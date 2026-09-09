@@ -15,8 +15,12 @@ Future<void> main() async {
 
   // Cloud-Sync ist optional: ohne eigenes Firebase-Projekt (siehe README,
   // `flutterfire configure`) bleibt die App vollständig offline nutzbar.
+  // Timeout ist bewusst gesetzt: im Web lädt Firebase sein JS-SDK per
+  // dynamischem Import von Googles CDN nach – blockiert das (Firewall,
+  // Adblocker, kein Netz), würde die App sonst nie über den Startbildschirm
+  // hinauskommen, weil runApp() erst danach läuft.
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp().timeout(const Duration(seconds: 5));
   } catch (e) {
     debugPrint('Firebase nicht konfiguriert – Cloud-Sync deaktiviert ($e).');
   }

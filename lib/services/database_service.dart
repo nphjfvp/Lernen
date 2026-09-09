@@ -1,12 +1,12 @@
-import 'dart:io';
+import 'package:sembast/sembast.dart';
 
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:sembast/sembast_io.dart';
+import 'db_factory/db_factory_web.dart'
+    if (dart.library.io) 'db_factory/db_factory_io.dart';
 
-/// Öffnet die einzige Sembast-Datenbankdatei der App und stellt die
-/// benannten Stores bereit. Ein Singleton, damit nie zwei Instanzen
-/// dieselbe Datei öffnen (das ist bei Sembast nicht sicher).
+/// Öffnet die einzige Sembast-Datenbank der App (echte Datei auf
+/// Windows/iOS/Android, IndexedDB im Web – siehe db_factory/) und stellt
+/// die benannten Stores bereit. Ein Singleton, damit nie zwei Instanzen
+/// dieselbe Datenbank öffnen (das ist bei Sembast nicht sicher).
 class DatabaseService {
   DatabaseService._();
   static final DatabaseService instance = DatabaseService._();
@@ -20,10 +20,7 @@ class DatabaseService {
   }
 
   Future<Database> _open() async {
-    final Directory dir = await getApplicationSupportDirectory();
-    await dir.create(recursive: true);
-    final path = p.join(dir.path, 'lernen.db');
-    final db = await databaseFactoryIo.openDatabase(path);
+    final db = await openLernenDatabase();
     _db = db;
     return db;
   }

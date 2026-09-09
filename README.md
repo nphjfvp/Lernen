@@ -93,11 +93,24 @@ ausreichend; für größere Organisationen ggf. Lizenz prüfen und
 
 ### 5. Ausführen
 
+**Am einfachsten zum Ausprobieren: im Browser**, kein Visual Studio/Android
+SDK/Xcode nötig – nur Flutter + ein Chrome/Edge:
+
 ```bash
-flutter run -d windows   # Windows-Desktop
-flutter run -d ios       # iOS (benötigt Xcode + Mac)
-flutter run -d android   # Android
+flutter run -d chrome
 ```
+
+Web läuft mit derselben Codebasis (lokale Daten liegen dann im
+IndexedDB des Browsers statt in einer Datei). Für die Ziel-Plattformen:
+
+```bash
+flutter run -d windows   # Windows-Desktop (braucht Visual Studio C++-Workload)
+flutter run -d ios       # iOS (benötigt Xcode + Mac)
+flutter run -d android   # Android (Emulator oder Gerät mit USB-Debugging)
+```
+
+`flutter devices` zeigt an, was auf dem jeweiligen Rechner tatsächlich
+verfügbar ist.
 
 ## Tests
 
@@ -108,7 +121,11 @@ flutter test       # FSRS-Algorithmus, Exam-Scheduler, KI-JSON-Parsing, App-Smok
 
 Die Kernlogik (FSRS-Scheduling, Exam-Scheduler-Dosierung, robuste
 JSON-Extraktion aus KI-Antworten) ist mit `flutter test` ohne Gerät
-abgedeckt. UI-Screens (PDF-Upload-Flows, Klausur-Countdown, Daily-Quiz-
-Session) wurden in diesem Sandbox-Environment nicht auf einem echten
-Windows/iOS/Android-Gerät durchgeklickt – das lohnt sich vor dem ersten
-echten Einsatz nachzuholen (`flutter run -d <platform>`).
+abgedeckt. Zusätzlich wurde der komplette Kernablauf – Fach anlegen,
+Navigation zwischen Fächer/Daily-Quiz/Einstellungen, Settings-UI – als
+Web-Build (`flutter build web`) in einem echten (headless) Chromium
+durchgeklickt und per Screenshot verifiziert. Native Windows/iOS/Android-
+Builds selbst (PDF-Upload-Flows, echte Gerätespezifika) wurden in diesem
+Sandbox-Environment nicht getestet, da hierfür Visual Studio/Xcode/Android-
+SDK fehlen – das lohnt sich vor dem ersten echten Einsatz nachzuholen
+(`flutter run -d <platform>`).
