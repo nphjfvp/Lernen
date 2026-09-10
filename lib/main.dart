@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'firebase_options.dart';
 import 'repositories/concept_repository.dart';
 import 'repositories/flashcard_repository.dart';
 import 'repositories/material_repository.dart';
@@ -13,14 +14,14 @@ import 'ui/root_shell.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Cloud-Sync ist optional: ohne eigenes Firebase-Projekt (siehe README,
-  // `flutterfire configure`) bleibt die App vollständig offline nutzbar.
-  // Timeout ist bewusst gesetzt: im Web lädt Firebase sein JS-SDK per
-  // dynamischem Import von Googles CDN nach – blockiert das (Firewall,
-  // Adblocker, kein Netz), würde die App sonst nie über den Startbildschirm
-  // hinauskommen, weil runApp() erst danach läuft.
+  // Cloud-Sync ist optional: schlägt die Initialisierung fehl, bleibt die
+  // App vollständig offline nutzbar. Timeout ist bewusst gesetzt: im Web
+  // lädt Firebase sein JS-SDK per dynamischem Import von Googles CDN nach –
+  // blockiert das (Firewall, Adblocker, kein Netz), würde die App sonst nie
+  // über den Startbildschirm hinauskommen, weil runApp() erst danach läuft.
   try {
-    await Firebase.initializeApp().timeout(const Duration(seconds: 5));
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
+        .timeout(const Duration(seconds: 5));
   } catch (e) {
     debugPrint('Firebase nicht konfiguriert – Cloud-Sync deaktiviert ($e).');
   }

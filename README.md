@@ -67,21 +67,25 @@ im Projektverzeichnis installiert alle Abhängigkeiten.
 Key unter <https://openrouter.ai> erstellen und in der App unter
 **Einstellungen** eintragen. Es ist kein Backend nötig.
 
-### 3. Cloud-Sync (optional)
+### 3. Cloud-Sync
 
-Ohne weitere Konfiguration läuft die App vollständig offline – die
-Einstellungen zeigen dann "Cloud-Sync nicht konfiguriert". Um Sync zwischen
-Windows/iPad/Android zu aktivieren:
+Ist bereits eingerichtet: `lib/firebase_options.dart` enthält die Config des
+Firebase-Projekts **lernenwing**, `main.dart` initialisiert Firebase damit
+beim Start. Fehlt `firebase_options.dart` oder schlägt die Initialisierung
+fehl (kein Netz, eigener Fork ohne Projekt), läuft die App einfach offline
+weiter – die Einstellungen zeigen dann "Cloud-Sync nicht konfiguriert".
 
-1. Eigenes Firebase-Projekt anlegen (<https://console.firebase.google.com>).
-2. Firestore Database aktivieren (Testmodus reicht für den Sync-Code-Ansatz;
-   für den Produktivbetrieb Security Rules ergänzen, die Lese-/Schreibzugriff
-   auf `sync_codes/{code}` nicht komplett offenlassen).
-3. `flutterfire configure` im Projektverzeichnis ausführen (installiert
-   `firebase_options.dart` und die nötigen nativen Konfigurationsdateien für
-   Android/iOS/Windows).
-4. `Firebase.initializeApp()` in `lib/main.dart` nutzt danach automatisch die
-   generierte Konfiguration.
+Die **Firestore Security Rules** (`firestore.rules` im Repo-Root) müssen
+einmalig manuell in der Firebase Console eingetragen werden (Firebase liest
+sie nicht automatisch aus dem Repo): **Firebase Console → Firestore Database
+→ Rules-Tab → Inhalt von `firestore.rules` einfügen → Veröffentlichen.**
+Sie beschränken den Zugriff auf `sync_codes/{code}` (kein Auflisten/Erraten
+existierender Codes möglich) und sperren alles andere per Default.
+
+Für ein komplett eigenes Firebase-Projekt (z.B. eigener Fork): Projekt unter
+<https://console.firebase.google.com> anlegen, eine Web-App registrieren,
+die angezeigte `firebaseConfig` in `lib/firebase_options.dart` eintragen,
+Firestore Database aktivieren, obige Rules einfügen.
 
 ### 4. PDF-Textextraktion (Syncfusion)
 

@@ -1,0 +1,21 @@
+rules_version = '2';
+
+// Sync-Code-Modell (kein Firebase Auth): wer den Sync-Code kennt, darf genau
+// dieses eine Dokument lesen/schreiben - wie ein Passwort. Was das absichert:
+//  - "list" ist verboten -> niemand kann die Sammlung durchsuchen/aufzählen,
+//    um an existierende Sync-Codes zu kommen. Nur direkter Zugriff per
+//    bekannter Dokument-ID (= Sync-Code) funktioniert.
+//  - Alles außerhalb von sync_codes/{code} ist per Default-Regel gesperrt,
+//    falls später weitere Collections dazukommen.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /sync_codes/{code} {
+      allow get, write: if code is string && code.size() >= 6;
+      allow list: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
