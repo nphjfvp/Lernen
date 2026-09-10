@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_colors.dart';
+
 /// Kleines Badge, das die verbleibenden Tage bis zur Klausur anzeigt und
 /// bei Klausuren in den nächsten 3 Tagen (Wiederholungs-Endspurt) warnt.
 class ExamCountdownBadge extends StatelessWidget {
@@ -12,35 +14,39 @@ class ExamCountdownBadge extends StatelessWidget {
     if (daysUntilExam == null) {
       return const SizedBox.shrink();
     }
+    final c = context.colors;
     final days = daysUntilExam!;
     late final String label;
-    late final Color color;
+    late final Color fg;
+    late final Color bg;
     if (days < 0) {
       label = 'Klausur vorbei';
-      color = Colors.grey;
+      fg = c.inkMuted;
+      bg = c.surfaceAlt;
     } else if (days == 0) {
       label = 'Klausur heute!';
-      color = Colors.red;
+      fg = c.danger;
+      bg = c.dangerSoft;
     } else if (days <= 3) {
       label = 'noch $days Tag${days == 1 ? '' : 'e'}';
-      color = Colors.red;
+      fg = c.danger;
+      bg = c.dangerSoft;
     } else if (days <= 14) {
       label = 'noch $days Tage';
-      color = Colors.orange;
+      fg = c.warn;
+      bg = c.warnSoft;
     } else {
       label = 'noch $days Tage';
-      color = Colors.green;
+      fg = c.good;
+      bg = c.goodSoft;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
       child: Text(
         label,
-        style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12),
+        style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 11),
       ),
     );
   }

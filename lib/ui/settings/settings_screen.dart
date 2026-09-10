@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/app_settings.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/sync_service.dart';
+import '../../theme/app_colors.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -103,116 +104,212 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  InputDecoration _fieldDecoration(BuildContext context, {required String label}) {
+    final c = context.colors;
+    final radius = BorderRadius.circular(14);
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: c.surface,
+      border: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: c.border)),
+      enabledBorder: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: c.border)),
+      focusedBorder: OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: c.accent)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsRepository>().settings;
+    final c = context.colors;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Einstellungen')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text('KI (BYOK)', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          const Text(
-            'Bring your own key: hinterlege deinen eigenen OpenRouter-API-Key. '
-            'Es läuft kein eigener Server – Anfragen gehen direkt von diesem Gerät an OpenRouter.',
-            style: TextStyle(fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _apiKeyController,
-            obscureText: _obscureKey,
-            decoration: InputDecoration(
-              labelText: 'OpenRouter API-Key',
-              border: const OutlineInputBorder(),
-              suffixIcon: IconButton(
-                icon: Icon(_obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                onPressed: () => setState(() => _obscureKey = !_obscureKey),
-              ),
+    return Material(
+      color: c.bg,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 4),
+              child: Text('Einstellungen', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
             ),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(onPressed: _saveApiKey, child: const Text('Speichern')),
-          ),
-          const SizedBox(height: 24),
-          Text('Modell', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          RadioGroup<String>(
-            groupValue: settings.selectedModel,
-            onChanged: (v) => _selectModel(v!),
-            child: Column(
-              children: kOpenRouterModels
-                  .map((m) => RadioListTile<String>(
-                        value: m.id,
-                        title: Text(m.label),
-                        subtitle: Text(m.id, style: const TextStyle(fontSize: 11)),
-                      ))
-                  .toList(),
-            ),
-          ),
-          const Divider(height: 40),
-          Text('Cloud-Sync', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          if (!_syncService.isAvailable)
-            const Text(
-              'Nicht konfiguriert: dieser Build hat kein Firebase-Projekt '
-              'verbunden. Die App funktioniert komplett offline. Siehe README '
-              '("flutterfire configure"), um Sync zwischen Windows/iPad/Android '
-              'zu aktivieren.',
-              style: TextStyle(fontSize: 12),
-            )
-          else ...[
-            const Text(
-              'Gib auf jedem Gerät denselben Sync-Code ein, um Fächer und '
-              'Lernfortschritt zu teilen. Der Code funktioniert wie ein '
-              'Passwort – teile ihn nicht mit Fremden.',
-              style: TextStyle(fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _syncCodeController,
-              decoration: const InputDecoration(labelText: 'Sync-Code', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _syncBusy ? null : _push,
-                    child: const Text('In Cloud hochladen'),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(24, 14, 24, 160),
+                children: [
+                  _SectionLabel('KI (BYOK)'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Eigener OpenRouter-Key – Anfragen gehen direkt von diesem '
+                    'Gerät an OpenRouter, kein eigener Server.',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _syncBusy ? null : _pull,
-                    child: const Text('Aus Cloud laden'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _apiKeyController,
+                    obscureText: _obscureKey,
+                    decoration: _fieldDecoration(context, label: 'OpenRouter API-Key').copyWith(
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: c.inkMuted),
+                        onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                      ),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (_syncBusy) const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            if (_syncMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(_syncMessage!),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: c.accentSolid,
+                        foregroundColor: c.accentInk,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: _saveApiKey,
+                      child: const Text('Speichern'),
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  _SectionLabel('Modell'),
+                  RadioGroup<String>(
+                    groupValue: settings.selectedModel,
+                    onChanged: (v) => _selectModel(v!),
+                    child: Column(
+                      children: kOpenRouterModels
+                          .map((m) => RadioListTile<String>(
+                                value: m.id,
+                                activeColor: c.accent,
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                title: Text(m.label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                                subtitle: Text(m.id, style: TextStyle(fontSize: 11, color: c.inkMuted)),
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 26),
+                    child: Divider(height: 1, color: c.border),
+                  ),
+                  _SectionLabel('Cloud-Sync'),
+                  const SizedBox(height: 4),
+                  if (!_syncService.isAvailable)
+                    Text(
+                      'Nicht konfiguriert: dieser Build hat kein Firebase-Projekt '
+                      'verbunden. Die App funktioniert komplett offline. Siehe README '
+                      '("flutterfire configure"), um Sync zwischen Windows/iPad/Android '
+                      'zu aktivieren.',
+                      style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                    )
+                  else ...[
+                    Text(
+                      'Gib auf jedem Gerät denselben Sync-Code ein, um Fächer und '
+                      'Lernfortschritt zu teilen. Der Code funktioniert wie ein '
+                      'Passwort – teile ihn nicht mit Fremden.',
+                      style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _syncCodeController,
+                      decoration: _fieldDecoration(context, label: 'Sync-Code'),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _SoftButton(
+                            icon: Icons.cloud_upload_outlined,
+                            label: 'Hochladen',
+                            onTap: _syncBusy ? null : _push,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _SoftButton(
+                            icon: Icons.cloud_download_outlined,
+                            label: 'Herunterladen',
+                            onTap: _syncBusy ? null : _pull,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_syncBusy)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    if (_syncMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(_syncMessage!, style: TextStyle(color: c.inkMuted)),
+                      ),
+                    if (settings.lastSyncAt != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Row(
+                          children: [
+                            Container(width: 7, height: 7, decoration: BoxDecoration(color: c.good, shape: BoxShape.circle)),
+                            const SizedBox(width: 7),
+                            Text(
+                              'Zuletzt synchronisiert: ${settings.lastSyncAt}',
+                              style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ],
               ),
-            if (settings.lastSyncAt != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Zuletzt synchronisiert: ${settings.lastSyncAt}',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ),
+            ),
           ],
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, letterSpacing: 0.04, color: c.inkMuted),
+      ),
+    );
+  }
+}
+
+class _SoftButton extends StatelessWidget {
+  const _SoftButton({required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border.all(color: c.border),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: c.ink),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.ink)),
+          ],
+        ),
       ),
     );
   }

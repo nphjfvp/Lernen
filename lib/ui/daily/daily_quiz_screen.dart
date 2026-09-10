@@ -6,6 +6,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../services/daily_scheduler_service.dart';
 import '../../services/fsrs_service.dart';
+import '../../theme/app_colors.dart';
 
 /// Daily Quiz / Exam-Scheduler: tägliche Lernsession über alle Fächer
 /// hinweg. Fällige Wiederholungen + eine je nach Wissensstand und
@@ -58,24 +59,28 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> {
   @override
   Widget build(BuildContext context) {
     final plan = _plan;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Daily Quiz')),
-      body: plan == null
-          ? const Center(child: CircularProgressIndicator())
-          : plan.total == 0
-              ? const _AllDoneView()
-              : _index >= plan.total
-                  ? _SessionDoneView(count: _reviewedCount, onRestart: _loadPlan)
-                  : _SessionView(
-                      card: plan.allCards[_index],
-                      progress: _index / plan.total,
-                      total: plan.total,
-                      position: _index + 1,
-                      isNew: plan.newCards.contains(plan.allCards[_index]),
-                      showBack: _showBack,
-                      onFlip: () => setState(() => _showBack = true),
-                      onGrade: _grade,
-                    ),
+    final c = context.colors;
+    return Material(
+      color: c.bg,
+      child: SafeArea(
+        child: plan == null
+            ? const Center(child: CircularProgressIndicator())
+            : plan.total == 0
+                ? const _AllDoneView()
+                : _index >= plan.total
+                    ? _SessionDoneView(count: _reviewedCount, onRestart: _loadPlan)
+                    : _SessionView(
+                        card: plan.allCards[_index],
+                        moduleName: context.read<ModuleRepository>().byId(plan.allCards[_index].moduleId)?.name ?? '',
+                        progress: (_index + 1) / plan.total,
+                        total: plan.total,
+                        position: _index + 1,
+                        isNew: plan.newCards.contains(plan.allCards[_index]),
+                        showBack: _showBack,
+                        onFlip: () => setState(() => _showBack = true),
+                        onGrade: _grade,
+                      ),
+      ),
     );
   }
 }
@@ -85,18 +90,20 @@ class _AllDoneView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final c = context.colors;
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.celebration_outlined, size: 64, color: Colors.green),
-            SizedBox(height: 16),
+            Icon(Icons.celebration_outlined, size: 56, color: c.good),
+            const SizedBox(height: 16),
             Text(
               'Für heute nichts fällig!\nLege in einem Fach neue Karteikarten '
               'an (Nachbereiten-Modus) oder komm morgen wieder.',
               textAlign: TextAlign.center,
+              style: TextStyle(color: c.inkMuted),
             ),
           ],
         ),
@@ -112,13 +119,14 @@ class _SessionDoneView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle_outline, size: 64, color: Colors.green),
+            Icon(Icons.check_circle_outline, size: 56, color: c.good),
             const SizedBox(height: 16),
             Text('Session abgeschlossen! $count Karten wiederholt.', textAlign: TextAlign.center),
             const SizedBox(height: 16),
@@ -133,6 +141,7 @@ class _SessionDoneView extends StatelessWidget {
 class _SessionView extends StatelessWidget {
   const _SessionView({
     required this.card,
+    required this.moduleName,
     required this.progress,
     required this.total,
     required this.position,
@@ -143,6 +152,7 @@ class _SessionView extends StatelessWidget {
   });
 
   final Flashcard card;
+  final String moduleName;
   final double progress;
   final int total;
   final int position;
@@ -153,78 +163,132 @@ class _SessionView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          LinearProgressIndicator(value: progress),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final c = context.colors;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+          child: Column(
             children: [
-              Text('$position / $total'),
-              if (isNew)
-                const Chip(label: Text('Neu'), visualDensity: VisualDensity.compact),
-            ],
-          ),
-          Expanded(
-            child: Center(
-              child: GestureDetector(
-                onTap: showBack ? null : onFlip,
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: double.infinity),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(card.front, style: Theme.of(context).textTheme.titleLarge, textAlign: TextAlign.center),
-                          if (showBack) ...[
-                            const Divider(height: 32),
-                            Text(card.back, textAlign: TextAlign.center),
-                          ] else ...[
-                            const SizedBox(height: 16),
-                            Text('Zum Umdrehen tippen', style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                        ],
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 6,
+                  backgroundColor: c.border,
+                  valueColor: AlwaysStoppedAnimation(c.accent),
+                ),
+              ),
+              const SizedBox(height: 13),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('$position / $total', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+                  if (moduleName.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
+                      decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(20)),
+                      child: Text(
+                        moduleName,
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.accentOnSoft),
                       ),
                     ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: GestureDetector(
+                onTap: showBack ? null : onFlip,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 34),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    border: Border.all(color: c.border),
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (isNew)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                          decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(20)),
+                          child: Text('NEU', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.warn, letterSpacing: 0.03)),
+                        ),
+                      if (isNew) const SizedBox(height: 16),
+                      Text(
+                        card.front,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, height: 1.45),
+                      ),
+                      if (showBack) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Divider(height: 1, color: c.border),
+                        ),
+                        Text(
+                          card.back,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 15, height: 1.6, color: c.inkMuted),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 16),
+                        Text('Zum Umdrehen tippen', style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                      ],
+                    ],
                   ),
                 ),
               ),
             ),
           ),
-          if (showBack)
-            Row(
+        ),
+        if (showBack)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 30),
+            child: Row(
               children: [
-                Expanded(child: _GradeButton(label: 'Nochmal', color: Colors.red, onTap: () => onGrade(Grade.again))),
-                const SizedBox(width: 8),
-                Expanded(child: _GradeButton(label: 'Schwer', color: Colors.orange, onTap: () => onGrade(Grade.hard))),
-                const SizedBox(width: 8),
-                Expanded(child: _GradeButton(label: 'Gut', color: Colors.green, onTap: () => onGrade(Grade.good))),
-                const SizedBox(width: 8),
-                Expanded(child: _GradeButton(label: 'Leicht', color: Colors.blue, onTap: () => onGrade(Grade.easy))),
+                Expanded(child: _GradeButton(label: 'Nochmal', fg: c.danger, bg: c.dangerSoft, onTap: () => onGrade(Grade.again))),
+                const SizedBox(width: 9),
+                Expanded(child: _GradeButton(label: 'Schwer', fg: c.warn, bg: c.warnSoft, onTap: () => onGrade(Grade.hard))),
+                const SizedBox(width: 9),
+                Expanded(child: _GradeButton(label: 'Gut', fg: c.good, bg: c.goodSoft, onTap: () => onGrade(Grade.good))),
+                const SizedBox(width: 9),
+                Expanded(child: _GradeButton(label: 'Leicht', fg: c.accentOnSoft, bg: c.accentSoft, onTap: () => onGrade(Grade.easy))),
               ],
             ),
-        ],
-      ),
+          )
+        else
+          const SizedBox(height: 30),
+      ],
     );
   }
 }
 
 class _GradeButton extends StatelessWidget {
-  const _GradeButton({required this.label, required this.color, required this.onTap});
+  const _GradeButton({required this.label, required this.fg, required this.bg, required this.onTap});
   final String label;
-  final Color color;
+  final Color fg;
+  final Color bg;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
-      style: FilledButton.styleFrom(backgroundColor: color),
-      onPressed: onTap,
-      child: Text(label),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+        child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg)),
+      ),
     );
   }
 }

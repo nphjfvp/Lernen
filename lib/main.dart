@@ -9,6 +9,7 @@ import 'repositories/material_repository.dart';
 import 'repositories/module_repository.dart';
 import 'repositories/settings_repository.dart';
 import 'repositories/summary_repository.dart';
+import 'theme/app_theme.dart';
 import 'ui/root_shell.dart';
 
 Future<void> main() async {
@@ -46,17 +47,8 @@ class LernenApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Lernen',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3D5AFE)),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF3D5AFE),
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-        ),
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
         home: const RootShell(),
       ),
     );

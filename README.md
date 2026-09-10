@@ -47,6 +47,7 @@ lib/
     daily_scheduler_service.dart    Exam-Scheduler (fällige + neue Karten)
     sync_service.dart               Firestore Sync-Code Push/Pull (optional)
   repositories/    ChangeNotifier-Wrapper um die DB, für Provider/Consumer
+  theme/           Design-Tokens ("Ruhig & Fokussiert") + Light-/Dark-Theme
   ui/              home, modules, prepare, review, daily, settings
 ```
 
@@ -54,6 +55,18 @@ Lokale Persistenz läuft über [Sembast](https://pub.dev/packages/sembast)
 (reines Dart, keine nativen Bindings nötig – funktioniert identisch auf
 Windows/iOS/Android). State-Management ist bewusst einfach gehalten:
 `ChangeNotifier`-Repositories + `provider`, keine zusätzliche Abstraktion.
+
+### Design
+
+Eigenständigeres Look-and-Feel statt Standard-Material: warmes Off-White/
+Tinte im Hellmodus, sanftes Dunkelblau-Grau im Dunkelmodus, ein entsättigtes
+Periwinkle als einziger Akzent, [Public Sans](https://fonts.google.com/specimen/Public+Sans)
+(über `google_fonts`), weiche Ecken statt Schatten, schwebende Pillen-
+Navigation statt Vollbreiten-Bottom-Bar. Alle Tokens liegen zentral in
+`lib/theme/app_colors.dart` als `ThemeExtension` (`context.colors.accent`
+usw.) – Screens greifen darauf zu statt Farben zu hardcoden. Ursprung ist
+eine Design-Grundlage (Light/Dark-Mockups) für Fächer-Liste, Modul-Detail,
+Daily Quiz und Einstellungen, die 1:1 in echten App-Code übernommen wurde.
 
 ## Setup
 
