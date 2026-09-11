@@ -7,6 +7,7 @@ import 'repositories/auth_repository.dart';
 import 'repositories/concept_repository.dart';
 import 'repositories/flashcard_repository.dart';
 import 'repositories/material_repository.dart';
+import 'repositories/model_catalog_repository.dart';
 import 'repositories/module_repository.dart';
 import 'repositories/settings_repository.dart';
 import 'repositories/summary_repository.dart';
@@ -45,6 +46,7 @@ class LernenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ConceptRepository()),
         ChangeNotifierProvider(create: (_) => FlashcardRepository()),
         ChangeNotifierProvider(create: (_) => SettingsRepository()..load()),
+        ChangeNotifierProvider(create: (_) => ModelCatalogRepository()..loadCached()),
       ],
       child: MaterialApp(
         title: 'Lernen',

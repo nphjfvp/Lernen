@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/ai_model_info.dart';
 import '../../models/app_settings.dart';
 import '../../repositories/auth_repository.dart';
+import '../../repositories/model_catalog_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/sync_service.dart';
 import '../../theme/app_colors.dart';
 import '../auth/login_screen.dart';
+import 'model_picker_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -46,9 +49,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _selectModel(String modelId) async {
+  Future<void> _pickModel({
+    required String role,
+    required String title,
+    required List<AiModelInfo> models,
+    required String selectedId,
+  }) async {
+    final picked = await showModelPickerSheet(context, title: title, models: models, selectedId: selectedId);
+    if (picked == null || !mounted) return;
     final repo = context.read<SettingsRepository>();
-    await repo.update(repo.settings.copyWith(selectedModel: modelId));
+    switch (role) {
+      case 'question':
+        await repo.update(repo.settings.copyWith(questionModelId: picked));
+      case 'vision':
+        await repo.update(repo.settings.copyWith(visionModelId: picked));
+      case 'crosscheck':
+        await repo.update(repo.settings.copyWith(crosscheckModelId: picked));
+    }
+  }
+
+  String _formatRelative(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'gerade eben';
+    if (diff.inMinutes < 60) return 'vor ${diff.inMinutes} Min.';
+    if (diff.inHours < 24) return 'vor ${diff.inHours} Std.';
+    return 'vor ${diff.inDays} Tagen';
   }
 
   Future<void> _push() async {
@@ -170,21 +195,120 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 26),
-                  _SectionLabel('Modell'),
-                  RadioGroup<String>(
-                    groupValue: settings.selectedModel,
-                    onChanged: (v) => _selectModel(v!),
-                    child: Column(
-                      children: kOpenRouterModels
-                          .map((m) => RadioListTile<String>(
-                                value: m.id,
-                                activeColor: c.accent,
-                                contentPadding: EdgeInsets.zero,
-                                dense: true,
-                                title: Text(m.label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                                subtitle: Text(m.id, style: TextStyle(fontSize: 11, color: c.inkMuted)),
-                              ))
-                          .toList(),
+                  _SectionLabel('Modelle'),
+                  const SizedBox(height: 4),
+                  Consumer<ModelCatalogRepository>(
+                    builder: (context, catalog, _) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  catalog.lastUpdated == null
+                                      ? 'Noch nicht aktualisiert – eingebaute Fallback-Liste aktiv.'
+                                      : '${catalog.models.length} Modelle von OpenRouter · aktualisiert ${_formatRelative(catalog.lastUpdated!)}',
+                                  style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: catalog.isRefreshing ? null : () => catalog.refresh(),
+                                icon: catalog.isRefreshing
+                                    ? SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: c.accent),
+                                      )
+                                    : const Icon(Icons.refresh, size: 16),
+                                label: const Text('Aktualisieren', style: TextStyle(fontSize: 12.5)),
+                              ),
+                            ],
+                          ),
+                          if (catalog.lastError != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4, bottom: 6),
+                              child: Text(catalog.lastError!, style: TextStyle(fontSize: 11.5, color: c.danger)),
+                            ),
+                          const SizedBox(height: 10),
+                          _ModelSelectorTile(
+                            label: 'Fragenerstellen',
+                            sublabel: 'Zusammenfassungen, Konzepte, Karteikarten',
+                            selectedId: settings.questionModelId,
+                            catalog: catalog,
+                            onTap: () => _pickModel(
+                              role: 'question',
+                              title: 'Modell für Fragenerstellen',
+                              models: catalog.models,
+                              selectedId: settings.questionModelId,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _ModelSelectorTile(
+                            label: 'Vision',
+                            sublabel: 'Für gescannte Folien ohne Textebene',
+                            selectedId: settings.visionModelId,
+                            catalog: catalog,
+                            onTap: () => _pickModel(
+                              role: 'vision',
+                              title: 'Vision-Modell',
+                              models: catalog.visionModels,
+                              selectedId: settings.visionModelId,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _ModelSelectorTile(
+                            label: 'Crosscheck',
+                            sublabel: 'Zweitmeinung zur Prüfung der Ergebnisse',
+                            selectedId: settings.crosscheckModelId,
+                            catalog: catalog,
+                            onTap: () => _pickModel(
+                              role: 'crosscheck',
+                              title: 'Crosscheck-Modell',
+                              models: catalog.models,
+                              selectedId: settings.crosscheckModelId,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 22),
+                  _SectionLabel('Chunking'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Wie große Foliensätze/Übungen vor der KI-Generierung in Abschnitte '
+                    'zerlegt werden.',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ChunkGranularity.values.map((g) {
+                      final selected = settings.chunkGranularity == g;
+                      return ChoiceChip(
+                        label: Text(g.label),
+                        selected: selected,
+                        onSelected: (_) => context.read<SettingsRepository>().update(settings.copyWith(chunkGranularity: g)),
+                        selectedColor: c.accentSoft,
+                        labelStyle: TextStyle(fontSize: 12.5, color: selected ? c.accentOnSoft : c.ink, fontWeight: FontWeight.w600),
+                        backgroundColor: c.surface,
+                        side: BorderSide(color: selected ? c.accent : c.border),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.rollingContextEnabled,
+                    activeThumbColor: c.accent,
+                    onChanged: (v) => context.read<SettingsRepository>().update(settings.copyWith(rollingContextEnabled: v)),
+                    title: const Text('Rolling-Context', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      'Bereits erkannte Themen werden in den nächsten Abschnitt mitgegeben, '
+                      'um doppelte Karten/Konzepte zu vermeiden.',
+                      style: TextStyle(fontSize: 11.5, color: c.inkMuted),
                     ),
                   ),
                   Padding(
@@ -357,6 +481,63 @@ class _AccountSection extends StatelessWidget {
           child: const Text('Anmelden'),
         ),
       ],
+    );
+  }
+}
+
+class _ModelSelectorTile extends StatelessWidget {
+  const _ModelSelectorTile({
+    required this.label,
+    required this.sublabel,
+    required this.selectedId,
+    required this.catalog,
+    required this.onTap,
+  });
+
+  final String label;
+  final String sublabel;
+  final String selectedId;
+  final ModelCatalogRepository catalog;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final model = catalog.byId(selectedId);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border.all(color: c.border),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(sublabel, style: TextStyle(fontSize: 11, color: c.inkMuted)),
+                  const SizedBox(height: 6),
+                  Text(
+                    model?.name ?? selectedId,
+                    style: TextStyle(fontSize: 12.5, color: c.accentOnSoft, fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: c.inkMuted, size: 18),
+          ],
+        ),
+      ),
     );
   }
 }

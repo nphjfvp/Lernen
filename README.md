@@ -19,7 +19,18 @@ engerem Fokus statt Feature-Fülle.
   (siehe `lib/services/daily_scheduler_service.dart`).
 - **BYOK** – die KI läuft über [OpenRouter](https://openrouter.ai) mit einem
   selbst mitgebrachten API-Key. Es gibt keinen App-eigenen Server; Anfragen
-  gehen direkt vom Gerät an OpenRouter.
+  gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von
+  OpenRouter abgerufen (Cache in der lokalen DB, wöchentlicher Refresh) statt
+  fest in der App hinterlegt zu sein – neue Modelle stehen so automatisch
+  zur Verfügung. Getrennte Modell-Einstellungen für drei Rollen:
+  **Fragenerstellen**, **Vision** (bildfähige Modelle, z.B. für gescannte
+  Foliensätze) und **Crosscheck** (bewusst ein zweites Modell, das die
+  Ergebnisse des ersten gegenprüft). Große Foliensätze/Übungsaufgaben werden
+  automatisch in mehrere Anfragen zerlegt ("Rolling-Context-Chunking" –
+  jeder weitere Abschnitt bekommt die bereits erfassten Kernkonzepte als
+  Kontext, um Wiederholungen zu vermeiden); Vorbereiten/Nachbereiten
+  unterstützen dabei mehrere PDF-Uploads gleichzeitig und zeigen vorab eine
+  kurze Analyse (Länge → empfohlene Chunk-Granularität).
 - **Cloud-Sync (optional)** – Sync-Code-basiert wie beim Vorgänger, über ein
   eigenes Firebase-Projekt. Ohne Konfiguration läuft die App komplett
   offline.
@@ -33,20 +44,25 @@ engerem Fokus statt Feature-Fülle.
 Der Vorgänger hatte 9 Fragetypen, 6 Mini-Games, eine Coin-Economy/Shop,
 Mock-Klausuren, Formelsammlungen, Sokrates-Modus u.v.m. Diese App
 konzentriert sich auf den Kernkreislauf **Vorbereiten → Nachbereiten →
-Daily Quiz** und verzichtet bewusst auf alles andere. Auch Vision-Pipelines
-(Bild-Upload, handschriftliche Formeln) und mehrstufiges Text-Chunking für
-sehr große PDFs sind (noch) nicht umgesetzt – lange Foliensätze werden aktuell
-hart gekürzt (`AiService.maxInputChars`).
+Daily Quiz** und verzichtet bewusst auf alles andere. Die Vision-Modell-Rolle
+existiert bereits in den Einstellungen (für später), eine konkrete
+OCR-Fallback-Pipeline für gescannte/bildbasierte PDFs (Rasterung + Versand an
+ein Vision-Modell) ist aber noch nicht umgesetzt – aktuell scheitert die
+Textextraktion bei rein-bildbasierten PDFs mit einer klaren Fehlermeldung.
 
 ## Architektur
 
 ```
 lib/
-  models/        Module, MaterialItem, Summary, Concept, Flashcard, AppSettings
+  models/        Module, MaterialItem, Summary, Concept, Flashcard, AppSettings, AiModelInfo
   services/
     database_service.dart          Sembast (lokale, dateibasierte NoSQL-DB)
     pdf_service.dart                PDF-Textextraktion (syncfusion_flutter_pdf)
-    ai_service.dart                 OpenRouter-Anbindung (BYOK) + JSON-Reparatur
+    ai_service.dart                 OpenRouter-Anbindung (BYOK), Chunking/Rolling
+                                     Context, Crosscheck-Pass + JSON-Reparatur
+    text_chunker.dart                Zerlegt lange Texte für ai_service.dart
+    content_analyzer.dart            Kurzanalyse (Länge → Chunking-Empfehlung)
+    model_catalog_service.dart      Ruft OpenRouters Modell-Katalog live ab
     fsrs_service.dart               FSRS-4.5 Spaced-Repetition-Algorithmus
     daily_scheduler_service.dart    Exam-Scheduler (fällige + neue Karten)
     sync_service.dart               Firestore Sync-Code Push/Pull (optional)

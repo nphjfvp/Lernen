@@ -31,4 +31,5 @@ class DatabaseService {
   static final concepts = stringMapStoreFactory.store('concepts');
   static final flashcards = stringMapStoreFactory.store('flashcards');
   static final settings = stringMapStoreFactory.store('settings');
+  static final modelCatalog = stringMapStoreFactory.store('model_catalog');
 }
