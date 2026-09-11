@@ -172,6 +172,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Future<void> _save() async {
     final result = _result!;
     final now = DateTime.now();
+    // Nachbereiten setzt "behandelt" standardmäßig auf true: wer Folien UND
+    // Übungen gemeinsam nachbereitet, hat das Thema damit i.d.R. bereits in
+    // der Vorlesung gehabt (Übungen kommen meist erst danach). Lässt sich im
+    // Modul-Detail jederzeit manuell umstellen.
     final slidesMaterials = _slidesFiles
         .map((f) => MaterialItem(
               id: const Uuid().v4(),
@@ -180,6 +184,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               kind: MaterialKind.slide,
               extractedText: f.text,
               createdAt: now,
+              covered: true,
             ))
         .toList();
     final exercisesMaterials = _exercisesFiles
@@ -190,6 +195,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               kind: MaterialKind.exercise,
               extractedText: f.text,
               createdAt: now,
+              covered: true,
             ))
         .toList();
     final sourceIds = [

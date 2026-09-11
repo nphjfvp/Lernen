@@ -30,6 +30,14 @@ class MaterialRepository extends ChangeNotifier {
     await loadForModule(item.moduleId);
   }
 
+  /// Markiert ein Material als (nicht) im Unterricht behandelt. Rein
+  /// informativ – blockiert nirgends den Zugriff auf das Material selbst.
+  Future<void> setCovered(String id, String moduleId, bool covered) async {
+    final db = await DatabaseService.instance.database;
+    await DatabaseService.materials.record(id).update(db, {'covered': covered});
+    await loadForModule(moduleId);
+  }
+
   Future<List<MaterialItem>> byIds(List<String> ids) async {
     final db = await DatabaseService.instance.database;
     final result = <MaterialItem>[];

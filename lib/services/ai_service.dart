@@ -304,6 +304,46 @@ Antworte in der Sprache der Vorlage.
     return _parseJsonObject(raw);
   }
 
+  static const _chatSystemPrompt = '''
+Du bist ein Lernassistent für Studierende. Du bekommst hochgeladenes
+Vorlesungs- und Übungsmaterial eines Fachs, chronologisch geordnet und
+jeweils markiert, ob es im Unterricht bereits "Behandelt" wurde oder "Noch
+nicht behandelt" ist (nur hochgeladen, damit vorab weitergelernt werden
+kann, aber in der Vorlesung noch nicht dran).
+Beantworte NUR die gestellte Frage – erkläre oder ergänze nichts, wonach
+nicht gefragt wurde. Wenn sich die Frage auf den Zusammenhang mit früherem
+oder späterem Stoff bezieht, ordne die Antwort anhand des chronologischen
+Materials entsprechend ein (auch noch nicht behandeltes Material, wenn
+danach gefragt wird – weise dann kurz darauf hin, dass es im Unterricht
+noch nicht dran war). Antworte klar und prägnant in normalem Fließtext
+(kein JSON, keine Codefences), in der Sprache der Frage.
+''';
+
+  /// Frage-Chat zu den hochgeladenen Materialien eines Fachs. Reagiert
+  /// ausschließlich auf [question] – wird nie von selbst aufgerufen, siehe
+  /// ModuleChatScreen. [materialsContext] kommt aus [ChatContextBuilder] und
+  /// enthält bereits alle Materialien chronologisch mit Behandelt-Status,
+  /// [history] die letzten Chat-Turns für Rückbezüge ("und was meintest du
+  /// vorhin mit...").
+  Future<String> answerQuestion({
+    required String question,
+    required String materialsContext,
+    List<({bool isUser, String content})> history = const [],
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Verfügbares Material:')
+      ..writeln(materialsContext);
+    if (history.isNotEmpty) {
+      buffer.writeln('Bisheriger Gesprächsverlauf:');
+      for (final turn in history) {
+        buffer.writeln('${turn.isUser ? 'Ich' : 'Assistent'}: ${turn.content}');
+      }
+      buffer.writeln();
+    }
+    buffer.writeln('Meine Frage: $question');
+    return _complete(_chatSystemPrompt, buffer.toString());
+  }
+
   Map<String, dynamic> _parseJsonObject(String raw) {
     final candidate = _extractJsonBlock(raw);
     try {

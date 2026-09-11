@@ -1,5 +1,9 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../models/material_item.dart';
 import '../../repositories/concept_repository.dart';
@@ -7,7 +11,9 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/summary_repository.dart';
+import '../../services/pdf_service.dart';
 import '../../theme/app_colors.dart';
+import '../chat/module_chat_screen.dart';
 import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
@@ -152,6 +158,17 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    _SoftRow(
+                      icon: Icons.forum_outlined,
+                      title: 'Fragen stellen',
+                      subtitle: 'Zu deinen hochgeladenen Materialien nachfragen – nur wenn du fragst',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ModuleChatScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 26),
                     _SectionHeader(title: 'Zusammenfassungen', count: summaries.length),
                     const SizedBox(height: 10),
@@ -233,15 +250,23 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     const SizedBox(height: 20),
                     _SectionHeader(title: 'Materialien', count: materials.length),
                     const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _uploadMaterials,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Material hochladen'),
+                    ),
+                    const SizedBox(height: 10),
                     if (materials.isEmpty)
-                      const _HintText('Noch keine Dateien hochgeladen.')
+                      const _HintText(
+                          'Noch keine Dateien hochgeladen. Du kannst hier auch schon den ganzen '
+                          'Semesterinhalt ablegen und vorarbeiten – ohne dass dafür KI-Anfragen anfallen.')
                     else
                       ...materials.map((m) => Padding(
                             padding: const EdgeInsets.only(bottom: 10),
-                            child: _SoftRow(
-                              icon: m.kind == MaterialKind.slide ? Icons.slideshow_outlined : Icons.assignment_outlined,
-                              title: m.fileName,
-                              subtitle: m.kind == MaterialKind.slide ? 'Folien' : 'Übungsaufgabe',
+                            child: _MaterialRow(
+                              material: m,
+                              onToggleCovered: (value) =>
+                                  context.read<MaterialRepository>().setCovered(m.id, m.moduleId, value),
                             ),
                           )),
                   ],
@@ -252,6 +277,56 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _uploadMaterials() async {
+    final kind = await showDialog<MaterialKind>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Was lädst du hoch?'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop(MaterialKind.slide),
+            child: const Text('Folien'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop(MaterialKind.exercise),
+            child: const Text('Übungsaufgaben'),
+          ),
+        ],
+      ),
+    );
+    if (kind == null || !mounted) return;
+
+    final picked = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
+    if (picked.isEmpty || !mounted) return;
+
+    final repo = context.read<MaterialRepository>();
+    final errors = <String>[];
+    for (final file in picked) {
+      try {
+        final Uint8List bytes = await file.readAsBytes();
+        final text = PdfService().extractText(bytes);
+        if (text.isEmpty) {
+          errors.add('${file.name}: kein Text gefunden.');
+          continue;
+        }
+        await repo.save(MaterialItem(
+          id: const Uuid().v4(),
+          moduleId: widget.moduleId,
+          fileName: file.name,
+          kind: kind,
+          extractedText: text,
+          createdAt: DateTime.now(),
+        ));
+        if (!mounted) return;
+      } catch (e) {
+        errors.add('${file.name}: $e');
+      }
+    }
+    if (errors.isNotEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errors.join('\n'))));
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context, String id, String name) async {
@@ -386,6 +461,71 @@ class _SoftRow extends StatelessWidget {
               if (onTap != null) Icon(Icons.chevron_right_rounded, size: 16, color: c.inkMuted),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MaterialRow extends StatelessWidget {
+  const _MaterialRow({required this.material, required this.onToggleCovered});
+  final MaterialItem material;
+  final ValueChanged<bool> onToggleCovered;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(11)),
+              alignment: Alignment.center,
+              child: Icon(
+                material.kind == MaterialKind.slide ? Icons.slideshow_outlined : Icons.assignment_outlined,
+                size: 16,
+                color: c.inkMuted,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    material.fileName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    material.kind == MaterialKind.slide ? 'Folien' : 'Übungsaufgabe',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted),
+                  ),
+                ],
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                Checkbox(
+                  value: material.covered,
+                  onChanged: (v) => onToggleCovered(v ?? false),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

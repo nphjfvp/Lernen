@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
 import 'repositories/auth_repository.dart';
+import 'repositories/chat_repository.dart';
 import 'repositories/concept_repository.dart';
 import 'repositories/flashcard_repository.dart';
 import 'repositories/material_repository.dart';
@@ -42,6 +43,7 @@ class LernenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthRepository()),
         ChangeNotifierProvider(create: (_) => ModuleRepository()..load()),
         ChangeNotifierProvider(create: (_) => MaterialRepository()),
+        ChangeNotifierProvider(create: (_) => ChatRepository()),
         ChangeNotifierProvider(create: (_) => SummaryRepository()),
         ChangeNotifierProvider(create: (_) => ConceptRepository()),
         ChangeNotifierProvider(create: (_) => FlashcardRepository()),

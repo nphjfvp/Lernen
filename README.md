@@ -17,6 +17,22 @@ engerem Fokus statt Feature-Fülle.
   hinweg. FSRS-Spaced-Repetition für fällige Wiederholungen; die Menge neuer
   Karten wird pro Fach dynamisch an Wissensstand und Klausarnähe angepasst
   (siehe `lib/services/daily_scheduler_service.dart`).
+- **Materialien & Vorarbeiten** – im Modul-Detail lässt sich beliebig viel
+  Material (z.B. der komplette Semesterinhalt) direkt hochladen, ohne dass
+  dafür eine KI-Anfrage anfällt – reine Textextraktion + Ablage. Jedes
+  Material hat eine manuelle "Behandelt"-Markierung, die der Nutzer setzt,
+  sobald das Thema in der Vorlesung dran war; sie blockiert nichts (man kann
+  jederzeit weiter vorarbeiten), dient aber als zusätzlicher Kontext für den
+  Frage-Chat.
+- **Frage-Chat** – pro Modul durch die hochgeladenen Materialien gehen und
+  Fragen dazu stellen/sich Dinge erklären lassen, ausschließlich auf
+  explizite Nachfrage (nichts wird automatisch erklärt). Die KI bekommt alle
+  Materialien chronologisch mit Behandelt-Status als Kontext, sodass sie bei
+  Bedarf auch frühere oder noch nicht behandelte Folien einordnen kann. Der
+  Kontext wird auf ein Zeichenbudget begrenzt (grob aus dem Kontextfenster
+  des gewählten Modells abgeleitet, siehe
+  `lib/services/chat_context_builder.dart`), behandelte Materialien haben
+  dabei Vorrang vor noch nicht behandelten.
 - **BYOK** – die KI läuft über [OpenRouter](https://openrouter.ai) mit einem
   selbst mitgebrachten API-Key. Es gibt keinen App-eigenen Server; Anfragen
   gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von
@@ -54,14 +70,16 @@ Textextraktion bei rein-bildbasierten PDFs mit einer klaren Fehlermeldung.
 
 ```
 lib/
-  models/        Module, MaterialItem, Summary, Concept, Flashcard, AppSettings, AiModelInfo
+  models/        Module, MaterialItem, Summary, Concept, Flashcard, AppSettings,
+                 AiModelInfo, ChatMessage
   services/
     database_service.dart          Sembast (lokale, dateibasierte NoSQL-DB)
     pdf_service.dart                PDF-Textextraktion (syncfusion_flutter_pdf)
     ai_service.dart                 OpenRouter-Anbindung (BYOK), Chunking/Rolling
-                                     Context, Crosscheck-Pass + JSON-Reparatur
+                                     Context, Crosscheck-Pass, Frage-Chat + JSON-Reparatur
     text_chunker.dart                Zerlegt lange Texte für ai_service.dart
     content_analyzer.dart            Kurzanalyse (Länge → Chunking-Empfehlung)
+    chat_context_builder.dart        Baut den Material-Kontext für den Frage-Chat
     model_catalog_service.dart      Ruft OpenRouters Modell-Katalog live ab
     fsrs_service.dart               FSRS-4.5 Spaced-Repetition-Algorithmus
     daily_scheduler_service.dart    Exam-Scheduler (fällige + neue Karten)
