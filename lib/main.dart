@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
+import 'repositories/auth_repository.dart';
 import 'repositories/concept_repository.dart';
 import 'repositories/flashcard_repository.dart';
 import 'repositories/material_repository.dart';
@@ -37,6 +38,7 @@ class LernenApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => AuthRepository()),
         ChangeNotifierProvider(create: (_) => ModuleRepository()..load()),
         ChangeNotifierProvider(create: (_) => MaterialRepository()),
         ChangeNotifierProvider(create: (_) => SummaryRepository()),

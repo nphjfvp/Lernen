@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/app_settings.dart';
+import '../../repositories/auth_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/sync_service.dart';
 import '../../theme/app_colors.dart';
+import '../auth/login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -189,6 +191,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 26),
                     child: Divider(height: 1, color: c.border),
                   ),
+                  _SectionLabel('Account'),
+                  const SizedBox(height: 4),
+                  const _AccountSection(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 26),
+                    child: Divider(height: 1, color: c.border),
+                  ),
                   _SectionLabel('Cloud-Sync'),
                   const SizedBox(height: 4),
                   if (!_syncService.isAvailable)
@@ -279,6 +288,75 @@ class _SectionLabel extends StatelessWidget {
         text.toUpperCase(),
         style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, letterSpacing: 0.04, color: c.inkMuted),
       ),
+    );
+  }
+}
+
+class _AccountSection extends StatelessWidget {
+  const _AccountSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final auth = context.watch<AuthRepository>();
+
+    if (!auth.isAvailable) {
+      return Text(
+        'Nicht konfiguriert: dieser Build hat kein Firebase-Projekt verbunden.',
+        style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+      );
+    }
+
+    if (auth.isSignedIn) {
+      final user = auth.currentUser!;
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Angemeldet als', style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                const SizedBox(height: 2),
+                Text(
+                  user.email ?? user.displayName ?? user.uid,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton(
+            onPressed: () => context.read<AuthRepository>().signOut(),
+            child: const Text('Abmelden'),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Text(
+            'Optional: mit E-Mail/Passwort oder Google anmelden.',
+            style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+          ),
+        ),
+        const SizedBox(width: 12),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: c.accentSolid,
+            foregroundColor: c.accentInk,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          ),
+          child: const Text('Anmelden'),
+        ),
+      ],
     );
   }
 }

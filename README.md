@@ -23,6 +23,10 @@ engerem Fokus statt Feature-Fülle.
 - **Cloud-Sync (optional)** – Sync-Code-basiert wie beim Vorgänger, über ein
   eigenes Firebase-Projekt. Ohne Konfiguration läuft die App komplett
   offline.
+- **Account (optional)** – E-Mail/Passwort oder Google-Anmeldung über
+  Firebase Auth, aus den Einstellungen heraus. Nie erzwungen: die App bleibt
+  auch ohne Account voll nutzbar, Account und Sync-Code existieren
+  nebeneinander.
 
 ## Bewusst NICHT enthalten (verglichen mit der Vorgänger-App)
 
@@ -100,7 +104,23 @@ Für ein komplett eigenes Firebase-Projekt (z.B. eigener Fork): Projekt unter
 die angezeigte `firebaseConfig` in `lib/firebase_options.dart` eintragen,
 Firestore Database aktivieren, obige Rules einfügen.
 
-### 4. PDF-Textextraktion (Syncfusion)
+### 4. Account (E-Mail/Passwort + Google)
+
+Nutzt dasselbe Firebase-Projekt wie Cloud-Sync, braucht aber zusätzlich
+aktivierte Sign-in-Methoden: **Firebase Console → Authentication →
+Sign-in-Methode → "E-Mail/Passwort" und "Google" aktivieren.** Ohne das
+schlägt die jeweilige Anmeldung mit einer Fehlermeldung fehl, der Rest der
+App bleibt unberührt.
+
+Google-Sign-In läuft im Web direkt über Firebases Popup-Flow (kein Zusatz-
+Setup nötig, sobald der Google-Provider oben aktiviert ist). Für
+Android/iOS braucht `google_sign_in` zusätzlich eine **echte, in der
+Firebase-Console registrierte App** (Package-Name + SHA-1-Fingerabdruck
+bzw. Bundle-ID) – ohne das zeigt die App dort eine klare Fehlermeldung
+statt eines Absturzes. E-Mail/Passwort funktioniert überall ohne
+Zusatz-Setup.
+
+### 5. PDF-Textextraktion (Syncfusion)
 
 `syncfusion_flutter_pdf` wird für die reine Textextraktion genutzt (kein
 UI-Widget). Für Privatpersonen/kleine Unternehmen ist die kostenlose
@@ -108,7 +128,7 @@ UI-Widget). Für Privatpersonen/kleine Unternehmen ist die kostenlose
 ausreichend; für größere Organisationen ggf. Lizenz prüfen und
 `SyncfusionLicense.registerLicense(...)` beim App-Start ergänzen.
 
-### 5. Ausführen
+### 6. Ausführen
 
 **Am einfachsten zum Ausprobieren: im Browser**, kein Visual Studio/Android
 SDK/Xcode nötig – nur Flutter + ein Chrome/Edge:
