@@ -36,6 +36,7 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   bool _sending = false;
+  bool _useContext = true;
   String _statusLabel = '';
   String? _error;
 
@@ -100,9 +101,11 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
 
     final chatRepo = context.read<ChatRepository>();
     final materialRepo = context.read<MaterialRepository>();
-    final initialMaterials = materialRepo.forModule(widget.moduleId);
-    if (initialMaterials.isEmpty) {
-      setState(() => _error = 'Noch keine Materialien hochgeladen – lade zuerst Folien/Übungen im Modul hoch.');
+    final initialMaterials = _useContext ? materialRepo.forModule(widget.moduleId) : const <MaterialItem>[];
+    if (_useContext && initialMaterials.isEmpty) {
+      setState(() => _error =
+          'Noch keine Materialien hochgeladen – lade zuerst Folien/Übungen hoch, oder schalte '
+          '"Mit Materialien" aus, um allgemein zu fragen.');
       return;
     }
     final modelInfo = context.read<ModelCatalogRepository>().byId(settings.questionModelId);
@@ -115,7 +118,7 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
     _controller.clear();
     setState(() {
       _sending = true;
-      _statusLabel = 'Sende Frage …';
+      _statusLabel = _useContext ? 'Sende Frage …' : 'Antwort wird erstellt …';
       _error = null;
     });
 
@@ -131,39 +134,44 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
 
     try {
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
-      final charBudget = ChatContextBuilder.charBudgetForContextTokens(modelInfo?.contextLength);
 
-      await _ensureIndexed(ai, initialMaterials);
-      if (!mounted) return;
-      final indexedMaterials = materialRepo.forModule(widget.moduleId);
+      String? materialsContext;
+      if (_useContext) {
+        final charBudget = ChatContextBuilder.charBudgetForContextTokens(modelInfo?.contextLength);
 
-      setState(() => _statusLabel = 'Relevante Materialien werden ausgewählt …');
-      List<String>? relevantIds;
-      try {
-        relevantIds = await ai.selectRelevantMaterials(
-          question: question,
-          indexContext: ChatContextBuilder.buildIndexContext(indexedMaterials),
-          history: historyTurns,
-        );
-      } catch (_) {
-        relevantIds = null; // Auswahl fehlgeschlagen -> Sicherheitsnetz: alles einbeziehen.
+        await _ensureIndexed(ai, initialMaterials);
+        if (!mounted) return;
+        final indexedMaterials = materialRepo.forModule(widget.moduleId);
+
+        setState(() => _statusLabel = 'Relevante Materialien werden ausgewählt …');
+        List<String>? relevantIds;
+        try {
+          relevantIds = await ai.selectRelevantMaterials(
+            question: question,
+            indexContext: ChatContextBuilder.buildIndexContext(indexedMaterials),
+            history: historyTurns,
+          );
+        } catch (_) {
+          relevantIds = null; // Auswahl fehlgeschlagen -> Sicherheitsnetz: alles einbeziehen.
+        }
+
+        if (relevantIds == null) {
+          materialsContext = ChatContextBuilder.build(indexedMaterials, charBudget: charBudget);
+        } else if (relevantIds.isNotEmpty) {
+          final ids = relevantIds.toSet();
+          final matched = indexedMaterials.where((m) => ids.contains(m.id)).toList();
+          // Kein erzwungenes "irgendwas nehmen": passt keine der (evtl.
+          // halluzinierten) IDs zu einem echten Material, bleibt es bei
+          // "kein Material relevant" statt alles reinzukippen.
+          materialsContext = matched.isEmpty ? null : ChatContextBuilder.build(matched, charBudget: charBudget);
+        }
+        // relevantIds == [] (bewusst "nichts passt"): materialsContext
+        // bleibt null, die Frage wird dann ganz normal ohne Materialbezug
+        // beantwortet (siehe answerQuestion-Systemprompt).
+
+        setState(() => _statusLabel = 'Antwort wird erstellt …');
       }
 
-      final String materialsContext;
-      if (relevantIds == null) {
-        materialsContext = ChatContextBuilder.build(indexedMaterials, charBudget: charBudget);
-      } else if (relevantIds.isEmpty) {
-        materialsContext = '(Kein hochgeladenes Material scheint zu dieser Frage zu passen.)';
-      } else {
-        final ids = relevantIds.toSet();
-        final matched = indexedMaterials.where((m) => ids.contains(m.id)).toList();
-        materialsContext = ChatContextBuilder.build(
-          matched.isEmpty ? indexedMaterials : matched,
-          charBudget: charBudget,
-        );
-      }
-
-      setState(() => _statusLabel = 'Antwort wird erstellt …');
       final answer = await ai.answerQuestion(
         question: question,
         materialsContext: materialsContext,
@@ -206,7 +214,8 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
                         child: Text(
                           'Stell eine Frage zu deinen hochgeladenen Materialien – z.B. "Erklär mir Thema X" '
                           'oder "Wie hängt das mit der letzten Vorlesung zusammen?". Es passiert nichts von '
-                          'selbst, nur wenn du fragst.',
+                          'selbst, nur wenn du fragst. Mit "Mit Materialien" unten kannst du auch ganz ohne '
+                          'Materialbezug allgemein fragen.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: c.inkMuted),
                         ),
@@ -236,6 +245,19 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Text(_error!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
               ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FilterChip(
+                  label: const Text('Mit Materialien'),
+                  avatar: Icon(_useContext ? Icons.folder_outlined : Icons.folder_off_outlined, size: 16),
+                  selected: _useContext,
+                  onSelected: (v) => setState(() => _useContext = v),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
               child: Row(

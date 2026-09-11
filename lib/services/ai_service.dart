@@ -305,21 +305,24 @@ Antworte in der Sprache der Vorlage.
   }
 
   static const _chatSystemPrompt = '''
-Du bist ein Lernassistent für Studierende. Du bekommst hochgeladenes
-Vorlesungs- und Übungsmaterial eines Fachs, chronologisch geordnet und
-jeweils markiert, ob es im Unterricht bereits "Behandelt" wurde oder "Noch
-nicht behandelt" ist (nur hochgeladen, damit vorab weitergelernt werden
-kann, aber in der Vorlesung noch nicht dran).
+Du bist ein Lernassistent für Studierende. Wird dir Material bereitgestellt
+(hochgeladenes Vorlesungs-/Übungsmaterial eines Fachs, chronologisch
+geordnet und jeweils markiert, ob es im Unterricht bereits "Behandelt"
+wurde oder "Noch nicht behandelt" ist), stütze deine Antwort darauf und
+ordne sie bei Bezug auf früheren/späteren Stoff entsprechend chronologisch
+ein (auch noch nicht behandeltes Material, wenn danach gefragt wird – weise
+dann kurz darauf hin, dass es im Unterricht noch nicht dran war). Wird KEIN
+Material bereitgestellt oder passt keines zur Frage, beantworte sie anhand
+deines allgemeinen Wissens – sag in dem Fall kurz, dass sich die Antwort
+nicht auf die hochgeladenen Materialien stützt.
 Beantworte NUR die gestellte Frage – erkläre oder ergänze nichts, wonach
-nicht gefragt wurde. Wenn sich die Frage auf den Zusammenhang mit früherem
-oder späterem Stoff bezieht, ordne die Antwort anhand des chronologischen
-Materials entsprechend ein (auch noch nicht behandeltes Material, wenn
-danach gefragt wird – weise dann kurz darauf hin, dass es im Unterricht
-noch nicht dran war). Antworte klar und prägnant in normalem Fließtext
+nicht gefragt wurde. Antworte klar und prägnant in normalem Fließtext
 (kein JSON, keine Codefences), in der Sprache der Frage.
 ''';
 
-  /// Frage-Chat zu den hochgeladenen Materialien eines Fachs. Reagiert
+  /// Frage-Chat zu den hochgeladenen Materialien eines Fachs (oder, wenn
+  /// [materialsContext] weggelassen wird, eine ganz normale Frage ohne
+  /// Materialbezug – der Nutzer kann das explizit wählen). Reagiert
   /// ausschließlich auf [question] – wird nie von selbst aufgerufen, siehe
   /// ModuleChatScreen. [materialsContext] kommt aus [ChatContextBuilder] und
   /// enthält bereits alle Materialien chronologisch mit Behandelt-Status,
@@ -327,12 +330,15 @@ noch nicht dran war). Antworte klar und prägnant in normalem Fließtext
   /// vorhin mit...").
   Future<String> answerQuestion({
     required String question,
-    required String materialsContext,
+    String? materialsContext,
     List<({bool isUser, String content})> history = const [],
   }) async {
-    final buffer = StringBuffer()
-      ..writeln('Verfügbares Material:')
-      ..writeln(materialsContext);
+    final buffer = StringBuffer();
+    if (materialsContext != null) {
+      buffer
+        ..writeln('Verfügbares Material:')
+        ..writeln(materialsContext);
+    }
     if (history.isNotEmpty) {
       buffer.writeln('Bisheriger Gesprächsverlauf:');
       for (final turn in history) {
@@ -374,11 +380,19 @@ Gesprächsverlaufs, falls vorhanden) aus, welche Materialien man sich im
 Detail ansehen müsste, um die Frage gut zu beantworten. Bezieht sich die
 Frage auf den Zusammenhang mit früherem oder späterem Stoff, wähle auch
 diese Materialien aus (auch noch nicht behandelte, wenn explizit danach
-gefragt wird). Wähle so wenige wie möglich, aber so viele wie nötig
-(typischerweise 1-6). Antworte AUSSCHLIESSLICH mit validem JSON in genau
-diesem Format, ohne Markdown-Codefences, ohne zusätzlichen Text:
+gefragt wird).
+
+Sei dabei STRENG: wähle NUR Materialien, die für die Antwort tatsächlich
+gebraucht werden – nicht "um jeden Preis" irgendetwas, nur weil es
+thematisch entfernt passen könnte. Ist die Frage allgemein, hat sie keinen
+erkennbaren Bezug zu einem der Themen im Index, oder lässt sie sich auch
+ohne ein bestimmtes Material beantworten, liefere eine LEERE Liste – das
+ist ein völlig normales, gutes Ergebnis, kein Fehler und keine Notlösung.
+Es ist besser, zu wenig auszuwählen als zu viel.
+
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text:
 {"relevant_ids": ["id1", "id2"]}
-Passt kein Material zur Frage, liefere eine leere Liste.
 ''';
 
   /// Erster Schritt des zweistufigen Frage-Chats: statt bei jeder Frage

@@ -69,6 +69,21 @@ void main() {
       );
       expect(called, isFalse);
     });
+
+    test('funktioniert ganz ohne Material-Kontext (allgemeine Frage)', () async {
+      late Map<String, dynamic> sentBody;
+      final client = MockClient((request) async {
+        sentBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return _chatResponse('Allgemeine Antwort ohne Materialbezug.');
+      });
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+      final answer = await ai.answerQuestion(question: 'Was ist die Hauptstadt von Frankreich?');
+
+      final userMessage = (sentBody['messages'] as List).last['content'] as String;
+      expect(userMessage.contains('Verfügbares Material'), isFalse);
+      expect(answer, 'Allgemeine Antwort ohne Materialbezug.');
+    });
   });
 
   group('AiService.summarizeForIndex', () {

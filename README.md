@@ -37,9 +37,15 @@ engerem Fokus statt Feature-Fülle.
   `lib/services/chat_context_builder.dart`, `AiService.summarizeForIndex` /
   `.selectRelevantMaterials`). Bezieht sich die Frage auf frühere oder noch
   nicht behandelte Folien, kann die Auswahl das entsprechend einbeziehen.
-  Schlägt die Auswahl fehl, greift ein Sicherheitsnetz auf ein
-  Zeichenbudget-basiertes Zusammenstellen aller Materialien zurück
-  (Vorrang für behandelte).
+  Die Auswahl ist bewusst NICHT verpflichtend: findet sich zu einer Frage
+  kein wirklich passendes Material (allgemeine Frage, kein Bezug zum
+  Fach), liefert sie eine leere Auswahl statt krampfhaft irgendetwas
+  Naheliegendes einzubeziehen – die Frage wird dann ganz normal ohne
+  Materialbezug beantwortet. Über den "Mit Materialien"-Schalter im Chat
+  kann der Nutzer den Materialbezug auch komplett abschalten, um bewusst
+  allgemein zu fragen. Schlägt die Auswahl-Anfrage selbst fehl (Fehler statt
+  Ergebnis), greift ein Sicherheitsnetz auf ein Zeichenbudget-basiertes
+  Zusammenstellen aller Materialien zurück (Vorrang für behandelte).
 - **BYOK** – die KI läuft über [OpenRouter](https://openrouter.ai) mit einem
   selbst mitgebrachten API-Key. Es gibt keinen App-eigenen Server; Anfragen
   gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von
