@@ -26,13 +26,20 @@ engerem Fokus statt Feature-Fülle.
   Frage-Chat.
 - **Frage-Chat** – pro Modul durch die hochgeladenen Materialien gehen und
   Fragen dazu stellen/sich Dinge erklären lassen, ausschließlich auf
-  explizite Nachfrage (nichts wird automatisch erklärt). Die KI bekommt alle
-  Materialien chronologisch mit Behandelt-Status als Kontext, sodass sie bei
-  Bedarf auch frühere oder noch nicht behandelte Folien einordnen kann. Der
-  Kontext wird auf ein Zeichenbudget begrenzt (grob aus dem Kontextfenster
-  des gewählten Modells abgeleitet, siehe
-  `lib/services/chat_context_builder.dart`), behandelte Materialien haben
-  dabei Vorrang vor noch nicht behandelten.
+  explizite Nachfrage (nichts wird automatisch erklärt). Zweistufig statt
+  "alles in den Kontext kippen": beim ersten Chat pro Material erstellt die
+  KI einmalig einen kurzen Index-Eintrag (Thema + grobe Kurzfassung,
+  `MaterialItem.topicIndex`) und speichert ihn dauerhaft. Bei jeder Frage
+  sieht die KI zuerst nur diese kompakten Einträge aller Materialien
+  (chronologisch, mit Behandelt-Status) und wählt aus, welche für GENAU
+  diese Frage wirklich relevant sind; erst von denen wird der volle Text
+  nachgeladen und in die eigentliche Antwort-Anfrage gegeben (siehe
+  `lib/services/chat_context_builder.dart`, `AiService.summarizeForIndex` /
+  `.selectRelevantMaterials`). Bezieht sich die Frage auf frühere oder noch
+  nicht behandelte Folien, kann die Auswahl das entsprechend einbeziehen.
+  Schlägt die Auswahl fehl, greift ein Sicherheitsnetz auf ein
+  Zeichenbudget-basiertes Zusammenstellen aller Materialien zurück
+  (Vorrang für behandelte).
 - **BYOK** – die KI läuft über [OpenRouter](https://openrouter.ai) mit einem
   selbst mitgebrachten API-Key. Es gibt keinen App-eigenen Server; Anfragen
   gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von

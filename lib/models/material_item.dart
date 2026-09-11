@@ -22,6 +22,15 @@ class MaterialItem {
   /// vorab hochgeladen wurde).
   final bool covered;
 
+  /// Kurzer, von der KI erzeugter Index-Eintrag (Themen + grobe
+  /// Kurzfassung) für den Frage-Chat: bevor eine Frage beantwortet wird,
+  /// sieht die KI zuerst nur diese Kurzfassungen ALLER Materialien und
+  /// entscheidet, welche für die konkrete Frage genauer angesehen werden
+  /// müssen – so muss nicht der komplette Foliensatz jedes Mal im Kontext
+  /// landen. Null, solange das Material noch nicht indiziert wurde (wird
+  /// beim ersten Chat lazy nachgeholt, siehe ModuleChatScreen).
+  final String? topicIndex;
+
   const MaterialItem({
     required this.id,
     required this.moduleId,
@@ -30,6 +39,7 @@ class MaterialItem {
     required this.extractedText,
     required this.createdAt,
     this.covered = false,
+    this.topicIndex,
   });
 
   Map<String, dynamic> toMap() => {
@@ -40,6 +50,7 @@ class MaterialItem {
         'extractedText': extractedText,
         'createdAt': createdAt.toIso8601String(),
         'covered': covered,
+        'topicIndex': topicIndex,
       };
 
   factory MaterialItem.fromMap(Map<String, dynamic> map) => MaterialItem(
@@ -50,5 +61,6 @@ class MaterialItem {
         extractedText: map['extractedText'] as String,
         createdAt: DateTime.parse(map['createdAt'] as String),
         covered: map['covered'] as bool? ?? false,
+        topicIndex: map['topicIndex'] as String?,
       );
 }

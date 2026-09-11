@@ -70,4 +70,61 @@ void main() {
       expect(called, isFalse);
     });
   });
+
+  group('AiService.summarizeForIndex', () {
+    test('gibt die getrimmte Modellantwort zurück', () async {
+      final client = MockClient((request) async {
+        return _chatResponse('  Themen: Kristallgitter, Gitterfehler.  ');
+      });
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+      final gist = await ai.summarizeForIndex('Sehr langer Foliensatz-Text ...');
+
+      expect(gist, 'Themen: Kristallgitter, Gitterfehler.');
+    });
+  });
+
+  group('AiService.selectRelevantMaterials', () {
+    test('parst relevant_ids aus der JSON-Antwort', () async {
+      final client = MockClient((request) async {
+        return _chatResponse(jsonEncode({
+          'relevant_ids': ['abc', 'def'],
+        }));
+      });
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+      final ids = await ai.selectRelevantMaterials(
+        question: 'Was war in Woche 3?',
+        indexContext: '[id: abc] [Behandelt] w3.pdf (Folien): Thema X',
+      );
+
+      expect(ids, ['abc', 'def']);
+    });
+
+    test('gibt eine leere Liste zurück, wenn kein Material passt', () async {
+      final client = MockClient((request) async {
+        return _chatResponse(jsonEncode({'relevant_ids': []}));
+      });
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+      final ids = await ai.selectRelevantMaterials(
+        question: 'Wie ist das Wetter heute?',
+        indexContext: '[id: abc] [Behandelt] w3.pdf (Folien): Thema X',
+      );
+
+      expect(ids, isEmpty);
+    });
+
+    test('wirft AiServiceException bei kaputtem JSON statt still eine leere Liste zu liefern', () async {
+      final client = MockClient((request) async {
+        return _chatResponse('Das ist kein JSON.');
+      });
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+      expect(
+        () => ai.selectRelevantMaterials(question: 'Frage?', indexContext: 'Index'),
+        throwsA(isA<AiServiceException>()),
+      );
+    });
+  });
 }

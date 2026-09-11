@@ -38,6 +38,15 @@ class MaterialRepository extends ChangeNotifier {
     await loadForModule(moduleId);
   }
 
+  /// Speichert den KI-generierten Kurz-Index eines Materials (siehe
+  /// [MaterialItem.topicIndex]). Wird einmalig beim ersten Frage-Chat pro
+  /// Material nachgeholt und danach dauerhaft gecacht.
+  Future<void> setTopicIndex(String id, String moduleId, String topicIndex) async {
+    final db = await DatabaseService.instance.database;
+    await DatabaseService.materials.record(id).update(db, {'topicIndex': topicIndex});
+    await loadForModule(moduleId);
+  }
+
   Future<List<MaterialItem>> byIds(List<String> ids) async {
     final db = await DatabaseService.instance.database;
     final result = <MaterialItem>[];

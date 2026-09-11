@@ -7,6 +7,7 @@ MaterialItem _material({
   required bool covered,
   required int textLength,
   required DateTime createdAt,
+  String? topicIndex,
 }) {
   return MaterialItem(
     id: id,
@@ -16,6 +17,7 @@ MaterialItem _material({
     extractedText: 'x' * textLength,
     createdAt: createdAt,
     covered: covered,
+    topicIndex: topicIndex,
   );
 }
 
@@ -86,6 +88,43 @@ void main() {
       // Winziges Budget: reicht nicht mal für einen Anriss von 'b'.
       final result = ChatContextBuilder.build(materials, charBudget: 200);
       expect(result.contains('b.pdf'), isFalse);
+    });
+  });
+
+  group('ChatContextBuilder.buildIndexContext', () {
+    test('leere Materialliste ergibt einen Platzhaltertext', () {
+      final result = ChatContextBuilder.buildIndexContext([]);
+      expect(result, contains('keine Materialien'));
+    });
+
+    test('nutzt den topicIndex, wenn vorhanden, statt den Rohtext', () {
+      final material = _material(
+        id: 'a',
+        covered: true,
+        textLength: 50000,
+        createdAt: DateTime(2026, 1, 1),
+        topicIndex: 'Themen: Kristallgitter. Kurzfassung: ...',
+      );
+      final result = ChatContextBuilder.buildIndexContext([material]);
+      expect(result.contains('Themen: Kristallgitter'), isTrue);
+      // Der lange Rohtext selbst landet NICHT im kompakten Index.
+      expect(result.contains('x' * 1000), isFalse);
+      expect(result.contains('[id: a]'), isTrue);
+      expect(result.contains('[Behandelt]'), isTrue);
+    });
+
+    test('fällt ohne topicIndex auf einen kurzen Rohtext-Anriss zurück', () {
+      final material = _material(
+        id: 'b',
+        covered: false,
+        textLength: 5000,
+        createdAt: DateTime(2026, 1, 1),
+      );
+      final result = ChatContextBuilder.buildIndexContext([material]);
+      expect(result.contains('[id: b]'), isTrue);
+      expect(result.contains('[Noch nicht behandelt]'), isTrue);
+      // Anriss ist klar kürzer als der volle Rohtext (5000 Zeichen).
+      expect(result.length, lessThan(1000));
     });
   });
 }

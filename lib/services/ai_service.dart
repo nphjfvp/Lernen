@@ -344,6 +344,72 @@ noch nicht dran war). Antworte klar und prägnant in normalem Fließtext
     return _complete(_chatSystemPrompt, buffer.toString());
   }
 
+  static const _indexSystemPrompt = '''
+Du erstellst einen SEHR KURZEN Index-Eintrag für ein Stück Lernmaterial
+(Foliensatz oder Übungsaufgabe). Dieser Eintrag hilft später einer anderen
+KI-Anfrage zu entscheiden, ob genau dieses Material für eine gestellte
+Frage relevant ist, ohne den vollen Text lesen zu müssen. Antworte in 2-4
+Sätzen als Fließtext (kein JSON, keine Codefences, keine Einleitung wie
+"Hier ist..."): welche Themen/Stichworte werden behandelt, grobe
+inhaltliche Kurzfassung. Antworte in der Sprache der Vorlage.
+''';
+
+  /// Zeichenobergrenze für den Index-Aufruf: hier geht es nur um den groben
+  /// Gist eines Materials, nicht um Vollständigkeit – ein Anriss reicht.
+  static const int _indexInputCap = 30000;
+
+  /// Erstellt den Kurz-Index für ein einzelnes Material (siehe
+  /// [MaterialItem.topicIndex]). Wird einmalig pro Material aufgerufen und
+  /// das Ergebnis dauerhaft gespeichert, nicht bei jeder Frage neu.
+  Future<String> summarizeForIndex(String extractedText) async {
+    final raw = await _complete(_indexSystemPrompt, _cap(extractedText, _indexInputCap));
+    return raw.trim();
+  }
+
+  static const _selectRelevantSystemPrompt = '''
+Du bekommst einen Index ALLER verfügbaren Lernmaterialien eines Fachs: pro
+Material eine ID, ob es im Unterricht bereits behandelt wurde, und eine
+kurze Themen-/Inhaltsangabe. Wähle anhand der gestellten Frage (und des
+Gesprächsverlaufs, falls vorhanden) aus, welche Materialien man sich im
+Detail ansehen müsste, um die Frage gut zu beantworten. Bezieht sich die
+Frage auf den Zusammenhang mit früherem oder späterem Stoff, wähle auch
+diese Materialien aus (auch noch nicht behandelte, wenn explizit danach
+gefragt wird). Wähle so wenige wie möglich, aber so viele wie nötig
+(typischerweise 1-6). Antworte AUSSCHLIESSLICH mit validem JSON in genau
+diesem Format, ohne Markdown-Codefences, ohne zusätzlichen Text:
+{"relevant_ids": ["id1", "id2"]}
+Passt kein Material zur Frage, liefere eine leere Liste.
+''';
+
+  /// Erster Schritt des zweistufigen Frage-Chats: statt bei jeder Frage
+  /// alle Materialien im Volltext mitzuschicken, sieht die KI hier zuerst
+  /// nur den kompakten Index ([indexContext], siehe
+  /// [ChatContextBuilder.buildIndexContext]) und wählt die tatsächlich
+  /// relevanten IDs aus. Erst danach wird von genau diesen Materialien der
+  /// volle Text nachgeladen (siehe [ChatContextBuilder.build] +
+  /// [answerQuestion]).
+  Future<List<String>> selectRelevantMaterials({
+    required String question,
+    required String indexContext,
+    List<({bool isUser, String content})> history = const [],
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Material-Index:')
+      ..writeln(indexContext);
+    if (history.isNotEmpty) {
+      buffer.writeln('Bisheriger Gesprächsverlauf:');
+      for (final turn in history) {
+        buffer.writeln('${turn.isUser ? 'Ich' : 'Assistent'}: ${turn.content}');
+      }
+      buffer.writeln();
+    }
+    buffer.writeln('Frage: $question');
+    final raw = await _complete(_selectRelevantSystemPrompt, buffer.toString());
+    final parsed = _parseJsonObject(raw);
+    final ids = (parsed['relevant_ids'] as List?)?.map((e) => e.toString()).toList();
+    return ids ?? const [];
+  }
+
   Map<String, dynamic> _parseJsonObject(String raw) {
     final candidate = _extractJsonBlock(raw);
     try {

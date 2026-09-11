@@ -27,6 +27,38 @@ class ChatContextBuilder {
     return (tokens * 3.2 * 0.55).round();
   }
 
+  /// Genügend Rohtext eines noch nicht indizierten Materials, um dem
+  /// Auswahl-Schritt trotzdem einen groben Anhaltspunkt zu geben, statt es
+  /// stillschweigend zu ignorieren.
+  static const int _fallbackGistChars = 300;
+
+  /// Baut den KOMPAKTEN Material-Index für den ersten Schritt des
+  /// zweistufigen Frage-Chats (siehe [AiService.selectRelevantMaterials]):
+  /// pro Material nur ID, Behandelt-Status und die kurze KI-generierte
+  /// Themenangabe ([MaterialItem.topicIndex]) – nie der volle Text. Für
+  /// noch nicht indizierte Materialien wird ersatzweise ein kurzer
+  /// Rohtext-Anriss verwendet, damit sie trotzdem in der Auswahl auftauchen
+  /// können (ModuleChatScreen holt die eigentliche Indizierung vor der
+  /// ersten Frage nach; dieser Fallback greift nur, falls das für ein
+  /// Material fehlschlägt).
+  static String buildIndexContext(List<MaterialItem> materials) {
+    if (materials.isEmpty) return '(Noch keine Materialien hochgeladen.)';
+
+    final chronological = [...materials]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final buffer = StringBuffer();
+    for (final m in chronological) {
+      final kindLabel = m.kind == MaterialKind.slide ? 'Folien' : 'Übungsaufgabe';
+      final status = m.covered ? 'Behandelt' : 'Noch nicht behandelt';
+      final gist = (m.topicIndex != null && m.topicIndex!.trim().isNotEmpty)
+          ? m.topicIndex!.trim()
+          : (m.extractedText.length > _fallbackGistChars
+              ? '${m.extractedText.substring(0, _fallbackGistChars)}…'
+              : m.extractedText);
+      buffer.writeln('[id: ${m.id}] [$status] ${m.fileName} ($kindLabel): $gist');
+    }
+    return buffer.toString();
+  }
+
   static String build(List<MaterialItem> materials, {required int charBudget}) {
     if (materials.isEmpty) return '(Noch keine Materialien hochgeladen.)';
 
