@@ -13,7 +13,7 @@ import '../../repositories/settings_repository.dart';
 import '../../repositories/summary_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/content_analyzer.dart';
-import '../../services/pdf_service.dart';
+import '../../services/material_text_extractor.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/raw_response_dialog.dart';
 
@@ -52,7 +52,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
   Future<void> _pickAndExtract() async {
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: MaterialTextExtractor.supportedExtensions,
     );
     if (picked.isEmpty) return;
 
@@ -65,7 +65,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
     for (final file in picked) {
       try {
         final Uint8List bytes = await file.readAsBytes();
-        final text = PdfService().extractText(bytes);
+        final text = MaterialTextExtractor().extractText(file.name, bytes);
         if (text.isNotEmpty) {
           newFiles.add(_PickedFile(fileName: file.name, text: text));
         }
@@ -77,7 +77,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
     setState(() {
       _files.addAll(newFiles);
       if (_files.isEmpty) {
-        _error ??= 'Kein Text in den PDFs gefunden (evtl. gescannte Bilder ohne Text-Ebene).';
+        _error ??= 'Kein Text in den Dateien gefunden (evtl. gescannte Bilder ohne Text-Ebene).';
         _step = _Step.pick;
       } else {
         _step = _Step.ready;
@@ -193,7 +193,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
           onPick: _pickAndExtract,
         );
       case _Step.extracting:
-        return const _LoadingView(label: 'Text wird aus PDFs extrahiert …');
+        return const _LoadingView(label: 'Text wird extrahiert …');
       case _Step.ready:
         return _ReadyView(
           files: _files.map((f) => f.fileName).toList(),
@@ -233,16 +233,16 @@ class _PickView extends StatelessWidget {
           const Icon(Icons.upload_file_outlined, size: 64, color: Colors.grey),
           const SizedBox(height: 16),
           const Text(
-            'Lade Vorlesungsfolien als PDF hoch (auch mehrere auf einmal). '
-            'Die KI erstellt daraus eine strukturierte Zusammenfassung mit '
-            'den wichtigsten Konzepten.',
+            'Lade Vorlesungsfolien als PDF, Word oder PowerPoint hoch (auch mehrere '
+            'auf einmal). Die KI erstellt daraus eine strukturierte Zusammenfassung '
+            'mit den wichtigsten Konzepten.',
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onPick,
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('PDFs auswählen'),
+            icon: const Icon(Icons.upload_file_outlined),
+            label: const Text('Dateien auswählen'),
           ),
           if (error != null) ...[
             const SizedBox(height: 16),
@@ -321,7 +321,7 @@ class _ReadyView extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: onAddMore,
           icon: const Icon(Icons.add),
-          label: const Text('Weitere PDF hinzufügen'),
+          label: const Text('Weitere Datei hinzufügen'),
         ),
         const SizedBox(height: 16),
         AnalysisRecommendationCard(

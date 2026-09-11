@@ -13,7 +13,7 @@ import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/content_analyzer.dart';
-import '../../services/pdf_service.dart';
+import '../../services/material_text_extractor.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/raw_response_dialog.dart';
 
@@ -62,7 +62,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Future<void> _pick({required bool isSlides}) async {
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: MaterialTextExtractor.supportedExtensions,
     );
     if (picked.isEmpty) return;
 
@@ -74,7 +74,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     for (final file in picked) {
       try {
         final bytes = await file.readAsBytes();
-        final text = PdfService().extractText(bytes);
+        final text = MaterialTextExtractor().extractText(file.name, bytes);
         if (text.isNotEmpty) {
           target.add(_PickedFile(fileName: file.name, text: text));
         }

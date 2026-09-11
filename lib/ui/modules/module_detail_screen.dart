@@ -5,18 +5,22 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/concept.dart';
 import '../../models/material_item.dart';
 import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/summary_repository.dart';
-import '../../services/pdf_service.dart';
+import '../../services/material_text_extractor.dart';
 import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
+import '../flashcards/flashcard_list_screen.dart';
 import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
+import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/edit_text_dialog.dart';
 import 'module_form_screen.dart';
 
 class ModuleDetailScreen extends StatefulWidget {
@@ -209,10 +213,28 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                                   collapsedIconColor: c.inkMuted,
                                   children: [
                                     Padding(
-                                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                                       child: Align(
                                         alignment: Alignment.centerLeft,
                                         child: Text(concept.explanation, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5)),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          TextButton.icon(
+                                            onPressed: () => _editConcept(concept),
+                                            icon: const Icon(Icons.edit_outlined, size: 16),
+                                            label: const Text('Bearbeiten'),
+                                          ),
+                                          TextButton.icon(
+                                            onPressed: () => _deleteConcept(concept),
+                                            icon: const Icon(Icons.delete_outline, size: 16),
+                                            label: const Text('Löschen'),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
@@ -225,7 +247,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     const SizedBox(height: 10),
                     if (flashcards.isEmpty)
                       const _HintText('Noch keine Karteikarten – entstehen automatisch im Nachbereiten-Modus.')
-                    else
+                    else ...[
                       Row(
                         children: [
                           Expanded(
@@ -247,6 +269,17 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => FlashcardListScreen(moduleId: module.id, moduleName: module.name),
+                          ),
+                        ),
+                        icon: const Icon(Icons.style_outlined),
+                        label: const Text('Alle Karteikarten ansehen'),
+                      ),
+                    ],
                     const SizedBox(height: 20),
                     _SectionHeader(title: 'Materialien', count: materials.length),
                     const SizedBox(height: 10),
@@ -267,6 +300,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                               material: m,
                               onToggleCovered: (value) =>
                                   context.read<MaterialRepository>().setCovered(m.id, m.moduleId, value),
+                              onDelete: () => _deleteMaterial(m),
                             ),
                           )),
                   ],
@@ -298,7 +332,10 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     );
     if (kind == null || !mounted) return;
 
-    final picked = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf']);
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: MaterialTextExtractor.supportedExtensions,
+    );
     if (picked.isEmpty || !mounted) return;
 
     final repo = context.read<MaterialRepository>();
@@ -306,7 +343,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     for (final file in picked) {
       try {
         final Uint8List bytes = await file.readAsBytes();
-        final text = PdfService().extractText(bytes);
+        final text = MaterialTextExtractor().extractText(file.name, bytes);
         if (text.isEmpty) {
           errors.add('${file.name}: kein Text gefunden.');
           continue;
@@ -326,6 +363,51 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     }
     if (errors.isNotEmpty && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errors.join('\n'))));
+    }
+  }
+
+  Future<void> _deleteMaterial(MaterialItem material) async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Material löschen?',
+      message: '"${material.fileName}" wird endgültig gelöscht.',
+    );
+    if (ok && mounted) {
+      await context.read<MaterialRepository>().delete(material.id, material.moduleId);
+    }
+  }
+
+  Future<void> _editConcept(Concept concept) async {
+    final result = await editTwoFieldsDialog(
+      context,
+      title: 'Konzept bearbeiten',
+      label1: 'Titel',
+      initial1: concept.title,
+      label2: 'Erklärung',
+      initial2: concept.explanation,
+    );
+    if (result == null || !mounted) return;
+    final (title, explanation) = result;
+    await context.read<ConceptRepository>().saveAll([
+      Concept(
+        id: concept.id,
+        moduleId: concept.moduleId,
+        title: title,
+        explanation: explanation,
+        sourceMaterialIds: concept.sourceMaterialIds,
+        createdAt: concept.createdAt,
+      ),
+    ]);
+  }
+
+  Future<void> _deleteConcept(Concept concept) async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Konzept löschen?',
+      message: '"${concept.title}" wird endgültig gelöscht.',
+    );
+    if (ok && mounted) {
+      await context.read<ConceptRepository>().delete(concept.id, concept.moduleId);
     }
   }
 
@@ -468,9 +550,10 @@ class _SoftRow extends StatelessWidget {
 }
 
 class _MaterialRow extends StatelessWidget {
-  const _MaterialRow({required this.material, required this.onToggleCovered});
+  const _MaterialRow({required this.material, required this.onToggleCovered, required this.onDelete});
   final MaterialItem material;
   final ValueChanged<bool> onToggleCovered;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -522,6 +605,11 @@ class _MaterialRow extends StatelessWidget {
                 Checkbox(
                   value: material.covered,
                   onChanged: (v) => onToggleCovered(v ?? false),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  color: c.inkMuted,
+                  onPressed: onDelete,
                 ),
               ],
             ),

@@ -8,22 +8,32 @@ engerem Fokus statt Feature-Fülle.
 
 - **Modul-Verwaltung** – Fächer-Ordner mit Klausurdatum, in denen Folien und
   Übungsaufgaben gesammelt werden.
-- **Vorbereiten-Modus** – PDF-Vorlesungsfolien hochladen → die KI erstellt
-  eine strukturierte Zusammenfassung mit hervorgehobenen Kernkonzepten.
+- **Vorbereiten-Modus** – Vorlesungsfolien als PDF, Word oder PowerPoint
+  hochladen → die KI erstellt eine strukturierte Zusammenfassung mit
+  hervorgehobenen Kernkonzepten. Zusammenfassungen lassen sich danach
+  jederzeit bearbeiten (Titel/Kernkonzepte/Text) oder löschen.
 - **Nachbereiten-Modus** – Folien UND Übungsaufgaben gemeinsam hochladen →
   die KI erstellt Lernkonzepte und Karteikarten mit Fokus auf tiefem
-  Verständnis der Übungen (nicht nur Theorie-Wiedergabe).
+  Verständnis der Übungen (nicht nur Theorie-Wiedergabe). Einzelne Konzepte
+  und Karteikarten lassen sich im Modul-Detail bzw. in der Karteikarten-
+  Übersicht jederzeit bearbeiten oder löschen.
 - **Daily Quiz (Exam-Scheduler)** – tägliche Lernsession über alle Fächer
   hinweg. FSRS-Spaced-Repetition für fällige Wiederholungen; die Menge neuer
   Karten wird pro Fach dynamisch an Wissensstand und Klausarnähe angepasst
   (siehe `lib/services/daily_scheduler_service.dart`).
 - **Materialien & Vorarbeiten** – im Modul-Detail lässt sich beliebig viel
-  Material (z.B. der komplette Semesterinhalt) direkt hochladen, ohne dass
-  dafür eine KI-Anfrage anfällt – reine Textextraktion + Ablage. Jedes
-  Material hat eine manuelle "Behandelt"-Markierung, die der Nutzer setzt,
-  sobald das Thema in der Vorlesung dran war; sie blockiert nichts (man kann
-  jederzeit weiter vorarbeiten), dient aber als zusätzlicher Kontext für den
-  Frage-Chat.
+  Material (z.B. der komplette Semesterinhalt, als PDF/Word/PowerPoint)
+  direkt hochladen, ohne dass dafür eine KI-Anfrage anfällt – reine
+  Textextraktion (`lib/services/material_text_extractor.dart`) + Ablage,
+  auch wieder löschbar. Jedes Material hat eine manuelle
+  "Behandelt"-Markierung, die der Nutzer setzt, sobald das Thema in der
+  Vorlesung dran war; sie blockiert nichts (man kann jederzeit weiter
+  vorarbeiten), dient aber als zusätzlicher Kontext für den Frage-Chat.
+- **Fortschritt** – eigener Tab mit Streak (aufeinanderfolgende Lerntage),
+  Gesamtzahl Wiederholungen und geschätzter Behaltensrate (aus dem
+  FSRS-Zustand der Karten), gesamt und pro Fach. Komplett aus vorhandenen
+  Daten berechnet, kein separates Tracking (siehe
+  `lib/services/stats_service.dart`).
 - **Frage-Chat** – pro Modul durch die hochgeladenen Materialien gehen und
   Fragen dazu stellen/sich Dinge erklären lassen, ausschließlich auf
   explizite Nachfrage (nichts wird automatisch erklärt). Zweistufig statt
@@ -88,6 +98,9 @@ lib/
   services/
     database_service.dart          Sembast (lokale, dateibasierte NoSQL-DB)
     pdf_service.dart                PDF-Textextraktion (syncfusion_flutter_pdf)
+    office_text_extractor.dart      Word-/PowerPoint-Textextraktion (archive + xml,
+                                     reines Dart – beide Formate sind ZIP+XML)
+    material_text_extractor.dart    Wählt den Extraktor anhand der Dateiendung
     ai_service.dart                 OpenRouter-Anbindung (BYOK), Chunking/Rolling
                                      Context, Crosscheck-Pass, Frage-Chat + JSON-Reparatur
     text_chunker.dart                Zerlegt lange Texte für ai_service.dart
@@ -96,10 +109,13 @@ lib/
     model_catalog_service.dart      Ruft OpenRouters Modell-Katalog live ab
     fsrs_service.dart               FSRS-4.5 Spaced-Repetition-Algorithmus
     daily_scheduler_service.dart    Exam-Scheduler (fällige + neue Karten)
+    stats_service.dart              Streak/Wiederholungen/Behaltensrate aus
+                                     vorhandenen Modul-/Karteikarten-Daten
     sync_service.dart               Firestore Sync-Code Push/Pull (optional)
   repositories/    ChangeNotifier-Wrapper um die DB, für Provider/Consumer
   theme/           Design-Tokens ("Ruhig & Fokussiert") + Light-/Dark-Theme
-  ui/              home, modules, prepare, review, daily, settings
+  ui/              home, modules, prepare, review, daily, stats, chat,
+                   flashcards, settings
 ```
 
 Lokale Persistenz läuft über [Sembast](https://pub.dev/packages/sembast)

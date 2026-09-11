@@ -68,6 +68,28 @@ class Flashcard {
     );
   }
 
+  /// Für manuelle Textkorrekturen (siehe FlashcardListScreen) – der
+  /// Spaced-Repetition-Zustand bleibt dabei unverändert.
+  Flashcard copyWithText({required String front, required String back}) {
+    return Flashcard(
+      id: id,
+      moduleId: moduleId,
+      conceptId: conceptId,
+      front: front,
+      back: back,
+      createdAt: createdAt,
+      due: due,
+      stability: stability,
+      difficulty: difficulty,
+      elapsedDays: elapsedDays,
+      scheduledDays: scheduledDays,
+      reps: reps,
+      lapses: lapses,
+      state: state,
+      lastReview: lastReview,
+    );
+  }
+
   Map<String, dynamic> toMap() => {
         'id': id,
         'moduleId': moduleId,

@@ -5,6 +5,7 @@ import 'daily/daily_quiz_screen.dart';
 import 'home/home_screen.dart';
 import 'modules/module_form_screen.dart';
 import 'settings/settings_screen.dart';
+import 'stats/stats_screen.dart';
 import 'widgets/floating_nav_bar.dart';
 
 /// Schwebende Pillen-Navigation über die drei Hauptbereiche der App (siehe
@@ -23,12 +24,14 @@ class _RootShellState extends State<RootShell> {
   static const _screens = [
     HomeScreen(),
     DailyQuizScreen(),
+    StatsScreen(),
     SettingsScreen(),
   ];
 
   static const _navItems = [
     NavItem(icon: Icons.folder_rounded, label: 'Fächer'),
     NavItem(icon: Icons.calendar_today_rounded, label: 'Daily Quiz'),
+    NavItem(icon: Icons.insights_rounded, label: 'Fortschritt'),
     NavItem(icon: Icons.settings_rounded, label: 'Einstellungen'),
   ];
 
