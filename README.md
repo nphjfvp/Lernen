@@ -142,6 +142,18 @@ Daily Quiz und Einstellungen, die 1:1 in echten App-Code übernommen wurde.
 Dieses Projekt wurde mit Flutter 3.47 (stable) angelegt. `flutter pub get`
 im Projektverzeichnis installiert alle Abhängigkeiten.
 
+Zum Testen im Browser immer zuerst den aktuellsten Stand holen, dann
+Abhängigkeiten aktualisieren, dann starten:
+
+```
+git pull
+flutter pub get
+flutter run -d chrome
+```
+
+`./update.sh` macht genau diese drei Schritte in einem Rutsch (macOS/Linux/
+Git-Bash unter Windows). So läuft nie versehentlich ein veralteter Stand.
+
 ### 2. OpenRouter-API-Key (BYOK)
 
 Key unter <https://openrouter.ai> erstellen und in der App unter
