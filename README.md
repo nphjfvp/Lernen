@@ -47,6 +47,28 @@ engerem Fokus statt Feature-Fülle.
   FSRS-Zustand der Karten), gesamt und pro Fach. Komplett aus vorhandenen
   Daten berechnet, kein separates Tracking (siehe
   `lib/services/stats_service.dart`).
+- **Kalender** – eigener Tab mit Monatsansicht: zeigt wöchentlich
+  wiederkehrende Vorlesungstermine (pro Fach im Bearbeiten-Formular als
+  Wochentag + Uhrzeit hinterlegt, `Module.lectureSlots`) zusammen mit den
+  Klausurterminen an, plus einen kleinen Countdown zur nächsten Klausur oben
+  rechts. Die Termin-Logik selbst ist reine, getestete Logik
+  (`lib/services/calendar_service.dart`), die UI navigiert nur Monate und
+  zeigt die Tagesagenda für den gewählten Tag.
+- **Lernerinnerung** – tägliche Push-Benachrichtigung zu einer selbst
+  gewählten Uhrzeit (Einstellungen → Lernerinnerung), lokal geplant über
+  `flutter_local_notifications` (kein eigener Server, wiederholt sich nach
+  dem ersten Planen selbst täglich). Auf Web ohne Wirkung, da das Paket dort
+  nicht unterstützt wird – der Schalter bleibt sichtbar, tut aber nichts.
+- **Startbildschirm-Widget (Android)** – zeigt die nächste Vorlesung, die
+  Anzahl heute fälliger Karten und einen Klausur-Countdown direkt auf dem
+  Android-Homescreen, ohne die App zu öffnen (`home_widget`-Package +
+  natives `CalendarWidgetProvider.kt`). Die drei Textzeilen werden aus
+  denselben Daten wie Kalender/Daily-Quiz berechnet
+  (`lib/services/home_widget_service.dart`) und bei jeder Fach-Änderung
+  sowie nach jeder Daily-Quiz-Wiederholung aktualisiert. Bewusst nur
+  Android: ein iOS-Widget bräuchte zusätzlich eine native
+  Swift/WidgetKit-Extension, die sich in dieser Umgebung ohnehin nicht in
+  einem iOS-Simulator testen ließe.
 - **Frage-Chat** – pro Modul durch die hochgeladenen Materialien gehen und
   Fragen dazu stellen/sich Dinge erklären lassen, ausschließlich auf
   explizite Nachfrage (nichts wird automatisch erklärt). Zweistufig statt
@@ -258,4 +280,10 @@ durchgeklickt und per Screenshot verifiziert. Native Windows/iOS/Android-
 Builds selbst (PDF-Upload-Flows, echte Gerätespezifika) wurden in diesem
 Sandbox-Environment nicht getestet, da hierfür Visual Studio/Xcode/Android-
 SDK fehlen – das lohnt sich vor dem ersten echten Einsatz nachzuholen
-(`flutter run -d <platform>`).
+(`flutter run -d <platform>`). Das gilt besonders für das
+Android-Startbildschirm-Widget (`android/app/src/main/kotlin/com/pius/lernen/CalendarWidgetProvider.kt`
++ die zugehörigen `res/xml`/`res/layout`-Dateien): rein aus Code-Review
+erstellt und mit den offiziellen `home_widget`-Beispielen abgeglichen, aber
+nie in einem echten Android-Build/-Emulator gerendert – vor dem ersten
+Release unbedingt auf einem echten Gerät/Emulator ausprobieren (Widget zum
+Homescreen hinzufügen, prüfen ob Text/Klick-Verhalten stimmen).

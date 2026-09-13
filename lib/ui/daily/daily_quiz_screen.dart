@@ -10,6 +10,7 @@ import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/daily_scheduler_service.dart';
 import '../../services/fsrs_service.dart';
+import '../../services/home_widget_service.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import 'question_answer_view.dart';
@@ -40,6 +41,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> {
     final modules = context.read<ModuleRepository>().modules;
     final allCards = await context.read<FlashcardRepository>().loadAll();
     final plan = DailySchedulerService().buildPlan(modules: modules, allCards: allCards);
+    unawaited(HomeWidgetService().refresh(modules: modules, allCards: allCards));
     if (!mounted) return;
     setState(() {
       _plan = plan;
@@ -69,6 +71,14 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> {
       _index += 1;
       _reviewedCount += 1;
     });
+    unawaited(_refreshHomeWidget());
+  }
+
+  Future<void> _refreshHomeWidget() async {
+    if (!mounted) return;
+    final modules = context.read<ModuleRepository>().modules;
+    final allCards = await context.read<FlashcardRepository>().loadAll();
+    await HomeWidgetService().refresh(modules: modules, allCards: allCards);
   }
 
   /// Erzeugt lazy die nächste (schwerere) Eskalationsstufe per KI und

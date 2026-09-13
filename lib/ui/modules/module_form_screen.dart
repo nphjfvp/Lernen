@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/module.dart';
+import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../services/home_widget_service.dart';
 
 const _kModuleColors = [
   0xFF3D5AFE,
@@ -17,6 +21,8 @@ const _kModuleColors = [
 ];
 
 const _kModuleIcons = ['📘', '📐', '🧪', '💻', '⚖️', '🧠', '📊', '🌍'];
+
+const _kWeekdayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
 /// Formular zum Anlegen/Bearbeiten eines Fach-Ordners inkl. Klausurdatum.
 class ModuleFormScreen extends StatefulWidget {
@@ -33,6 +39,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
   late int _colorValue;
   late String _icon;
   DateTime? _examDate;
+  late List<LectureSlot> _lectureSlots;
 
   @override
   void initState() {
@@ -42,6 +49,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
     _colorValue = existing?.colorValue ?? _kModuleColors.first;
     _icon = existing?.icon ?? _kModuleIcons.first;
     _examDate = existing?.examDate;
+    _lectureSlots = List.of(existing?.lectureSlots ?? const []);
   }
 
   @override
@@ -61,6 +69,42 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
     if (picked != null) setState(() => _examDate = picked);
   }
 
+  Future<void> _addLectureSlot() async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 10, minute: 0),
+    );
+    if (time == null || !mounted) return;
+    int weekday = DateTime.monday;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('An welchem Wochentag?'),
+          content: Wrap(
+            spacing: 8,
+            children: List.generate(7, (i) {
+              final day = i + 1;
+              return ChoiceChip(
+                label: Text(_kWeekdayLabels[i]),
+                selected: weekday == day,
+                onSelected: (_) => setDialogState(() => weekday = day),
+              );
+            }),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
+            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Hinzufügen')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() {
+      _lectureSlots.add(LectureSlot(weekday: weekday, hour: time.hour, minute: time.minute));
+    });
+  }
+
   Future<void> _save() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
@@ -73,8 +117,12 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
       icon: _icon,
       examDate: _examDate,
       createdAt: existing?.createdAt ?? DateTime.now(),
+      lectureSlots: _lectureSlots.isEmpty ? null : _lectureSlots,
     );
     await repo.save(module);
+    if (!mounted) return;
+    final allCards = await context.read<FlashcardRepository>().loadAll();
+    unawaited(HomeWidgetService().refresh(modules: repo.modules, allCards: allCards));
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -152,6 +200,33 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
                   ),
               ],
             ),
+          ),
+          const SizedBox(height: 24),
+          const Text('Vorlesungstermine', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(
+            'Wöchentlich wiederkehrend, für die Kalender-Ansicht und Erinnerungen.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          for (var i = 0; i < _lectureSlots.length; i++)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.event_repeat),
+              title: Text(
+                '${_kWeekdayLabels[_lectureSlots[i].weekday - 1]} '
+                '${_lectureSlots[i].hour.toString().padLeft(2, '0')}:'
+                '${_lectureSlots[i].minute.toString().padLeft(2, '0')} Uhr',
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () => setState(() => _lectureSlots.removeAt(i)),
+              ),
+            ),
+          TextButton.icon(
+            onPressed: _addLectureSlot,
+            icon: const Icon(Icons.add),
+            label: const Text('Termin hinzufügen'),
           ),
           const SizedBox(height: 32),
           FilledButton(

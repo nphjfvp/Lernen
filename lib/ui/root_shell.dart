@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import 'calendar/calendar_screen.dart';
 import 'daily/daily_quiz_screen.dart';
 import 'home/home_screen.dart';
 import 'modules/module_form_screen.dart';
@@ -24,13 +25,15 @@ class _RootShellState extends State<RootShell> {
   static const _screens = [
     HomeScreen(),
     DailyQuizScreen(),
+    CalendarScreen(),
     StatsScreen(),
     SettingsScreen(),
   ];
 
   static const _navItems = [
     NavItem(icon: Icons.folder_rounded, label: 'Fächer'),
-    NavItem(icon: Icons.calendar_today_rounded, label: 'Daily Quiz'),
+    NavItem(icon: Icons.style_rounded, label: 'Daily Quiz'),
+    NavItem(icon: Icons.calendar_today_rounded, label: 'Kalender'),
     NavItem(icon: Icons.insights_rounded, label: 'Fortschritt'),
     NavItem(icon: Icons.settings_rounded, label: 'Einstellungen'),
   ];

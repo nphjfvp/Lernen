@@ -30,10 +30,17 @@ class AppSettings {
   final bool rollingContextEnabled;
   final String? syncCode;
   final DateTime? lastSyncAt;
+  final bool dailyReminderEnabled;
+
+  /// Uhrzeit der täglichen Lernerinnerung, als Minuten seit Mitternacht
+  /// (kein `TimeOfDay` hier, damit dieses Modell ohne Flutter-Import
+  /// testbar bleibt). Default 18:00.
+  final int dailyReminderMinuteOfDay;
 
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
+  static const defaultReminderMinuteOfDay = 18 * 60;
 
   const AppSettings({
     this.openRouterApiKey,
@@ -44,10 +51,15 @@ class AppSettings {
     this.rollingContextEnabled = true,
     this.syncCode,
     this.lastSyncAt,
+    this.dailyReminderEnabled = false,
+    this.dailyReminderMinuteOfDay = defaultReminderMinuteOfDay,
   });
 
   bool get hasApiKey =>
       openRouterApiKey != null && openRouterApiKey!.trim().isNotEmpty;
+
+  int get dailyReminderHour => dailyReminderMinuteOfDay ~/ 60;
+  int get dailyReminderMinute => dailyReminderMinuteOfDay % 60;
 
   AppSettings copyWith({
     String? openRouterApiKey,
@@ -58,6 +70,8 @@ class AppSettings {
     bool? rollingContextEnabled,
     String? syncCode,
     DateTime? lastSyncAt,
+    bool? dailyReminderEnabled,
+    int? dailyReminderMinuteOfDay,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -68,6 +82,8 @@ class AppSettings {
       rollingContextEnabled: rollingContextEnabled ?? this.rollingContextEnabled,
       syncCode: syncCode ?? this.syncCode,
       lastSyncAt: lastSyncAt ?? this.lastSyncAt,
+      dailyReminderEnabled: dailyReminderEnabled ?? this.dailyReminderEnabled,
+      dailyReminderMinuteOfDay: dailyReminderMinuteOfDay ?? this.dailyReminderMinuteOfDay,
     );
   }
 
@@ -80,6 +96,8 @@ class AppSettings {
         'rollingContextEnabled': rollingContextEnabled,
         'syncCode': syncCode,
         'lastSyncAt': lastSyncAt?.toIso8601String(),
+        'dailyReminderEnabled': dailyReminderEnabled,
+        'dailyReminderMinuteOfDay': dailyReminderMinuteOfDay,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -96,5 +114,7 @@ class AppSettings {
         lastSyncAt: map['lastSyncAt'] == null
             ? null
             : DateTime.parse(map['lastSyncAt'] as String),
+        dailyReminderEnabled: map['dailyReminderEnabled'] as bool? ?? false,
+        dailyReminderMinuteOfDay: map['dailyReminderMinuteOfDay'] as int? ?? defaultReminderMinuteOfDay,
       );
 }

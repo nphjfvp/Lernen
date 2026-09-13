@@ -6,6 +6,7 @@ import '../../models/app_settings.dart';
 import '../../repositories/auth_repository.dart';
 import '../../repositories/model_catalog_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../services/reminder_service.dart';
 import '../../services/sync_service.dart';
 import '../../theme/app_colors.dart';
 import '../auth/login_screen.dart';
@@ -129,6 +130,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       setState(() => _syncBusy = false);
     }
+  }
+
+  Future<void> _setReminderEnabled(bool enabled) async {
+    final repo = context.read<SettingsRepository>();
+    await repo.update(repo.settings.copyWith(dailyReminderEnabled: enabled));
+    if (!mounted) return;
+    await ReminderService().reschedule(repo.settings);
+  }
+
+  Future<void> _pickReminderTime() async {
+    final settings = context.read<SettingsRepository>().settings;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: settings.dailyReminderHour, minute: settings.dailyReminderMinute),
+    );
+    if (picked == null || !mounted) return;
+    final repo = context.read<SettingsRepository>();
+    await repo.update(repo.settings.copyWith(dailyReminderMinuteOfDay: picked.hour * 60 + picked.minute));
+    if (!mounted) return;
+    await ReminderService().reschedule(repo.settings);
   }
 
   InputDecoration _fieldDecoration(BuildContext context, {required String label}) {
@@ -311,6 +332,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       style: TextStyle(fontSize: 11.5, color: c.inkMuted),
                     ),
                   ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 26),
+                    child: Divider(height: 1, color: c.border),
+                  ),
+                  _SectionLabel('Lernerinnerung'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tägliche Erinnerung als Push-Benachrichtigung, zur gewählten Uhrzeit.',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.dailyReminderEnabled,
+                    activeThumbColor: c.accent,
+                    onChanged: (v) => _setReminderEnabled(v),
+                    title: const Text('Tägliche Erinnerung', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  ),
+                  if (settings.dailyReminderEnabled)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.access_time_rounded),
+                      title: Text(
+                        '${settings.dailyReminderHour.toString().padLeft(2, '0')}:'
+                        '${settings.dailyReminderMinute.toString().padLeft(2, '0')} Uhr',
+                      ),
+                      trailing: TextButton(onPressed: _pickReminderTime, child: const Text('Ändern')),
+                    ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 26),
                     child: Divider(height: 1, color: c.border),

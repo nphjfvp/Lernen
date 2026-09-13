@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:padding="14dp">
+
+    <TextView
+        android:id="@+id/widget_lecture"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="12.5sp"
+        android:textColor="#6B7280"
+        android:maxLines="1"
+        android:ellipsize="end"
+        tools:text="📅 Mo 10:00 · Analysis 2" />
+
+    <TextView
+        android:id="@+id/widget_reminder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:textColor="#2A2E3D"
+        android:maxLines="1"
+        android:ellipsize="end"
+        tools:text="🔔 12 Karten fällig heute" />
+
+    <TextView
+        android:id="@+id/widget_countdown"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textSize="11.5sp"
+        android:textColor="#876433"
+        android:maxLines="1"
+        android:ellipsize="end"
+        tools:text="⏳ Klausur Analysis 2 in 12 Tagen" />
+</LinearLayout>
