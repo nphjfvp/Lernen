@@ -267,13 +267,23 @@ verfügbar ist.
 ### Android-APK ohne eigenen Rechner (GitHub Actions)
 
 Bei jedem Push baut `.github/workflows/android-apk.yml` automatisch eine
-installierbare APK und hängt sie als Artifact an den Actions-Run:
-GitHub-Repo → Tab **Actions** → den Workflow-Lauf öffnen → unten bei
-**Artifacts** `lernen-apk` herunterladen (ZIP, enthält die `.apk`). Auf dem
-Handy die APK öffnen; Android fragt einmalig nach der Erlaubnis, Apps aus
-dieser Quelle zu installieren ("Unbekannte Quellen zulassen") – die APK ist
-nur mit dem Debug-Keystore signiert (kein Play-Store-Eintrag nötig), das
-ist für den Eigengebrauch aber unproblematisch.
+installierbare APK – auch komplett vom Handy aus nutzbar, ohne PC:
+
+- **Direkter Download (empfohlen):** GitHub-Repo → Tab **Releases** → den
+  Release **"Android APK (aktueller Stand)"** (Tag `android-latest`) öffnen
+  → `app-release.apk` antippen. Lädt die `.apk` direkt herunter, kein
+  ZIP-Umweg. Dieser eine Release wird bei jedem Push aktualisiert, die URL
+  bleibt also immer gleich.
+- **Pro Commit (Artifact):** Tab **Actions** → gewünschten Workflow-Lauf
+  öffnen → unten bei **Artifacts** `lernen-apk` herunterladen (als ZIP,
+  30 Tage aufbewahrt) – falls mal genau der Build zu einem bestimmten Commit
+  gebraucht wird, nicht nur der neueste Stand.
+
+Auf dem Handy die `.apk` antippen; Android fragt einmalig nach der
+Erlaubnis, Apps aus dieser Quelle zu installieren ("Unbekannte Quellen
+zulassen") – die APK ist nur mit dem Debug-Keystore signiert (kein
+Play-Store-Eintrag nötig), das ist für den Eigengebrauch aber
+unproblematisch.
 
 ## Tests
 

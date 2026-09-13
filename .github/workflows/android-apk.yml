@@ -1,13 +1,20 @@
 name: Android APK
 
-# Baut bei jedem Push eine installierbare APK und hängt sie als Workflow-
-# Artifact an den Actions-Run an (unter dem Run auf GitHub herunterladbar,
-# kein eigener Play-Store-Eintrag nötig). Release-Build wird mit dem
-# Debug-Keystore signiert (siehe android/app/build.gradle.kts) - installiert
-# direkt auf jedem Gerät, ist aber kein Play-Store-fähiges Signing.
+# Baut bei jedem Push eine installierbare APK. Landet an zwei Stellen:
+#  1. Als "android-latest"-Release mit fester URL (softprops/action-gh-release
+#     aktualisiert bei jedem Lauf denselben Release/Tag statt neue anzulegen)
+#     - direkter .apk-Download ohne ZIP-Umweg, auch vom Handy aus.
+#  2. Zusätzlich als Workflow-Artifact am Actions-Run (30 Tage, falls mal
+#     genau der Build zu einem bestimmten Commit gebraucht wird).
+# Release-Build wird mit dem Debug-Keystore signiert (siehe
+# android/app/build.gradle.kts) - installiert direkt auf jedem Gerät, ist
+# aber kein Play-Store-fähiges Signing.
 on:
   push:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-apk:
@@ -37,3 +44,17 @@ jobs:
           name: lernen-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      - name: Aktuellen Stand als Release veröffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: Android APK (aktueller Stand)
+          body: |
+            Automatisch gebaut aus Commit ${{ github.sha }} auf ${{ github.ref_name }}.
+            Mit dem Debug-Keystore signiert (siehe android/app/build.gradle.kts) -
+            installiert direkt auf jedem Gerät, ist aber kein Play-Store-Signing.
+          prerelease: true
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
