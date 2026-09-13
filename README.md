@@ -264,6 +264,17 @@ flutter run -d android   # Android (Emulator oder Gerät mit USB-Debugging)
 `flutter devices` zeigt an, was auf dem jeweiligen Rechner tatsächlich
 verfügbar ist.
 
+### Android-APK ohne eigenen Rechner (GitHub Actions)
+
+Bei jedem Push baut `.github/workflows/android-apk.yml` automatisch eine
+installierbare APK und hängt sie als Artifact an den Actions-Run:
+GitHub-Repo → Tab **Actions** → den Workflow-Lauf öffnen → unten bei
+**Artifacts** `lernen-apk` herunterladen (ZIP, enthält die `.apk`). Auf dem
+Handy die APK öffnen; Android fragt einmalig nach der Erlaubnis, Apps aus
+dieser Quelle zu installieren ("Unbekannte Quellen zulassen") – die APK ist
+nur mit dem Debug-Keystore signiert (kein Play-Store-Eintrag nötig), das
+ist für den Eigengebrauch aber unproblematisch.
+
 ## Tests
 
 ```bash

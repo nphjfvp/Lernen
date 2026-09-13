@@ -1,0 +1,39 @@
+name: Android APK
+
+# Baut bei jedem Push eine installierbare APK und hängt sie als Workflow-
+# Artifact an den Actions-Run an (unter dem Run auf GitHub herunterladbar,
+# kein eigener Play-Store-Eintrag nötig). Release-Build wird mit dem
+# Debug-Keystore signiert (siehe android/app/build.gradle.kts) - installiert
+# direkt auf jedem Gerät, ist aber kein Play-Store-fähiges Signing.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.3"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lernen-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
