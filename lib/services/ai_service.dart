@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/app_settings.dart';
+import '../models/flashcard.dart' show QuestionType;
 import 'text_chunker.dart';
 
 /// Wird geworfen, wenn die KI-Antwort kein (reparierbares) JSON enthält.
@@ -185,7 +186,26 @@ Analysiere den Abschnitt und erstelle:
 1. Lernkonzepte, die erklären, WARUM die Übungsaufgaben so gelöst werden wie
    sie gelöst werden (der Fokus liegt auf tiefem Verständnis der Übungen,
    nicht auf reiner Theorie-Wiedergabe der Folien).
-2. Karteikarten (Frage/Antwort) zur Wiederholung dieser Konzepte.
+2. Karteikarten/Fragen zur Wiederholung dieser Konzepte – wähle pro Frage
+   den passenden Typ statt immer dasselbe Format zu nutzen:
+   - "single_choice": klares Faktenwissen mit genau einer richtigen Antwort.
+     Setze zusätzlich "escalate": true – das System steigert den
+     Schwierigkeitsgrad solcher Fragen automatisch, sobald sie zuverlässig
+     richtig beantwortet werden.
+   - "multiple_choice": wenn mehrere Aussagen gleichzeitig zutreffen können.
+   - "fill_blank": Lückentext – markiere jede Lücke im "front"-Text mit genau
+     drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
+     Reihenfolge.
+   - "free_text": offene, aber eindeutig prüfbare Kurzantwort; "correctText"
+     enthält die Lösung (bei mehreren akzeptierten Formulierungen durch ";"
+     getrennt).
+   - "drag_drop": Begriffe einander zuordnen (Paare); "dragPairs" enthält
+     {"source","target"}-Paare.
+   - "drag_category": Begriffe in Kategorien einsortieren; "dragPairs" wie
+     bei drag_drop, "target" ist hier der Kategoriename (mehrere "source"
+     können denselben "target"-Wert haben).
+   - "flashcard": nur wenn WIRKLICH keiner der obigen Typen passt (z.B. eine
+     freie, nicht eindeutig prüfbare Erklärung) – "front"/"back" wie bisher.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {
@@ -193,11 +213,17 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
     {"title": "Konzeptname", "explanation": "Ausführliche Erklärung mit Bezug zu den Übungsaufgaben"}
   ],
   "flashcards": [
-    {"front": "Frage", "back": "Antwort"}
+    {"type": "single_choice", "front": "Frage", "escalate": true,
+     "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
+    {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]},
+    {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative"},
+    {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]},
+    {"type": "flashcard", "front": "Frage", "back": "Antwort"}
   ]
 }
 Erstelle so viele Konzepte/Karteikarten wie der Abschnitt hergibt (auch
-wenige, wenn der Abschnitt kurz ist). Wenn bereits erstellte Konzepte aus
+wenige, wenn der Abschnitt kurz ist), mit einer sinnvollen Mischung aus
+Typen statt nur einem einzigen. Wenn bereits erstellte Konzepte aus
 vorherigen Abschnitten genannt werden, erstelle diese NICHT erneut.
 Antworte in der Sprache der Vorlage.
 ''';
@@ -301,6 +327,63 @@ Antworte in der Sprache der Vorlage.
           ..writeln(jsonEncode(generated)))
         .toString();
     final raw = await _complete(_crosscheckSystemPrompt, userPrompt);
+    return _parseJsonObject(raw);
+  }
+
+  static String _variantTypeRule(QuestionType targetType) => switch (targetType) {
+        QuestionType.singleChoice =>
+          'Zieltyp "single_choice": 3-4 Antwortoptionen, GENAU eine davon '
+              'richtig (die bekannte Lösung). Antwortformat: '
+              '{"front": "...", "options": [{"text": "...", "isCorrect": true}, ...]}',
+        QuestionType.multipleChoice =>
+          'Zieltyp "multiple_choice": 4-6 Antwortoptionen, mehrere davon '
+              'richtig. Antwortformat: {"front": "...", "options": '
+              '[{"text": "...", "isCorrect": true}, ...]}',
+        QuestionType.fillBlank =>
+          'Zieltyp "fill_blank": derselbe Fakt als Lückentext. Markiere '
+              'jede Lücke im "front"-Text mit genau drei Unterstrichen '
+              '"___". Antwortformat: {"front": "Text mit ___ Lücke(n)", '
+              '"blanks": ["Lösung 1", "..."]}',
+        QuestionType.freeText =>
+          'Zieltyp "free_text": derselbe Fakt als offene, aber eindeutig '
+              'prüfbare Frage ohne Antwortoptionen (die schwerste Stufe – '
+              'keine Auswahl mehr, nur Erinnerung). Antwortformat: '
+              '{"front": "...", "correctText": "Lösung; ggf. Alternative"}',
+        QuestionType.dragDrop =>
+          'Zieltyp "drag_drop": als Zuordnungspaare. Antwortformat: '
+              '{"front": "...", "dragPairs": [{"source": "...", "target": "..."}]}',
+        QuestionType.dragCategory =>
+          'Zieltyp "drag_category": Begriffe in Kategorien einsortieren. '
+              'Antwortformat: {"front": "...", "dragPairs": '
+              '[{"source": "...", "target": "Kategorie"}]}',
+        QuestionType.flashcard =>
+          'Zieltyp "flashcard": offene Frage/Antwort. Antwortformat: '
+              '{"front": "...", "back": "..."}',
+      };
+
+  /// Erster Schritt der Schwierigkeits-Eskalation (siehe
+  /// [Flashcard.variantChain]): wandelt eine Frage mit BEKANNTER Lösung in
+  /// einen anspruchsvolleren Fragetyp um, OHNE den geprüften Fakt zu
+  /// verändern – nur das Format wird schwerer. Wird lazy aufgerufen, sobald
+  /// eine Frage zuverlässig richtig beantwortet wurde (nicht im Voraus für
+  /// alle Stufen), damit keine KI-Kosten für Stufen anfallen, die
+  /// möglicherweise nie erreicht werden.
+  Future<Map<String, dynamic>> generateHarderVariant({
+    required String questionText,
+    required String currentAnswer,
+    required QuestionType targetType,
+  }) async {
+    final systemPrompt = '''
+Du wandelst eine Lernfrage mit BEKANNTER Lösung in einen anspruchsvolleren
+Fragetyp um. Der geprüfte Fakt/die Lösung darf sich NICHT ändern – nur das
+Format der Frage.
+${_variantTypeRule(targetType)}
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format (siehe
+oben), ohne Markdown-Codefences, ohne zusätzlichen Text davor/danach.
+Antworte in der Sprache der Vorlage.
+''';
+    final userPrompt = 'Ursprüngliche Frage: $questionText\nBekannte Lösung: $currentAnswer';
+    final raw = await _complete(systemPrompt, userPrompt);
     return _parseJsonObject(raw);
   }
 

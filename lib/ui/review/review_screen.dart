@@ -14,6 +14,7 @@ import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/material_text_extractor.dart';
+import '../../services/question_parsing.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/raw_response_dialog.dart';
 
@@ -214,16 +215,25 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ))
         .toList();
 
-    final flashcards = ((result['flashcards'] as List?) ?? [])
-        .map((f) => Flashcard(
-              id: const Uuid().v4(),
-              moduleId: widget.moduleId,
-              front: (f['front'] ?? '').toString(),
-              back: (f['back'] ?? '').toString(),
-              createdAt: now,
-              due: now,
-            ))
-        .toList();
+    final flashcards = ((result['flashcards'] as List?) ?? []).map((raw) {
+      final f = Map<String, dynamic>.from(raw as Map);
+      final type = questionTypeFromString(f['type'] as String?);
+      final escalate = f['escalate'] == true && type == QuestionType.singleChoice;
+      return Flashcard(
+        id: const Uuid().v4(),
+        moduleId: widget.moduleId,
+        front: (f['front'] ?? '').toString(),
+        back: (f['back'] ?? '').toString(),
+        createdAt: now,
+        due: now,
+        type: type,
+        options: QuestionParsing.parseOptions(f['options']),
+        correctText: f['correctText'] as String?,
+        blanks: QuestionParsing.parseBlanks(f['blanks']),
+        dragPairs: QuestionParsing.parseDragPairs(f['dragPairs']),
+        variantChain: escalate ? QuestionParsing.escalationChain : null,
+      );
+    }).toList();
 
     final materialRepo = context.read<MaterialRepository>();
     for (final material in [...slidesMaterials, ...exercisesMaterials]) {
@@ -453,12 +463,17 @@ class _PreviewView extends StatelessWidget {
                   )),
               const SizedBox(height: 16),
               Text('Karteikarten', style: Theme.of(context).textTheme.titleMedium),
-              ...flashcards.map((f) => Card(
-                    child: ListTile(
-                      title: Text((f['front'] ?? '').toString()),
-                      subtitle: Text((f['back'] ?? '').toString()),
-                    ),
-                  )),
+              ...flashcards.map((raw) {
+                final f = Map<String, dynamic>.from(raw as Map);
+                final type = questionTypeFromString(f['type'] as String?);
+                return Card(
+                  child: ListTile(
+                    leading: Icon(_iconFor(type)),
+                    title: Text((f['front'] ?? '').toString()),
+                    subtitle: Text('${type.label} · ${_answerPreview(f, type)}'),
+                  ),
+                );
+              }),
               const SizedBox(height: 16),
               Card(
                 child: Padding(
@@ -520,5 +535,37 @@ class _PreviewView extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  IconData _iconFor(QuestionType type) => switch (type) {
+        QuestionType.flashcard => Icons.style_outlined,
+        QuestionType.singleChoice => Icons.radio_button_checked_outlined,
+        QuestionType.multipleChoice => Icons.check_box_outlined,
+        QuestionType.freeText => Icons.short_text,
+        QuestionType.fillBlank => Icons.space_bar,
+        QuestionType.dragDrop => Icons.compare_arrows,
+        QuestionType.dragCategory => Icons.category_outlined,
+      };
+
+  String _answerPreview(Map<String, dynamic> f, QuestionType type) {
+    switch (type) {
+      case QuestionType.flashcard:
+        return (f['back'] ?? '').toString();
+      case QuestionType.singleChoice:
+      case QuestionType.multipleChoice:
+        final options = (f['options'] as List?) ?? const [];
+        return options
+            .where((o) => o is Map && o['isCorrect'] == true)
+            .map((o) => (o as Map)['text'])
+            .join(', ');
+      case QuestionType.freeText:
+        return (f['correctText'] ?? '').toString();
+      case QuestionType.fillBlank:
+        return ((f['blanks'] as List?) ?? const []).join(', ');
+      case QuestionType.dragDrop:
+      case QuestionType.dragCategory:
+        final pairs = (f['dragPairs'] as List?) ?? const [];
+        return pairs.map((p) => '${(p as Map)['source']} → ${p['target']}').join(', ');
+    }
   }
 }

@@ -84,4 +84,15 @@ void main() {
     expect(soon, lessThanOrEqualTo(1.0));
     expect(later, greaterThanOrEqualTo(0.0));
   });
+
+  group('FsrsService.gradeFromResult', () {
+    test('richtige Antwort ergibt Easy', () {
+      expect(fsrs.gradeFromResult(true), Grade.easy);
+    });
+
+    test('falsche Antwort ergibt Hard statt Again (kein harter Rücksetzer '
+        'wegen eines einzelnen Formulierungsfehlers)', () {
+      expect(fsrs.gradeFromResult(false), Grade.hard);
+    });
+  });
 }

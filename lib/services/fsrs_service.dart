@@ -133,4 +133,15 @@ class FsrsService {
     final elapsed = (now ?? DateTime.now()).difference(card.lastReview!).inDays;
     return _retrievability(elapsed, card.stability);
   }
+
+  /// Leitet für automatisch auswertbare Fragetypen (Single-/Multiple-Choice,
+  /// Freitext, Lückentext, Zuordnen – siehe AnswerChecker) eine FSRS-
+  /// Bewertung aus der reinen Korrektheit ab, statt den Nutzer selbst
+  /// einschätzen zu lassen (das bleibt dem offenen `flashcard`-Typ
+  /// vorbehalten). Ein falscher Versuch zählt als "Schwer" statt "Nochmal":
+  /// ein Formulierungs-/Flüchtigkeitsfehler bedeutet nicht zwingend, dass
+  /// der Stoff komplett neu gelernt werden muss (Grade.again würde die
+  /// Stabilität stark zurücksetzen). Entspricht dem Verhalten der
+  /// Vorgänger-App (ratingFromResult).
+  Grade gradeFromResult(bool isCorrect) => isCorrect ? Grade.easy : Grade.hard;
 }

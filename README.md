@@ -21,6 +21,19 @@ engerem Fokus statt Feature-Fülle.
   hinweg. FSRS-Spaced-Repetition für fällige Wiederholungen; die Menge neuer
   Karten wird pro Fach dynamisch an Wissensstand und Klausarnähe angepasst
   (siehe `lib/services/daily_scheduler_service.dart`).
+- **Fragetypen & adaptive Schwierigkeit** – die KI erzeugt beim Nachbereiten
+  neben klassischen Karteikarten auch Single-Choice, Multiple-Choice,
+  Freitext, Lückentext sowie Drag&Drop-Zuordnung/-Kategorisierung (Auswahl je
+  nach Inhalt, `lib/models/flashcard.dart` `QuestionType`,
+  `lib/services/answer_checker.dart` prüft automatisch inkl. toleranter
+  Tippfehler-Erkennung bei Freitext/Lückentext). Ausgewählte Single-Choice-
+  Fragen tragen zusätzlich eine Eskalationskette (Single-Choice → Lückentext
+  → Freitext): wird eine Frage im Daily Quiz wiederholt richtig beantwortet
+  (Leitner-Box, Schwelle 3), erzeugt die KI im Hintergrund lazy die nächst
+  schwierigere Variante zur selben Karte – ohne alle Stufen vorab zu
+  generieren. Eine falsche Antwort senkt die Box wieder, ohne die Karte
+  zurückzustufen. Bewusst NICHT enthalten: der Mathe-Formel-Fragetyp der
+  Vorgänger-App.
 - **Materialien & Vorarbeiten** – im Modul-Detail lässt sich beliebig viel
   Material (z.B. der komplette Semesterinhalt, als PDF/Word/PowerPoint)
   direkt hochladen, ohne dass dafür eine KI-Anfrage anfällt – reine
@@ -80,10 +93,15 @@ engerem Fokus statt Feature-Fülle.
 
 ## Bewusst NICHT enthalten (verglichen mit der Vorgänger-App)
 
-Der Vorgänger hatte 9 Fragetypen, 6 Mini-Games, eine Coin-Economy/Shop,
-Mock-Klausuren, Formelsammlungen, Sokrates-Modus u.v.m. Diese App
-konzentriert sich auf den Kernkreislauf **Vorbereiten → Nachbereiten →
-Daily Quiz** und verzichtet bewusst auf alles andere. Die Vision-Modell-Rolle
+Der Vorgänger hatte 9 Fragetypen (inkl. Mathe-Formel-Fragen mit Formel-Editor
+und Diagramm-Beschriftung/Bild-Markierung), 6 Mini-Games, eine
+Coin-Economy/Shop, Mock-Klausuren, Formelsammlungen, Sokrates-Modus u.v.m.
+Diese App übernimmt 6 der 9 Fragetypen inkl. der adaptiven
+Schwierigkeits-Eskalation (siehe oben), lässt aber bewusst den
+Mathe-Formel-Fragetyp sowie diagramm-/bildbasierte Fragetypen (Diagramm
+beschriften, Bild markieren) weg und konzentriert sich ansonsten auf den
+Kernkreislauf **Vorbereiten → Nachbereiten → Daily Quiz** ohne Mini-Games,
+Economy o.ä. Die Vision-Modell-Rolle
 existiert bereits in den Einstellungen (für später), eine konkrete
 OCR-Fallback-Pipeline für gescannte/bildbasierte PDFs (Rasterung + Versand an
 ein Vision-Modell) ist aber noch nicht umgesetzt – aktuell scheitert die

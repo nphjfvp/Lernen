@@ -70,6 +70,11 @@ class _FlashcardTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final statusParts = [
+      card.type.label,
+      card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
+      if (card.variantChain != null) 'Stufe ${card.variantLevel + 1}/${card.variantChain!.length}',
+    ];
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surface,
@@ -82,7 +87,7 @@ class _FlashcardTile extends StatelessWidget {
           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
           title: Text(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
           subtitle: Text(
-            card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
+            statusParts.join(' · '),
             style: TextStyle(fontSize: 11.5, color: c.inkMuted),
           ),
           iconColor: c.inkMuted,
@@ -92,7 +97,7 @@ class _FlashcardTile extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(card.back, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5)),
+                child: Text(card.answerSummary, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5)),
               ),
             ),
             Padding(
@@ -100,11 +105,12 @@ class _FlashcardTile extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton.icon(
-                    onPressed: () => _edit(context),
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('Bearbeiten'),
-                  ),
+                  if (card.type == QuestionType.flashcard)
+                    TextButton.icon(
+                      onPressed: () => _edit(context),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Bearbeiten'),
+                    ),
                   TextButton.icon(
                     onPressed: () => _delete(context),
                     icon: const Icon(Icons.delete_outline, size: 16),
