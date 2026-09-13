@@ -33,6 +33,21 @@ android {
         multiDexEnabled = true
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // Fester, mit ins Repo committeter Debug-Keystore (Standard-
+            // Passwörter/Alias) statt des sonst pro Maschine automatisch
+            // erzeugten ~/.android/debug.keystore: sorgt dafür, dass jeder
+            // GitHub-Actions-Build dieselbe Signatur hat und sich als Update
+            // über die vorherige APK installieren lässt, statt bei jedem
+            // Build eine neue, zufällige Signatur zu bekommen.
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

@@ -12,3 +12,11 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Ausnahme: der feste Debug-Keystore (Standard-Passwörter "android"/
+# "android", KEIN Release-Signing) wird bewusst mit ins Repo genommen, damit
+# CI-Builds über mehrere Läufe hinweg dieselbe Signatur haben – sonst würde
+# jeder GitHub-Actions-Run beim Fehlen von ~/.android/debug.keystore einen
+# neuen, zufälligen erzeugen und jede neue APK ließe sich nicht mehr als
+# Update über die vorherige installieren.
+!app/debug.keystore
