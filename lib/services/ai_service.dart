@@ -544,6 +544,45 @@ Markdown-Codefences, ohne zusätzlichen Text:
     return ids ?? const [];
   }
 
+  static const _highlightSuggestionSystemPrompt = '''
+Du bekommst den Text einer Vorlesungsfolie. Finde die wichtigsten
+Textstellen und ordne jede EINER von drei Kategorien zu:
+- "red": eignet sich gut als Prüfungsfrage (klares, abfragbares Faktenwissen).
+- "green": die dazugehörige Antwort bzw. der Kernfakt, der so eine Frage
+  beantworten würde.
+- "yellow": sonst einfach wichtig/relevant, ohne klare Frage/Antwort-Rolle.
+
+Zitiere jede markierte Stelle EXAKT wie sie im Original vorkommt – keine
+Paraphrase, keine Kürzung mit "...", keine Korrektur von Tipp-/OCR-Fehlern –
+die Stelle muss im Original per Textsuche wiedergefunden werden können.
+Wähle höchstens 12 Stellen, konzentriere dich auf das fachlich Wichtigste.
+
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text davor/danach:
+{"highlights": [
+  {"text": "exaktes Zitat aus dem Original", "color": "red", "reason": "kurze Begründung"}
+]}
+Antworte in der Sprache der Vorlage.
+''';
+
+  static const int _highlightInputCap = 40000;
+
+  /// Lässt die KI die wichtigsten Textstellen einer Folie vorschlagen und
+  /// nach rot (Frage-relevant) / grün (Antwort) / gelb (sonst relevant)
+  /// kategorisieren (siehe [MaterialViewerScreen]). Die zurückgegebenen
+  /// "text"-Zitate werden anschließend per Text-Matching im PDF wiedergefunden
+  /// und dort als Annotation platziert (siehe HighlightMatcher) – bleibt ein
+  /// Zitat unauffindbar, zählt es trotzdem als markierter Kontext für die
+  /// spätere KI-Weiterverarbeitung, erscheint aber nicht sichtbar im Dokument.
+  Future<List<Map<String, dynamic>>> suggestHighlights(String extractedText) async {
+    final raw = await _complete(
+        _highlightSuggestionSystemPrompt, _cap(extractedText, _highlightInputCap));
+    final parsed = _parseJsonObject(raw);
+    return (parsed['highlights'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
   Map<String, dynamic> _parseJsonObject(String raw) {
     final candidate = _extractJsonBlock(raw);
     try {

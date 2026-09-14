@@ -149,8 +149,14 @@ lib/
     office_text_extractor.dart      Word-/PowerPoint-Textextraktion (archive + xml,
                                      reines Dart – beide Formate sind ZIP+XML)
     material_text_extractor.dart    Wählt den Extraktor anhand der Dateiendung
+    material_file_store.dart        Persistiert Original-PDF-Bytes (Datei/Base64,
+                                     Conditional Import für Web)
+    highlight_matcher.dart           Findet ein KI-Zitat in PDF-Textzeilen wieder
+    highlight_context.dart          Baut den "besonders wichtig"-Kontextblock aus
+                                     Markierungen + Notiz eines Materials
     ai_service.dart                 OpenRouter-Anbindung (BYOK), Chunking/Rolling
-                                     Context, Crosscheck-Pass, Frage-Chat + JSON-Reparatur
+                                     Context, Crosscheck-Pass, Frage-Chat + JSON-Reparatur,
+                                     Markier-Vorschläge (suggestHighlights)
     text_chunker.dart                Zerlegt lange Texte für ai_service.dart
     content_analyzer.dart            Kurzanalyse (Länge → Chunking-Empfehlung)
     chat_context_builder.dart        Baut den Material-Kontext für den Frage-Chat
@@ -244,13 +250,32 @@ bzw. Bundle-ID) – ohne das zeigt die App dort eine klare Fehlermeldung
 statt eines Absturzes. E-Mail/Passwort funktioniert überall ohne
 Zusatz-Setup.
 
-### 5. PDF-Textextraktion (Syncfusion)
+### 5. PDF-Textextraktion + -Ansicht (Syncfusion)
 
 `syncfusion_flutter_pdf` wird für die reine Textextraktion genutzt (kein
-UI-Widget). Für Privatpersonen/kleine Unternehmen ist die kostenlose
+UI-Widget), `syncfusion_flutter_pdfviewer` zusätzlich für die visuelle
+Folien-Ansicht + Markier-Funktion (`MaterialViewerScreen`, siehe unten). Für
+Privatpersonen/kleine Unternehmen ist die kostenlose
 [Syncfusion Community License](https://www.syncfusion.com/sales/communitylicense)
 ausreichend; für größere Organisationen ggf. Lizenz prüfen und
 `SyncfusionLicense.registerLicense(...)` beim App-Start ergänzen.
+
+### 5a. Folien markieren (rot/grün/gelb) + KI-Vorschläge
+
+Ein Tippen auf ein hochgeladenes PDF-Foliendokument (Materialien-Liste im
+Fach) öffnet `MaterialViewerScreen`: Text auswählen und mit rot (eignet
+sich als Prüfungsfrage), grün (Antwort/Schlüsselfakt) oder gelb (sonst
+relevant) markieren, dazu eine kurze Notiz. Der "KI-Vorschläge"-Button
+lässt das Fragenerstellen-Modell (`AiService.suggestHighlights`) selbst
+wichtige Stellen vorschlagen; sie werden per Text-Matching
+(`HighlightMatcher`) im PDF wiedergefunden und automatisch platziert – nicht
+auffindbare Zitate bleiben als reiner Kontext-Eintrag erhalten (erscheinen
+unten in der Liste, aber nicht sichtbar im Dokument). Alle Markierungen +
+die Notiz fließen als "vom Nutzer als besonders wichtig markiert"-Kontext
+in Vorbereiten/Nachbereiten/Chat mit ein (`HighlightContext`). Nur für
+PDF-Folien verfügbar (Original-Bytes werden dafür beim Upload zusätzlich
+gespeichert, siehe `MaterialFileStore`); andere Formate/Übungsaufgaben
+funktionieren weiterhin rein textbasiert.
 
 ### 6. Ausführen
 

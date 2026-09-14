@@ -13,6 +13,7 @@ import '../../repositories/settings_repository.dart';
 import '../../repositories/summary_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/content_analyzer.dart';
+import '../../services/highlight_context.dart';
 import '../../services/material_text_extractor.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/raw_response_dialog.dart';
@@ -50,6 +51,14 @@ class _PrepareScreenState extends State<PrepareScreen> {
       .join('\n\n');
 
   Future<void> _pickAndExtract() async {
+    // Wurde für dieses Fach bereits ein gleichnamiges Material hochgeladen
+    // und dort markiert (siehe MaterialViewerScreen), fließen dessen
+    // Markierungen + Notiz als zusätzlicher "besonders wichtig"-Kontext mit
+    // ein – auch wenn die Datei hier gerade frisch neu ausgewählt wurde. Vor
+    // dem ersten await gelesen, um BuildContext-Nutzung über einen
+    // Async-Gap hinweg zu vermeiden.
+    final existing = context.read<MaterialRepository>().forModule(widget.moduleId);
+
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: MaterialTextExtractor.supportedExtensions,
@@ -67,7 +76,16 @@ class _PrepareScreenState extends State<PrepareScreen> {
         final Uint8List bytes = await file.readAsBytes();
         final text = MaterialTextExtractor().extractText(file.name, bytes);
         if (text.isNotEmpty) {
-          newFiles.add(_PickedFile(fileName: file.name, text: text));
+          MaterialItem? match;
+          for (final m in existing) {
+            if (m.fileName == file.name) {
+              match = m;
+              break;
+            }
+          }
+          final highlightBlock = match != null ? HighlightContext.build(match) : '';
+          final combined = highlightBlock.isEmpty ? text : '$text\n\n$highlightBlock';
+          newFiles.add(_PickedFile(fileName: file.name, text: combined));
         }
       } catch (e) {
         setState(() => _error = '${file.name}: $e');

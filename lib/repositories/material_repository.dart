@@ -47,6 +47,28 @@ class MaterialRepository extends ChangeNotifier {
     await loadForModule(moduleId);
   }
 
+  /// Speichert die Markierungen + Notiz eines Materials (siehe
+  /// [MaterialViewerScreen]) sowie optional aktualisierte PDF-Bytes (nach
+  /// dem Einbetten der Annotationen ins Dokument selbst).
+  Future<void> saveHighlights(
+    String id,
+    String moduleId, {
+    required List<MaterialHighlight> highlights,
+    required String notes,
+    String? filePath,
+    String? fileBytesBase64,
+  }) async {
+    final db = await DatabaseService.instance.database;
+    final update = <String, dynamic>{
+      'highlights': highlights.map((h) => h.toMap()).toList(),
+      'notes': notes,
+    };
+    if (filePath != null) update['filePath'] = filePath;
+    if (fileBytesBase64 != null) update['fileBytesBase64'] = fileBytesBase64;
+    await DatabaseService.materials.record(id).update(db, update);
+    await loadForModule(moduleId);
+  }
+
   Future<List<MaterialItem>> byIds(List<String> ids) async {
     final db = await DatabaseService.instance.database;
     final result = <MaterialItem>[];

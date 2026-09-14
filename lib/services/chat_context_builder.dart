@@ -1,4 +1,5 @@
 import '../models/material_item.dart';
+import 'highlight_context.dart';
 
 /// Baut den Material-Kontext für den Frage-Chat: alle Materialien eines
 /// Fachs, chronologisch geordnet und mit Behandelt-Status markiert, begrenzt
@@ -91,6 +92,7 @@ class ChatContextBuilder {
         buffer
           ..writeln('--- [$status] ${m.fileName} ($kindLabel) ---')
           ..writeln(m.extractedText)
+          ..writeln(HighlightContext.build(m))
           ..writeln();
       } else if (stubIds.contains(m.id)) {
         final preview = m.extractedText.length > stubPreviewChars
@@ -99,6 +101,7 @@ class ChatContextBuilder {
         buffer
           ..writeln('--- [$status] ${m.fileName} ($kindLabel) – nur Anriss, nicht vollständig geladen ---')
           ..writeln(preview)
+          ..writeln(HighlightContext.build(m))
           ..writeln();
       }
       // sonst: Budget erschöpft, Material wird gar nicht erwähnt.

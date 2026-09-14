@@ -13,6 +13,7 @@ import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/content_analyzer.dart';
+import '../../services/highlight_context.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/question_parsing.dart';
 import '../widgets/analysis_recommendation_card.dart';
@@ -69,6 +70,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
       _exercisesFiles.map((f) => '=== Datei: ${f.fileName} ===\n${f.text}').join('\n\n');
 
   Future<void> _pick({required bool isSlides}) async {
+    // Wurde für dieses Fach bereits ein gleichnamiges Material hochgeladen
+    // und dort markiert (siehe MaterialViewerScreen), fließen dessen
+    // Markierungen + Notiz als zusätzlicher "besonders wichtig"-Kontext mit
+    // ein – auch wenn die Datei hier gerade frisch neu ausgewählt wurde. Vor
+    // dem ersten await gelesen, um BuildContext-Nutzung über einen
+    // Async-Gap hinweg zu vermeiden.
+    final existing = context.read<MaterialRepository>().forModule(widget.moduleId);
+
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: MaterialTextExtractor.supportedExtensions,
@@ -85,7 +94,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
         final bytes = await file.readAsBytes();
         final text = MaterialTextExtractor().extractText(file.name, bytes);
         if (text.isNotEmpty) {
-          target.add(_PickedFile(fileName: file.name, text: text));
+          MaterialItem? match;
+          for (final m in existing) {
+            if (m.fileName == file.name) {
+              match = m;
+              break;
+            }
+          }
+          final highlightBlock = match != null ? HighlightContext.build(match) : '';
+          final combined = highlightBlock.isEmpty ? text : '$text\n\n$highlightBlock';
+          target.add(_PickedFile(fileName: file.name, text: combined));
         }
       } catch (e) {
         setState(() => _error = '${file.name}: $e');

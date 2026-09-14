@@ -12,6 +12,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/summary_repository.dart';
+import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
@@ -21,6 +22,7 @@ import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
+import 'material_viewer_screen.dart';
 import 'module_form_screen.dart';
 
 class ModuleDetailScreen extends StatefulWidget {
@@ -301,6 +303,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                               onToggleCovered: (value) =>
                                   context.read<MaterialRepository>().setCovered(m.id, m.moduleId, value),
                               onDelete: () => _deleteMaterial(m),
+                              onOpen: m.hasViewablePdf ? () => _openMaterial(m) : null,
                             ),
                           )),
                   ],
@@ -348,13 +351,25 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           errors.add('${file.name}: kein Text gefunden.');
           continue;
         }
+        final id = const Uuid().v4();
+        // Original-PDF-Bytes zusätzlich speichern (nur für Folien im
+        // PDF-Format) – Grundlage für die visuelle Ansicht + Markier-
+        // Funktion in MaterialViewerScreen. Andere Formate/Übungsaufgaben
+        // funktionieren wie bisher rein textbasiert.
+        String? filePath;
+        String? fileBytesBase64;
+        if (kind == MaterialKind.slide && file.name.toLowerCase().endsWith('.pdf')) {
+          (filePath, fileBytesBase64) = await MaterialFileStore.store(id, bytes);
+        }
         await repo.save(MaterialItem(
-          id: const Uuid().v4(),
+          id: id,
           moduleId: widget.moduleId,
           fileName: file.name,
           kind: kind,
           extractedText: text,
           createdAt: DateTime.now(),
+          filePath: filePath,
+          fileBytesBase64: fileBytesBase64,
         ));
         if (!mounted) return;
       } catch (e) {
@@ -366,6 +381,12 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     }
   }
 
+  void _openMaterial(MaterialItem material) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => MaterialViewerScreen(material: material)),
+    );
+  }
+
   Future<void> _deleteMaterial(MaterialItem material) async {
     final ok = await confirmDelete(
       context,
@@ -373,6 +394,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
       message: '"${material.fileName}" wird endgültig gelöscht.',
     );
     if (ok && mounted) {
+      await MaterialFileStore.delete(filePath: material.filePath);
+      if (!mounted) return;
       await context.read<MaterialRepository>().delete(material.id, material.moduleId);
     }
   }
@@ -550,10 +573,11 @@ class _SoftRow extends StatelessWidget {
 }
 
 class _MaterialRow extends StatelessWidget {
-  const _MaterialRow({required this.material, required this.onToggleCovered, required this.onDelete});
+  const _MaterialRow({required this.material, required this.onToggleCovered, required this.onDelete, this.onOpen});
   final MaterialItem material;
   final ValueChanged<bool> onToggleCovered;
   final VoidCallback onDelete;
+  final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -564,56 +588,65 @@ class _MaterialRow extends StatelessWidget {
         border: Border.all(color: c.border),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(11)),
-              alignment: Alignment.center,
-              child: Icon(
-                material.kind == MaterialKind.slide ? Icons.slideshow_outlined : Icons.assignment_outlined,
-                size: 16,
-                color: c.inkMuted,
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(11)),
+                alignment: Alignment.center,
+                child: Icon(
+                  material.kind == MaterialKind.slide ? Icons.slideshow_outlined : Icons.assignment_outlined,
+                  size: 16,
+                  color: c.inkMuted,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      material.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      material.kind == MaterialKind.slide
+                          ? (material.highlights.isNotEmpty
+                              ? 'Folien · ${material.highlights.length} markiert'
+                              : 'Folien')
+                          : 'Übungsaufgabe',
+                      style: TextStyle(fontSize: 12, color: c.inkMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    material.fileName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                  Checkbox(
+                    value: material.covered,
+                    onChanged: (v) => onToggleCovered(v ?? false),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    material.kind == MaterialKind.slide ? 'Folien' : 'Übungsaufgabe',
-                    style: TextStyle(fontSize: 12, color: c.inkMuted),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    color: c.inkMuted,
+                    onPressed: onDelete,
                   ),
                 ],
               ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
-                Checkbox(
-                  value: material.covered,
-                  onChanged: (v) => onToggleCovered(v ?? false),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  color: c.inkMuted,
-                  onPressed: onDelete,
-                ),
-              ],
-            ),
-          ],
+              if (onOpen != null) Icon(Icons.chevron_right_rounded, size: 16, color: c.inkMuted),
+            ],
+          ),
         ),
       ),
     );
