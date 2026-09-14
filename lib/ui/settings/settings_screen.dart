@@ -9,7 +9,9 @@ import '../../repositories/settings_repository.dart';
 import '../../services/reminder_service.dart';
 import '../../services/sync_service.dart';
 import '../../theme/app_colors.dart';
+import '../../services/auth_service.dart';
 import '../auth/login_screen.dart';
+import '../widgets/add_password_dialog.dart';
 import 'model_picker_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -515,8 +517,35 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _AccountSection extends StatelessWidget {
+class _AccountSection extends StatefulWidget {
   const _AccountSection();
+
+  @override
+  State<_AccountSection> createState() => _AccountSectionState();
+}
+
+class _AccountSectionState extends State<_AccountSection> {
+  bool _linkingPassword = false;
+
+  Future<void> _addPassword(String email) async {
+    final password = await addPasswordDialog(context, email: email);
+    if (password == null || !mounted) return;
+    setState(() => _linkingPassword = true);
+    try {
+      await context.read<AuthRepository>().linkEmailPassword(email, password);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Passwort hinzugefügt – Anmeldung mit "$email" geht jetzt auch auf Windows/Desktop.'),
+        ));
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _linkingPassword = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -532,28 +561,51 @@ class _AccountSection extends StatelessWidget {
 
     if (auth.isSignedIn) {
       final user = auth.currentUser!;
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      final hasPassword = user.providerData.any((p) => p.providerId == 'password');
+      final canAddPassword = !hasPassword && user.email != null;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Angemeldet als', style: TextStyle(fontSize: 12, color: c.inkMuted)),
-                const SizedBox(height: 2),
-                Text(
-                  user.email ?? user.displayName ?? user.uid,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Angemeldet als', style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                    const SizedBox(height: 2),
+                    Text(
+                      user.email ?? user.displayName ?? user.uid,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-              ],
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton(
+                onPressed: () => context.read<AuthRepository>().signOut(),
+                child: const Text('Abmelden'),
+              ),
+            ],
+          ),
+          if (canAddPassword) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Google-Anmeldung funktioniert nicht auf Windows/Desktop (das Package '
+              'unterstützt das dort nicht). Passwort hinzufügen, um dich mit demselben '
+              'Konto auch dort anzumelden – gleicher Cloud-Sync.',
+              style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
             ),
-          ),
-          const SizedBox(width: 12),
-          OutlinedButton(
-            onPressed: () => context.read<AuthRepository>().signOut(),
-            child: const Text('Abmelden'),
-          ),
+            const SizedBox(height: 6),
+            OutlinedButton(
+              onPressed: _linkingPassword ? null : () => _addPassword(user.email!),
+              child: _linkingPassword
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Passwort hinzufügen'),
+            ),
+          ],
         ],
       );
     }

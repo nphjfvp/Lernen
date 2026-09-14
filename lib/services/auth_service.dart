@@ -29,6 +29,13 @@ class AuthException implements Exception {
 /// eine echte, in der Firebase-Console registrierte Android-/iOS-App
 /// (Package-Name + SHA-1 bzw. Bundle-ID) braucht – ohne das schlägt
 /// [signInWithGoogle] dort mit einer verständlichen Fehlermeldung fehl.
+///
+/// Auf Windows/Linux/macOS gibt es KEINE `google_sign_in`-Implementierung
+/// (nur google_sign_in_android/_ios/_web existieren) – dort schlägt
+/// [signInWithGoogle] IMMER fehl, unabhängig von jeder Konfiguration. Für
+/// Cloud-Sync auf solchen Plattformen: [linkEmailPassword] am
+/// Google-Konto ein Passwort hinterlegen und sich damit anmelden (siehe
+/// Settings → Account → "Passwort hinzufügen").
 class AuthService {
   /// Ob überhaupt ein Firebase-Projekt verbunden ist. Erst NACH diesem Check
   /// darf [FirebaseAuth.instance] angefasst werden – ohne registrierte App
@@ -112,7 +119,31 @@ class AuthService {
       // Auf Plattformen ohne google_sign_in-Implementierung (z.B. Windows)
       // wirft der Platform-Channel selbst statt eines GoogleSignInException –
       // ohne diesen Fang würde das als unbehandelte Exception durchschlagen.
-      throw AuthException('Google-Anmeldung ist auf dieser Plattform nicht eingerichtet ($e).');
+      throw AuthException(
+        'Google-Anmeldung wird auf dieser Plattform nicht unterstützt (z.B. Windows/Desktop). '
+        'Auf einem Gerät, auf dem Google-Anmeldung funktioniert, unter Einstellungen → Account '
+        'ein Passwort zum Konto hinzufügen und damit hier anmelden.',
+      );
+    }
+  }
+
+  /// Hängt ein E-Mail/Passwort-Login an das aktuell angemeldete Konto (egal
+  /// über welchen Provider es ursprünglich angelegt wurde). Der Hauptzweck:
+  /// wer sich z.B. auf Android per Google angemeldet hat, kann sich danach
+  /// mit demselben Passwort auf Windows/Desktop einloggen, wo die
+  /// Google-Anmeldung mangels google_sign_in-Windows-Unterstützung nicht
+  /// funktioniert – beide führen zur selben Firebase-UID, der Cloud-Sync
+  /// bleibt also derselbe.
+  Future<void> linkEmailPassword(String email, String password) async {
+    _requireAvailable();
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw AuthException('Nicht angemeldet.');
+    }
+    try {
+      await user.linkWithCredential(EmailAuthProvider.credential(email: email, password: password));
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_messageFor(e));
     }
   }
 
@@ -141,6 +172,11 @@ class AuthService {
         return 'Kein Konto mit diesen Zugangsdaten gefunden.';
       case 'wrong-password':
         return 'Falsches Passwort.';
+      case 'credential-already-in-use':
+      case 'provider-already-linked':
+        return 'Diese E-Mail ist bereits einem (anderen) Konto zugeordnet.';
+      case 'requires-recent-login':
+        return 'Aus Sicherheitsgründen bitte einmal ab- und wieder anmelden, dann erneut versuchen.';
       default:
         return e.message ?? 'Anmeldung fehlgeschlagen (${e.code}).';
     }

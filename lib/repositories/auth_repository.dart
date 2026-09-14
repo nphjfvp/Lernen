@@ -36,6 +36,9 @@ class AuthRepository extends ChangeNotifier {
 
   Future<void> signInWithGoogle() => _authService.signInWithGoogle();
 
+  Future<void> linkEmailPassword(String email, String password) =>
+      _authService.linkEmailPassword(email, password);
+
   Future<void> signOut() => _authService.signOut();
 
   @override
