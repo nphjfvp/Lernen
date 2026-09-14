@@ -1,0 +1,65 @@
+name: Windows App
+
+# Baut bei jedem Push eine native Windows-Desktop-App (kein Emulator nötig).
+# Landet an zwei Stellen, analog zu android-apk.yml:
+#  1. Als "windows-latest"-Release mit fester URL (softprops/action-gh-release
+#     aktualisiert bei jedem Lauf denselben Release/Tag statt neue anzulegen)
+#     - ein .zip mit der fertigen lernen.exe + allen nötigen DLLs/Assets.
+#  2. Zusätzlich als Workflow-Artifact am Actions-Run (30 Tage).
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.3"
+          channel: stable
+          cache: true
+
+      - name: Windows-Desktop-Unterstützung aktivieren
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release Windows-App
+        run: flutter build windows --release
+
+      - name: Build-Ordner ermitteln und als ZIP packen
+        shell: pwsh
+        run: |
+          $releaseDir = Get-ChildItem -Path build/windows -Recurse -Directory -Filter Release |
+            Where-Object { $_.FullName -match '\\runner\\Release$' } |
+            Select-Object -First 1
+          if (-not $releaseDir) {
+            throw "Release-Ordner (runner/Release) wurde nicht gefunden."
+          }
+          Compress-Archive -Path "$($releaseDir.FullName)\*" -DestinationPath lernen-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lernen-windows
+          path: lernen-windows.zip
+          retention-days: 30
+
+      - name: Aktuellen Stand als Release veröffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-latest
+          name: Windows-App (aktueller Stand)
+          body: |
+            Automatisch gebaut aus Commit ${{ github.sha }} auf ${{ github.ref_name }}.
+            ZIP entpacken und lernen.exe starten - keine Installation nötig.
+          prerelease: true
+          files: lernen-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
