@@ -8,19 +8,48 @@ engerem Fokus statt Feature-Fülle.
 
 - **Modul-Verwaltung** – Fächer-Ordner mit Klausurdatum, in denen Folien und
   Übungsaufgaben gesammelt werden.
-- **Vorbereiten-Modus** – Vorlesungsfolien als PDF, Word oder PowerPoint
-  hochladen → die KI erstellt eine strukturierte Zusammenfassung mit
-  hervorgehobenen Kernkonzepten. Zusammenfassungen lassen sich danach
-  jederzeit bearbeiten (Titel/Kernkonzepte/Text) oder löschen.
+- **Vorbereiten-Modus, zwei Varianten** – Vorlesungsfolien als PDF, Word oder
+  PowerPoint hochladen, dann Wahl zwischen: **Kurz** (die KI erstellt eine
+  strukturierte Zusammenfassung mit hervorgehobenen Kernkonzepten,
+  Zusammenfassungen lassen sich danach jederzeit bearbeiten oder löschen)
+  oder **Ausführlich** (die KI liest ALLE hochgeladenen Folien, markiert die
+  relevantesten Stellen wie bei der Folien-Markierung, siehe unten, UND
+  beantwortet direkt gestellte Rückfragen dazu, live gestützt auf genau
+  diesen Foliensatz – jede gestellte Frage wird beim Abschließen automatisch
+  als Merkpunkt an die gewählte Einheit angehängt, siehe
+  `lib/ui/prepare/prepare_screen.dart`).
 - **Nachbereiten-Modus** – Folien UND Übungsaufgaben gemeinsam hochladen →
   die KI erstellt Lernkonzepte und Karteikarten mit Fokus auf tiefem
   Verständnis der Übungen (nicht nur Theorie-Wiedergabe). Einzelne Konzepte
   und Karteikarten lassen sich im Modul-Detail bzw. in der Karteikarten-
-  Übersicht jederzeit bearbeiten oder löschen.
-- **Daily Quiz (Exam-Scheduler)** – tägliche Lernsession über alle Fächer
-  hinweg. FSRS-Spaced-Repetition für fällige Wiederholungen; die Menge neuer
-  Karten wird pro Fach dynamisch an Wissensstand und Klausarnähe angepasst
-  (siehe `lib/services/daily_scheduler_service.dart`).
+  Übersicht jederzeit bearbeiten oder löschen. Zusätzlich: **Speedrun** –
+  schneller Selbsteinschätzungs-Durchlauf durch alle Konzepte eines Fachs
+  (Titel zeigen, selbst einschätzen, Erklärung aufdecken); was man nicht
+  wusste, landet in einer wiederholbaren Vertiefen-Runde
+  (`lib/ui/speedrun/speedrun_screen.dart`, bewusst ohne FSRS-Effekt – ein
+  Verständnis-Check, keine spaced-repetition-wirksame Wiederholung).
+- **Einheiten** – Materialien/Konzepte/Karteikarten eines Fachs lassen sich
+  zu Vorlesungseinheiten gruppieren (z.B. "Einheit 3"); man kann ruhig den
+  ganzen Semesterstoff im Voraus hochladen, das Daily Quiz fragt aber nur
+  Karten aus Einheiten ab, die explizit als "behandelt" markiert wurden
+  (`lib/models/lecture_unit.dart`, echtes Zugriffs-Gate im Scheduler, anders
+  als die rein informative Behandelt-Markierung einzelner Materialien).
+  Jede Einheit trägt zusätzlich frei erweiterbare Textfelder (eigene
+  Zusammenfassung, Merksätze, offene Fragen) – direkt im Modul-Detail
+  anlegbar/editierbar.
+- **Daily Quiz (Exam-Scheduler) + freier Lernmodus** – tägliche Lernsession
+  über alle Fächer hinweg. FSRS-Spaced-Repetition für fällige
+  Wiederholungen; die Menge neuer Karten wird pro Fach dynamisch an
+  Wissensstand und Klausarnähe angepasst (siehe
+  `lib/services/daily_scheduler_service.dart`). Ergänzend dazu pro Fach ein
+  freier **Üben-Modus** (`lib/ui/practice/practice_screen.dart`): übt das
+  gesamte Kartenset unabhängig von Fälligkeit/Klausur-Pacing/Einheiten-
+  Status, optional gefiltert nach Ampel-Stufe (siehe unten) – jede Antwort
+  aktualisiert trotzdem den echten FSRS-Zustand.
+- **Wissensstand-Ampel** – jede Karte bekommt anhand ihrer geschätzten
+  FSRS-Behaltensrate eine Rot/Gelb/Grün-Einstufung (siehe
+  `lib/services/mastery_service.dart`), sichtbar in der Karteikarten-Liste,
+  im Modul-Detail (Aufschlüsselung) und in der Fortschritts-Übersicht.
 - **Fragetypen & adaptive Schwierigkeit** – die KI erzeugt beim Nachbereiten
   neben klassischen Karteikarten auch Single-Choice, Multiple-Choice,
   Freitext, Lückentext sowie Drag&Drop-Zuordnung/-Kategorisierung (Auswahl je

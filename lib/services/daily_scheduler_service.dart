@@ -97,9 +97,22 @@ class DailySchedulerService {
                   .reduce((a, b) => a + b) /
               reviewed.length;
 
-      final daysUntilExam = module.daysUntilExam;
+      // Bewusst relativ zu [todayDay] (dem ggf. für Tests injizierten `now`)
+      // statt module.daysUntilExam zu nutzen: dieses rechnet immer gegen die
+      // echte Systemzeit, was Tests mit simuliertem Datum unzuverlässig
+      // machen würde.
+      final examDate = module.examDate;
+      final daysUntilExam = examDate == null
+          ? null
+          : DateTime(examDate.year, examDate.month, examDate.day).difference(todayDay).inDays;
       int introductionWindowDays;
-      if (daysUntilExam == null) {
+      if (daysUntilExam == null || daysUntilExam < 0) {
+        // Kein Klausurdatum ODER die Klausur liegt bereits in der
+        // Vergangenheit (z.B. Testdatum, oder schlicht vergessen zu
+        // aktualisieren): ohne diesen Fallback würde `budget` unten für
+        // IMMER bei 0 einfrieren – die Klausurnähe-Logik ist nur für eine
+        // TATSÄCHLICH bevorstehende Klausur sinnvoll, nicht als dauerhafte
+        // Bremse nach ihr.
         introductionWindowDays = defaultPacingHorizonDays;
       } else if (daysUntilExam <= reviewBufferDays) {
         introductionWindowDays = 0; // reiner Wiederholungs-Endspurt

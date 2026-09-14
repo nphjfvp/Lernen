@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/app_settings.dart';
+import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
 import '../../models/summary.dart';
+import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/summary_repository.dart';
@@ -15,10 +17,13 @@ import '../../services/ai_service.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
 import '../../services/material_text_extractor.dart';
+import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/raw_response_dialog.dart';
 
-enum _Step { pick, extracting, ready, generating, preview }
+enum _Mode { kurz, ausfuehrlich }
+
+enum _Step { modeSelect, pick, extracting, ready, generating, preview, preparingSession, session }
 
 class _PickedFile {
   _PickedFile({required this.fileName, required this.text});
@@ -26,10 +31,17 @@ class _PickedFile {
   final String text;
 }
 
-/// Vorbereiten-Modus: PDF-Vorlesungsfolien hochladen (auch mehrere auf
-/// einmal) → KI erstellt daraus eine strukturierte Zusammenfassung mit
-/// hervorgehobenen Kernkonzepten für den schnellen Überblick vor der
-/// Sitzung.
+/// Vorbereiten-Modus, in zwei Varianten:
+///  - "Kurz": PDF-Vorlesungsfolien hochladen → KI erstellt daraus eine
+///    strukturierte Zusammenfassung mit hervorgehobenen Kernkonzepten für
+///    den schnellen Überblick (der ursprüngliche, unveränderte Ablauf).
+///  - "Ausführlich": die KI liest ALLE hochgeladenen Folien, markiert die
+///    relevantesten Stellen (siehe AiService.suggestHighlights, dieselbe
+///    Grundlage wie in MaterialViewerScreen) UND beantwortet direkte
+///    Rückfragen dazu (siehe AiService.answerQuestion) – jede gestellte
+///    Frage wird dabei als "hier hakte es" gewertet und automatisch als
+///    Merkpunkt an die gewählte Einheit angehängt (siehe LectureUnit.notes),
+///    damit man beim nächsten Mal genau dort ansetzen kann.
 class PrepareScreen extends StatefulWidget {
   const PrepareScreen({super.key, required this.moduleId});
 
@@ -40,15 +52,46 @@ class PrepareScreen extends StatefulWidget {
 }
 
 class _PrepareScreenState extends State<PrepareScreen> {
-  _Step _step = _Step.pick;
+  _Step _step = _Step.modeSelect;
+  _Mode? _mode;
   final List<_PickedFile> _files = [];
   Map<String, dynamic>? _result;
   String? _error;
   String? _rawResponse;
 
+  String _unitChoice = '';
+
+  // -- Ausführlich-Modus-Zustand -------------------------------------------
+  Map<String, List<MaterialHighlight>> _highlightsByFile = {};
+  String? _sessionError;
+  final List<({String question, String answer})> _qaTurns = [];
+  final _questionController = TextEditingController();
+  bool _asking = false;
+  String? _askError;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => context.read<LectureUnitRepository>().loadForModule(widget.moduleId));
+  }
+
+  @override
+  void dispose() {
+    _questionController.dispose();
+    super.dispose();
+  }
+
   String get _combinedText => _files
       .map((f) => '=== Datei: ${f.fileName} ===\n${f.text}')
       .join('\n\n');
+
+  void _chooseMode(_Mode mode) {
+    setState(() {
+      _mode = mode;
+      _step = _Step.pick;
+    });
+  }
 
   Future<void> _pickAndExtract() async {
     // Wurde für dieses Fach bereits ein gleichnamiges Material hochgeladen
@@ -115,6 +158,44 @@ class _PrepareScreenState extends State<PrepareScreen> {
     await repo.update(repo.settings.copyWith(chunkGranularity: granularity));
   }
 
+  Future<void> _handleUnitChanged(String? value) async {
+    if (value == null) return;
+    if (value != '_new') {
+      setState(() => _unitChoice = value);
+      return;
+    }
+    final title = await _promptNewUnitTitle();
+    if (title == null || !mounted) return;
+    final unit = LectureUnit(
+      id: const Uuid().v4(),
+      moduleId: widget.moduleId,
+      title: title,
+      createdAt: DateTime.now(),
+    );
+    await context.read<LectureUnitRepository>().save(unit);
+    if (!mounted) return;
+    setState(() => _unitChoice = unit.id);
+  }
+
+  Future<String?> _promptNewUnitTitle() async {
+    final existingCount = context.read<LectureUnitRepository>().forModule(widget.moduleId).length;
+    final controller = TextEditingController(text: 'Einheit ${existingCount + 1}');
+    final title = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Neue Einheit'),
+        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Titel')),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(controller.text.trim()), child: const Text('Anlegen')),
+        ],
+      ),
+    );
+    return (title == null || title.isEmpty) ? null : title;
+  }
+
+  // -- Kurz-Modus -----------------------------------------------------------
+
   Future<void> _generate() async {
     final settings = context.read<SettingsRepository>().settings;
     if (!settings.hasApiKey) {
@@ -159,6 +240,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
   Future<void> _save() async {
     final result = _result!;
     final now = DateTime.now();
+    final unitId = _unitChoice.isEmpty ? null : _unitChoice;
     final materials = _files
         .map((f) => MaterialItem(
               id: const Uuid().v4(),
@@ -167,6 +249,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
               kind: MaterialKind.slide,
               extractedText: f.text,
               createdAt: now,
+              unitId: unitId,
             ))
         .toList();
 
@@ -191,6 +274,132 @@ class _PrepareScreenState extends State<PrepareScreen> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  // -- Ausführlich-Modus ------------------------------------------------------
+
+  Future<void> _startSession() async {
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) {
+      setState(() => _error = 'Kein OpenRouter-API-Key hinterlegt. Bitte zuerst in den Einstellungen eintragen.');
+      return;
+    }
+
+    setState(() {
+      _step = _Step.preparingSession;
+      _error = null;
+    });
+
+    final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+    final highlightsByFile = <String, List<MaterialHighlight>>{};
+    final failed = <String>[];
+    for (final file in _files) {
+      try {
+        final suggestions = await ai.suggestHighlights(file.text);
+        highlightsByFile[file.fileName] = suggestions
+            .map((s) {
+              final text = (s['text'] ?? '').toString().trim();
+              return MaterialHighlight(
+                id: const Uuid().v4(),
+                text: text,
+                color: highlightColorFromString(s['color'] as String?),
+                source: HighlightSource.ai,
+                reason: (s['reason'] as String?)?.trim(),
+              );
+            })
+            .where((h) => h.text.isNotEmpty)
+            .toList();
+      } catch (_) {
+        failed.add(file.fileName);
+        highlightsByFile[file.fileName] = const [];
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _highlightsByFile = highlightsByFile;
+      _sessionError = failed.isEmpty ? null : 'KI-Markierung fehlgeschlagen für: ${failed.join(', ')}';
+      _step = _Step.session;
+    });
+  }
+
+  Future<void> _ask() async {
+    final question = _questionController.text.trim();
+    if (question.isEmpty) return;
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) {
+      setState(() => _askError = 'Kein OpenRouter-API-Key hinterlegt.');
+      return;
+    }
+
+    setState(() {
+      _asking = true;
+      _askError = null;
+    });
+    try {
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final history = _qaTurns
+          .expand((t) => [(isUser: true, content: t.question), (isUser: false, content: t.answer)])
+          .toList();
+      final answer = await ai.answerQuestion(question: question, materialsContext: _combinedText, history: history);
+      if (!mounted) return;
+      setState(() {
+        _qaTurns.add((question: question, answer: answer));
+        _questionController.clear();
+        _asking = false;
+      });
+    } on AiServiceException catch (e) {
+      setState(() {
+        _askError = e.message;
+        _asking = false;
+      });
+    } catch (e) {
+      setState(() {
+        _askError = 'Unerwarteter Fehler: $e';
+        _asking = false;
+      });
+    }
+  }
+
+  Future<void> _finishSession() async {
+    final now = DateTime.now();
+    final unitId = _unitChoice.isEmpty ? null : _unitChoice;
+    final materials = _files
+        .map((f) => MaterialItem(
+              id: const Uuid().v4(),
+              moduleId: widget.moduleId,
+              fileName: f.fileName,
+              kind: MaterialKind.slide,
+              extractedText: f.text,
+              createdAt: now,
+              unitId: unitId,
+              highlights: _highlightsByFile[f.fileName] ?? const [],
+            ))
+        .toList();
+
+    final materialRepo = context.read<MaterialRepository>();
+    for (final material in materials) {
+      await materialRepo.save(material);
+      if (!mounted) return;
+    }
+
+    if (_qaTurns.isNotEmpty) {
+      final noteText = _qaTurns.map((t) => 'F: ${t.question}\nA: ${t.answer}').join('\n\n');
+      if (unitId != null) {
+        final unitRepo = context.read<LectureUnitRepository>();
+        final unit = unitRepo.forModule(widget.moduleId).firstWhere((u) => u.id == unitId);
+        await unitRepo.setNotes(unit.id, unit.moduleId, [...unit.notes, noteText]);
+      } else if (materials.isNotEmpty) {
+        await materialRepo.saveHighlights(
+          materials.first.id,
+          widget.moduleId,
+          highlights: materials.first.highlights,
+          notes: noteText,
+        );
+      }
+      if (!mounted) return;
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -204,23 +413,34 @@ class _PrepareScreenState extends State<PrepareScreen> {
 
   Widget _buildBody() {
     switch (_step) {
+      case _Step.modeSelect:
+        return _ModeSelectView(onChoose: _chooseMode);
       case _Step.pick:
         return _PickView(
           error: _error,
           rawResponse: _rawResponse,
           onPick: _pickAndExtract,
+          onChangeMode: () => setState(() {
+            _step = _Step.modeSelect;
+            _mode = null;
+          }),
         );
       case _Step.extracting:
         return const _LoadingView(label: 'Text wird extrahiert …');
       case _Step.ready:
+        final units = context.watch<LectureUnitRepository>().forModule(widget.moduleId);
         return _ReadyView(
+          mode: _mode!,
           files: _files.map((f) => f.fileName).toList(),
           combinedText: _combinedText,
           error: _error,
           onAddMore: _pickAndExtract,
           onRemove: _removeFile,
           onApplyRecommendation: _applyRecommendation,
-          onGenerate: _generate,
+          onGenerate: _mode == _Mode.kurz ? _generate : _startSession,
+          units: units,
+          selectedUnitChoice: _unitChoice,
+          onUnitChanged: _handleUnitChanged,
         );
       case _Step.generating:
         return const _LoadingView(label: 'KI erstellt Zusammenfassung …');
@@ -231,14 +451,111 @@ class _PrepareScreenState extends State<PrepareScreen> {
             _result = null;
           });
         });
+      case _Step.preparingSession:
+        return const _LoadingView(label: 'KI liest die Folien und markiert relevante Stellen …');
+      case _Step.session:
+        return _SessionView(
+          highlightsByFile: _highlightsByFile,
+          sessionError: _sessionError,
+          qaTurns: _qaTurns,
+          questionController: _questionController,
+          asking: _asking,
+          askError: _askError,
+          onAsk: _ask,
+          onFinish: _finishSession,
+        );
     }
   }
 }
 
+class _ModeSelectView extends StatelessWidget {
+  const _ModeSelectView({required this.onChoose});
+  final void Function(_Mode mode) onChoose;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return ListView(
+      children: [
+        Text(
+          'Wie möchtest du vorbereiten?',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 16),
+        _ModeOption(
+          icon: Icons.bolt_outlined,
+          title: 'Kurz vorbereiten',
+          subtitle: 'Folien hochladen → KI erstellt eine strukturierte Zusammenfassung mit Kernkonzepten. Schnell, für den groben Überblick.',
+          onTap: () => onChoose(_Mode.kurz),
+        ),
+        const SizedBox(height: 12),
+        _ModeOption(
+          icon: Icons.travel_explore_outlined,
+          title: 'Ausführlich vorbereiten',
+          subtitle: 'Die KI liest ALLE Folien, markiert die relevantesten Stellen und beantwortet '
+              'direkt gestellte Rückfragen dazu. Deine Fragen werden automatisch als Merkpunkte '
+              'zur Einheit gespeichert – für spätere Vertiefung.',
+          onTap: () => onChoose(_Mode.ausfuehrlich),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Beide Modi legen die hochgeladenen Folien als Material im Fach ab.',
+          style: TextStyle(fontSize: 12, color: c.inkMuted),
+        ),
+      ],
+    );
+  }
+}
+
+class _ModeOption extends StatelessWidget {
+  const _ModeOption({required this.icon, required this.title, required this.subtitle, required this.onTap});
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: c.accent),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Text(subtitle, style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PickView extends StatelessWidget {
-  const _PickView({required this.onPick, this.error, this.rawResponse});
+  const _PickView({required this.onPick, required this.onChangeMode, this.error, this.rawResponse});
 
   final VoidCallback onPick;
+  final VoidCallback onChangeMode;
   final String? error;
   final String? rawResponse;
 
@@ -252,8 +569,7 @@ class _PickView extends StatelessWidget {
           const SizedBox(height: 16),
           const Text(
             'Lade Vorlesungsfolien als PDF, Word oder PowerPoint hoch (auch mehrere '
-            'auf einmal). Die KI erstellt daraus eine strukturierte Zusammenfassung '
-            'mit den wichtigsten Konzepten.',
+            'auf einmal).',
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
@@ -262,6 +578,8 @@ class _PickView extends StatelessWidget {
             icon: const Icon(Icons.upload_file_outlined),
             label: const Text('Dateien auswählen'),
           ),
+          const SizedBox(height: 8),
+          TextButton(onPressed: onChangeMode, child: const Text('Anderen Modus wählen')),
           if (error != null) ...[
             const SizedBox(height: 16),
             Text(error!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
@@ -289,7 +607,7 @@ class _LoadingView extends StatelessWidget {
         children: [
           const CircularProgressIndicator(),
           const SizedBox(height: 16),
-          Text(label),
+          Text(label, textAlign: TextAlign.center),
         ],
       ),
     );
@@ -298,21 +616,29 @@ class _LoadingView extends StatelessWidget {
 
 class _ReadyView extends StatelessWidget {
   const _ReadyView({
+    required this.mode,
     required this.files,
     required this.combinedText,
     required this.onAddMore,
     required this.onRemove,
     required this.onApplyRecommendation,
     required this.onGenerate,
+    required this.units,
+    required this.selectedUnitChoice,
+    required this.onUnitChanged,
     this.error,
   });
 
+  final _Mode mode;
   final List<String> files;
   final String combinedText;
   final VoidCallback onAddMore;
   final void Function(int index) onRemove;
   final void Function(ChunkGranularity granularity) onApplyRecommendation;
   final VoidCallback onGenerate;
+  final List<LectureUnit> units;
+  final String selectedUnitChoice;
+  final void Function(String? choice) onUnitChanged;
   final String? error;
 
   @override
@@ -342,6 +668,20 @@ class _ReadyView extends StatelessWidget {
           label: const Text('Weitere Datei hinzufügen'),
         ),
         const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          initialValue: selectedUnitChoice,
+          decoration: const InputDecoration(
+            labelText: 'Einheit',
+            helperText: 'Ordnet die hochgeladenen Folien einer Vorlesungseinheit zu.',
+          ),
+          items: [
+            const DropdownMenuItem(value: '', child: Text('Keine Einheit')),
+            ...units.map((u) => DropdownMenuItem(value: u.id, child: Text(u.title))),
+            const DropdownMenuItem(value: '_new', child: Text('+ Neue Einheit anlegen')),
+          ],
+          onChanged: onUnitChanged,
+        ),
+        const SizedBox(height: 16),
         AnalysisRecommendationCard(
           analysis: analysis,
           currentGranularity: settings.chunkGranularity,
@@ -350,8 +690,8 @@ class _ReadyView extends StatelessWidget {
         const SizedBox(height: 24),
         FilledButton.icon(
           onPressed: onGenerate,
-          icon: const Icon(Icons.auto_awesome_outlined),
-          label: const Text('Zusammenfassung erstellen'),
+          icon: Icon(mode == _Mode.kurz ? Icons.auto_awesome_outlined : Icons.travel_explore_outlined),
+          label: Text(mode == _Mode.kurz ? 'Zusammenfassung erstellen' : 'Ausführlich vorbereiten starten'),
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
@@ -409,6 +749,166 @@ class _PreviewView extends StatelessWidget {
             ),
           ],
         ),
+      ],
+    );
+  }
+}
+
+/// Interaktiver Teil des "Ausführlich"-Modus: zeigt die von der KI markierten
+/// relevantesten Stellen je Datei sowie einen Frage-Chat, der direkt auf den
+/// gerade hochgeladenen Folientext gestützt ist (nicht auf das gesamte
+/// Fach-Material wie ModuleChatScreen). Jede gestellte Frage wird beim
+/// Abschließen (siehe onFinish) automatisch als Merkpunkt gespeichert.
+class _SessionView extends StatelessWidget {
+  const _SessionView({
+    required this.highlightsByFile,
+    required this.qaTurns,
+    required this.questionController,
+    required this.asking,
+    required this.onAsk,
+    required this.onFinish,
+    this.sessionError,
+    this.askError,
+  });
+
+  final Map<String, List<MaterialHighlight>> highlightsByFile;
+  final String? sessionError;
+  final List<({String question, String answer})> qaTurns;
+  final TextEditingController questionController;
+  final bool asking;
+  final String? askError;
+  final VoidCallback onAsk;
+  final VoidCallback onFinish;
+
+  Color _dotColor(AppColors c, HighlightColor color) => switch (color) {
+        HighlightColor.red => c.danger,
+        HighlightColor.green => c.good,
+        HighlightColor.yellow => c.warn,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final totalHighlights = highlightsByFile.values.fold<int>(0, (sum, l) => sum + l.length);
+
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            children: [
+              if (sessionError != null) ...[
+                Text(sessionError!, style: TextStyle(color: c.danger, fontSize: 12.5)),
+                const SizedBox(height: 12),
+              ],
+              Text('Markierte Stellen ($totalHighlights)', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              if (totalHighlights == 0)
+                Text('Keine relevanten Stellen gefunden.', style: TextStyle(color: c.inkMuted))
+              else
+                ...highlightsByFile.entries.where((e) => e.value.isNotEmpty).map((entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: c.surface,
+                          border: Border.all(color: c.border),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Theme(
+                          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+                            title: Text(entry.key, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                            subtitle: Text('${entry.value.length} markiert', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                            children: entry.value
+                                .map((h) => Padding(
+                                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Container(
+                                              width: 9,
+                                              height: 9,
+                                              decoration: BoxDecoration(color: _dotColor(c, h.color), shape: BoxShape.circle),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(h.text, style: const TextStyle(fontSize: 12.5)),
+                                                if (h.reason != null && h.reason!.isNotEmpty)
+                                                  Text(h.reason!, style: TextStyle(fontSize: 11, color: c.inkMuted)),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ))
+                                .toList(),
+                          ),
+                        ),
+                      ),
+                    )),
+              const SizedBox(height: 20),
+              Text('Direkt nachfragen', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                'Deine Fragen werden automatisch als Merkpunkte zur gewählten Einheit gespeichert.',
+                style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+              ),
+              const SizedBox(height: 10),
+              ...qaTurns.map((t) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(t.question, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(t.answer, style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.4)),
+                      ],
+                    ),
+                  )),
+              if (asking)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+              if (askError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(askError!, style: TextStyle(color: c.danger, fontSize: 12.5)),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: questionController,
+                enabled: !asking,
+                decoration: InputDecoration(
+                  hintText: 'Frage zu den Folien …',
+                  filled: true,
+                  fillColor: c.surfaceAlt,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+                onSubmitted: (_) => asking ? null : onAsk(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              onPressed: asking ? null : onAsk,
+              icon: const Icon(Icons.send_rounded),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        FilledButton(onPressed: onFinish, child: const Text('Fertig & speichern')),
       ],
     );
   }

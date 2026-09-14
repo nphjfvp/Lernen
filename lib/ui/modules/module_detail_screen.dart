@@ -18,14 +18,18 @@ import '../../repositories/module_repository.dart';
 import '../../repositories/summary_repository.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
+import '../../services/mastery_service.dart';
 import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
 import '../flashcards/flashcard_list_screen.dart';
+import '../practice/practice_screen.dart';
 import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
+import '../speedrun/speedrun_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
+import '../widgets/mastery_dot.dart';
 import 'material_viewer_screen.dart';
 import 'module_form_screen.dart';
 
@@ -173,6 +177,28 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     ),
                     const SizedBox(height: 12),
                     _SoftRow(
+                      icon: Icons.style_outlined,
+                      title: 'Üben (Lernmodus)',
+                      subtitle: 'Frei üben, unabhängig von Fälligkeit/Klausur-Pacing – zählt trotzdem für die Planung',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PracticeScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _SoftRow(
+                      icon: Icons.bolt_outlined,
+                      title: 'Speedrun (Nachbereiten)',
+                      subtitle: 'Schneller Durchlauf durch alle Konzepte – Fehler werden danach vertieft',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => SpeedrunScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _SoftRow(
                       icon: Icons.forum_outlined,
                       title: 'Fragen stellen',
                       subtitle: 'Zu deinen hochgeladenen Materialien nachfragen – nur wenn du fragst',
@@ -279,6 +305,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 10),
+                      _AmpelRow(breakdown: MasteryService().breakdown(flashcards)),
+                      const SizedBox(height: 10),
                       OutlinedButton.icon(
                         onPressed: () => Navigator.of(context).push(
                           MaterialPageRoute(
@@ -309,6 +337,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                                   .read<LectureUnitRepository>()
                                   .setCovered(u.id, u.moduleId, value),
                               onDelete: () => _deleteUnit(u),
+                              onNotesChanged: (notes) =>
+                                  context.read<LectureUnitRepository>().setNotes(u.id, u.moduleId, notes),
                             ),
                           )),
                     OutlinedButton.icon(
@@ -875,21 +905,83 @@ class _MaterialRow extends StatelessWidget {
   }
 }
 
-class _UnitRow extends StatelessWidget {
+/// Zeigt eine Vorlesungseinheit samt Materialienzahl + "behandelt"-Toggle,
+/// aufklappbar für freie Textnotizen (siehe [LectureUnit.notes]) – z.B.
+/// eigene Zusammenfassung oder Merksätze direkt an der Einheit, statt nur in
+/// der (an eine einzelne Datei gebundenen) Material-Notiz.
+class _UnitRow extends StatefulWidget {
   const _UnitRow({
     required this.unit,
     required this.materialCount,
     required this.onToggleCovered,
     required this.onDelete,
+    required this.onNotesChanged,
   });
   final LectureUnit unit;
   final int materialCount;
   final ValueChanged<bool> onToggleCovered;
   final VoidCallback onDelete;
+  final ValueChanged<List<String>> onNotesChanged;
+
+  @override
+  State<_UnitRow> createState() => _UnitRowState();
+}
+
+class _UnitRowState extends State<_UnitRow> {
+  bool _expanded = false;
+
+  Future<void> _addNote() async {
+    final text = await _promptNoteText();
+    if (text == null || text.isEmpty) return;
+    widget.onNotesChanged([...widget.unit.notes, text]);
+  }
+
+  Future<void> _editNote(int index) async {
+    final text = await _promptNoteText(initial: widget.unit.notes[index]);
+    if (text == null) return;
+    final updated = List<String>.of(widget.unit.notes);
+    if (text.isEmpty) {
+      updated.removeAt(index);
+    } else {
+      updated[index] = text;
+    }
+    widget.onNotesChanged(updated);
+  }
+
+  Future<String?> _promptNoteText({String? initial}) {
+    final controller = TextEditingController(text: initial ?? '');
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(initial == null ? 'Textfeld hinzufügen' : 'Textfeld bearbeiten'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 6,
+          minLines: 3,
+          decoration: const InputDecoration(hintText: 'Freier Text zu dieser Einheit …'),
+        ),
+        actions: [
+          if (initial != null)
+            TextButton(onPressed: () => Navigator.of(ctx).pop(''), child: const Text('Löschen')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final unit = widget.unit;
+    final subtitleParts = [
+      '${widget.materialCount} Material${widget.materialCount == 1 ? '' : 'ien'}',
+      if (unit.notes.isNotEmpty) '${unit.notes.length} Textfeld${unit.notes.length == 1 ? '' : 'er'}',
+    ];
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surface,
@@ -898,41 +990,79 @@ class _UnitRow extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    unit.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '$materialCount Material${materialCount == 1 ? '' : 'ien'}',
-                    style: TextStyle(fontSize: 12, color: c.inkMuted),
-                  ),
-                ],
-              ),
-            ),
             Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
-                Checkbox(
-                  value: unit.covered,
-                  onChanged: (v) => onToggleCovered(v ?? false),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            unit.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(subtitleParts.join(' · '), style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  color: c.inkMuted,
-                  onPressed: onDelete,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                    Checkbox(
+                      value: unit.covered,
+                      onChanged: (v) => widget.onToggleCovered(v ?? false),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      color: c.inkMuted,
+                      onPressed: widget.onDelete,
+                    ),
+                    IconButton(
+                      icon: Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 20),
+                      color: c.inkMuted,
+                      onPressed: () => setState(() => _expanded = !_expanded),
+                    ),
+                  ],
                 ),
               ],
             ),
+            if (_expanded) ...[
+              Divider(height: 1, color: c.border),
+              const SizedBox(height: 10),
+              ...unit.notes.asMap().entries.map((e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                      onTap: () => _editNote(e.key),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(10)),
+                        child: Text(e.value, style: TextStyle(fontSize: 12.5, color: c.ink, height: 1.4)),
+                      ),
+                    ),
+                  )),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextButton.icon(
+                  onPressed: _addNote,
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Textfeld hinzufügen'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -952,6 +1082,38 @@ class _MaterialGroupLabel extends StatelessWidget {
         title.toUpperCase(),
         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.colors.inkMuted),
       ),
+    );
+  }
+}
+
+/// Ampel-Aufschlüsselung der Karten eines Fachs nach FSRS-Wissensstand
+/// (siehe MasteryService) – macht auf einen Blick sichtbar, wie viele Karten
+/// gerade schwach/mittel/gut sitzen, statt nur "neu"/"in Wiederholung".
+class _AmpelRow extends StatelessWidget {
+  const _AmpelRow({required this.breakdown});
+  final Map<MasteryLevel, int> breakdown;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final relevant = [MasteryLevel.red, MasteryLevel.yellow, MasteryLevel.green];
+    if (relevant.every((l) => (breakdown[l] ?? 0) == 0)) return const SizedBox.shrink();
+    return Row(
+      children: relevant
+          .map((level) => Padding(
+                padding: const EdgeInsets.only(right: 14),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MasteryDot(level: level),
+                    const SizedBox(width: 6),
+                    Text('${breakdown[level] ?? 0}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 4),
+                    Text(level.label, style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                  ],
+                ),
+              ))
+          .toList(),
     );
   }
 }

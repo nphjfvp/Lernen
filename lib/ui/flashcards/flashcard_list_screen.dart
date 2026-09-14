@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../services/mastery_service.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
+import '../widgets/mastery_dot.dart';
 
 /// Listet alle Karteikarten eines Fachs auf – zum gezielten Bearbeiten oder
 /// Löschen einzelner Karten, unabhängig vom Daily-Quiz-Wiederholungsflow
@@ -70,6 +72,7 @@ class _FlashcardTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final level = MasteryService().levelFor(card);
     final statusParts = [
       card.type.label,
       card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
@@ -85,6 +88,7 @@ class _FlashcardTile extends StatelessWidget {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          leading: MasteryDot(level: level),
           title: Text(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
           subtitle: Text(
             statusParts.join(' · '),

@@ -16,13 +16,31 @@ class LectureUnit {
   final bool covered;
   final DateTime createdAt;
 
+  /// Freie Textnotizen zu dieser Einheit (eigene Zusammenfassung,
+  /// Merksätze, offene Fragen, ...) – direkt in der Einheit selbst editierbar
+  /// (siehe ModuleDetailScreen), unabhängig von der einzelnen
+  /// Material-Notiz (siehe MaterialItem.notes, die an EINE Datei gebunden
+  /// ist statt an die ganze Einheit). Leere Liste = alte Einheiten vor
+  /// Einführung dieses Felds, oder einfach noch keine Notiz angelegt.
+  final List<String> notes;
+
   const LectureUnit({
     required this.id,
     required this.moduleId,
     required this.title,
     required this.createdAt,
     this.covered = false,
+    this.notes = const [],
   });
+
+  LectureUnit copyWith({List<String>? notes}) => LectureUnit(
+        id: id,
+        moduleId: moduleId,
+        title: title,
+        createdAt: createdAt,
+        covered: covered,
+        notes: notes ?? this.notes,
+      );
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -30,6 +48,7 @@ class LectureUnit {
         'title': title,
         'covered': covered,
         'createdAt': createdAt.toIso8601String(),
+        'notes': notes,
       };
 
   factory LectureUnit.fromMap(Map<String, dynamic> map) => LectureUnit(
@@ -38,5 +57,6 @@ class LectureUnit {
         title: map['title'] as String,
         covered: map['covered'] as bool? ?? false,
         createdAt: DateTime.parse(map['createdAt'] as String),
+        notes: (map['notes'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       );
 }

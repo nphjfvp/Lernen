@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../services/mastery_service.dart';
 import '../../services/stats_service.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/mastery_dot.dart';
 
 /// Fortschritts-Übersicht: Streak, Gesamtzahl Wiederholungen, durchschnitt-
 /// liche geschätzte Behaltensrate, und eine Aufschlüsselung pro Fach.
@@ -196,6 +198,26 @@ class _ModuleStatsRow extends StatelessWidget {
                 ),
               ],
             ),
+            if ([MasteryLevel.red, MasteryLevel.yellow, MasteryLevel.green]
+                .any((l) => (stats.masteryBreakdown[l] ?? 0) > 0)) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [MasteryLevel.red, MasteryLevel.yellow, MasteryLevel.green]
+                    .map((level) => Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              MasteryDot(level: level, size: 8),
+                              const SizedBox(width: 5),
+                              Text('${stats.masteryBreakdown[level] ?? 0}',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ],
           ],
         ),
       ),

@@ -1,6 +1,7 @@
 import '../models/flashcard.dart';
 import '../models/module.dart';
 import 'fsrs_service.dart';
+import 'mastery_service.dart';
 
 /// Fortschritts-Kennzahlen für ein einzelnes Fach.
 class ModuleStats {
@@ -10,6 +11,7 @@ class ModuleStats {
     required this.newCards,
     required this.reviewedCards,
     required this.averageRetrievability,
+    required this.masteryBreakdown,
   });
 
   final Module module;
@@ -21,6 +23,9 @@ class ModuleStats {
   /// bereits mindestens einmal wiederholten Karten dieses Fachs, oder null
   /// wenn noch keine Karte wiederholt wurde.
   final double? averageRetrievability;
+
+  /// Ampel-Aufschlüsselung (siehe MasteryService) der Karten dieses Fachs.
+  final Map<MasteryLevel, int> masteryBreakdown;
 }
 
 /// Fortschritts-Kennzahlen über alle Fächer hinweg.
@@ -43,9 +48,12 @@ class OverallStats {
 /// Daily Quiz aktualisiert bereits `Flashcard.lastReview`, das reicht als
 /// Grundlage für Streak/Retention, ohne einen zusätzlichen Datenspeicher.
 class StatsService {
-  StatsService({FsrsService? fsrs}) : _fsrs = fsrs ?? FsrsService();
+  StatsService({FsrsService? fsrs, MasteryService? mastery})
+      : _fsrs = fsrs ?? FsrsService(),
+        _mastery = mastery ?? MasteryService();
 
   final FsrsService _fsrs;
+  final MasteryService _mastery;
 
   OverallStats compute({
     required List<Module> modules,
@@ -77,6 +85,7 @@ class StatsService {
       newCards: cards.where((c) => c.reps == 0).length,
       reviewedCards: cards.where((c) => c.reps > 0).length,
       averageRetrievability: _averageRetrievability(cards, today),
+      masteryBreakdown: _mastery.breakdown(cards, now: today),
     );
   }
 

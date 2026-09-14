@@ -38,5 +38,27 @@ void main() {
       };
       expect(LectureUnit.fromMap(legacyMap).covered, isFalse);
     });
+
+    test('erhält notes', () {
+      final unit = LectureUnit(
+        id: '1',
+        moduleId: 'm1',
+        title: 'Einheit 1',
+        createdAt: DateTime(2026, 1, 1),
+        notes: const ['Merksatz 1', 'Merksatz 2'],
+      );
+      final restored = LectureUnit.fromMap(unit.toMap());
+      expect(restored.notes, ['Merksatz 1', 'Merksatz 2']);
+    });
+
+    test('ist abwärtskompatibel zu Datensätzen ohne notes-Feld', () {
+      final legacyMap = {
+        'id': '1',
+        'moduleId': 'm1',
+        'title': 'Einheit 1',
+        'createdAt': DateTime(2026, 1, 1).toIso8601String(),
+      };
+      expect(LectureUnit.fromMap(legacyMap).notes, isEmpty);
+    });
   });
 }

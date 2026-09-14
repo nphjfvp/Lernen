@@ -51,6 +51,19 @@ void main() {
     expect(plan.newCards.length, 2);
   });
 
+  test('Klausurdatum in der Vergangenheit bremst neue Karten nicht dauerhaft ein', () {
+    // Regression: ohne Fallback bliebe introductionWindowDays für ein
+    // abgelaufenes Klausurdatum für immer bei 0 -> das Daily Quiz würde nie
+    // wieder neue Karten dieses Moduls einplanen.
+    final module = _module('m1', examDate: now.subtract(const Duration(days: 30)));
+    final cards = List.generate(28, (i) => _newFlashcard('n$i', 'm1'));
+
+    final plan = scheduler.buildPlan(modules: [module], allCards: cards, now: now);
+
+    expect(plan.newCardBudgetByModule['m1'], 2);
+    expect(plan.newCards.length, 2);
+  });
+
   test('kurz vor der Klausur werden keine neuen Karten mehr eingeführt', () {
     final module = _module('m1', examDate: now.add(const Duration(days: 2)));
     final cards = List.generate(10, (i) => _newFlashcard('n$i', 'm1'));

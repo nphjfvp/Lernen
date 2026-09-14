@@ -47,6 +47,12 @@ class LectureUnitRepository extends ChangeNotifier {
     await loadForModule(moduleId);
   }
 
+  Future<void> setNotes(String id, String moduleId, List<String> notes) async {
+    final db = await DatabaseService.instance.database;
+    await DatabaseService.lectureUnits.record(id).update(db, {'notes': notes});
+    await loadForModule(moduleId);
+  }
+
   Future<void> delete(String id, String moduleId) async {
     final db = await DatabaseService.instance.database;
     await DatabaseService.lectureUnits.record(id).delete(db);
