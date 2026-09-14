@@ -1,14 +1,18 @@
 import 'dart:typed_data';
 
+import 'package:cross_file/cross_file.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/concept.dart';
+import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
 import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/summary_repository.dart';
@@ -35,6 +39,8 @@ class ModuleDetailScreen extends StatefulWidget {
 }
 
 class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
+  bool _isDragOver = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +55,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     await context.read<ConceptRepository>().loadForModule(widget.moduleId);
     if (!mounted) return;
     await context.read<FlashcardRepository>().loadForModule(widget.moduleId);
+    if (!mounted) return;
+    await context.read<LectureUnitRepository>().loadForModule(widget.moduleId);
   }
 
   @override
@@ -62,11 +70,10 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     final summaries = context.watch<SummaryRepository>().forModule(widget.moduleId);
     final concepts = context.watch<ConceptRepository>().forModule(widget.moduleId);
     final flashcards = context.watch<FlashcardRepository>().forModule(widget.moduleId);
+    final units = context.watch<LectureUnitRepository>().forModule(widget.moduleId);
     final days = module.daysUntilExam;
 
-    return Scaffold(
-      backgroundColor: c.bg,
-      body: SafeArea(
+    final content = SafeArea(
         child: Column(
           children: [
             Padding(
@@ -283,6 +290,33 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       ),
                     ],
                     const SizedBox(height: 20),
+                    _SectionHeader(title: 'Einheiten', count: units.length),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Fasst Material zu einer Vorlesungssitzung zusammen. Du kannst ruhig den '
+                      'ganzen Semesterstoff im Voraus hochladen – das Daily Quiz fragt trotzdem nur '
+                      'Karten aus Einheiten ab, die du hier als "behandelt" markiert hast.',
+                      style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                    ),
+                    const SizedBox(height: 10),
+                    if (units.isNotEmpty)
+                      ...units.map((u) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _UnitRow(
+                              unit: u,
+                              materialCount: materials.where((m) => m.unitId == u.id).length,
+                              onToggleCovered: (value) => context
+                                  .read<LectureUnitRepository>()
+                                  .setCovered(u.id, u.moduleId, value),
+                              onDelete: () => _deleteUnit(u),
+                            ),
+                          )),
+                    OutlinedButton.icon(
+                      onPressed: _createUnit,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Einheit anlegen'),
+                    ),
+                    const SizedBox(height: 20),
                     _SectionHeader(title: 'Materialien', count: materials.length),
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
@@ -295,45 +329,200 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       const _HintText(
                           'Noch keine Dateien hochgeladen. Du kannst hier auch schon den ganzen '
                           'Semesterinhalt ablegen und vorarbeiten – ohne dass dafür KI-Anfragen anfallen.')
-                    else
-                      ...materials.map((m) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _MaterialRow(
-                              material: m,
-                              onToggleCovered: (value) =>
-                                  context.read<MaterialRepository>().setCovered(m.id, m.moduleId, value),
-                              onDelete: () => _deleteMaterial(m),
-                              onOpen: m.hasViewablePdf ? () => _openMaterial(m) : null,
-                            ),
-                          )),
+                    else ...[
+                      for (final unit in units)
+                        if (materials.any((m) => m.unitId == unit.id)) ...[
+                          _MaterialGroupLabel(unit.title),
+                          ...materials.where((m) => m.unitId == unit.id).map(_materialRow),
+                          const SizedBox(height: 6),
+                        ],
+                      if (materials.any((m) => m.unitId == null)) ...[
+                        if (units.isNotEmpty) const _MaterialGroupLabel('Ohne Einheit'),
+                        ...materials.where((m) => m.unitId == null).map(_materialRow),
+                      ],
+                    ],
                   ],
                 ),
               ),
             ),
           ],
         ),
+    );
+    return Scaffold(
+      backgroundColor: c.bg,
+      body: DropTarget(
+        onDragEntered: (_) => setState(() => _isDragOver = true),
+        onDragExited: (_) => setState(() => _isDragOver = false),
+        onDragDone: (details) {
+          setState(() => _isDragOver = false);
+          _handleDroppedFiles(details.files);
+        },
+        child: Stack(
+          children: [
+            content,
+            if (_isDragOver)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    color: c.accent.withAlpha(35),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(border: Border.all(color: c.accent, width: 3)),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: c.accent),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.file_download_outlined, color: c.accent),
+                              const SizedBox(width: 8),
+                              Text('Hier ablegen zum Hochladen',
+                                  style: TextStyle(color: c.accent, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Future<void> _uploadMaterials() async {
-    final kind = await showDialog<MaterialKind>(
+  Widget _materialRow(MaterialItem m) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: _MaterialRow(
+          material: m,
+          onToggleCovered: (value) =>
+              context.read<MaterialRepository>().setCovered(m.id, m.moduleId, value),
+          onDelete: () => _deleteMaterial(m),
+          onOpen: m.hasViewablePdf ? () => _openMaterial(m) : null,
+        ),
+      );
+
+  /// Fragt einen Einheit-Titel ab (z.B. für "+ Neue Einheit anlegen" beim
+  /// Hochladen). Schlägt "Einheit N" als Vorgabe vor. Null bei Abbruch.
+  Future<String?> _promptUnitTitle() async {
+    final existingCount = context.read<LectureUnitRepository>().forModule(widget.moduleId).length;
+    final controller = TextEditingController(text: 'Einheit ${existingCount + 1}');
+    final title = await showDialog<String>(
       context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Was lädst du hoch?'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(ctx).pop(MaterialKind.slide),
-            child: const Text('Folien'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(ctx).pop(MaterialKind.exercise),
-            child: const Text('Übungsaufgaben'),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Neue Einheit'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Titel'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Anlegen'),
           ),
         ],
       ),
     );
+    return (title == null || title.isEmpty) ? null : title;
+  }
+
+  Future<void> _createUnit() async {
+    final title = await _promptUnitTitle();
+    if (title == null || !mounted) return;
+    await context.read<LectureUnitRepository>().save(LectureUnit(
+          id: const Uuid().v4(),
+          moduleId: widget.moduleId,
+          title: title,
+          createdAt: DateTime.now(),
+        ));
+  }
+
+  Future<void> _deleteUnit(LectureUnit unit) async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Einheit löschen?',
+      message: '"${unit.title}" wird gelöscht. Zugeordnete Materialien/Karteikarten bleiben '
+          'erhalten, verlieren aber die Zuordnung zu dieser Einheit (zählen dann wieder immer als '
+          'verfügbar).',
+    );
+    if (ok && mounted) {
+      await context.read<LectureUnitRepository>().delete(unit.id, unit.moduleId);
+    }
+  }
+
+  /// Fragt vor dem eigentlichen Hochladen ab, welcher Einheit die Datei(en)
+  /// zugeordnet werden sollen. Gibt `null` zurück, wenn der Dialog
+  /// abgebrochen wurde (Upload soll dann abbrechen); einen leeren String für
+  /// "Keine Einheit" (Upload läuft normal weiter, nur ohne Zuordnung); sonst
+  /// die (ggf. gerade neu angelegte) Einheit-ID.
+  Future<String?> _pickUnit() async {
+    final units = context.read<LectureUnitRepository>().forModule(widget.moduleId);
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Welcher Einheit zuordnen?'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop(''),
+            child: const Text('Keine Einheit'),
+          ),
+          for (final u in units)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(u.id),
+              child: Text(u.title),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop('_new'),
+            child: const Text('+ Neue Einheit anlegen'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || choice != '_new') return choice;
+
+    if (!mounted) return null;
+    final title = await _promptUnitTitle();
+    if (title == null || !mounted) return null;
+    final unit = LectureUnit(
+      id: const Uuid().v4(),
+      moduleId: widget.moduleId,
+      title: title,
+      createdAt: DateTime.now(),
+    );
+    await context.read<LectureUnitRepository>().save(unit);
+    return unit.id;
+  }
+
+  Future<MaterialKind?> _pickKind() => showDialog<MaterialKind>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('Was lädst du hoch?'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(MaterialKind.slide),
+              child: const Text('Folien'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(MaterialKind.exercise),
+              child: const Text('Übungsaufgaben'),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _uploadMaterials() async {
+    final kind = await _pickKind();
     if (kind == null || !mounted) return;
+
+    final unitChoice = await _pickUnit();
+    if (unitChoice == null || !mounted) return;
 
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -341,11 +530,43 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     );
     if (picked.isEmpty || !mounted) return;
 
+    await _processFiles(
+      kind: kind,
+      unitId: unitChoice.isEmpty ? null : unitChoice,
+      files: picked.map((f) => (name: f.name, readBytes: f.readAsBytes)).toList(),
+    );
+  }
+
+  /// Per Drag-and-Drop auf den Bildschirm gezogene Dateien (Windows/macOS/
+  /// Linux/Web – auf Mobile ohne Wirkung, da OS-Drag-and-Drop von
+  /// Dateien dort keine gängige Interaktion ist). Fragt dieselben Angaben
+  /// ab wie der normale Upload-Button (Kind + Einheit), dann derselbe
+  /// Verarbeitungsweg wie beim Datei-Picker.
+  Future<void> _handleDroppedFiles(List<XFile> files) async {
+    if (files.isEmpty || !mounted) return;
+    final kind = await _pickKind();
+    if (kind == null || !mounted) return;
+
+    final unitChoice = await _pickUnit();
+    if (unitChoice == null || !mounted) return;
+
+    await _processFiles(
+      kind: kind,
+      unitId: unitChoice.isEmpty ? null : unitChoice,
+      files: files.map((f) => (name: f.name, readBytes: f.readAsBytes)).toList(),
+    );
+  }
+
+  Future<void> _processFiles({
+    required MaterialKind kind,
+    required String? unitId,
+    required List<({String name, Future<Uint8List> Function() readBytes})> files,
+  }) async {
     final repo = context.read<MaterialRepository>();
     final errors = <String>[];
-    for (final file in picked) {
+    for (final file in files) {
       try {
-        final Uint8List bytes = await file.readAsBytes();
+        final Uint8List bytes = await file.readBytes();
         final text = MaterialTextExtractor().extractText(file.name, bytes);
         if (text.isEmpty) {
           errors.add('${file.name}: kein Text gefunden.');
@@ -370,6 +591,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           createdAt: DateTime.now(),
           filePath: filePath,
           fileBytesBase64: fileBytesBase64,
+          unitId: unitId,
         ));
         if (!mounted) return;
       } catch (e) {
@@ -648,6 +870,87 @@ class _MaterialRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _UnitRow extends StatelessWidget {
+  const _UnitRow({
+    required this.unit,
+    required this.materialCount,
+    required this.onToggleCovered,
+    required this.onDelete,
+  });
+  final LectureUnit unit;
+  final int materialCount;
+  final ValueChanged<bool> onToggleCovered;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    unit.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$materialCount Material${materialCount == 1 ? '' : 'ien'}',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted),
+                  ),
+                ],
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                Checkbox(
+                  value: unit.covered,
+                  onChanged: (v) => onToggleCovered(v ?? false),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  color: c.inkMuted,
+                  onPressed: onDelete,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MaterialGroupLabel extends StatelessWidget {
+  const _MaterialGroupLabel(this.title);
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 6, left: 2),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.colors.inkMuted),
       ),
     );
   }

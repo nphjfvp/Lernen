@@ -44,16 +44,34 @@ class DailySchedulerService {
   static const int maxNewCardsPerModulePerDay = 15;
   static const int maxSessionSize = 60;
 
+  /// [unitCoveredById] ordnet jede Vorlesungseinheit (LectureUnit.id) ihrem
+  /// "behandelt"-Status zu. Eine Karte mit gesetzter [Flashcard.unitId]
+  /// wird NUR eingeplant, wenn diese Einheit als behandelt markiert ist –
+  /// so kann man ruhig den ganzen Semesterstoff im Voraus hochladen, ohne
+  /// dass das Daily Quiz schon Karten aus zukünftigen Einheiten abfragt.
+  /// Karten ohne Einheit (`unitId == null`, z.B. älterer Stand vor
+  /// Einführung der Einheiten) bleiben wie bisher immer eingeplant. Fehlt
+  /// eine Einheit-ID in der Map (z.B. Dateninkonsistenz), wird die Karte im
+  /// Zweifel eingeplant statt sie stillschweigend zu verstecken.
   DailyPlan buildPlan({
     required List<Module> modules,
     required List<Flashcard> allCards,
+    Map<String, bool> unitCoveredById = const {},
     DateTime? now,
   }) {
     final today = now ?? DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
 
+    bool isEligible(Flashcard c) {
+      final unitId = c.unitId;
+      if (unitId == null) return true;
+      return unitCoveredById[unitId] ?? true;
+    }
+
+    final eligibleCards = allCards.where(isEligible).toList();
+
     final endOfToday = todayDay.add(const Duration(days: 1));
-    final dueCards = allCards
+    final dueCards = eligibleCards
         .where((c) => c.reps > 0 && c.due.isBefore(endOfToday))
         .toList()
       ..sort((a, b) => a.due.compareTo(b.due));
@@ -62,7 +80,7 @@ class DailySchedulerService {
     final newCards = <Flashcard>[];
 
     for (final module in modules) {
-      final moduleCards = allCards.where((c) => c.moduleId == module.id);
+      final moduleCards = eligibleCards.where((c) => c.moduleId == module.id);
       final notIntroduced =
           moduleCards.where((c) => c.reps == 0).toList()
             ..sort((a, b) => a.createdAt.compareTo(b.createdAt));

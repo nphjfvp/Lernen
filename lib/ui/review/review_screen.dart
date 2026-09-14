@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:cross_file/cross_file.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,9 +10,11 @@ import 'package:uuid/uuid.dart';
 import '../../models/app_settings.dart';
 import '../../models/concept.dart';
 import '../../models/flashcard.dart';
+import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
 import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
@@ -16,6 +22,7 @@ import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/question_parsing.dart';
+import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/raw_response_dialog.dart';
 
@@ -50,10 +57,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
   String? _rawResponse;
   bool _extracting = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => context.read<LectureUnitRepository>().loadForModule(widget.moduleId));
+  }
+
   bool _crosschecking = false;
   Map<String, dynamic>? _crosscheckResult;
   String? _crosscheckError;
   final Set<int> _appliedIssueIndices = {};
+
+  /// Welcher Einheit (siehe LectureUnit) die generierten Konzepte/
+  /// Karteikarten zugeordnet werden. Leerer String = keine Einheit.
+  String _unitChoice = '';
 
   /// Anzahl der Karteikarten, die die KI unvollständig geliefert hat (z.B.
   /// "options" bei einer Single-Choice-Frage vergessen) und die sich auch
@@ -70,28 +88,45 @@ class _ReviewScreenState extends State<ReviewScreen> {
       _exercisesFiles.map((f) => '=== Datei: ${f.fileName} ===\n${f.text}').join('\n\n');
 
   Future<void> _pick({required bool isSlides}) async {
-    // Wurde für dieses Fach bereits ein gleichnamiges Material hochgeladen
-    // und dort markiert (siehe MaterialViewerScreen), fließen dessen
-    // Markierungen + Notiz als zusätzlicher "besonders wichtig"-Kontext mit
-    // ein – auch wenn die Datei hier gerade frisch neu ausgewählt wurde. Vor
-    // dem ersten await gelesen, um BuildContext-Nutzung über einen
-    // Async-Gap hinweg zu vermeiden.
-    final existing = context.read<MaterialRepository>().forModule(widget.moduleId);
-
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: MaterialTextExtractor.supportedExtensions,
     );
-    if (picked.isEmpty) return;
+    if (picked.isEmpty || !mounted) return;
+    await _processFiles(
+      isSlides: isSlides,
+      files: picked.map((f) => (name: f.name, readBytes: f.readAsBytes)).toList(),
+    );
+  }
+
+  /// Per Drag-and-Drop auf die Folien-/Übungsaufgaben-Zone gezogene Dateien
+  /// (Windows/macOS/Linux/Web – auf Mobile ohne Wirkung).
+  Future<void> _handleDroppedFiles({required bool isSlides, required List<XFile> files}) async {
+    if (files.isEmpty || !mounted) return;
+    await _processFiles(
+      isSlides: isSlides,
+      files: files.map((f) => (name: f.name, readBytes: f.readAsBytes)).toList(),
+    );
+  }
+
+  Future<void> _processFiles({
+    required bool isSlides,
+    required List<({String name, Future<Uint8List> Function() readBytes})> files,
+  }) async {
+    // Wurde für dieses Fach bereits ein gleichnamiges Material hochgeladen
+    // und dort markiert (siehe MaterialViewerScreen), fließen dessen
+    // Markierungen + Notiz als zusätzlicher "besonders wichtig"-Kontext mit
+    // ein – auch wenn die Datei hier gerade frisch neu ausgewählt wurde.
+    final existing = context.read<MaterialRepository>().forModule(widget.moduleId);
 
     setState(() {
       _extracting = true;
       _error = null;
     });
     final target = isSlides ? _slidesFiles : _exercisesFiles;
-    for (final file in picked) {
+    for (final file in files) {
       try {
-        final bytes = await file.readAsBytes();
+        final bytes = await file.readBytes();
         final text = MaterialTextExtractor().extractText(file.name, bytes);
         if (text.isNotEmpty) {
           MaterialItem? match;
@@ -254,9 +289,59 @@ class _ReviewScreenState extends State<ReviewScreen> {
     }
   }
 
+  Future<void> _handleUnitChanged(String? value) async {
+    if (value == null) return;
+    if (value != '_new') {
+      setState(() => _unitChoice = value);
+      return;
+    }
+    final title = await _promptNewUnitTitle();
+    if (title == null || !mounted) return;
+    final unit = LectureUnit(
+      id: const Uuid().v4(),
+      moduleId: widget.moduleId,
+      title: title,
+      createdAt: DateTime.now(),
+      // Im Nachbereiten-Modus ist der Stoff per Definition schon dran
+      // gewesen (man arbeitet ja gerade genau diesen Abschnitt nach) –
+      // anders als beim reinen Vorab-Hochladen in ModuleDetailScreen, wo
+      // eine neue Einheit bewusst erst noch als "behandelt" markiert
+      // werden muss.
+      covered: true,
+    );
+    await context.read<LectureUnitRepository>().save(unit);
+    if (!mounted) return;
+    setState(() => _unitChoice = unit.id);
+  }
+
+  Future<String?> _promptNewUnitTitle() async {
+    final existingCount = context.read<LectureUnitRepository>().forModule(widget.moduleId).length;
+    final controller = TextEditingController(text: 'Einheit ${existingCount + 1}');
+    final title = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Neue Einheit'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Titel'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Anlegen'),
+          ),
+        ],
+      ),
+    );
+    return (title == null || title.isEmpty) ? null : title;
+  }
+
   Future<void> _save() async {
     final result = _result!;
     final now = DateTime.now();
+    final unitId = _unitChoice.isEmpty ? null : _unitChoice;
     // Nachbereiten setzt "behandelt" standardmäßig auf true: wer Folien UND
     // Übungen gemeinsam nachbereitet, hat das Thema damit i.d.R. bereits in
     // der Vorlesung gehabt (Übungen kommen meist erst danach). Lässt sich im
@@ -270,6 +355,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               extractedText: f.text,
               createdAt: now,
               covered: true,
+              unitId: unitId,
             ))
         .toList();
     final exercisesMaterials = _exercisesFiles
@@ -281,6 +367,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               extractedText: f.text,
               createdAt: now,
               covered: true,
+              unitId: unitId,
             ))
         .toList();
     final sourceIds = [
@@ -296,6 +383,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               explanation: (c['explanation'] ?? '').toString(),
               sourceMaterialIds: sourceIds,
               createdAt: now,
+              unitId: unitId,
             ))
         .toList();
 
@@ -311,6 +399,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         createdAt: now,
         due: now,
         type: type,
+        unitId: unitId,
         options: QuestionParsing.parseOptions(f['options']),
         correctText: f['correctText'] as String?,
         blanks: QuestionParsing.parseBlanks(f['blanks']),
@@ -345,6 +434,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     switch (_step) {
       case _Step.pick:
         final settings = context.watch<SettingsRepository>().settings;
+        final units = context.watch<LectureUnitRepository>().forModule(widget.moduleId);
         final analysis = _readyToGenerate
             ? ContentAnalyzer.analyze('$_slidesText\n\n$_exercisesText')
             : null;
@@ -356,12 +446,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
           rawResponse: _rawResponse,
           onPickSlides: () => _pick(isSlides: true),
           onPickExercises: () => _pick(isSlides: false),
+          onDropSlides: (files) => _handleDroppedFiles(isSlides: true, files: files),
+          onDropExercises: (files) => _handleDroppedFiles(isSlides: false, files: files),
           onRemoveSlide: (i) => _removeFile(isSlides: true, index: i),
           onRemoveExercise: (i) => _removeFile(isSlides: false, index: i),
           onGenerate: _readyToGenerate ? _generate : null,
           analysis: analysis,
           currentGranularity: settings.chunkGranularity,
           onApplyRecommendation: _applyRecommendation,
+          units: units,
+          selectedUnitChoice: _unitChoice,
+          onUnitChanged: _handleUnitChanged,
         );
       case _Step.generating:
         return const Center(
@@ -403,11 +498,16 @@ class _PickView extends StatelessWidget {
     required this.extracting,
     required this.onPickSlides,
     required this.onPickExercises,
+    required this.onDropSlides,
+    required this.onDropExercises,
     required this.onRemoveSlide,
     required this.onRemoveExercise,
     required this.onGenerate,
     required this.currentGranularity,
     required this.onApplyRecommendation,
+    required this.units,
+    required this.selectedUnitChoice,
+    required this.onUnitChanged,
     this.analysis,
     this.error,
     this.rawResponse,
@@ -418,11 +518,16 @@ class _PickView extends StatelessWidget {
   final bool extracting;
   final VoidCallback onPickSlides;
   final VoidCallback onPickExercises;
+  final void Function(List<XFile> files) onDropSlides;
+  final void Function(List<XFile> files) onDropExercises;
   final void Function(int index) onRemoveSlide;
   final void Function(int index) onRemoveExercise;
   final VoidCallback? onGenerate;
   final ChunkGranularity currentGranularity;
   final void Function(ChunkGranularity granularity) onApplyRecommendation;
+  final List<LectureUnit> units;
+  final String selectedUnitChoice;
+  final void Function(String? choice) onUnitChanged;
   final ContentAnalysis? analysis;
   final String? error;
   final String? rawResponse;
@@ -437,41 +542,75 @@ class _PickView extends StatelessWidget {
           'Fokus liegt darauf, WARUM die Übungen so gelöst werden, nicht nur '
           'auf Theorie.',
         ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          initialValue: selectedUnitChoice,
+          decoration: const InputDecoration(
+            labelText: 'Einheit',
+            helperText: 'Ordnet die generierten Konzepte/Karteikarten einer Vorlesungseinheit zu.',
+          ),
+          items: [
+            const DropdownMenuItem(value: '', child: Text('Keine Einheit')),
+            ...units.map((u) => DropdownMenuItem(value: u.id, child: Text(u.title))),
+            const DropdownMenuItem(value: '_new', child: Text('+ Neue Einheit anlegen')),
+          ],
+          onChanged: onUnitChanged,
+        ),
         const SizedBox(height: 24),
-        Text('Folien', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        ...slidesFiles.asMap().entries.map((e) => Card(
-              child: ListTile(
-                leading: const Icon(Icons.slideshow_outlined),
-                title: Text(e.value),
-                trailing: IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => onRemoveSlide(e.key),
-                ),
+        _DropZone(
+          onDrop: onDropSlides,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Folien', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              ...slidesFiles.asMap().entries.map((e) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.slideshow_outlined),
+                      title: Text(e.value),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => onRemoveSlide(e.key),
+                      ),
+                    ),
+                  )),
+              OutlinedButton.icon(
+                onPressed: extracting ? null : onPickSlides,
+                icon: const Icon(Icons.add),
+                label: Text(slidesFiles.isEmpty
+                    ? 'Folien auswählen oder hierher ziehen'
+                    : 'Weitere Folien hinzufügen'),
               ),
-            )),
-        OutlinedButton.icon(
-          onPressed: extracting ? null : onPickSlides,
-          icon: const Icon(Icons.add),
-          label: Text(slidesFiles.isEmpty ? 'Folien auswählen' : 'Weitere Folien hinzufügen'),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
-        Text('Übungsaufgaben', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        ...exercisesFiles.asMap().entries.map((e) => Card(
-              child: ListTile(
-                leading: const Icon(Icons.assignment_outlined),
-                title: Text(e.value),
-                trailing: IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => onRemoveExercise(e.key),
-                ),
+        _DropZone(
+          onDrop: onDropExercises,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Übungsaufgaben', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              ...exercisesFiles.asMap().entries.map((e) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.assignment_outlined),
+                      title: Text(e.value),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => onRemoveExercise(e.key),
+                      ),
+                    ),
+                  )),
+              OutlinedButton.icon(
+                onPressed: extracting ? null : onPickExercises,
+                icon: const Icon(Icons.add),
+                label: Text(exercisesFiles.isEmpty
+                    ? 'Übungsaufgaben auswählen oder hierher ziehen'
+                    : 'Weitere Übungen hinzufügen'),
               ),
-            )),
-        OutlinedButton.icon(
-          onPressed: extracting ? null : onPickExercises,
-          icon: const Icon(Icons.add),
-          label: Text(exercisesFiles.isEmpty ? 'Übungsaufgaben auswählen' : 'Weitere Übungen hinzufügen'),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
         if (extracting) const Center(child: CircularProgressIndicator()),
@@ -498,6 +637,46 @@ class _PickView extends StatelessWidget {
             ),
         ],
       ],
+    );
+  }
+}
+
+/// Rahmt [child] mit einer Drag-and-Drop-Zone (Windows/macOS/Linux/Web –
+/// auf Mobile ohne Wirkung, da OS-Drag-and-Drop von Dateien dort keine
+/// gängige Interaktion ist) und hebt sie farblich hervor, solange eine
+/// Datei darüber schwebt.
+class _DropZone extends StatefulWidget {
+  const _DropZone({required this.onDrop, required this.child});
+  final void Function(List<XFile> files) onDrop;
+  final Widget child;
+
+  @override
+  State<_DropZone> createState() => _DropZoneState();
+}
+
+class _DropZoneState extends State<_DropZone> {
+  bool _isDragOver = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _isDragOver = true),
+      onDragExited: (_) => setState(() => _isDragOver = false),
+      onDragDone: (details) {
+        setState(() => _isDragOver = false);
+        widget.onDrop(details.files);
+      },
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: _isDragOver ? Border.all(color: c.accent, width: 2) : null,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(_isDragOver ? 6 : 0),
+          child: widget.child,
+        ),
+      ),
     );
   }
 }

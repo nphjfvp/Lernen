@@ -6,6 +6,7 @@ Flashcard _base({
   List<QuestionType>? variantChain,
   int variantLevel = 0,
   int variantBox = 0,
+  String? unitId,
 }) {
   return Flashcard(
     id: 'f1',
@@ -18,6 +19,7 @@ Flashcard _base({
     variantChain: variantChain,
     variantLevel: variantLevel,
     variantBox: variantBox,
+    unitId: unitId,
   );
 }
 
@@ -107,6 +109,21 @@ void main() {
       expect(restored.variantChain, isNull);
       expect(restored.variantLevel, 0);
       expect(restored.variantBox, 0);
+      expect(restored.unitId, isNull);
+    });
+
+    test('erhält unitId', () {
+      final card = Flashcard(
+        id: '1',
+        moduleId: 'm1',
+        front: 'F',
+        back: 'B',
+        createdAt: DateTime(2026, 1, 1),
+        due: DateTime(2026, 1, 1),
+        unitId: 'u1',
+      );
+      final restored = Flashcard.fromMap(card.toMap());
+      expect(restored.unitId, 'u1');
     });
   });
 
@@ -204,6 +221,7 @@ void main() {
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
         variantLevel: 0,
         variantBox: 3,
+        unitId: 'u1',
       );
       final promoted = card.copyWithPromotedVariant(
         newType: QuestionType.fillBlank,
@@ -218,6 +236,8 @@ void main() {
       // FSRS-Zustand bleibt unangetastet.
       expect(promoted.id, card.id);
       expect(promoted.due, card.due);
+      // unitId bleibt bei allen copyWith*-Methoden erhalten.
+      expect(promoted.unitId, 'u1');
     });
   });
 }

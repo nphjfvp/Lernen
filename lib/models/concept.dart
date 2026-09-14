@@ -10,6 +10,11 @@ class Concept {
   final List<String> sourceMaterialIds;
   final DateTime createdAt;
 
+  /// Welcher Vorlesungseinheit (siehe LectureUnit) dieses Konzept
+  /// zugeordnet ist – übernommen von der beim Nachbereiten gewählten
+  /// Einheit. Null = keine Einheit gewählt.
+  final String? unitId;
+
   const Concept({
     required this.id,
     required this.moduleId,
@@ -17,6 +22,7 @@ class Concept {
     required this.explanation,
     required this.sourceMaterialIds,
     required this.createdAt,
+    this.unitId,
   });
 
   Map<String, dynamic> toMap() => {
@@ -26,6 +32,7 @@ class Concept {
         'explanation': explanation,
         'sourceMaterialIds': sourceMaterialIds,
         'createdAt': createdAt.toIso8601String(),
+        'unitId': unitId,
       };
 
   factory Concept.fromMap(Map<String, dynamic> map) => Concept(
@@ -35,5 +42,6 @@ class Concept {
         explanation: map['explanation'] as String,
         sourceMaterialIds: List<String>.from(map['sourceMaterialIds'] as List),
         createdAt: DateTime.parse(map['createdAt'] as String),
+        unitId: map['unitId'] as String?,
       );
 }

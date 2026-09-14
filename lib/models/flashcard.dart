@@ -103,6 +103,14 @@ class Flashcard {
   final String state; // new | learning | review | relearning
   final DateTime? lastReview;
 
+  /// Welcher Vorlesungseinheit (siehe LectureUnit) diese Karte zugeordnet
+  /// ist – übernommen vom Konzept/Material, aus dem sie generiert wurde.
+  /// Null = keine Einheit (ältere Karten, oder ohne Einheiten-Auswahl
+  /// generiert) – solche Karten bleiben immer verfügbar. Ist eine Einheit
+  /// gesetzt, aber (noch) nicht als "behandelt" markiert, lässt der
+  /// DailyScheduler die Karte aus (siehe DailySchedulerService.buildPlan).
+  final String? unitId;
+
   const Flashcard({
     required this.id,
     required this.moduleId,
@@ -127,6 +135,7 @@ class Flashcard {
     this.lapses = 0,
     this.state = 'new',
     this.lastReview,
+    this.unitId,
   });
 
   /// Kanonische Antwort-Darstellung, unabhängig vom Fragetyp - Grundlage,
@@ -180,6 +189,7 @@ class Flashcard {
       lapses: lapses,
       state: state,
       lastReview: lastReview,
+      unitId: unitId,
     );
   }
 
@@ -211,6 +221,7 @@ class Flashcard {
       lapses: lapses,
       state: state,
       lastReview: lastReview,
+      unitId: unitId,
     );
   }
 
@@ -251,6 +262,7 @@ class Flashcard {
       lapses: lapses,
       state: state,
       lastReview: lastReview,
+      unitId: unitId,
     );
     return (card: updated, nextType: canPromote ? chain[variantLevel + 1] : null);
   }
@@ -291,6 +303,7 @@ class Flashcard {
       lapses: lapses,
       state: state,
       lastReview: lastReview,
+      unitId: unitId,
     );
   }
 
@@ -322,6 +335,7 @@ class Flashcard {
         'lapses': lapses,
         'state': state,
         'lastReview': lastReview?.toIso8601String(),
+        'unitId': unitId,
       };
 
   factory Flashcard.fromMap(Map<String, dynamic> map) => Flashcard(
@@ -355,5 +369,6 @@ class Flashcard {
         lastReview: map['lastReview'] == null
             ? null
             : DateTime.parse(map['lastReview'] as String),
+        unitId: map['unitId'] as String?,
       );
 }

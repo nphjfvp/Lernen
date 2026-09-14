@@ -120,6 +120,13 @@ class MaterialItem {
   /// relevanter Kontext an die KI weitergegeben wird.
   final String notes;
 
+  /// Welcher Vorlesungseinheit (siehe LectureUnit) dieses Material
+  /// zugeordnet ist. Null = keine Einheit gewählt (z.B. ältere Uploads vor
+  /// Einführung der Einheiten) – solche Materialien/daraus generierte
+  /// Karteikarten bleiben immer verfügbar, unabhängig vom
+  /// Einheiten-"behandelt"-Status.
+  final String? unitId;
+
   const MaterialItem({
     required this.id,
     required this.moduleId,
@@ -133,6 +140,7 @@ class MaterialItem {
     this.fileBytesBase64,
     this.highlights = const [],
     this.notes = '',
+    this.unitId,
   });
 
   /// Ob dieses Material eine visuelle PDF-Ansicht mit Markier-Funktion
@@ -156,6 +164,7 @@ class MaterialItem {
         fileBytesBase64: fileBytesBase64,
         highlights: highlights ?? this.highlights,
         notes: notes ?? this.notes,
+        unitId: unitId,
       );
 
   Map<String, dynamic> toMap() => {
@@ -171,6 +180,7 @@ class MaterialItem {
         'fileBytesBase64': fileBytesBase64,
         'highlights': highlights.map((h) => h.toMap()).toList(),
         'notes': notes,
+        'unitId': unitId,
       };
 
   factory MaterialItem.fromMap(Map<String, dynamic> map) => MaterialItem(
@@ -189,5 +199,6 @@ class MaterialItem {
                 .toList() ??
             const [],
         notes: map['notes'] as String? ?? '',
+        unitId: map['unitId'] as String?,
       );
 }

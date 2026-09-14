@@ -29,6 +29,7 @@ class DatabaseService {
   static final materials = stringMapStoreFactory.store('materials');
   static final summaries = stringMapStoreFactory.store('summaries');
   static final concepts = stringMapStoreFactory.store('concepts');
+  static final lectureUnits = stringMapStoreFactory.store('lecture_units');
   static final flashcards = stringMapStoreFactory.store('flashcards');
   static final settings = stringMapStoreFactory.store('settings');
   static final modelCatalog = stringMapStoreFactory.store('model_catalog');

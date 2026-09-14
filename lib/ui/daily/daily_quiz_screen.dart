@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
@@ -39,9 +40,14 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> {
 
   Future<void> _loadPlan() async {
     final modules = context.read<ModuleRepository>().modules;
-    final allCards = await context.read<FlashcardRepository>().loadAll();
-    final plan = DailySchedulerService().buildPlan(modules: modules, allCards: allCards);
-    unawaited(HomeWidgetService().refresh(modules: modules, allCards: allCards));
+    final flashcardRepo = context.read<FlashcardRepository>();
+    final lectureUnitRepo = context.read<LectureUnitRepository>();
+    final allCards = await flashcardRepo.loadAll();
+    final unitCoveredById = await lectureUnitRepo.loadAllCoveredById();
+    final plan = DailySchedulerService()
+        .buildPlan(modules: modules, allCards: allCards, unitCoveredById: unitCoveredById);
+    unawaited(HomeWidgetService()
+        .refresh(modules: modules, allCards: allCards, unitCoveredById: unitCoveredById));
     if (!mounted) return;
     setState(() {
       _plan = plan;

@@ -42,8 +42,18 @@ class HomeWidgetService {
     return '📅 $weekday $time · ${next.module.name}';
   }
 
-  String buildReminderLine(List<Module> modules, List<Flashcard> allCards, {DateTime? now}) {
-    final plan = _schedulerService.buildPlan(modules: modules, allCards: allCards, now: now);
+  String buildReminderLine(
+    List<Module> modules,
+    List<Flashcard> allCards, {
+    Map<String, bool> unitCoveredById = const {},
+    DateTime? now,
+  }) {
+    final plan = _schedulerService.buildPlan(
+      modules: modules,
+      allCards: allCards,
+      unitCoveredById: unitCoveredById,
+      now: now,
+    );
     final count = plan.total;
     if (count == 0) return '🎉 Heute nichts fällig';
     return '🔔 $count Karte${count == 1 ? '' : 'n'} fällig heute';
@@ -65,10 +75,15 @@ class HomeWidgetService {
   /// DailyQuizScreen): auf Plattformen ohne den `home_widget`-Platform-
   /// Channel (iOS/Web/Tests) oder ohne installiertes Widget soll das nie die
   /// eigentliche App-Funktion stören.
-  Future<void> refresh({required List<Module> modules, required List<Flashcard> allCards}) async {
+  Future<void> refresh({
+    required List<Module> modules,
+    required List<Flashcard> allCards,
+    Map<String, bool> unitCoveredById = const {},
+  }) async {
     try {
       await HomeWidget.saveWidgetData<String>(keyLecture, buildLectureLine(modules));
-      await HomeWidget.saveWidgetData<String>(keyReminder, buildReminderLine(modules, allCards));
+      await HomeWidget.saveWidgetData<String>(
+          keyReminder, buildReminderLine(modules, allCards, unitCoveredById: unitCoveredById));
       await HomeWidget.saveWidgetData<String>(keyCountdown, buildCountdownLine(modules));
       await HomeWidget.updateWidget(androidName: androidProviderName);
     } catch (_) {

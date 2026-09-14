@@ -12,16 +12,17 @@ Module _module(String id, {DateTime? examDate}) => Module(
       createdAt: DateTime(2026, 1, 1),
     );
 
-Flashcard _newFlashcard(String id, String moduleId, {DateTime? createdAt}) => Flashcard(
+Flashcard _newFlashcard(String id, String moduleId, {DateTime? createdAt, String? unitId}) => Flashcard(
       id: id,
       moduleId: moduleId,
       front: 'F$id',
       back: 'B$id',
       createdAt: createdAt ?? DateTime(2026, 1, 1),
       due: DateTime(2026, 1, 1),
+      unitId: unitId,
     );
 
-Flashcard _dueFlashcard(String id, String moduleId, DateTime due) => Flashcard(
+Flashcard _dueFlashcard(String id, String moduleId, DateTime due, {String? unitId}) => Flashcard(
       id: id,
       moduleId: moduleId,
       front: 'F$id',
@@ -31,6 +32,7 @@ Flashcard _dueFlashcard(String id, String moduleId, DateTime due) => Flashcard(
       reps: 3,
       stability: 5,
       lastReview: due.subtract(const Duration(days: 5)),
+      unitId: unitId,
     );
 
 void main() {
@@ -132,5 +134,79 @@ void main() {
     // Bei schlechtem Wissensstand (niedrige Retrievability) wird das Tempo
     // auf 50%-100% gebremst -> spürbar weniger neue Karten als die Baseline.
     expect(weakPlan.newCardBudgetByModule['m2'], lessThan(3));
+  });
+
+  group('unitCoveredById – Einheiten-Gate', () {
+    test('Karten ohne unitId bleiben immer eingeplant, unabhängig von unitCoveredById', () {
+      final module = _module('m1');
+      final due = _dueFlashcard('d1', 'm1', now.subtract(const Duration(days: 1)));
+
+      final plan = scheduler.buildPlan(
+        modules: [module],
+        allCards: [due],
+        unitCoveredById: const {'irgendeine-andere-einheit': false},
+        now: now,
+      );
+
+      expect(plan.dueCards.map((c) => c.id), contains('d1'));
+    });
+
+    test('fällige Karte einer NICHT behandelten Einheit wird nicht eingeplant', () {
+      final module = _module('m1');
+      final due = _dueFlashcard('d1', 'm1', now.subtract(const Duration(days: 1)), unitId: 'u1');
+
+      final plan = scheduler.buildPlan(
+        modules: [module],
+        allCards: [due],
+        unitCoveredById: const {'u1': false},
+        now: now,
+      );
+
+      expect(plan.dueCards, isEmpty);
+    });
+
+    test('fällige Karte einer behandelten Einheit wird eingeplant', () {
+      final module = _module('m1');
+      final due = _dueFlashcard('d1', 'm1', now.subtract(const Duration(days: 1)), unitId: 'u1');
+
+      final plan = scheduler.buildPlan(
+        modules: [module],
+        allCards: [due],
+        unitCoveredById: const {'u1': true},
+        now: now,
+      );
+
+      expect(plan.dueCards.map((c) => c.id), contains('d1'));
+    });
+
+    test('neue Karten aus nicht behandelter Einheit zählen nicht ins Budget/die Auswahl', () {
+      final module = _module('m1');
+      final coveredCards = List.generate(5, (i) => _newFlashcard('c$i', 'm1', unitId: 'u1'));
+      final uncoveredCards = List.generate(20, (i) => _newFlashcard('n$i', 'm1', unitId: 'u2'));
+
+      final plan = scheduler.buildPlan(
+        modules: [module],
+        allCards: [...coveredCards, ...uncoveredCards],
+        unitCoveredById: const {'u1': true, 'u2': false},
+        now: now,
+      );
+
+      expect(plan.newCards.every((c) => c.unitId != 'u2'), isTrue);
+      // 5 Karten / 14 Tage Standard-Horizont => ceil(5/14) = 1.
+      expect(plan.newCardBudgetByModule['m1'], 1);
+    });
+
+    test('fehlt eine Einheit-ID in der Map, bleibt die Karte im Zweifel eingeplant', () {
+      final module = _module('m1');
+      final due = _dueFlashcard('d1', 'm1', now.subtract(const Duration(days: 1)), unitId: 'u-unbekannt');
+
+      final plan = scheduler.buildPlan(
+        modules: [module],
+        allCards: [due],
+        now: now,
+      );
+
+      expect(plan.dueCards.map((c) => c.id), contains('d1'));
+    });
   });
 }
