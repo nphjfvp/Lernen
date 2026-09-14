@@ -8,17 +8,34 @@ import '../../repositories/module_repository.dart';
 import '../../services/home_widget_service.dart';
 
 const _kModuleColors = [
-  0xFF3D5AFE,
-  0xFFE53935,
-  0xFF43A047,
-  0xFFFB8C00,
-  0xFF8E24AA,
-  0xFF00897B,
-  0xFFFDD835,
-  0xFF6D4C41,
+  0xFF3D5AFE, // Indigo
+  0xFF2196F3, // Blau
+  0xFF00BCD4, // Cyan
+  0xFF00897B, // Türkis
+  0xFF43A047, // Grün
+  0xFF8BC34A, // Hellgrün
+  0xFFFDD835, // Gelb
+  0xFFFFB300, // Amber
+  0xFFFB8C00, // Orange
+  0xFFFF5722, // Orangerot
+  0xFFE53935, // Rot
+  0xFFEC407A, // Pink
+  0xFF8E24AA, // Lila
+  0xFF5E35B1, // Dunkellila
+  0xFF6D4C41, // Braun
+  0xFF546E7A, // Blaugrau
 ];
 
-const _kModuleIcons = ['📘', '📐', '🧪', '💻', '⚖️', '🧠', '📊', '🌍'];
+const _kModuleIcons = [
+  '📘', '📗', '📙', '📕',
+  '📐', '📏', '🧮', '🔢',
+  '🧪', '🔬', '⚗️', '🧬',
+  '💻', '🖥️', '⚙️', '🔧',
+  '⚖️', '🏛️', '🧠', '💊',
+  '🩺', '📊', '📈', '💰',
+  '🌍', '🗺️', '🎨', '🎵',
+  '🎭', '🗣️', '📖', '🔭',
+];
 
 const _kWeekdayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 
@@ -68,11 +85,22 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
   }
 
   Future<void> _addLectureSlot() async {
-    final time = await showTimePicker(
+    final startTime = await showTimePicker(
       context: context,
       initialTime: const TimeOfDay(hour: 10, minute: 0),
+      helpText: 'Startzeit',
     );
-    if (time == null || !mounted) return;
+    if (startTime == null || !mounted) return;
+
+    // Vorschlag für die Endzeit: übliche 90-Minuten-Vorlesung.
+    final suggestedEndMinutes = (startTime.hour * 60 + startTime.minute + 90) % (24 * 60);
+    final endTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: suggestedEndMinutes ~/ 60, minute: suggestedEndMinutes % 60),
+      helpText: 'Endzeit',
+    );
+    if (endTime == null || !mounted) return;
+
     int weekday = DateTime.monday;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -99,7 +127,13 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
     );
     if (confirmed != true) return;
     setState(() {
-      _lectureSlots.add(LectureSlot(weekday: weekday, hour: time.hour, minute: time.minute));
+      _lectureSlots.add(LectureSlot(
+        weekday: weekday,
+        hour: startTime.hour,
+        minute: startTime.minute,
+        endHour: endTime.hour,
+        endMinute: endTime.minute,
+      ));
     });
   }
 
@@ -218,8 +252,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
               leading: const Icon(Icons.event_repeat),
               title: Text(
                 '${_kWeekdayLabels[_lectureSlots[i].weekday - 1]} '
-                '${_lectureSlots[i].hour.toString().padLeft(2, '0')}:'
-                '${_lectureSlots[i].minute.toString().padLeft(2, '0')} Uhr',
+                '${_lectureSlots[i].timeLabel} Uhr',
               ),
               trailing: IconButton(
                 icon: const Icon(Icons.clear),

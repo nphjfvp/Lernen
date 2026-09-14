@@ -1,29 +1,62 @@
 import 'package:flutter/material.dart';
 
 /// Ein wöchentlich wiederkehrender Vorlesungstermin (Wochentag + Uhrzeit).
+/// Endzeit ist optional/nullable – ältere, vor der Endzeit-Unterstützung
+/// gespeicherte Termine haben keine und zeigen dann nur die Startzeit.
 class LectureSlot {
   final int weekday; // 1 = Montag ... 7 = Sonntag (DateTime.monday..sunday)
   final int hour;
   final int minute;
+  final int? endHour;
+  final int? endMinute;
 
-  const LectureSlot({required this.weekday, required this.hour, required this.minute});
+  const LectureSlot({
+    required this.weekday,
+    required this.hour,
+    required this.minute,
+    this.endHour,
+    this.endMinute,
+  });
 
-  /// Nächstes Vorkommen dieses Termins ab [from] (inklusive, falls die Uhrzeit
-  /// an diesem Tag noch nicht vorbei ist).
-  DateTime nextOccurrenceFrom(DateTime from) {
-    var candidate = DateTime(from.year, from.month, from.day, hour, minute);
-    final daysUntilWeekday = (weekday - from.weekday) % 7;
-    candidate = candidate.add(Duration(days: daysUntilWeekday));
-    if (candidate.isBefore(from)) candidate = candidate.add(const Duration(days: 7));
-    return candidate;
+  bool get hasEndTime => endHour != null && endMinute != null;
+
+  /// "10:00" oder, mit hinterlegter Endzeit, "10:00–11:30".
+  String get timeLabel {
+    final start = '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+    if (!hasEndTime) return start;
+    final end = '${endHour!.toString().padLeft(2, '0')}:${endMinute!.toString().padLeft(2, '0')}';
+    return '$start–$end';
   }
 
-  Map<String, dynamic> toMap() => {'weekday': weekday, 'hour': hour, 'minute': minute};
+  /// Nächstes Vorkommen dieses Termins ab [from] (inklusive, falls der
+  /// Termin an diesem Tag noch nicht vorbei ist – mit Endzeit zählt dafür
+  /// das Ende, ohne die Startzeit, damit eine gerade laufende Vorlesung
+  /// nicht schon als "nächste Woche" angezeigt wird).
+  DateTime nextOccurrenceFrom(DateTime from) {
+    var candidateStart = DateTime(from.year, from.month, from.day, hour, minute);
+    final daysUntilWeekday = (weekday - from.weekday) % 7;
+    candidateStart = candidateStart.add(Duration(days: daysUntilWeekday));
+    final candidateEnd = hasEndTime
+        ? DateTime(candidateStart.year, candidateStart.month, candidateStart.day, endHour!, endMinute!)
+        : candidateStart;
+    if (candidateEnd.isBefore(from)) candidateStart = candidateStart.add(const Duration(days: 7));
+    return candidateStart;
+  }
+
+  Map<String, dynamic> toMap() => {
+        'weekday': weekday,
+        'hour': hour,
+        'minute': minute,
+        'endHour': endHour,
+        'endMinute': endMinute,
+      };
 
   factory LectureSlot.fromMap(Map<String, dynamic> map) => LectureSlot(
         weekday: map['weekday'] as int,
         hour: map['hour'] as int,
         minute: map['minute'] as int,
+        endHour: map['endHour'] as int?,
+        endMinute: map['endMinute'] as int?,
       );
 }
 

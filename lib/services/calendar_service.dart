@@ -4,13 +4,15 @@ enum CalendarEventType { lecture, exam }
 
 /// Ein einzelnes Kalender-Ereignis: entweder ein Vorlesungstermin
 /// (wöchentlich wiederkehrend, aus [Module.lectureSlots] expandiert) oder
-/// ein Klausurtermin ([Module.examDate]).
+/// ein Klausurtermin ([Module.examDate]). [endDateTime] ist nur bei
+/// Vorlesungen mit hinterlegter Endzeit gesetzt.
 class CalendarEvent {
   final CalendarEventType type;
   final Module module;
   final DateTime dateTime;
+  final DateTime? endDateTime;
 
-  const CalendarEvent({required this.type, required this.module, required this.dateTime});
+  const CalendarEvent({required this.type, required this.module, required this.dateTime, this.endDateTime});
 }
 
 /// Reine Logik (keine UI/Persistenz): expandiert die wöchentlichen
@@ -18,6 +20,11 @@ class CalendarEvent {
 /// Ereignisliste, wiederverwendbar für Kalender-Ansicht, Startbildschirm-
 /// Widget und spätere Erinnerungen.
 class CalendarService {
+  DateTime? _endFor(LectureSlot slot, DateTime occurrence) {
+    if (!slot.hasEndTime) return null;
+    return DateTime(occurrence.year, occurrence.month, occurrence.day, slot.endHour!, slot.endMinute!);
+  }
+
   /// Alle Ereignisse im Intervall `[start, end)`, chronologisch sortiert.
   List<CalendarEvent> eventsInRange({
     required List<Module> modules,
@@ -35,7 +42,12 @@ class CalendarService {
         for (final slot in slots) {
           var occurrence = slot.nextOccurrenceFrom(start);
           while (occurrence.isBefore(end)) {
-            events.add(CalendarEvent(type: CalendarEventType.lecture, module: module, dateTime: occurrence));
+            events.add(CalendarEvent(
+              type: CalendarEventType.lecture,
+              module: module,
+              dateTime: occurrence,
+              endDateTime: _endFor(slot, occurrence),
+            ));
             occurrence = occurrence.add(const Duration(days: 7));
           }
         }
@@ -51,9 +63,18 @@ class CalendarService {
     final start = from ?? DateTime.now();
     CalendarEvent? best;
     for (final module in modules) {
-      final next = module.nextLectureFrom(start);
-      if (next != null && (best == null || next.isBefore(best.dateTime))) {
-        best = CalendarEvent(type: CalendarEventType.lecture, module: module, dateTime: next);
+      final slots = module.lectureSlots;
+      if (slots == null) continue;
+      for (final slot in slots) {
+        final occurrence = slot.nextOccurrenceFrom(start);
+        if (best == null || occurrence.isBefore(best.dateTime)) {
+          best = CalendarEvent(
+            type: CalendarEventType.lecture,
+            module: module,
+            dateTime: occurrence,
+            endDateTime: _endFor(slot, occurrence),
+          );
+        }
       }
     }
     return best;

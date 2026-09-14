@@ -35,15 +35,55 @@ void main() {
       final next = slot.nextOccurrenceFrom(from);
       expect(next, DateTime(2026, 1, 8, 10, 15)); // Donnerstag derselben Woche
     });
+
+    test('mit Endzeit: läuft die Vorlesung noch, zählt sie nicht als vorbei', () {
+      const slot = LectureSlot(weekday: DateTime.monday, hour: 10, minute: 0, endHour: 11, endMinute: 30);
+      final from = DateTime(2026, 1, 5, 10, 45); // Montag, mitten in der Vorlesung
+      final next = slot.nextOccurrenceFrom(from);
+      expect(next, DateTime(2026, 1, 5, 10, 0)); // bleibt der heutige Termin
+    });
+
+    test('mit Endzeit: springt erst nach Vorlesungsende eine Woche weiter', () {
+      const slot = LectureSlot(weekday: DateTime.monday, hour: 10, minute: 0, endHour: 11, endMinute: 30);
+      final from = DateTime(2026, 1, 5, 12, 0); // Montag, nach Vorlesungsende
+      final next = slot.nextOccurrenceFrom(from);
+      expect(next, DateTime(2026, 1, 12, 10, 0));
+    });
+  });
+
+  group('LectureSlot.timeLabel', () {
+    test('zeigt nur die Startzeit ohne hinterlegte Endzeit', () {
+      const slot = LectureSlot(weekday: 1, hour: 9, minute: 5);
+      expect(slot.timeLabel, '09:05');
+      expect(slot.hasEndTime, isFalse);
+    });
+
+    test('zeigt Start–Ende mit hinterlegter Endzeit', () {
+      const slot = LectureSlot(weekday: 1, hour: 10, minute: 0, endHour: 11, endMinute: 30);
+      expect(slot.timeLabel, '10:00–11:30');
+      expect(slot.hasEndTime, isTrue);
+    });
   });
 
   group('LectureSlot.toMap/fromMap', () {
-    test('Round-Trip erhält alle Felder', () {
-      const slot = LectureSlot(weekday: 3, hour: 12, minute: 30);
+    test('Round-Trip erhält alle Felder inkl. Endzeit', () {
+      const slot = LectureSlot(weekday: 3, hour: 12, minute: 30, endHour: 14, endMinute: 0);
       final restored = LectureSlot.fromMap(slot.toMap());
       expect(restored.weekday, 3);
       expect(restored.hour, 12);
       expect(restored.minute, 30);
+      expect(restored.endHour, 14);
+      expect(restored.endMinute, 0);
+    });
+
+    test('ist abwärtskompatibel zu älteren Datensätzen ohne Endzeit-Felder', () {
+      final map = const LectureSlot(weekday: 3, hour: 12, minute: 30).toMap()
+        ..remove('endHour')
+        ..remove('endMinute');
+      final restored = LectureSlot.fromMap(map);
+      expect(restored.endHour, isNull);
+      expect(restored.endMinute, isNull);
+      expect(restored.hasEndTime, isFalse);
     });
   });
 

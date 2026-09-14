@@ -58,6 +58,21 @@ void main() {
       expect(outOfRange, isEmpty);
     });
 
+    test('übernimmt die Endzeit des Slots in jedes expandierte Ereignis', () {
+      final module = _module(
+        id: 'm1',
+        lectureSlots: const [
+          LectureSlot(weekday: DateTime.monday, hour: 10, minute: 0, endHour: 11, endMinute: 30),
+        ],
+      );
+      final events = service.eventsInRange(
+        modules: [module],
+        start: DateTime(2026, 1, 5),
+        end: DateTime(2026, 1, 6),
+      );
+      expect(events.single.endDateTime, DateTime(2026, 1, 5, 11, 30));
+    });
+
     test('sortiert Vorlesungen und Klausuren gemeinsam chronologisch', () {
       final lecture = _module(
         id: 'm1',
@@ -92,6 +107,17 @@ void main() {
 
     test('gibt null zurück, wenn kein Modul Termine hat', () {
       expect(service.nextLecture([_module(id: 'm1')]), isNull);
+    });
+
+    test('übernimmt die Endzeit des gefundenen Slots', () {
+      final module = _module(
+        id: 'm1',
+        lectureSlots: const [
+          LectureSlot(weekday: DateTime.monday, hour: 10, minute: 0, endHour: 11, endMinute: 30),
+        ],
+      );
+      final next = service.nextLecture([module], from: DateTime(2026, 1, 5, 7, 0));
+      expect(next!.endDateTime, DateTime(2026, 1, 5, 11, 30));
     });
   });
 

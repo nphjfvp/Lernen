@@ -51,6 +51,18 @@ void main() {
       final line = service.buildLectureLine([_module(id: 'm1')]);
       expect(line, 'Keine Vorlesung geplant');
     });
+
+    test('zeigt Start–Ende, wenn eine Endzeit hinterlegt ist', () {
+      final module = _module(
+        id: 'm1',
+        name: 'Analysis 2',
+        lectureSlots: const [
+          LectureSlot(weekday: DateTime.monday, hour: 10, minute: 0, endHour: 11, endMinute: 30),
+        ],
+      );
+      final line = service.buildLectureLine([module], from: DateTime(2026, 1, 5, 8, 0));
+      expect(line, contains('10:00–11:30'));
+    });
   });
 
   group('HomeWidgetService.buildReminderLine', () {

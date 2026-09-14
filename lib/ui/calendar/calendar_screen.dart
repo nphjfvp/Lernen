@@ -243,8 +243,13 @@ class _EventTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final isExam = event.type == CalendarEventType.exam;
-    final time = '${event.dateTime.hour.toString().padLeft(2, '0')}:'
+    final start = '${event.dateTime.hour.toString().padLeft(2, '0')}:'
         '${event.dateTime.minute.toString().padLeft(2, '0')}';
+    final endDateTime = event.endDateTime;
+    final time = endDateTime == null
+        ? start
+        : '$start–${endDateTime.hour.toString().padLeft(2, '0')}:'
+            '${endDateTime.minute.toString().padLeft(2, '0')}';
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surface,

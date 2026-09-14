@@ -34,7 +34,11 @@ class HomeWidgetService {
     if (next == null) return 'Keine Vorlesung geplant';
     final d = next.dateTime;
     final weekday = _kWeekdayLabels[d.weekday - 1];
-    final time = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final start = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final end = next.endDateTime;
+    final time = end == null
+        ? start
+        : '$start–${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
     return '📅 $weekday $time · ${next.module.name}';
   }
 
