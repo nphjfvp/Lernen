@@ -49,4 +49,84 @@ void main() {
     expect(QuestionParsing.escalationChain,
         [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText]);
   });
+
+  group('QuestionParsing.normalizeGeneratedFlashcard', () {
+    test('lässt einen vollständigen flashcard-Eintrag unverändert', () {
+      final raw = {'type': 'flashcard', 'front': 'Frage?', 'back': 'Antwort'};
+      expect(QuestionParsing.normalizeGeneratedFlashcard(raw), raw);
+    });
+
+    test('lässt einen vollständigen single_choice-Eintrag unverändert', () {
+      final raw = {
+        'type': 'single_choice',
+        'front': 'Frage?',
+        'options': [
+          {'text': 'A', 'isCorrect': true},
+          {'text': 'B', 'isCorrect': false},
+        ],
+      };
+      expect(QuestionParsing.normalizeGeneratedFlashcard(raw), raw);
+    });
+
+    test('rettet eine flashcard ohne "back" als flashcard mit "correctText" als Antwort', () {
+      final raw = {'type': 'flashcard', 'front': 'Frage?', 'correctText': 'Eigentliche Antwort'};
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw);
+      expect(fixed, isNotNull);
+      expect(fixed!['type'], 'flashcard');
+      expect(fixed['back'], 'Eigentliche Antwort');
+    });
+
+    test('rettet eine single_choice ohne "options" über die Blanks-Lösung', () {
+      final raw = {
+        'type': 'single_choice',
+        'front': 'Frage?',
+        'blanks': ['Die richtige Lösung'],
+      };
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw);
+      expect(fixed, isNotNull);
+      expect(fixed!['type'], 'flashcard');
+      expect(fixed['back'], 'Die richtige Lösung');
+    });
+
+    test('rettet über die als richtig markierten Optionen, wenn nur die fehlen', () {
+      final raw = {
+        'type': 'single_choice',
+        'front': 'Frage?',
+        'options': [
+          {'text': 'Richtig', 'isCorrect': true},
+          {'text': 'Falsch', 'isCorrect': false},
+        ],
+      };
+      // Vollständig -> bleibt unverändert (kein Rettungsfall).
+      expect(QuestionParsing.normalizeGeneratedFlashcard(raw)!['options'], isNotNull);
+    });
+
+    test('gibt null zurück, wenn nirgends eine Antwort zu finden ist', () {
+      final raw = {'type': 'single_choice', 'front': 'Frage ohne jede Antwort?'};
+      expect(QuestionParsing.normalizeGeneratedFlashcard(raw), isNull);
+    });
+
+    test('gibt null zurück, wenn "front" leer ist', () {
+      final raw = {'type': 'flashcard', 'front': '', 'back': 'Antwort'};
+      expect(QuestionParsing.normalizeGeneratedFlashcard(raw), isNull);
+    });
+
+    test('fill_blank ohne nicht-leere Lücken wird über "back" gerettet', () {
+      final raw = {
+        'type': 'fill_blank',
+        'front': 'Text mit ___ Lücke',
+        'blanks': [''],
+        'back': 'Lösung',
+      };
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw);
+      expect(fixed, isNotNull);
+      expect(fixed!['type'], 'flashcard');
+      expect(fixed['back'], 'Lösung');
+    });
+
+    test('drag_drop ohne dragPairs wird nicht gerettet, wenn keine Antwort auffindbar ist', () {
+      final raw = {'type': 'drag_drop', 'front': 'Ordne zu'};
+      expect(QuestionParsing.normalizeGeneratedFlashcard(raw), isNull);
+    });
+  });
 }

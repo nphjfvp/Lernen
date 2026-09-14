@@ -52,6 +52,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
   bool _crosschecking = false;
   Map<String, dynamic>? _crosscheckResult;
   String? _crosscheckError;
+  final Set<int> _appliedIssueIndices = {};
+
+  /// Anzahl der Karteikarten, die die KI unvollständig geliefert hat (z.B.
+  /// "options" bei einer Single-Choice-Frage vergessen) und die sich auch
+  /// nicht zu einer einfachen Karteikarte retten ließen (siehe
+  /// QuestionParsing.normalizeGeneratedFlashcard) – wurden verworfen statt
+  /// als stumme "nur Vorderseite"-Karte gespeichert zu werden.
+  int _droppedFlashcardCount = 0;
 
   bool get _readyToGenerate => _slidesFiles.isNotEmpty && _exercisesFiles.isNotEmpty;
 
@@ -120,8 +128,27 @@ class _ReviewScreenState extends State<ReviewScreen> {
         granularity: settings.chunkGranularity,
         rollingContext: settings.rollingContextEnabled,
       );
+
+      // Manche Modelle liefern trotz Anweisung unvollständige Karten (z.B.
+      // "options" bei einer Single-Choice-Frage vergessen). Statt eine
+      // stumme "nur Vorderseite"-Karte zu speichern: retten, wenn irgendwo
+      // im Eintrag noch eine brauchbare Antwort steckt, sonst verwerfen und
+      // dem Nutzer sichtbar melden statt es zu verschweigen.
+      final normalized = <Map<String, dynamic>>[];
+      var dropped = 0;
+      for (final entry in (result['flashcards'] as List? ?? const [])) {
+        final fixed = QuestionParsing.normalizeGeneratedFlashcard(Map<String, dynamic>.from(entry as Map));
+        if (fixed == null) {
+          dropped++;
+        } else {
+          normalized.add(fixed);
+        }
+      }
+      result['flashcards'] = normalized;
+
       setState(() {
         _result = result;
+        _droppedFlashcardCount = dropped;
         _step = _Step.preview;
       });
     } on AiServiceException catch (e) {
@@ -145,6 +172,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     setState(() {
       _crosschecking = true;
       _crosscheckError = null;
+      _appliedIssueIndices.clear();
     });
     try {
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.crosscheckModelId);
@@ -167,6 +195,44 @@ class _ReviewScreenState extends State<ReviewScreen> {
         _crosscheckError = 'Unerwarteter Fehler: $e';
         _crosschecking = false;
       });
+    }
+  }
+
+  /// Übernimmt den vom Crosscheck vorgeschlagenen Korrektur-Eintrag
+  /// ("fix") anstelle des Original-Konzepts/der Original-Karteikarte an
+  /// derselben Stelle. [issueIndex] ist die Position INNERHALB der
+  /// issues-Liste (für die "Übernommen"-Markierung in der UI), nicht der
+  /// targetIndex des betroffenen Konzepts/der Karteikarte selbst.
+  void _applyCrosscheckFix(int issueIndex) {
+    final issues = (_crosscheckResult?['issues'] as List?) ?? const [];
+    if (issueIndex < 0 || issueIndex >= issues.length || _result == null) return;
+    final issue = Map<String, dynamic>.from(issues[issueIndex] as Map);
+    final targetType = issue['targetType'] as String?;
+    final targetIndex = (issue['targetIndex'] as num?)?.toInt();
+    final fix = issue['fix'];
+    if (targetType == null || targetIndex == null || fix is! Map) return;
+
+    final listKey = switch (targetType) {
+      'concept' => 'concepts',
+      'flashcard' => 'flashcards',
+      _ => null,
+    };
+    if (listKey == null) return;
+
+    setState(() {
+      final list = List<dynamic>.from(_result![listKey] as List? ?? const []);
+      if (targetIndex >= 0 && targetIndex < list.length) {
+        list[targetIndex] = Map<String, dynamic>.from(fix);
+        _result![listKey] = list;
+      }
+      _appliedIssueIndices.add(issueIndex);
+    });
+  }
+
+  void _applyAllCrosscheckFixes() {
+    final issues = (_crosscheckResult?['issues'] as List?) ?? const [];
+    for (var i = 0; i < issues.length; i++) {
+      if (!_appliedIssueIndices.contains(i)) _applyCrosscheckFix(i);
     }
   }
 
@@ -217,7 +283,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
     final flashcards = ((result['flashcards'] as List?) ?? []).map((raw) {
       final f = Map<String, dynamic>.from(raw as Map);
-      final type = questionTypeFromString(f['type'] as String?);
+      final type = QuestionParsing.parseType(f['type'] as String?);
       final escalate = f['escalate'] == true && type == QuestionType.singleChoice;
       return Flashcard(
         id: const Uuid().v4(),
@@ -293,15 +359,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
       case _Step.preview:
         return _PreviewView(
           result: _result!,
+          droppedFlashcardCount: _droppedFlashcardCount,
           onSave: _save,
           onDiscard: () => setState(() {
             _step = _Step.pick;
             _result = null;
+            _droppedFlashcardCount = 0;
           }),
           crosschecking: _crosschecking,
           crosscheckResult: _crosscheckResult,
           crosscheckError: _crosscheckError,
+          appliedIssueIndices: _appliedIssueIndices,
           onCrosscheck: _crosscheck,
+          onApplyFix: _applyCrosscheckFix,
+          onApplyAllFixes: _applyAllCrosscheckFixes,
         );
     }
   }
@@ -416,19 +487,27 @@ class _PickView extends StatelessWidget {
 class _PreviewView extends StatelessWidget {
   const _PreviewView({
     required this.result,
+    required this.droppedFlashcardCount,
     required this.onSave,
     required this.onDiscard,
     required this.crosschecking,
     required this.onCrosscheck,
+    required this.appliedIssueIndices,
+    required this.onApplyFix,
+    required this.onApplyAllFixes,
     this.crosscheckResult,
     this.crosscheckError,
   });
 
   final Map<String, dynamic> result;
+  final int droppedFlashcardCount;
   final VoidCallback onSave;
   final VoidCallback onDiscard;
   final bool crosschecking;
   final VoidCallback onCrosscheck;
+  final Set<int> appliedIssueIndices;
+  final void Function(int issueIndex) onApplyFix;
+  final VoidCallback onApplyAllFixes;
   final Map<String, dynamic>? crosscheckResult;
   final String? crosscheckError;
 
@@ -446,6 +525,14 @@ class _PreviewView extends StatelessWidget {
             children: [
               Text('${concepts.length} Konzepte, ${flashcards.length} Karteikarten',
                   style: Theme.of(context).textTheme.titleMedium),
+              if (droppedFlashcardCount > 0) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '⚠️ $droppedFlashcardCount Karte${droppedFlashcardCount == 1 ? '' : 'n'} '
+                  'wegen unvollständiger KI-Antwort übersprungen.',
+                  style: const TextStyle(color: Colors.orange, fontSize: 12.5),
+                ),
+              ],
               const SizedBox(height: 16),
               ...concepts.map((c) => Card(
                     child: ExpansionTile(
@@ -465,7 +552,7 @@ class _PreviewView extends StatelessWidget {
               Text('Karteikarten', style: Theme.of(context).textTheme.titleMedium),
               ...flashcards.map((raw) {
                 final f = Map<String, dynamic>.from(raw as Map);
-                final type = questionTypeFromString(f['type'] as String?);
+                final type = QuestionParsing.parseType(f['type'] as String?);
                 return Card(
                   child: ListTile(
                     leading: Icon(_iconFor(type)),
@@ -502,21 +589,49 @@ class _PreviewView extends StatelessWidget {
                         const SizedBox(height: 8),
                         if (crosscheckOk)
                           const Text('Keine Probleme gefunden.')
-                        else
-                          ...issues.map((issue) => Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text((issue['title'] ?? '').toString(),
-                                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                                    Text((issue['problem'] ?? '').toString()),
-                                    if ((issue['suggestion'] ?? '').toString().isNotEmpty)
-                                      Text('Vorschlag: ${issue['suggestion']}',
-                                          style: const TextStyle(fontStyle: FontStyle.italic)),
-                                  ],
-                                ),
-                              )),
+                        else ...[
+                          ...issues.asMap().entries.map((entry) {
+                            final i = entry.key;
+                            final issue = Map<String, dynamic>.from(entry.value as Map);
+                            final targetType = issue['targetType'] as String?;
+                            final targetIndex = (issue['targetIndex'] as num?)?.toInt();
+                            final fix = issue['fix'];
+                            final applied = appliedIssueIndices.contains(i);
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(_issueLabel(targetType, targetIndex),
+                                            style: const TextStyle(fontWeight: FontWeight.w600)),
+                                      ),
+                                      if (applied)
+                                        const Text('✓ übernommen',
+                                            style: TextStyle(color: Colors.green, fontSize: 12))
+                                      else if (fix is Map)
+                                        TextButton(
+                                          onPressed: () => onApplyFix(i),
+                                          child: const Text('Übernehmen'),
+                                        ),
+                                    ],
+                                  ),
+                                  Text((issue['problem'] ?? '').toString()),
+                                ],
+                              ),
+                            );
+                          }),
+                          if (issues.where((it) => it is Map && it['fix'] is Map).length > 1)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: onApplyAllFixes,
+                                child: const Text('Alle Vorschläge übernehmen'),
+                              ),
+                            ),
+                        ],
                       ],
                     ],
                   ),
@@ -535,6 +650,25 @@ class _PreviewView extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// Beschriftung für eine Crosscheck-Zeile: zeigt den AKTUELLEN Titel/die
+  /// aktuelle Frage des betroffenen Eintrags (spiegelt bereits übernommene
+  /// Korrekturen anderer Issues an derselben Stelle wider).
+  String _issueLabel(String? targetType, int? targetIndex) {
+    if (targetType == null || targetIndex == null) return 'Änderungsvorschlag';
+    final listKey = switch (targetType) {
+      'concept' => 'concepts',
+      'flashcard' => 'flashcards',
+      _ => null,
+    };
+    if (listKey == null) return 'Änderungsvorschlag';
+    final list = (result[listKey] as List?) ?? const [];
+    if (targetIndex < 0 || targetIndex >= list.length) return 'Änderungsvorschlag';
+    final entry = Map<String, dynamic>.from(list[targetIndex] as Map);
+    final prefix = targetType == 'concept' ? 'Konzept' : 'Karteikarte';
+    final text = (targetType == 'concept' ? entry['title'] : entry['front']) ?? '';
+    return '$prefix: $text';
   }
 
   IconData _iconFor(QuestionType type) => switch (type) {

@@ -186,8 +186,13 @@ Analysiere den Abschnitt und erstelle:
 1. Lernkonzepte, die erklären, WARUM die Übungsaufgaben so gelöst werden wie
    sie gelöst werden (der Fokus liegt auf tiefem Verständnis der Übungen,
    nicht auf reiner Theorie-Wiedergabe der Folien).
-2. Karteikarten/Fragen zur Wiederholung dieser Konzepte – wähle pro Frage
-   den passenden Typ statt immer dasselbe Format zu nutzen:
+2. Karteikarten/Fragen zur Wiederholung dieser Konzepte.
+
+WICHTIG zur Typwahl: verwende NICHT für alle Karten denselben Typ. "flashcard"
+(freies front/back) ist die LETZTE Wahl, nur wenn WIRKLICH keiner der
+anderen Typen passt – erzeuge höchstens für etwa ein Fünftel der Karten
+diesen Typ, den Rest möglichst mit den spezifischeren Typen unten. Wähle pro
+Frage den zum Inhalt passenden Typ:
    - "single_choice": klares Faktenwissen mit genau einer richtigen Antwort.
      Setze zusätzlich "escalate": true – das System steigert den
      Schwierigkeitsgrad solcher Fragen automatisch, sobald sie zuverlässig
@@ -204,8 +209,14 @@ Analysiere den Abschnitt und erstelle:
    - "drag_category": Begriffe in Kategorien einsortieren; "dragPairs" wie
      bei drag_drop, "target" ist hier der Kategoriename (mehrere "source"
      können denselben "target"-Wert haben).
-   - "flashcard": nur wenn WIRKLICH keiner der obigen Typen passt (z.B. eine
-     freie, nicht eindeutig prüfbare Erklärung) – "front"/"back" wie bisher.
+   - "flashcard": nur als letzte Wahl (siehe oben) – "front"/"back" wie
+     bisher. Das Feld "back" ist dabei PFLICHT und darf NIE leer sein – eine
+     Karteikarte ohne Antwort ist nutzlos.
+
+JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
+enthalten (siehe Beispiele unten) – ein Eintrag mit nur "front" und sonst
+nichts ist ungültig und wird verworfen.
+
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {
@@ -215,16 +226,20 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
   "flashcards": [
     {"type": "single_choice", "front": "Frage", "escalate": true,
      "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
+    {"type": "multiple_choice", "front": "Frage",
+     "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
     {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]},
     {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative"},
     {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]},
-    {"type": "flashcard", "front": "Frage", "back": "Antwort"}
+    {"type": "drag_category", "front": "Sortiere ein", "dragPairs": [{"source": "A", "target": "Kategorie 1"}]},
+    {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"}
   ]
 }
 Erstelle so viele Konzepte/Karteikarten wie der Abschnitt hergibt (auch
 wenige, wenn der Abschnitt kurz ist), mit einer sinnvollen Mischung aus
-Typen statt nur einem einzigen. Wenn bereits erstellte Konzepte aus
-vorherigen Abschnitten genannt werden, erstelle diese NICHT erneut.
+mindestens 3 verschiedenen Typen, wenn der Abschnitt lang genug für mehrere
+Karten ist. Wenn bereits erstellte Konzepte aus vorherigen Abschnitten
+genannt werden, erstelle diese NICHT erneut.
 Antworte in der Sprache der Vorlage.
 ''';
 
@@ -293,14 +308,36 @@ Antworte in der Sprache der Vorlage.
   static const _crosscheckSystemPrompt = '''
 Du bist ein fachlicher Prüfer für Lernmaterial. Du bekommst
 Vorlesungsfolien, Übungsaufgaben und bereits von einer anderen KI erstellte
-Lernkonzepte und Karteikarten. Prüfe die Konzepte und Karteikarten auf
-fachliche Fehler, Ungenauigkeiten oder Widersprüche zum Ausgangsmaterial.
+Lernkonzepte und Karteikarten (als JSON mit den Arrays "concepts" und
+"flashcards" – Indizes darin beginnen bei 0, in der gegebenen Reihenfolge).
+Prüfe die Konzepte und Karteikarten auf fachliche Fehler, Ungenauigkeiten
+oder Widersprüche zum Ausgangsmaterial.
+
+Findest du ein Problem, liefere nicht nur eine Beschreibung, sondern auch
+eine KONKRET KORRIGIERTE Fassung des betroffenen Eintrags in "fix" – exakt
+dieselbe Feldstruktur wie das Original (bei Konzepten "title"+"explanation";
+bei Karteikarten "type" plus alle für diesen Typ nötigen Felder, siehe die
+Typen im Original: front/back, front/options, front/correctText,
+front/blanks, front/dragPairs). Ändere dabei NUR, was fachlich falsch ist –
+lass alles andere unverändert.
+
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {
   "ok": true,
   "issues": [
-    {"title": "Betroffenes Konzept/Karteikarte", "problem": "Was ist falsch/ungenau", "suggestion": "Korrekturvorschlag"}
+    {
+      "targetType": "concept",
+      "targetIndex": 0,
+      "problem": "Was ist falsch/ungenau",
+      "fix": {"title": "korrigierter Titel", "explanation": "korrigierte Erklärung"}
+    },
+    {
+      "targetType": "flashcard",
+      "targetIndex": 2,
+      "problem": "Was ist falsch/ungenau",
+      "fix": {"type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}]}
+    }
   ]
 }
 "ok" ist true, wenn keine Probleme gefunden wurden (dann "issues": []).
