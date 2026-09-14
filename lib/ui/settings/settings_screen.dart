@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -27,6 +29,8 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _apiKeyController;
   late TextEditingController _syncCodeController;
+  final _apiKeyFocusNode = FocusNode();
+  late SettingsRepository _settingsRepo;
   bool _obscureKey = true;
   bool _syncBusy = false;
   String? _syncMessage;
@@ -38,13 +42,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = context.read<SettingsRepository>().settings;
     _apiKeyController = TextEditingController(text: settings.openRouterApiKey ?? '');
     _syncCodeController = TextEditingController(text: settings.syncCode ?? '');
+    // Anders als jedes andere Feld auf diesem Screen (Modelle, Chunking,
+    // Erinnerung – alle speichern sofort bei Änderung) verlangte der
+    // API-Key bisher AUSSCHLIESSLICH den expliziten "Speichern"-Tap unten:
+    // wer tippt und dann einfach den Screen verlässt (naheliegend, da jedes
+    // andere Feld hier schon gespeichert ist), verliert den Key stillschweigend.
+    // Zusätzlich beim Fokusverlust speichern behebt genau das, ohne den
+    // Button selbst zu entfernen.
+    _apiKeyFocusNode.addListener(() {
+      if (!_apiKeyFocusNode.hasFocus) _persistApiKey();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _settingsRepo = context.read<SettingsRepository>();
   }
 
   @override
   void dispose() {
+    // Fängt den Fall ab, dass der Screen verlassen wird, während das Feld
+    // noch fokussiert ist (dann feuert der obige Fokus-Listener nicht mehr).
+    _persistApiKey();
+    _apiKeyFocusNode.dispose();
     _apiKeyController.dispose();
     _syncCodeController.dispose();
     super.dispose();
+  }
+
+  void _persistApiKey() {
+    final trimmed = _apiKeyController.text.trim();
+    if (trimmed == (_settingsRepo.settings.openRouterApiKey ?? '')) return;
+    unawaited(_settingsRepo.update(_settingsRepo.settings.copyWith(openRouterApiKey: trimmed)));
   }
 
   Future<void> _saveApiKey() async {
@@ -241,6 +271,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _apiKeyController,
+                    focusNode: _apiKeyFocusNode,
                     obscureText: _obscureKey,
                     decoration: _fieldDecoration(context, label: 'OpenRouter API-Key').copyWith(
                       suffixIcon: IconButton(
