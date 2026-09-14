@@ -92,8 +92,18 @@ class AuthService {
       final credential = GoogleAuthProvider.credential(idToken: idToken);
       await _auth.signInWithCredential(credential);
     } on GoogleSignInException catch (e) {
-      if (e.code == GoogleSignInExceptionCode.canceled) return;
-      throw AuthException('Google-Anmeldung fehlgeschlagen: ${e.description ?? e.code}');
+      // "canceled" heißt auf Android nicht immer, dass der Nutzer aktiv
+      // abgebrochen hat: der Credential Manager meldet z.B. auch dann
+      // "canceled", wenn Google für dieses App-Paket/Signatur gar keinen
+      // Credential ausstellen konnte (typischerweise fehlende Android-
+      // OAuth-Client-Registrierung, siehe Doc-Kommentar oben). Deshalb
+      // hier NICHT still zurückkehren, sondern immer eine sichtbare
+      // Meldung liefern – sonst wirkt es in der UI wie ein Erfolg.
+      throw AuthException(
+        e.code == GoogleSignInExceptionCode.canceled
+            ? 'Anmeldung abgebrochen (oder von Google verweigert – Android-App noch nicht in der Google Cloud Console registriert?).'
+            : 'Google-Anmeldung fehlgeschlagen: ${e.description ?? e.code}',
+      );
     } on FirebaseAuthException catch (e) {
       throw AuthException(_messageFor(e));
     } on AuthException {
