@@ -3,6 +3,15 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+/// Web-OAuth-Client-ID des Firebase-Projekts "lernenwing" (Firebase Console
+/// → Authentication → Sign-in method → Google → "Web SDK configuration").
+/// Auf Android braucht `google_sign_in` diese ID explizit – ohne
+/// registrierte native Android-App im Firebase-Projekt (kein
+/// google-services.json, siehe firebase_options.dart) kann das Package sie
+/// nicht selbst auslesen. Kein Geheimnis, genau wie der API-Key in
+/// firebase_options.dart: für clientseitige Nutzung gedacht.
+const _googleServerClientId = '447278958302-vtordjpqk6j4keetbqa3l6bae244ejqf.apps.googleusercontent.com';
+
 class AuthException implements Exception {
   AuthException(this.message);
   final String message;
@@ -69,7 +78,7 @@ class AuthService {
       }
 
       if (!_googleSignInInitialized) {
-        await GoogleSignIn.instance.initialize();
+        await GoogleSignIn.instance.initialize(serverClientId: _googleServerClientId);
         _googleSignInInitialized = true;
       }
       if (!GoogleSignIn.instance.supportsAuthenticate()) {
