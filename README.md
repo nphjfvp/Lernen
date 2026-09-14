@@ -319,6 +319,28 @@ zulassen") – die APK ist nur mit dem Debug-Keystore signiert (kein
 Play-Store-Eintrag nötig), das ist für den Eigengebrauch aber
 unproblematisch.
 
+`.github/workflows/windows-app.yml` baut analog eine native Windows-App
+(`flutter build windows`), gepackt als ZIP unter Release **"Windows-App
+(aktueller Stand)"** (Tag `windows-latest`) – entpacken, `lernen.exe`
+starten, keine Installation nötig.
+
+### In-App-Update-Hinweis
+
+Damit man nicht von Hand auf GitHub nachschauen muss, ob es einen neueren
+Build gibt: beide Workflows setzen `--build-number=${{ github.run_number }}`
+(eine garantiert fortlaufende Zahl über alle Pushes hinweg) und
+veröffentlichen zusätzlich ein `version.json`
+(`{"buildNumber": ..., "sha": "...", "tag": "..."}`) unter derselben
+Release-URL wie die APK/das ZIP. `UpdateCheckerService` vergleicht das beim
+App-Start (und über "Nach Updates suchen" in den Einstellungen) mit der
+Build-Nummer der laufenden App (`package_info_plus`) – findet es eine
+neuere, gibt es eine SnackBar bzw. einen Button mit direktem Download-Link.
+Rein informativ (kein Auto-Install): Android öffnet die `.apk` im Browser
+zum Herunterladen/Installieren, Windows lädt das ZIP zum manuellen
+Entpacken – für echte automatische Updates bräuchte es Play Store (Android)
+bzw. ein MSIX-Paket mit App-Installer-Manifest (Windows), beides mit
+deutlich mehr Einrichtungsaufwand.
+
 ## Tests
 
 ```bash

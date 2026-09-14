@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/ai_model_info.dart';
 import '../../models/app_settings.dart';
@@ -8,6 +10,7 @@ import '../../repositories/model_catalog_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/reminder_service.dart';
 import '../../services/sync_service.dart';
+import '../../services/update_checker_service.dart';
 import '../../theme/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../auth/login_screen.dart';
@@ -490,12 +493,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
                   ],
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 26),
+                    child: Divider(height: 1, color: c.border),
+                  ),
+                  _SectionLabel('App-Version'),
+                  const SizedBox(height: 4),
+                  const _UpdateSection(),
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _UpdateSection extends StatefulWidget {
+  const _UpdateSection();
+
+  @override
+  State<_UpdateSection> createState() => _UpdateSectionState();
+}
+
+class _UpdateSectionState extends State<_UpdateSection> {
+  PackageInfo? _info;
+  bool _checking = false;
+  bool _checked = false;
+  UpdateInfo? _update;
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _info = info);
+    });
+  }
+
+  Future<void> _check() async {
+    setState(() {
+      _checking = true;
+      _checked = false;
+    });
+    final update = await UpdateCheckerService().checkForUpdate();
+    if (!mounted) return;
+    setState(() {
+      _update = update;
+      _checking = false;
+      _checked = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _info == null ? 'Version wird geladen …' : 'Version ${_info!.version} (Build ${_info!.buildNumber})',
+          style: TextStyle(fontSize: 12, color: c.inkMuted),
+        ),
+        const SizedBox(height: 10),
+        if (_update != null) ...[
+          Text(
+            'Update verfügbar: Build ${_update!.buildNumber}',
+            style: TextStyle(fontSize: 12.5, color: c.good, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          _SoftButton(
+            icon: Icons.download_outlined,
+            label: 'Herunterladen',
+            onTap: () => launchUrl(Uri.parse(_update!.downloadUrl), mode: LaunchMode.externalApplication),
+          ),
+        ] else
+          OutlinedButton.icon(
+            onPressed: _checking ? null : _check,
+            icon: _checking
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.refresh),
+            label: Text(_checking ? 'Prüfe …' : (_checked ? 'Aktuell' : 'Nach Updates suchen')),
+          ),
+      ],
     );
   }
 }

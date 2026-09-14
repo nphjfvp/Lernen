@@ -36,8 +36,19 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # --build-number = fortlaufende Actions-Run-Nummer, NIE doppelt und
+      # immer aufsteigend über alle Pushes hinweg (anders als die
+      # pubspec.yaml-Versionsnummer, die man leicht vergisst hochzuzählen) -
+      # Grundlage für den In-App-Update-Check (siehe UpdateCheckerService),
+      # der genau diese Zahl mit der laufenden App vergleicht.
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number=${{ github.run_number }}
+
+      - name: version.json für den In-App-Update-Check schreiben
+        run: |
+          cat > version.json <<EOF
+          {"buildNumber": ${{ github.run_number }}, "sha": "${{ github.sha }}", "tag": "android-latest"}
+          EOF
 
       - uses: actions/upload-artifact@v4
         with:
@@ -55,6 +66,8 @@ jobs:
             Mit dem Debug-Keystore signiert (siehe android/app/build.gradle.kts) -
             installiert direkt auf jedem Gerät, ist aber kein Play-Store-Signing.
           prerelease: true
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            version.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../services/update_checker_service.dart';
 import '../theme/app_colors.dart';
 import 'calendar/calendar_screen.dart';
 import 'daily/daily_quiz_screen.dart';
@@ -21,6 +23,33 @@ class RootShell extends StatefulWidget {
 
 class _RootShellState extends State<RootShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+  }
+
+  /// Einmaliger, stiller Check beim App-Start, ob unter der festen
+  /// GitHub-Release-URL ein neuerer Build als der laufende liegt (siehe
+  /// UpdateCheckerService) – Ersatz dafür, von Hand auf GitHub nachschauen
+  /// zu müssen. Bewusst zurückhaltend: kein Dialog, nur eine SnackBar mit
+  /// direktem Download-Link, die man ignorieren kann; kein Internet/GitHub
+  /// nicht erreichbar liefert einfach `null`, ohne die App zu stören.
+  Future<void> _checkForUpdate() async {
+    final update = await UpdateCheckerService().checkForUpdate();
+    if (update == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 12),
+        content: Text('Update verfügbar (Build ${update.buildNumber}).'),
+        action: SnackBarAction(
+          label: 'Herunterladen',
+          onPressed: () => launchUrl(Uri.parse(update.downloadUrl), mode: LaunchMode.externalApplication),
+        ),
+      ),
+    );
+  }
 
   static const _screens = [
     HomeScreen(),
