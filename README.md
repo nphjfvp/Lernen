@@ -105,13 +105,21 @@ engerem Fokus statt Feature-Fülle.
   Kontext, um Wiederholungen zu vermeiden); Vorbereiten/Nachbereiten
   unterstützen dabei mehrere PDF-Uploads gleichzeitig und zeigen vorab eine
   kurze Analyse (Länge → empfohlene Chunk-Granularität).
-- **Cloud-Sync (optional)** – Sync-Code-basiert wie beim Vorgänger, über ein
-  eigenes Firebase-Projekt. Ohne Konfiguration läuft die App komplett
-  offline.
+- **Cloud-Sync (optional)** – zwei Wege, über ein eigenes Firebase-Projekt.
+  **Mit Account** (empfohlen): läuft automatisch über das Firebase-Konto
+  (`users/{uid}`, per Firestore-Regel exakt auf den eingeloggten Nutzer
+  beschränkt) – kein Code zum Teilen/Abtippen, einfach auf jedem Gerät mit
+  demselben Konto anmelden und synchronisieren. **Ohne Account**:
+  Sync-Code-basiert wie beim Vorgänger (`sync_codes/{code}`, funktioniert
+  wie ein Passwort) – bleibt als Fallback erhalten. Beide Wege übertragen
+  Fächer, Materialien, Konzepte, Karteikarten UND den BYOK-Teil der
+  Einstellungen (API-Key + Modellwahl); Geräte-lokales wie die
+  Lernerinnerungs-Uhrzeit bleibt bewusst lokal. Ohne Konfiguration läuft die
+  App komplett offline.
 - **Account (optional)** – E-Mail/Passwort oder Google-Anmeldung über
   Firebase Auth, aus den Einstellungen heraus. Nie erzwungen: die App bleibt
-  auch ohne Account voll nutzbar, Account und Sync-Code existieren
-  nebeneinander.
+  auch ohne Account voll nutzbar. Der Hauptzweck ist der automatische
+  Cloud-Sync oben (siehe dort) statt des manuellen Sync-Codes.
 
 ## Bewusst NICHT enthalten (verglichen mit der Vorgänger-App)
 
@@ -211,8 +219,9 @@ Die **Firestore Security Rules** (`firestore.rules` im Repo-Root) müssen
 einmalig manuell in der Firebase Console eingetragen werden (Firebase liest
 sie nicht automatisch aus dem Repo): **Firebase Console → Firestore Database
 → Rules-Tab → Inhalt von `firestore.rules` einfügen → Veröffentlichen.**
-Sie beschränken den Zugriff auf `sync_codes/{code}` (kein Auflisten/Erraten
-existierender Codes möglich) und sperren alles andere per Default.
+Sie beschränken den Zugriff auf `users/{uid}` (nur der authentifizierte
+Besitzer) und `sync_codes/{code}` (kein Auflisten/Erraten existierender
+Codes möglich) und sperren alles andere per Default.
 
 Für ein komplett eigenes Firebase-Projekt (z.B. eigener Fork): Projekt unter
 <https://console.firebase.google.com> anlegen, eine Web-App registrieren,

@@ -77,59 +77,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return 'vor ${diff.inDays} Tagen';
   }
 
-  Future<void> _push() async {
-    final code = _syncCodeController.text.trim();
-    if (code.isEmpty) return;
+  Future<void> _runSync(
+    Future<void> Function() action, {
+    required String successMessage,
+    Future<void> Function()? afterSuccess,
+  }) async {
     setState(() {
       _syncBusy = true;
       _syncMessage = null;
     });
     try {
-      await _syncService.push(code);
+      await action();
       if (!mounted) return;
-      final repo = context.read<SettingsRepository>();
-      await repo.update(repo.settings.copyWith(syncCode: code, lastSyncAt: DateTime.now()));
-      setState(() => _syncMessage = 'Hochgeladen.');
+      if (afterSuccess != null) await afterSuccess();
+      if (!mounted) return;
+      setState(() => _syncMessage = successMessage);
     } on SyncException catch (e) {
-      setState(() => _syncMessage = e.message);
+      if (mounted) setState(() => _syncMessage = e.message);
     } finally {
-      setState(() => _syncBusy = false);
+      if (mounted) setState(() => _syncBusy = false);
     }
   }
 
-  Future<void> _pull() async {
-    final code = _syncCodeController.text.trim();
-    if (code.isEmpty) return;
-    final confirmed = await showDialog<bool>(
+  Future<bool?> _confirmOverwrite() {
+    return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Lokale Daten überschreiben?'),
         content: const Text(
             'Alle lokalen Fächer, Materialien, Konzepte und Karteikarten werden '
-            'durch den Stand aus der Cloud ersetzt. Das kann nicht rückgängig gemacht werden.'),
+            'durch den Stand aus der Cloud ersetzt. Ein in der Cloud hinterlegter '
+            'API-Key/Modellwahl wird ebenfalls übernommen. Das kann nicht '
+            'rückgängig gemacht werden.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
           FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Überschreiben')),
         ],
       ),
     );
-    if (confirmed != true) return;
+  }
 
-    setState(() {
-      _syncBusy = true;
-      _syncMessage = null;
-    });
-    try {
-      await _syncService.pull(code);
-      if (!mounted) return;
-      final repo = context.read<SettingsRepository>();
-      await repo.update(repo.settings.copyWith(syncCode: code, lastSyncAt: DateTime.now()));
-      setState(() => _syncMessage = 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.');
-    } on SyncException catch (e) {
-      setState(() => _syncMessage = e.message);
-    } finally {
-      setState(() => _syncBusy = false);
-    }
+  Future<void> _pushCode() async {
+    final code = _syncCodeController.text.trim();
+    if (code.isEmpty) return;
+    await _runSync(
+      () => _syncService.pushToCode(code),
+      successMessage: 'Hochgeladen.',
+      afterSuccess: () async {
+        final repo = context.read<SettingsRepository>();
+        await repo.update(repo.settings.copyWith(syncCode: code, lastSyncAt: DateTime.now()));
+      },
+    );
+  }
+
+  Future<void> _pullCode() async {
+    final code = _syncCodeController.text.trim();
+    if (code.isEmpty) return;
+    final confirmed = await _confirmOverwrite();
+    if (confirmed != true) return;
+    await _runSync(
+      () => _syncService.pullFromCode(code),
+      successMessage: 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.',
+      afterSuccess: () async {
+        final repo = context.read<SettingsRepository>();
+        await repo.update(repo.settings.copyWith(syncCode: code, lastSyncAt: DateTime.now()));
+      },
+    );
+  }
+
+  Future<void> _pushAccount() async {
+    final uid = context.read<AuthRepository>().currentUser?.uid;
+    if (uid == null) return;
+    await _runSync(
+      () => _syncService.pushToAccount(uid),
+      successMessage: 'Hochgeladen.',
+      afterSuccess: () async {
+        final repo = context.read<SettingsRepository>();
+        await repo.update(repo.settings.copyWith(lastSyncAt: DateTime.now()));
+      },
+    );
+  }
+
+  Future<void> _pullAccount() async {
+    final uid = context.read<AuthRepository>().currentUser?.uid;
+    if (uid == null) return;
+    final confirmed = await _confirmOverwrite();
+    if (confirmed != true) return;
+    await _runSync(
+      () => _syncService.pullFromAccount(uid),
+      successMessage: 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.',
+      afterSuccess: () async {
+        final repo = context.read<SettingsRepository>();
+        await repo.update(repo.settings.copyWith(lastSyncAt: DateTime.now()));
+      },
+    );
   }
 
   Future<void> _setReminderEnabled(bool enabled) async {
@@ -168,6 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsRepository>().settings;
+    final auth = context.watch<AuthRepository>();
     final c = context.colors;
 
     return Material(
@@ -381,11 +423,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'zu aktivieren.',
                       style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
                     )
-                  else ...[
+                  else if (auth.isSignedIn) ...[
                     Text(
-                      'Gib auf jedem Gerät denselben Sync-Code ein, um Fächer und '
-                      'Lernfortschritt zu teilen. Der Code funktioniert wie ein '
-                      'Passwort – teile ihn nicht mit Fremden.',
+                      'Läuft automatisch über dein Konto '
+                      '(${auth.currentUser?.email ?? auth.currentUser?.displayName ?? "angemeldet"}) – '
+                      'auf jedem Gerät mit demselben Konto anmelden, dann hier '
+                      'synchronisieren. Kein Code nötig. Überträgt auch API-Key und '
+                      'Modellwahl.',
+                      style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _SoftButton(
+                            icon: Icons.cloud_upload_outlined,
+                            label: 'Hochladen',
+                            onTap: _syncBusy ? null : _pushAccount,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _SoftButton(
+                            icon: Icons.cloud_download_outlined,
+                            label: 'Herunterladen',
+                            onTap: _syncBusy ? null : _pullAccount,
+                          ),
+                        ),
+                      ],
+                    ),
+                    _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
+                  ] else ...[
+                    Text(
+                      'Ohne Konto: gib auf jedem Gerät denselben Sync-Code ein, um '
+                      'Fächer und Lernfortschritt zu teilen. Der Code funktioniert wie '
+                      'ein Passwort – teile ihn nicht mit Fremden. Mit Google/E-Mail '
+                      'anmelden (oben) synchronisiert stattdessen automatisch ohne Code.',
                       style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
                     ),
                     const SizedBox(height: 12),
@@ -400,7 +473,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: _SoftButton(
                             icon: Icons.cloud_upload_outlined,
                             label: 'Hochladen',
-                            onTap: _syncBusy ? null : _push,
+                            onTap: _syncBusy ? null : _pushCode,
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -408,35 +481,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: _SoftButton(
                             icon: Icons.cloud_download_outlined,
                             label: 'Herunterladen',
-                            onTap: _syncBusy ? null : _pull,
+                            onTap: _syncBusy ? null : _pullCode,
                           ),
                         ),
                       ],
                     ),
-                    if (_syncBusy)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 12),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                    if (_syncMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(_syncMessage!, style: TextStyle(color: c.inkMuted)),
-                      ),
-                    if (settings.lastSyncAt != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Row(
-                          children: [
-                            Container(width: 7, height: 7, decoration: BoxDecoration(color: c.good, shape: BoxShape.circle)),
-                            const SizedBox(width: 7),
-                            Text(
-                              'Zuletzt synchronisiert: ${settings.lastSyncAt}',
-                              style: TextStyle(fontSize: 11.5, color: c.inkMuted),
-                            ),
-                          ],
-                        ),
-                      ),
+                    _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
                   ],
                 ],
               ),
@@ -513,7 +563,8 @@ class _AccountSection extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            'Optional: mit E-Mail/Passwort oder Google anmelden.',
+            'Optional: mit E-Mail/Passwort oder Google anmelden, für '
+            'automatischen Cloud-Sync ohne Code.',
             style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
           ),
         ),
@@ -587,6 +638,48 @@ class _ModelSelectorTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SyncStatus extends StatelessWidget {
+  const _SyncStatus({required this.busy, required this.message, required this.lastSyncAt});
+
+  final bool busy;
+  final String? message;
+  final DateTime? lastSyncAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (busy)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        if (message != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(message!, style: TextStyle(color: c.inkMuted)),
+          ),
+        if (lastSyncAt != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Row(
+              children: [
+                Container(width: 7, height: 7, decoration: BoxDecoration(color: c.good, shape: BoxShape.circle)),
+                const SizedBox(width: 7),
+                Text(
+                  'Zuletzt synchronisiert: $lastSyncAt',
+                  style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

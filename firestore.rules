@@ -1,14 +1,23 @@
 rules_version = '2';
 
-// Sync-Code-Modell (kein Firebase Auth): wer den Sync-Code kennt, darf genau
-// dieses eine Dokument lesen/schreiben - wie ein Passwort. Was das absichert:
-//  - "list" ist verboten -> niemand kann die Sammlung durchsuchen/aufzählen,
-//    um an existierende Sync-Codes zu kommen. Nur direkter Zugriff per
-//    bekannter Dokument-ID (= Sync-Code) funktioniert.
-//  - Alles außerhalb von sync_codes/{code} ist per Default-Regel gesperrt,
-//    falls später weitere Collections dazukommen.
+// Zwei Zugriffswege auf Sync-Daten (siehe lib/services/sync_service.dart):
+//  - users/{uid}: an ein Firebase-Konto gebunden (Google/E-Mail-Anmeldung).
+//    Nur der authentifizierte Besitzer selbst darf lesen/schreiben - echte
+//    Zugriffskontrolle statt eines geteilten Geheimnisses. Empfohlener Weg,
+//    seit hier auch der BYOK-API-Key mit übertragen wird.
+//  - sync_codes/{code}: Fallback ohne Konto (wie beim Vorgänger) - wer den
+//    Sync-Code kennt, darf genau dieses eine Dokument lesen/schreiben, wie
+//    ein Passwort.
+// In beiden Fällen ist "list" verboten, damit niemand die Sammlung
+// durchsuchen/aufzählen kann, um an existierende IDs/Codes zu kommen. Alles
+// außerhalb dieser beiden Pfade ist per Default-Regel gesperrt.
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /users/{uid} {
+      allow get, write: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+    }
+
     match /sync_codes/{code} {
       allow get, write: if code is string && code.size() >= 6;
       allow list: if false;
