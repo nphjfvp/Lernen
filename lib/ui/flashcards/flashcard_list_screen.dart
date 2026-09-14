@@ -97,7 +97,7 @@ class _FlashcardTile extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(card.answerSummary, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5)),
+                child: _AnswerDetail(card: card),
               ),
             ),
             Padding(
@@ -126,4 +126,104 @@ class _FlashcardTile extends StatelessWidget {
   }
 
   String _formatDate(DateTime d) => '${d.day}.${d.month}.${d.year}';
+}
+
+/// Zeigt die vollständige Antwort-Struktur einer Karte passend zu ihrem
+/// [Flashcard.type] – anders als [Flashcard.answerSummary] (das nur die
+/// richtige(n) Antwort(en) als Kurzfassung zusammenfasst) sieht man hier bei
+/// Single-/Multiple-Choice ALLE Optionen inkl. der falschen, bei Lückentext
+/// jede Lücke einzeln nummeriert und bei Zuordnungsfragen alle Paare – das,
+/// was beim Aufklappen einer Karte tatsächlich erwartet wird, nicht nur ein
+/// einzelner Antwort-Text.
+class _AnswerDetail extends StatelessWidget {
+  const _AnswerDetail({required this.card});
+  final Flashcard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    switch (card.type) {
+      case QuestionType.flashcard:
+        return Text(card.back, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5));
+
+      case QuestionType.singleChoice:
+      case QuestionType.multipleChoice:
+        final options = card.options ?? const [];
+        if (options.isEmpty) {
+          return Text('Keine Antwortoptionen hinterlegt.',
+              style: TextStyle(color: c.danger, fontSize: 12.5, height: 1.5));
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: options
+              .map((o) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          o.isCorrect ? Icons.check_circle : Icons.circle_outlined,
+                          size: 16,
+                          color: o.isCorrect ? c.good : c.inkMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            o.text,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              height: 1.4,
+                              color: o.isCorrect ? c.ink : c.inkMuted,
+                              fontWeight: o.isCorrect ? FontWeight.w600 : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ))
+              .toList(),
+        );
+
+      case QuestionType.freeText:
+        return Text(card.correctText ?? '', style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5));
+
+      case QuestionType.fillBlank:
+        final blanks = card.blanks ?? const [];
+        if (blanks.isEmpty) {
+          return Text('Keine Lücken-Lösungen hinterlegt.',
+              style: TextStyle(color: c.danger, fontSize: 12.5, height: 1.5));
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: blanks
+              .asMap()
+              .entries
+              .map((e) => Text(
+                    'Lücke ${e.key + 1}: ${e.value}',
+                    style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.4),
+                  ))
+              .toList(),
+        );
+
+      case QuestionType.dragDrop:
+      case QuestionType.dragCategory:
+        final pairs = card.dragPairs ?? const [];
+        if (pairs.isEmpty) {
+          return Text('Keine Zuordnungspaare hinterlegt.',
+              style: TextStyle(color: c.danger, fontSize: 12.5, height: 1.5));
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: pairs
+              .map((p) => Text(
+                    '${p.source} → ${p.target}',
+                    style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.4),
+                  ))
+              .toList(),
+        );
+    }
+  }
 }
