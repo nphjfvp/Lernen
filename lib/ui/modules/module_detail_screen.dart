@@ -671,6 +671,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
         explanation: explanation,
         sourceMaterialIds: concept.sourceMaterialIds,
         createdAt: concept.createdAt,
+        unitId: concept.unitId,
       ),
     ]);
   }
