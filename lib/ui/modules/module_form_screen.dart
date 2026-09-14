@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -122,7 +120,12 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
     await repo.save(module);
     if (!mounted) return;
     final allCards = await context.read<FlashcardRepository>().loadAll();
-    unawaited(HomeWidgetService().refresh(modules: repo.modules, allCards: allCards));
+    // Bewusst AWAITED statt unawaited: direkt danach navigieren wir weg
+    // (Navigator.pop), und auf manchen Geräten wird die App danach schnell
+    // in den Hintergrund gedrängt – ein nicht abgewartetes Future könnte
+    // dann abgebrochen werden, bevor die Plattform-Channel-Aufrufe
+    // durchlaufen sind, und das Widget bliebe auf dem alten Stand hängen.
+    await HomeWidgetService().refresh(modules: repo.modules, allCards: allCards);
     if (mounted) Navigator.of(context).pop();
   }
 
