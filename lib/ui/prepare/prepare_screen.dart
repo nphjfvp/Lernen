@@ -16,6 +16,7 @@ import '../../repositories/summary_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
+import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
@@ -26,9 +27,10 @@ enum _Mode { kurz, ausfuehrlich }
 enum _Step { modeSelect, pick, extracting, ready, generating, preview, preparingSession, session }
 
 class _PickedFile {
-  _PickedFile({required this.fileName, required this.text});
+  _PickedFile({required this.fileName, required this.text, required this.bytes});
   final String fileName;
   final String text;
+  final Uint8List bytes;
 }
 
 /// Vorbereiten-Modus, in zwei Varianten:
@@ -128,7 +130,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
           }
           final highlightBlock = match != null ? HighlightContext.build(match) : '';
           final combined = highlightBlock.isEmpty ? text : '$text\n\n$highlightBlock';
-          newFiles.add(_PickedFile(fileName: file.name, text: combined));
+          newFiles.add(_PickedFile(fileName: file.name, text: combined, bytes: bytes));
         }
       } catch (e) {
         setState(() => _error = '${file.name}: $e');
@@ -241,17 +243,31 @@ class _PrepareScreenState extends State<PrepareScreen> {
     final result = _result!;
     final now = DateTime.now();
     final unitId = _unitChoice.isEmpty ? null : _unitChoice;
-    final materials = _files
-        .map((f) => MaterialItem(
-              id: const Uuid().v4(),
-              moduleId: widget.moduleId,
-              fileName: f.fileName,
-              kind: MaterialKind.slide,
-              extractedText: f.text,
-              createdAt: now,
-              unitId: unitId,
-            ))
-        .toList();
+    final materials = <MaterialItem>[];
+    for (final f in _files) {
+      final id = const Uuid().v4();
+      // Original-PDF-Bytes zusätzlich speichern (wie beim direkten Upload in
+      // ModuleDetailScreen) – sonst bleibt die Folie unsichtbar: ohne
+      // filePath/fileBytesBase64 ist hasViewablePdf false und weder
+      // MaterialViewerScreen noch die "Frage zur Seite"-Funktion darin sind
+      // erreichbar.
+      String? filePath;
+      String? fileBytesBase64;
+      if (f.fileName.toLowerCase().endsWith('.pdf')) {
+        (filePath, fileBytesBase64) = await MaterialFileStore.store(id, f.bytes);
+      }
+      materials.add(MaterialItem(
+        id: id,
+        moduleId: widget.moduleId,
+        fileName: f.fileName,
+        kind: MaterialKind.slide,
+        extractedText: f.text,
+        createdAt: now,
+        unitId: unitId,
+        filePath: filePath,
+        fileBytesBase64: fileBytesBase64,
+      ));
+    }
 
     final summary = Summary(
       id: const Uuid().v4(),
@@ -363,18 +379,27 @@ class _PrepareScreenState extends State<PrepareScreen> {
   Future<void> _finishSession() async {
     final now = DateTime.now();
     final unitId = _unitChoice.isEmpty ? null : _unitChoice;
-    final materials = _files
-        .map((f) => MaterialItem(
-              id: const Uuid().v4(),
-              moduleId: widget.moduleId,
-              fileName: f.fileName,
-              kind: MaterialKind.slide,
-              extractedText: f.text,
-              createdAt: now,
-              unitId: unitId,
-              highlights: _highlightsByFile[f.fileName] ?? const [],
-            ))
-        .toList();
+    final materials = <MaterialItem>[];
+    for (final f in _files) {
+      final id = const Uuid().v4();
+      String? filePath;
+      String? fileBytesBase64;
+      if (f.fileName.toLowerCase().endsWith('.pdf')) {
+        (filePath, fileBytesBase64) = await MaterialFileStore.store(id, f.bytes);
+      }
+      materials.add(MaterialItem(
+        id: id,
+        moduleId: widget.moduleId,
+        fileName: f.fileName,
+        kind: MaterialKind.slide,
+        extractedText: f.text,
+        createdAt: now,
+        unitId: unitId,
+        highlights: _highlightsByFile[f.fileName] ?? const [],
+        filePath: filePath,
+        fileBytesBase64: fileBytesBase64,
+      ));
+    }
 
     final materialRepo = context.read<MaterialRepository>();
     for (final material in materials) {

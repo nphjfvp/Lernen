@@ -20,6 +20,7 @@ import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
+import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
@@ -29,9 +30,10 @@ import '../widgets/raw_response_dialog.dart';
 enum _Step { pick, generating, preview }
 
 class _PickedFile {
-  _PickedFile({required this.fileName, required this.text});
+  _PickedFile({required this.fileName, required this.text, required this.bytes});
   final String fileName;
   final String text;
+  final Uint8List bytes;
 }
 
 /// Nachbereiten-Modus: Folien UND Übungsaufgaben gemeinsam hochladen (auch
@@ -138,7 +140,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           }
           final highlightBlock = match != null ? HighlightContext.build(match) : '';
           final combined = highlightBlock.isEmpty ? text : '$text\n\n$highlightBlock';
-          target.add(_PickedFile(fileName: file.name, text: combined));
+          target.add(_PickedFile(fileName: file.name, text: combined, bytes: bytes));
         }
       } catch (e) {
         setState(() => _error = '${file.name}: $e');
@@ -346,18 +348,32 @@ class _ReviewScreenState extends State<ReviewScreen> {
     // Übungen gemeinsam nachbereitet, hat das Thema damit i.d.R. bereits in
     // der Vorlesung gehabt (Übungen kommen meist erst danach). Lässt sich im
     // Modul-Detail jederzeit manuell umstellen.
-    final slidesMaterials = _slidesFiles
-        .map((f) => MaterialItem(
-              id: const Uuid().v4(),
-              moduleId: widget.moduleId,
-              fileName: f.fileName,
-              kind: MaterialKind.slide,
-              extractedText: f.text,
-              createdAt: now,
-              covered: true,
-              unitId: unitId,
-            ))
-        .toList();
+    final slidesMaterials = <MaterialItem>[];
+    for (final f in _slidesFiles) {
+      final id = const Uuid().v4();
+      // Original-PDF-Bytes zusätzlich speichern (wie beim direkten Upload in
+      // ModuleDetailScreen) – sonst bleibt die Folie unsichtbar: ohne
+      // filePath/fileBytesBase64 ist hasViewablePdf false und weder
+      // MaterialViewerScreen noch die "Frage zur Seite"-Funktion darin sind
+      // erreichbar.
+      String? filePath;
+      String? fileBytesBase64;
+      if (f.fileName.toLowerCase().endsWith('.pdf')) {
+        (filePath, fileBytesBase64) = await MaterialFileStore.store(id, f.bytes);
+      }
+      slidesMaterials.add(MaterialItem(
+        id: id,
+        moduleId: widget.moduleId,
+        fileName: f.fileName,
+        kind: MaterialKind.slide,
+        extractedText: f.text,
+        createdAt: now,
+        covered: true,
+        unitId: unitId,
+        filePath: filePath,
+        fileBytesBase64: fileBytesBase64,
+      ));
+    }
     final exercisesMaterials = _exercisesFiles
         .map((f) => MaterialItem(
               id: const Uuid().v4(),

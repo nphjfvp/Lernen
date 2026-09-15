@@ -336,6 +336,15 @@ PDF-Folien verfügbar (Original-Bytes werden dafür beim Upload zusätzlich
 gespeichert, siehe `MaterialFileStore`); andere Formate/Übungsaufgaben
 funktionieren weiterhin rein textbasiert.
 
+Diese Original-Bytes werden bei JEDEM Upload-Weg gespeichert – nicht nur
+beim direkten "Material hochladen" in `ModuleDetailScreen`, sondern
+genauso beim Foliten-Upload in `PrepareScreen` (Kurz **und** Ausführlich)
+und in `ReviewScreen` (Nachbereiten). Dadurch ist eine Folie unabhängig
+vom Weg, über den sie ins Fach kam, immer über `MaterialViewerScreen`
+einsehbar, markierbar und für "Frage zur Seite" (siehe 5b) nutzbar – ohne
+das läge nach Vorbereiten/Nachbereiten nur der extrahierte Text vor
+(`hasViewablePdf == false`), die eigentlichen Folien wären unsichtbar.
+
 ### 5b. Frage zur aktuellen Seite (Vision-Modell)
 
 Im selben `MaterialViewerScreen` öffnet der Button "Frage zur Seite" (in der
