@@ -37,6 +37,13 @@ class AppSettings {
   /// testbar bleibt). Default 18:00.
   final int dailyReminderMinuteOfDay;
 
+  /// Persönliche Bestleistung im Sprint-Pausenmodus (siehe SprintScreen) –
+  /// Anzahl richtig beantworteter Karten in einer Runde. Bewusst rein
+  /// geräte-lokal wie die Lernerinnerungs-Uhrzeit (kein Leaderboard, kein
+  /// Vergleich mit anderen Nutzern): Kompetenz-Feedback gegen den eigenen
+  /// früheren Stand motiviert nachhaltiger als sozialer Vergleich.
+  final int bestSprintScore;
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
@@ -53,6 +60,7 @@ class AppSettings {
     this.lastSyncAt,
     this.dailyReminderEnabled = false,
     this.dailyReminderMinuteOfDay = defaultReminderMinuteOfDay,
+    this.bestSprintScore = 0,
   });
 
   bool get hasApiKey =>
@@ -72,6 +80,7 @@ class AppSettings {
     DateTime? lastSyncAt,
     bool? dailyReminderEnabled,
     int? dailyReminderMinuteOfDay,
+    int? bestSprintScore,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -84,6 +93,7 @@ class AppSettings {
       lastSyncAt: lastSyncAt ?? this.lastSyncAt,
       dailyReminderEnabled: dailyReminderEnabled ?? this.dailyReminderEnabled,
       dailyReminderMinuteOfDay: dailyReminderMinuteOfDay ?? this.dailyReminderMinuteOfDay,
+      bestSprintScore: bestSprintScore ?? this.bestSprintScore,
     );
   }
 
@@ -98,6 +108,7 @@ class AppSettings {
         'lastSyncAt': lastSyncAt?.toIso8601String(),
         'dailyReminderEnabled': dailyReminderEnabled,
         'dailyReminderMinuteOfDay': dailyReminderMinuteOfDay,
+        'bestSprintScore': bestSprintScore,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -116,5 +127,6 @@ class AppSettings {
             : DateTime.parse(map['lastSyncAt'] as String),
         dailyReminderEnabled: map['dailyReminderEnabled'] as bool? ?? false,
         dailyReminderMinuteOfDay: map['dailyReminderMinuteOfDay'] as int? ?? defaultReminderMinuteOfDay,
+        bestSprintScore: map['bestSprintScore'] as int? ?? 0,
       );
 }

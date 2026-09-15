@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/mastery_snapshot.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../repositories/mastery_snapshot_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../services/mastery_service.dart';
+import '../../services/mastery_trend_service.dart';
 import '../../services/stats_service.dart';
 import '../../theme/app_colors.dart';
+import '../sprint/sprint_screen.dart';
 import '../widgets/mastery_dot.dart';
 
 /// Fortschritts-Übersicht: Streak, Gesamtzahl Wiederholungen, durchschnitt-
@@ -22,6 +26,8 @@ class StatsScreen extends StatefulWidget {
 
 class _StatsScreenState extends State<StatsScreen> {
   OverallStats? _stats;
+  MasteryTrend? _trend;
+  final _snapshotRepo = MasterySnapshotRepository();
 
   @override
   void initState() {
@@ -33,8 +39,27 @@ class _StatsScreenState extends State<StatsScreen> {
     final modules = context.read<ModuleRepository>().modules;
     final allCards = await context.read<FlashcardRepository>().loadAll();
     if (!mounted) return;
+    final stats = StatsService().compute(modules: modules, allCards: allCards);
+
+    // Ampel-Trend ("mehr Grün als letzte Woche"): einmal täglich einen
+    // Schnappschuss der aktuellen Ampel-Aufschlüsselung + Behaltensrate
+    // sichern (überschreibt bei mehrfachem Aufruf am selben Tag denselben
+    // Eintrag), dann mit dem Stand von vor ~7 Tagen vergleichen.
+    final breakdown = MasteryService().breakdown(allCards);
+    final today = MasterySnapshot(
+      date: DateTime.now(),
+      red: breakdown[MasteryLevel.red] ?? 0,
+      yellow: breakdown[MasteryLevel.yellow] ?? 0,
+      green: breakdown[MasteryLevel.green] ?? 0,
+      neu: breakdown[MasteryLevel.neu] ?? 0,
+      averageRetrievability: stats.averageRetrievability,
+    );
+    await _snapshotRepo.recordToday(today);
+    final history = await _snapshotRepo.loadRecent(14);
+    if (!mounted) return;
     setState(() {
-      _stats = StatsService().compute(modules: modules, allCards: allCards);
+      _stats = stats;
+      _trend = MasteryTrendService.compare(today: today, history: history);
     });
   }
 
@@ -91,6 +116,16 @@ class _StatsScreenState extends State<StatsScreen> {
                       fg: c.good,
                       bg: c.goodSoft,
                       wide: true,
+                    ),
+                    if (_trend != null) ...[
+                      const SizedBox(height: 10),
+                      _TrendCard(trend: _trend!),
+                    ],
+                    const SizedBox(height: 10),
+                    _SprintEntryCard(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SprintScreen()),
+                      ),
                     ),
                     const SizedBox(height: 28),
                     Text(
@@ -149,6 +184,109 @@ class _StatCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Vergleicht den heutigen Stand mit dem Schnappschuss von vor ~7 Tagen
+/// (siehe MasteryTrendService) – Kompetenz-Feedback gegen den EIGENEN
+/// früheren Stand statt Fremdvergleich/Leaderboard (Selbstbestimmungstheorie).
+class _TrendCard extends StatelessWidget {
+  const _TrendCard({required this.trend});
+  final MasteryTrend trend;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final retrievability = trend.retrievabilityDelta;
+    final greenShare = trend.greenShareDelta;
+    if (retrievability == null && greenShare == null) return const SizedBox.shrink();
+
+    return DecoratedBox(
+      decoration: BoxDecoration(color: c.surface, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(Icons.trending_up_rounded, color: c.accent, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Gegenüber vor ${trend.daysAgo} Tagen', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                  const SizedBox(height: 4),
+                  if (retrievability != null) _TrendLine(c: c, label: 'Behaltensrate', delta: retrievability),
+                  if (greenShare != null) _TrendLine(c: c, label: 'Grün-Anteil', delta: greenShare),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TrendLine extends StatelessWidget {
+  const _TrendLine({required this.c, required this.label, required this.delta});
+  final AppColors c;
+  final String label;
+  final double delta;
+
+  @override
+  Widget build(BuildContext context) {
+    final rounded = (delta * 100).round();
+    final color = rounded > 0 ? c.good : (rounded < 0 ? c.danger : c.inkMuted);
+    final sign = rounded > 0 ? '+' : '';
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        '$label: $sign$rounded Prozentpunkte',
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
+      ),
+    );
+  }
+}
+
+/// Einstieg in den Sprint-Pausenmodus (siehe SprintScreen) – bewusst hier
+/// im Fortschritts-Tab statt neben Vorbereiten/Nachbereiten/Daily Quiz, um
+/// es klar vom Kernlernkreislauf abzugrenzen: eine optionale Auflockerung,
+/// kein Ersatz dafür.
+class _SprintEntryCard extends StatelessWidget {
+  const _SprintEntryCard({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Icon(Icons.bolt_rounded, color: c.warn, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Sprint (Pause)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink)),
+                    const SizedBox(height: 2),
+                    Text('60 Sekunden gegen deine schwächsten Karten – zur Auflockerung',
+                        style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 18, color: c.inkMuted),
+            ],
+          ),
+        ),
       ),
     );
   }

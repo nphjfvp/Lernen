@@ -45,4 +45,20 @@ void main() {
       expect(restored.dailyReminderMinuteOfDay, AppSettings.defaultReminderMinuteOfDay);
     });
   });
+
+  group('AppSettings.bestSprintScore', () {
+    test('defaultet auf 0', () {
+      expect(const AppSettings().bestSprintScore, 0);
+    });
+
+    test('Round-Trip erhält den Wert', () {
+      const settings = AppSettings(bestSprintScore: 17);
+      expect(AppSettings.fromMap(settings.toMap()).bestSprintScore, 17);
+    });
+
+    test('ist abwärtskompatibel zu älteren Datensätzen ohne das Feld', () {
+      final map = const AppSettings().toMap()..remove('bestSprintScore');
+      expect(AppSettings.fromMap(map).bestSprintScore, 0);
+    });
+  });
 }

@@ -72,6 +72,23 @@ engerem Fokus statt Feature-Fülle.
   wirksamer als Blockübung (Interleaving-Effekt), ohne dass sich an
   Fälligkeit oder Neu-Karten-Budget etwas ändert – nur die Reihenfolge
   innerhalb der Session.
+- **Ampel-Trend** – im Fortschritts-Tab ein täglicher Schnappschuss der
+  Ampel-Aufschlüsselung + Behaltensrate (`lib/models/mastery_snapshot.dart`,
+  ein Eintrag pro Kalendertag, kein volles Review-Log), verglichen mit dem
+  Stand von vor ~7 Tagen (`lib/services/mastery_trend_service.dart`, reine
+  Logik). Bewusst ein Vergleich mit dem EIGENEN früheren Stand statt mit
+  anderen Nutzern – Kompetenz-Feedback motiviert nachhaltiger als sozialer
+  Vergleich/Leaderboards (Selbstbestimmungstheorie, Deci & Ryan).
+- **Sprint (Pausenmodus)** – ein optionales, klar vom Kernlernkreislauf
+  abgegrenztes Mini-Spiel im Fortschritts-Tab: 60 Sekunden Zeitdruck gegen
+  die fachübergreifend schwächsten (Ampel-rot, notfalls +gelb) Karten,
+  wiederverwendet dieselben Fragetypen/dieselbe Auswertung wie Daily Quiz.
+  Bewusst OHNE FSRS-Effekt (ändert nie, wann eine Karte fällig wird) und
+  OHNE Münzen/Shop/Fremdvergleich – nur eine geräte-lokale persönliche
+  Bestleistung (`AppSettings.bestSprintScore`). Gamification erhöht
+  nachweislich Engagement/Wiederkehrrate, aber nicht zuverlässig den
+  Lerngewinn pro Sitzung – deshalb bewusst als Auflockerung positioniert,
+  nicht als Ersatz für Daily Quiz/Üben/Nachbereiten.
 - **Materialien & Vorarbeiten** – im Modul-Detail lässt sich beliebig viel
   Material (z.B. der komplette Semesterinhalt, als PDF/Word/PowerPoint)
   direkt hochladen, ohne dass dafür eine KI-Anfrage anfällt – reine
