@@ -141,10 +141,13 @@ engerem Fokus statt Feature-Fülle.
   demselben Konto anmelden und synchronisieren. **Ohne Account**:
   Sync-Code-basiert wie beim Vorgänger (`sync_codes/{code}`, funktioniert
   wie ein Passwort) – bleibt als Fallback erhalten. Beide Wege übertragen
-  Fächer, Materialien, Konzepte, Karteikarten UND den BYOK-Teil der
-  Einstellungen (API-Key + Modellwahl); Geräte-lokales wie die
-  Lernerinnerungs-Uhrzeit bleibt bewusst lokal. Ohne Konfiguration läuft die
-  App komplett offline.
+  Fächer, Materialien, Konzepte, Karteikarten und die Modellwahl. Der
+  eigentliche API-Key wird bewusst NUR über den Konto-Weg übertragen (dort
+  regel-geschützt auf den Besitzer) – ein frei getippter Sync-Code hat keine
+  Mindestkomplexität/Ratenbegrenzung und darf kein potenziell
+  kostenpflichtiges API-Zugangsmittel offenlegen können. Geräte-lokales wie
+  die Lernerinnerungs-Uhrzeit bleibt bewusst lokal. Ohne Konfiguration läuft
+  die App komplett offline.
 - **Account (optional)** – E-Mail/Passwort oder Google-Anmeldung über
   Firebase Auth, aus den Einstellungen heraus. Nie erzwungen: die App bleibt
   auch ohne Account voll nutzbar. Der Hauptzweck ist der automatische

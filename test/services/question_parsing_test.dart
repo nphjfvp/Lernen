@@ -128,5 +128,32 @@ void main() {
       final raw = {'type': 'drag_drop', 'front': 'Ordne zu'};
       expect(QuestionParsing.normalizeGeneratedFlashcard(raw), isNull);
     });
+
+    test('übernimmt conceptTitle beim Retten in eine einfache flashcard', () {
+      final raw = {
+        'type': 'single_choice',
+        'front': 'Frage?',
+        'conceptTitle': 'Newtons zweites Gesetz',
+        'blanks': ['Die richtige Lösung'],
+      };
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw);
+      expect(fixed!['conceptTitle'], 'Newtons zweites Gesetz');
+    });
+  });
+
+  group('QuestionParsing.matchConceptId', () {
+    test('findet die ID case- und whitespace-tolerant', () {
+      final idByTitle = {'newtons zweites gesetz': 'concept-1'};
+      expect(QuestionParsing.matchConceptId('  Newtons Zweites Gesetz  ', idByTitle), 'concept-1');
+    });
+
+    test('gibt null zurück, wenn kein Titel angegeben wurde', () {
+      expect(QuestionParsing.matchConceptId(null, {'a': 'id-a'}), isNull);
+      expect(QuestionParsing.matchConceptId('', {'a': 'id-a'}), isNull);
+    });
+
+    test('gibt null zurück, wenn kein Konzept mit diesem Titel existiert', () {
+      expect(QuestionParsing.matchConceptId('Unbekanntes Konzept', {'a': 'id-a'}), isNull);
+    });
   });
 }

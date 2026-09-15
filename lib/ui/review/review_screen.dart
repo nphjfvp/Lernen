@@ -387,6 +387,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ))
         .toList();
 
+    // Grundlage für Flashcard.conceptId: die KI liefert pro Karte optional
+    // "conceptTitle" statt einer ID (kennt die erst nach dem Speichern noch
+    // nicht existierende UUID nicht) – hier gegen die gerade generierten
+    // Concept-Titel aufgelöst.
+    final conceptIdByTitle = {for (final c in concepts) c.title.trim().toLowerCase(): c.id};
+
     final flashcards = ((result['flashcards'] as List?) ?? []).map((raw) {
       final f = Map<String, dynamic>.from(raw as Map);
       final type = QuestionParsing.parseType(f['type'] as String?);
@@ -394,6 +400,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return Flashcard(
         id: const Uuid().v4(),
         moduleId: widget.moduleId,
+        conceptId: QuestionParsing.matchConceptId(f['conceptTitle'] as String?, conceptIdByTitle),
         front: (f['front'] ?? '').toString(),
         back: (f['back'] ?? '').toString(),
         createdAt: now,

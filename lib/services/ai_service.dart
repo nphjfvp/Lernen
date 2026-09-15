@@ -217,6 +217,13 @@ JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
 enthalten (siehe Beispiele unten) – ein Eintrag mit nur "front" und sonst
 nichts ist ungültig und wird verworfen.
 
+Trägt eine Karteikarte inhaltlich zu einem der oben erstellten Konzepte bei,
+ergänze zusätzlich "conceptTitle" mit EXAKT demselben Titel wie im
+"concepts"-Array (Zeichen für Zeichen identisch, damit die Zuordnung
+technisch funktioniert). Nicht jede Karte muss einem Konzept zugeordnet
+werden – reines Einzelfaktenwissen ohne Konzeptbezug lässt das Feld einfach
+weg.
+
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {
@@ -224,7 +231,7 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
     {"title": "Konzeptname", "explanation": "Ausführliche Erklärung mit Bezug zu den Übungsaufgaben"}
   ],
   "flashcards": [
-    {"type": "single_choice", "front": "Frage", "escalate": true,
+    {"type": "single_choice", "front": "Frage", "escalate": true, "conceptTitle": "Konzeptname",
      "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
     {"type": "multiple_choice", "front": "Frage",
      "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},

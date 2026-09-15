@@ -134,16 +134,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<bool?> _confirmOverwrite() {
+  /// Zeigt vor einem Pull die TATSÄCHLICHE Anzahl lokal vorhandener
+  /// Datensätze, statt nur pauschal zu warnen – [SyncService._pull] ist ein
+  /// vollständiger Ersatz statt eines Merges: hat ein anderes Gerät
+  /// zwischenzeitlich offline weitergelernt und noch nicht gepusht, geht
+  /// dieser Fortschritt hier lautlos verloren. Die konkreten Zahlen machen
+  /// zumindest sichtbar, was auf dem Spiel steht.
+  Future<bool?> _confirmOverwrite() async {
+    final counts = await _syncService.localCounts();
+    if (!mounted) return false;
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Lokale Daten überschreiben?'),
-        content: const Text(
-            'Alle lokalen Fächer, Materialien, Konzepte und Karteikarten werden '
-            'durch den Stand aus der Cloud ersetzt. Ein in der Cloud hinterlegter '
-            'API-Key/Modellwahl wird ebenfalls übernommen. Das kann nicht '
-            'rückgängig gemacht werden.'),
+        content: Text(
+            'Der Cloud-Stand ersetzt deine aktuell ${counts.modules} lokalen Fächer, '
+            '${counts.materials} Materialien, ${counts.concepts} Konzepte und '
+            '${counts.flashcards} Karteikarten VOLLSTÄNDIG – kein Zusammenführen. '
+            'Hat ein anderes Gerät zwischenzeitlich offline weitergelernt und das '
+            'noch nicht hochgeladen, geht dieser Fortschritt hier verloren. Das kann '
+            'nicht rückgängig gemacht werden.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
           FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Überschreiben')),

@@ -54,6 +54,7 @@ class _SummaryDetailScreenState extends State<SummaryDetailScreen> {
           .where((l) => l.isNotEmpty)
           .toList(),
       createdAt: _summary.createdAt,
+      unitId: _summary.unitId,
     );
     await context.read<SummaryRepository>().save(updated);
     if (!mounted) return;

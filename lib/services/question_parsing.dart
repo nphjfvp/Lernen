@@ -74,7 +74,12 @@ class QuestionParsing {
 
     final fallbackAnswer = _bestAvailableAnswer(raw);
     if (fallbackAnswer == null) return null;
-    return {'type': 'flashcard', 'front': front, 'back': fallbackAnswer};
+    return {
+      'type': 'flashcard',
+      'front': front,
+      'back': fallbackAnswer,
+      if (raw['conceptTitle'] != null) 'conceptTitle': raw['conceptTitle'],
+    };
   }
 
   static bool _isComplete(Map<String, dynamic> raw, QuestionType type) {
@@ -95,6 +100,20 @@ class QuestionParsing {
         final pairs = parseDragPairs(raw['dragPairs']);
         return pairs != null && pairs.isNotEmpty;
     }
+  }
+
+  /// Ordnet eine von der KI mitgelieferte "conceptTitle" (siehe
+  /// AiService.generateConceptsAndFlashcards) der ID des passenden, gerade
+  /// neu gespeicherten Konzepts zu – Grundlage für [Flashcard.conceptId].
+  /// [conceptIdByTitle] erwartet bereits normalisierte Schlüssel (siehe
+  /// Aufrufer in ReviewScreen). Case-/Whitespace-tolerant, da die KI den
+  /// Titel nicht immer exakt wiederholt. Liefert `null`, wenn kein Titel
+  /// angegeben wurde oder keiner passt – die Karte bleibt dann wie bisher
+  /// ohne Konzept-Verknüpfung, statt einen Fehler zu werfen.
+  static String? matchConceptId(String? conceptTitle, Map<String, String> conceptIdByTitle) {
+    final normalized = conceptTitle?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) return null;
+    return conceptIdByTitle[normalized];
   }
 
   static String? _bestAvailableAnswer(Map<String, dynamic> raw) {

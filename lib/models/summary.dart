@@ -10,6 +10,12 @@ class Summary {
   final List<String> keyPoints;
   final DateTime createdAt;
 
+  /// Welcher Vorlesungseinheit (siehe LectureUnit) diese Zusammenfassung
+  /// zugeordnet ist – übernommen von der beim Vorbereiten gewählten
+  /// Einheit. Null = keine Einheit gewählt (z.B. ältere Zusammenfassungen
+  /// vor Einführung der Einheiten).
+  final String? unitId;
+
   const Summary({
     required this.id,
     required this.moduleId,
@@ -18,6 +24,7 @@ class Summary {
     required this.overview,
     required this.keyPoints,
     required this.createdAt,
+    this.unitId,
   });
 
   Map<String, dynamic> toMap() => {
@@ -28,6 +35,7 @@ class Summary {
         'overview': overview,
         'keyPoints': keyPoints,
         'createdAt': createdAt.toIso8601String(),
+        'unitId': unitId,
       };
 
   factory Summary.fromMap(Map<String, dynamic> map) => Summary(
@@ -38,5 +46,6 @@ class Summary {
         overview: map['overview'] as String,
         keyPoints: List<String>.from(map['keyPoints'] as List),
         createdAt: DateTime.parse(map['createdAt'] as String),
+        unitId: map['unitId'] as String?,
       );
 }

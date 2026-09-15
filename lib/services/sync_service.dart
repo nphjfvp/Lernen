@@ -41,13 +41,15 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
 ///  - Sync-Code (Fallback ohne Konto, wie beim Vorgänger): Daten liegen
 ///    unter `sync_codes/{code}`, der Code wirkt wie ein Passwort.
 ///
-/// Beide Wege übertragen dieselben Inhalte: Fächer, Materialien,
-/// Zusammenfassungen, Konzepte, Karteikarten UND den BYOK-Teil der
-/// Einstellungen (API-Key + Modellwahl). Das ist beim Konto-Weg
-/// unproblematisch (nur der authentifizierte Besitzer hat Zugriff); beim
-/// Code-Weg ist es dasselbe Vertrauensmodell wie der Rest der Daten auch
-/// schon hat. Geräte-lokale Dinge wie die Lernerinnerungs-Uhrzeit werden
-/// bewusst NICHT übertragen.
+/// Beide Wege übertragen Fächer, Materialien, Zusammenfassungen, Konzepte
+/// und Karteikarten. Beim BYOK-Teil der Einstellungen (API-Key + Modellwahl)
+/// unterscheiden sie sich bewusst: der Konto-Weg überträgt auch den API-Key
+/// (nur der authentifizierte Besitzer hat Zugriff); der Code-Weg überträgt
+/// NUR die Modellwahl, NIE den Key selbst – ein frei getippter Sync-Code hat
+/// keine Mindestkomplexität/Ratenbegrenzung und darf deshalb kein
+/// potenziell kostenpflichtiges API-Zugangsmittel offenlegen können (siehe
+/// [_push]/[pushToCode]). Geräte-lokale Dinge wie die Lernerinnerungs-Uhrzeit
+/// werden bewusst NICHT übertragen.
 ///
 /// Setzt voraus, dass Firebase in main.dart erfolgreich initialisiert wurde.
 /// Ist Firebase nicht konfiguriert, bleibt die App voll offline nutzbar –
@@ -63,13 +65,35 @@ class SyncService {
   DocumentReference<Map<String, dynamic>> _accountDoc(String uid) =>
       FirebaseFirestore.instance.collection('users').doc(uid);
 
-  Future<void> pushToCode(String syncCode) => _push(_codeDoc(syncCode));
-  Future<void> pushToAccount(String uid) => _push(_accountDoc(uid));
+  /// [includeApiKey] ist bei Konto-Sync true (der Weg ist per Firestore-Regel
+  /// exakt auf den authentifizierten Besitzer beschränkt), beim Sync-Code
+  /// bewusst false: der Code selbst hat keine Mindestkomplexität und keine
+  /// Ratenbegrenzung außer Firebases Default – ein erratener/schwacher Code
+  /// darf kein potenziell kostenpflichtiges API-Zugangsmittel offenlegen.
+  /// Modellwahl (nicht geheim) wird trotzdem weiter übertragen.
+  Future<void> pushToCode(String syncCode) => _push(_codeDoc(syncCode), includeApiKey: false);
+  Future<void> pushToAccount(String uid) => _push(_accountDoc(uid), includeApiKey: true);
 
   Future<void> pullFromCode(String syncCode) => _pull(_codeDoc(syncCode));
   Future<void> pullFromAccount(String uid) => _pull(_accountDoc(uid));
 
-  Future<void> _push(DocumentReference<Map<String, dynamic>> doc) async {
+  /// Anzahl lokal vorhandener Datensätze je Kategorie – Grundlage für die
+  /// Bestätigung vor einem Pull (siehe SettingsScreen._confirmOverwrite):
+  /// [_pull] ersetzt diese Daten vollständig statt sie zu mergen (kein
+  /// Abgleich nach Änderungszeitpunkt), daher soll der Nutzer VOR dem
+  /// Bestätigen sehen, was konkret wegfällt, statt nur pauschal gewarnt zu
+  /// werden.
+  Future<({int modules, int materials, int concepts, int flashcards})> localCounts() async {
+    final db = await DatabaseService.instance.database;
+    return (
+      modules: await DatabaseService.modules.count(db),
+      materials: await DatabaseService.materials.count(db),
+      concepts: await DatabaseService.concepts.count(db),
+      flashcards: await DatabaseService.flashcards.count(db),
+    );
+  }
+
+  Future<void> _push(DocumentReference<Map<String, dynamic>> doc, {required bool includeApiKey}) async {
     if (!isAvailable) {
       throw SyncException('Cloud-Sync ist nicht konfiguriert (kein Firebase-Projekt verbunden).');
     }
@@ -88,7 +112,7 @@ class SyncService {
       'summaries': summaries,
       'concepts': concepts,
       'flashcards': flashcards,
-      'aiSettings': await _readAiSettings(db),
+      'aiSettings': await _readAiSettings(db, includeApiKey: includeApiKey),
     });
   }
 
@@ -141,11 +165,14 @@ class SyncService {
     });
   }
 
-  Future<Map<String, dynamic>> _readAiSettings(DatabaseClient db) async {
+  Future<Map<String, dynamic>> _readAiSettings(DatabaseClient db, {required bool includeApiKey}) async {
     final record = await DatabaseService.settings.record(_settingsKey).get(db);
     final settings = record == null ? const AppSettings() : AppSettings.fromMap(record);
     return {
-      'openRouterApiKey': settings.openRouterApiKey,
+      // Explizit null (nicht einfach weggelassen) statt des echten Keys, wenn
+      // includeApiKey=false: überschreibt dabei auch einen eventuell VOR
+      // diesem Fix in dieses Dokument gelangten Key beim nächsten Push.
+      'openRouterApiKey': includeApiKey ? settings.openRouterApiKey : null,
       'questionModelId': settings.questionModelId,
       'visionModelId': settings.visionModelId,
       'crosscheckModelId': settings.crosscheckModelId,

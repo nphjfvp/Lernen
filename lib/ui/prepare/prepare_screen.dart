@@ -263,6 +263,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
       overview: result['overview'] as String? ?? '',
       keyPoints: (result['key_points'] as List?)?.map((e) => e.toString()).toList() ?? [],
       createdAt: now,
+      unitId: unitId,
     );
 
     final materialRepo = context.read<MaterialRepository>();
