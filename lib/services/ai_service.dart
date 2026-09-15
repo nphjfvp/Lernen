@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -46,7 +47,13 @@ class AiService {
   /// den Prompt bei sehr vielen Chunks trotzdem beschränkt.
   static const int _rollingContextLimit = 40;
 
-  Future<String> _complete(String systemPrompt, String userPrompt) async {
+  /// [userContent] ist entweder ein einfacher String (Text-Anfrage, der
+  /// Normalfall) oder eine OpenRouter/OpenAI-kompatible Content-Parts-Liste
+  /// (`[{"type": "text", ...}, {"type": "image_url", ...}]`) für multimodale
+  /// Anfragen an ein Vision-Modell (siehe [answerPageQuestion]) – beides ist
+  /// als `content`-Wert einer Chat-Nachricht gültig, daher hier bewusst
+  /// `Object` statt `String`.
+  Future<String> _complete(String systemPrompt, Object userContent) async {
     if (apiKey.trim().isEmpty) {
       throw AiServiceException(
           'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
@@ -65,7 +72,7 @@ class AiService {
         'temperature': 0.3,
         'messages': [
           {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': userPrompt},
+          {'role': 'user', 'content': userContent},
         ],
       }),
     );
@@ -475,6 +482,65 @@ nicht gefragt wurde. Antworte klar und prägnant in normalem Fließtext
     }
     buffer.writeln('Meine Frage: $question');
     return _complete(_chatSystemPrompt, buffer.toString());
+  }
+
+  static const _pageQuestionSystemPrompt = '''
+Du bist ein Lernassistent für Studierende. Du bekommst ein Bild EINER
+konkreten Seite eines PDF-Foliensatzes/einer Übungsaufgabe (die Seite, auf
+der sich der Nutzer gerade befindet) sowie den vollständigen Text des
+GESAMTEN Dokuments als zusätzlichen Kontext – z.B. um Begriffe, Formeln
+oder Abkürzungen einzuordnen, die auf einer früheren oder späteren Seite
+erklärt werden. Stütze deine Antwort in erster Linie auf das, was auf dem
+Bild zu sehen ist (Layout, Diagramme, Formeln, hervorgehobene Stellen –
+Dinge, die reiner Text nicht wiedergibt), beziehe den Text-Kontext ein,
+wo er die Seite erklärt oder ergänzt. Beantworte AUSSCHLIESSLICH die
+gestellte Frage zu dieser Seite – erkläre oder ergänze nichts, wonach
+nicht gefragt wurde. Antworte klar und prägnant in normalem Fließtext
+(kein JSON, keine Codefences), in der Sprache der Frage.
+''';
+
+  /// Zeichenobergrenze für den Volltext-Kontext: hier geht es um Einordnung
+  /// der aktuellen Seite, nicht um vollständige Neuverarbeitung des ganzen
+  /// Dokuments (wie beim Vorbereiten/Nachbereiten-Modus).
+  static const int _pageQuestionDocumentCap = 40000;
+
+  /// Frage-Chat zu EINER KONKRETEN, gerade betrachteten PDF-Seite (siehe
+  /// MaterialViewerScreen): [pageImageBytes] ist ein Screenshot genau
+  /// dieser Seite (PNG), damit das – zwingend bildfähige, siehe
+  /// [AppSettings.visionModelId] – Modell sieht, was der Nutzer gerade vor
+  /// sich hat (Diagramme, Formeln, Markierungen), [documentText] der
+  /// Volltext des GESAMTEN Materials als zusätzlicher Kontext. Anders als
+  /// [answerQuestion] (materialübergreifend, reiner Text) ist dies bewusst
+  /// auf EIN Material und EINE Seite fokussiert.
+  Future<String> answerPageQuestion({
+    required String question,
+    required Uint8List pageImageBytes,
+    required int pageNumber,
+    required int totalPages,
+    required String documentText,
+    List<({bool isUser, String content})> history = const [],
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Aktuelle Seite: $pageNumber von $totalPages')
+      ..writeln()
+      ..writeln('Volltext des gesamten Dokuments (Kontext):')
+      ..writeln(_cap(documentText, _pageQuestionDocumentCap));
+    if (history.isNotEmpty) {
+      buffer.writeln('\nBisheriger Gesprächsverlauf:');
+      for (final turn in history) {
+        buffer.writeln('${turn.isUser ? 'Ich' : 'Assistent'}: ${turn.content}');
+      }
+    }
+    buffer.writeln('\nMeine Frage zu Seite $pageNumber: $question');
+
+    final content = [
+      {'type': 'text', 'text': buffer.toString()},
+      {
+        'type': 'image_url',
+        'image_url': {'url': 'data:image/png;base64,${base64Encode(pageImageBytes)}'},
+      },
+    ];
+    return _complete(_pageQuestionSystemPrompt, content);
   }
 
   static const _indexSystemPrompt = '''

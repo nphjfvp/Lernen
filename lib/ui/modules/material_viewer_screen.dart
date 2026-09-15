@@ -1,6 +1,8 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as sf_pdf;
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
@@ -33,6 +35,7 @@ class MaterialViewerScreen extends StatefulWidget {
 class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
   final _pdfController = PdfViewerController();
   final _pdfViewerKey = GlobalKey<SfPdfViewerState>();
+  final _pdfBoundaryKey = GlobalKey();
   late List<MaterialHighlight> _highlights;
   late final TextEditingController _notesController;
 
@@ -46,6 +49,8 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
 
   bool _suggesting = false;
   String? _suggestError;
+
+  bool _capturingPageQuestion = false;
 
   @override
   void initState() {
@@ -220,6 +225,53 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     }
   }
 
+  /// Erfasst genau das, was gerade sichtbar im PDF-Viewer angezeigt wird
+  /// (Screenshot, keine PDF-Rasterung – entspricht also 1:1 dem, was der
+  /// Nutzer gerade vor sich hat, inkl. Zoom/Ausschnitt), als PNG. `null` bei
+  /// jedem Fehlschlag statt zu werfen – siehe [_askAboutPage].
+  Future<Uint8List?> _capturePageImage() async {
+    try {
+      final boundary = _pdfBoundaryKey.currentContext?.findRenderObject();
+      if (boundary is! RenderRepaintBoundary) return null;
+      final image = await boundary.toImage(pixelRatio: 2.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Öffnet den Frage-Chat zur AKTUELL sichtbaren Seite (siehe
+  /// AiService.answerPageQuestion): erfasst einen Screenshot der Seite,
+  /// merkt sich Seitenzahl/Gesamtseiten vom Controller und zeigt dann das
+  /// Bottom-Sheet mit Text-Eingabe. Der Screenshot wird EINMALIG beim Öffnen
+  /// erfasst und für alle Rückfragen innerhalb desselben Sheets
+  /// wiederverwendet, statt bei jeder Frage neu zu erfassen.
+  Future<void> _askAboutPage() async {
+    if (_capturingPageQuestion) return;
+    setState(() => _capturingPageQuestion = true);
+    final imageBytes = await _capturePageImage();
+    final pageNumber = _pdfController.pageNumber;
+    final totalPages = _pdfController.pageCount;
+    if (!mounted) return;
+    setState(() => _capturingPageQuestion = false);
+    if (imageBytes == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Seite konnte nicht erfasst werden.')));
+      return;
+    }
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _PageQuestionSheet(
+        material: widget.material,
+        pageNumber: pageNumber < 1 ? 1 : pageNumber,
+        totalPages: totalPages < 1 ? 1 : totalPages,
+        pageImageBytes: imageBytes,
+      ),
+    );
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -276,6 +328,14 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
         appBar: AppBar(
           title: Text(widget.material.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
+            IconButton(
+              tooltip: 'Frage zur Seite',
+              icon: _capturingPageQuestion
+                  ? const SizedBox(
+                      width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.forum_outlined),
+              onPressed: (_capturingPageQuestion || _bytes == null) ? null : _askAboutPage,
+            ),
             IconButton(
               tooltip: 'KI-Vorschläge',
               icon: _suggesting
@@ -339,14 +399,17 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                         ),
                       ),
                       Expanded(
-                        child: SfPdfViewer.memory(
-                          _bytes!,
-                          key: _pdfViewerKey,
-                          controller: _pdfController,
-                          onTextSelectionChanged: (details) {
-                            setState(
-                                () => _hasSelection = (details.selectedText ?? '').trim().isNotEmpty);
-                          },
+                        child: RepaintBoundary(
+                          key: _pdfBoundaryKey,
+                          child: SfPdfViewer.memory(
+                            _bytes!,
+                            key: _pdfViewerKey,
+                            controller: _pdfController,
+                            onTextSelectionChanged: (details) {
+                              setState(
+                                  () => _hasSelection = (details.selectedText ?? '').trim().isNotEmpty);
+                            },
+                          ),
                         ),
                       ),
                       _BottomPanel(
@@ -358,6 +421,191 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                       ),
                     ],
                   ),
+      ),
+    );
+  }
+}
+
+/// Frage-Chat zu EINER konkreten, gerade betrachteten Seite (siehe
+/// AiService.answerPageQuestion) – sieht sowohl den mitgegebenen Screenshot
+/// dieser Seite als auch den Volltext des gesamten Materials als Kontext.
+/// Rein session-lokal (nicht persistiert): für eine dauerhafte Notiz kann
+/// das Ergebnis wie bisher manuell ins Notiz-Feld des Materials übernommen
+/// werden.
+class _PageQuestionSheet extends StatefulWidget {
+  const _PageQuestionSheet({
+    required this.material,
+    required this.pageNumber,
+    required this.totalPages,
+    required this.pageImageBytes,
+  });
+
+  final MaterialItem material;
+  final int pageNumber;
+  final int totalPages;
+  final Uint8List pageImageBytes;
+
+  @override
+  State<_PageQuestionSheet> createState() => _PageQuestionSheetState();
+}
+
+class _PageQuestionSheetState extends State<_PageQuestionSheet> {
+  final _controller = TextEditingController();
+  final List<({String question, String answer})> _turns = [];
+  bool _asking = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _ask() async {
+    final question = _controller.text.trim();
+    if (question.isEmpty) return;
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) {
+      setState(() => _error = 'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
+      return;
+    }
+
+    setState(() {
+      _asking = true;
+      _error = null;
+    });
+    try {
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.visionModelId);
+      final history = _turns
+          .expand((t) => [(isUser: true, content: t.question), (isUser: false, content: t.answer)])
+          .toList();
+      final answer = await ai.answerPageQuestion(
+        question: question,
+        pageImageBytes: widget.pageImageBytes,
+        pageNumber: widget.pageNumber,
+        totalPages: widget.totalPages,
+        documentText: widget.material.extractedText,
+        history: history,
+      );
+      if (!mounted) return;
+      setState(() {
+        _turns.add((question: question, answer: answer));
+        _controller.clear();
+        _asking = false;
+      });
+    } on AiServiceException catch (e) {
+      setState(() {
+        _error = e.message;
+        _asking = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Unerwarteter Fehler: $e';
+        _asking = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.75,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: c.bg, borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(widget.pageImageBytes, width: 44, height: 58, fit: BoxFit.cover),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Frage zu Seite ${widget.pageNumber}',
+                              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+                          Text('von ${widget.totalPages} · sieht Bild dieser Seite + gesamten Dokumenttext',
+                              style: TextStyle(fontSize: 11, color: c.inkMuted)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: c.border),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (_turns.isEmpty)
+                      Text('Stell eine Frage zu genau dieser Seite.',
+                          style: TextStyle(fontSize: 13, color: c.inkMuted)),
+                    ..._turns.map((t) => Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(t.question, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 4),
+                              Text(t.answer, style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.4)),
+                            ],
+                          ),
+                        )),
+                    if (_asking)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      ),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(_error!, style: TextStyle(color: c.danger, fontSize: 12.5)),
+                      ),
+                  ],
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          enabled: !_asking,
+                          decoration: InputDecoration(
+                            hintText: 'Frage zu dieser Seite …',
+                            filled: true,
+                            fillColor: c.surfaceAlt,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          ),
+                          onSubmitted: (_) => _asking ? null : _ask(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filled(onPressed: _asking ? null : _ask, icon: const Icon(Icons.send_rounded)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

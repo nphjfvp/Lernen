@@ -189,11 +189,12 @@ Schwierigkeits-Eskalation (siehe oben), lässt aber bewusst den
 Mathe-Formel-Fragetyp sowie diagramm-/bildbasierte Fragetypen (Diagramm
 beschriften, Bild markieren) weg und konzentriert sich ansonsten auf den
 Kernkreislauf **Vorbereiten → Nachbereiten → Daily Quiz** ohne Mini-Games,
-Economy o.ä. Die Vision-Modell-Rolle
-existiert bereits in den Einstellungen (für später), eine konkrete
-OCR-Fallback-Pipeline für gescannte/bildbasierte PDFs (Rasterung + Versand an
-ein Vision-Modell) ist aber noch nicht umgesetzt – aktuell scheitert die
-Textextraktion bei rein-bildbasierten PDFs mit einer klaren Fehlermeldung.
+Economy o.ä. Die Vision-Modell-Rolle wird inzwischen für die
+Seiten-Fragefunktion genutzt (siehe 5b); eine konkrete OCR-Fallback-Pipeline
+für gescannte/bildbasierte PDFs (Rasterung + Versand an ein Vision-Modell
+schon bei der Textextraktion selbst) ist aber weiterhin nicht umgesetzt –
+aktuell scheitert die Textextraktion bei rein-bildbasierten PDFs mit einer
+klaren Fehlermeldung.
 
 ## Architektur
 
@@ -334,6 +335,22 @@ in Vorbereiten/Nachbereiten/Chat mit ein (`HighlightContext`). Nur für
 PDF-Folien verfügbar (Original-Bytes werden dafür beim Upload zusätzlich
 gespeichert, siehe `MaterialFileStore`); andere Formate/Übungsaufgaben
 funktionieren weiterhin rein textbasiert.
+
+### 5b. Frage zur aktuellen Seite (Vision-Modell)
+
+Im selben `MaterialViewerScreen` öffnet der Button "Frage zur Seite" (in der
+AppBar) einen Frage-Chat zu genau der Seite, die gerade sichtbar ist: ein
+Screenshot des aktuellen PDF-Viewer-Ausschnitts (`RepaintBoundary` um
+`SfPdfViewer`, kein PDF-Rendering – 1:1 das, was der Nutzer gerade sieht,
+inkl. Zoom) geht zusammen mit dem Volltext des GESAMTEN Dokuments als
+zusätzlicher Kontext an das **Vision-Modell** aus den Einstellungen
+(`AppSettings.visionModelId` – bis hierhin nur vorbereitet, aber ungenutzt;
+dies ist die erste tatsächliche Verwendung). So sieht die KI Diagramme,
+Formeln oder Layout, die reiner Text nicht wiedergibt, UND kann Begriffe
+einordnen, die an anderer Stelle im Dokument erklärt werden
+(`AiService.answerPageQuestion`). Der Chat ist session-lokal (nicht
+persistiert) und öffnet als Bottom-Sheet, ohne den restlichen
+Viewer-Zustand (Markierungen/Notiz) zu beeinflussen.
 
 ### 6. Ausführen
 
