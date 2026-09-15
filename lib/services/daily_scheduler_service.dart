@@ -15,7 +15,12 @@ class DailyPlan {
     required this.newCardBudgetByModule,
   });
 
-  List<Flashcard> get allCards => [...dueCards, ...newCards];
+  /// Session-Reihenfolge: fällige und neue Karten zusammengeführt und über
+  /// [DailySchedulerService.interleaveByModule] fachübergreifend durchmischt
+  /// (Interleaving statt Blockübung) statt strikt "erst alle Fälligen eines
+  /// Fachs, dann die des nächsten". Beeinflusst nur die Reihenfolge INNERHALB
+  /// der heutigen Session, nicht welche Karten überhaupt eingeplant sind.
+  List<Flashcard> get allCards => DailySchedulerService.interleaveByModule([...dueCards, ...newCards]);
   int get total => dueCards.length + newCards.length;
 }
 
@@ -43,6 +48,37 @@ class DailySchedulerService {
 
   static const int maxNewCardsPerModulePerDay = 15;
   static const int maxSessionSize = 60;
+
+  /// Mischt Karten aus verschiedenen Fächern per Round-Robin durch
+  /// (Interleaving statt Blockübung, siehe Rohrer & Taylor 2007: Durchmischen
+  /// unterschiedlicher Themen/Konzepte verbessert nachweislich die
+  /// Unterscheidungsfähigkeit gegenüber reiner Blockübung eines einzelnen
+  /// Themas). Die Reihenfolge INNERHALB eines Fachs (z.B. schon nach
+  /// Fälligkeits-Priorität sortiert) bleibt dabei erhalten – nur ZWISCHEN
+  /// den Fächern wird durchmischt. Fach-Reihenfolge = Reihenfolge des
+  /// ersten Vorkommens in [cards] (deterministisch, kein Zufall nötig).
+  static List<Flashcard> interleaveByModule(List<Flashcard> cards) {
+    if (cards.isEmpty) return const [];
+    final byModule = <String, List<Flashcard>>{};
+    final moduleOrder = <String>[];
+    for (final card in cards) {
+      final list = byModule.putIfAbsent(card.moduleId, () {
+        moduleOrder.add(card.moduleId);
+        return [];
+      });
+      list.add(card);
+    }
+    final result = <Flashcard>[];
+    var index = 0;
+    while (result.length < cards.length) {
+      for (final moduleId in moduleOrder) {
+        final list = byModule[moduleId]!;
+        if (index < list.length) result.add(list[index]);
+      }
+      index++;
+    }
+    return result;
+  }
 
   /// [unitCoveredById] ordnet jede Vorlesungseinheit (LectureUnit.id) ihrem
   /// "behandelt"-Status zu. Eine Karte mit gesetzter [Flashcard.unitId]

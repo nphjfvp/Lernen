@@ -59,6 +59,56 @@ class DragPair {
       );
 }
 
+/// Momentaufnahme des Karten-Inhalts EINER Eskalationsstufe, angelegt kurz
+/// bevor [Flashcard.copyWithPromotedVariant] ihn durch die nächste
+/// (schwerere) Stufe überschreibt. Grundlage für
+/// [Flashcard.copyWithDemotedVariant]: hält ein Nutzer eine Stufe dauerhaft
+/// nicht mehr, kommt so wieder GENAU der alte Wortlaut zurück, ohne dafür
+/// erneut die KI bemühen zu müssen.
+class VariantSnapshot {
+  const VariantSnapshot({
+    required this.type,
+    required this.front,
+    required this.back,
+    this.options,
+    this.correctText,
+    this.blanks,
+    this.dragPairs,
+  });
+
+  final QuestionType type;
+  final String front;
+  final String back;
+  final List<QuizOption>? options;
+  final String? correctText;
+  final List<String>? blanks;
+  final List<DragPair>? dragPairs;
+
+  Map<String, dynamic> toMap() => {
+        'type': type.name,
+        'front': front,
+        'back': back,
+        'options': options?.map((o) => o.toMap()).toList(),
+        'correctText': correctText,
+        'blanks': blanks,
+        'dragPairs': dragPairs?.map((p) => p.toMap()).toList(),
+      };
+
+  factory VariantSnapshot.fromMap(Map<String, dynamic> map) => VariantSnapshot(
+        type: questionTypeFromString(map['type'] as String?),
+        front: map['front'] as String,
+        back: map['back'] as String? ?? '',
+        options: (map['options'] as List?)
+            ?.map((o) => QuizOption.fromMap(Map<String, dynamic>.from(o as Map)))
+            .toList(),
+        correctText: map['correctText'] as String?,
+        blanks: (map['blanks'] as List?)?.map((b) => b.toString()).toList(),
+        dragPairs: (map['dragPairs'] as List?)
+            ?.map((p) => DragPair.fromMap(Map<String, dynamic>.from(p as Map)))
+            .toList(),
+      );
+}
+
 /// Eine Karteikarte/Frage fürs Daily Quiz. Trägt ihren eigenen Spaced-
 /// Repetition-Zustand direkt auf dem Datensatz (statt einer separaten
 /// Review-Tabelle), das hält die App schlank.
@@ -72,8 +122,12 @@ class DragPair {
 /// (z.B. Single-Choice -> Lückentext -> Freitext): steigt [variantBox] beim
 /// wiederholten richtigen Beantworten hoch genug, wird die Frage lazy (nur
 /// bei Bedarf, ein KI-Aufruf) in den nächsten Typ der Kette umgewandelt und
-/// [variantLevel] erhöht. `null` bedeutet: kein Eskalations-Typ, die Frage
-/// bleibt dauerhaft in ihrem [type].
+/// [variantLevel] erhöht. Sinkt die Box dagegen auf einer Stufe > 0 wieder
+/// auf 0 UND es kommt noch ein Fehlversuch dazu, wird automatisch eine
+/// Stufe zurückgestuft (siehe [copyWithBoxUpdate]/[copyWithDemotedVariant])
+/// – Adaptivität in BEIDE Richtungen statt nur aufwärts. `null` bei
+/// [variantChain] bedeutet: kein Eskalations-Typ, die Frage bleibt
+/// dauerhaft in ihrem [type].
 class Flashcard {
   final String id;
   final String moduleId;
@@ -91,6 +145,21 @@ class Flashcard {
   final List<QuestionType>? variantChain;
   final int variantLevel;
   final int variantBox;
+
+  /// Inhalt jeder bereits verlassenen, leichteren Eskalationsstufe, in der
+  /// Reihenfolge, in der sie durchlaufen wurden (letzter Eintrag = zuletzt
+  /// verlassene Stufe, direkt unter der aktuellen). Wird bei jeder
+  /// Beförderung um einen Eintrag länger, bei jeder Rückstufung um einen
+  /// kürzer.
+  final List<VariantSnapshot>? variantHistory;
+
+  /// Anzahl FALSCHER Antworten in Folge auf der aktuellen Eskalationsstufe
+  /// (jede richtige Antwort setzt ihn auf 0 zurück) – getrennt von
+  /// [variantBox] geführt, damit "Box ist gerade frisch auf 0, weil eben
+  /// befördert wurde" nicht mit "zwei Fehlversuche in Folge" verwechselt
+  /// wird. Erreicht er [demotionMissStreakThreshold], stuft
+  /// [copyWithBoxUpdate] automatisch zurück.
+  final int variantMissStreak;
 
   // FSRS-Zustand
   final DateTime due;
@@ -127,6 +196,8 @@ class Flashcard {
     this.variantChain,
     this.variantLevel = 0,
     this.variantBox = 0,
+    this.variantHistory,
+    this.variantMissStreak = 0,
     this.stability = 0,
     this.difficulty = 0,
     this.elapsedDays = 0,
@@ -181,6 +252,8 @@ class Flashcard {
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
+      variantHistory: variantHistory,
+      variantMissStreak: variantMissStreak,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -213,6 +286,8 @@ class Flashcard {
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
+      variantHistory: variantHistory,
+      variantMissStreak: variantMissStreak,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -225,19 +300,67 @@ class Flashcard {
     );
   }
 
-  /// Nach einer Antwort: Leitner-Box fortschreiben (rein für die
-  /// Varianten-Eskalation, unabhängig vom FSRS-Zustand). Erreicht die Box
-  /// die "grüne" Schwelle und ist eine nächste Stufe in [variantChain]
-  /// vorhanden, wird das über die zurückgegebene [nextType] signalisiert -
-  /// das eigentliche Umwandeln (KI-Aufruf) übernimmt der Aufrufer, damit
-  /// dieses Modell frei von I/O bleibt.
-  ({Flashcard card, QuestionType? nextType}) copyWithBoxUpdate({required bool isCorrect}) {
-    final newBox = isCorrect ? variantBox + 1 : (variantBox - 1).clamp(0, 999);
-    final chain = variantChain;
-    final canPromote = chain != null &&
-        variantLevel < chain.length - 1 &&
-        newBox >= Flashcard.promotionThreshold;
+  /// Ab wie vielen FALSCHEN Antworten in Folge auf derselben Eskalationsstufe
+  /// [copyWithBoxUpdate] automatisch zurückstuft (siehe [variantMissStreak]).
+  static const int demotionMissStreakThreshold = 2;
 
+  /// Nach einer Antwort: Leitner-Box fortschreiben (rein für die
+  /// Varianten-Eskalation, unabhängig vom FSRS-Zustand) – in BEIDE
+  /// Richtungen. Erreicht die Box die "grüne" Schwelle und ist eine nächste
+  /// Stufe in [variantChain] vorhanden, wird das über die zurückgegebene
+  /// [nextType] signalisiert - das eigentliche Umwandeln (KI-Aufruf)
+  /// übernimmt der Aufrufer, damit dieses Modell frei von I/O bleibt.
+  /// Umgekehrt: erreicht [variantMissStreak] (Fehlversuche IN FOLGE auf
+  /// dieser Stufe) [demotionMissStreakThreshold], wird sofort zur
+  /// vorherigen, leichteren Stufe zurückgestuft (siehe
+  /// [copyWithDemotedVariant]) – dafür ist KEIN weiterer KI-Aufruf nötig,
+  /// der alte Wortlaut liegt bereits in [variantHistory].
+  ({Flashcard card, QuestionType? nextType}) copyWithBoxUpdate({required bool isCorrect}) {
+    final chain = variantChain;
+    final canPromote =
+        chain != null && variantLevel < chain.length - 1 && variantBox + 1 >= Flashcard.promotionThreshold && isCorrect;
+    if (canPromote) {
+      final updated = Flashcard(
+        id: id,
+        moduleId: moduleId,
+        conceptId: conceptId,
+        front: front,
+        back: back,
+        createdAt: createdAt,
+        due: due,
+        type: type,
+        options: options,
+        correctText: correctText,
+        blanks: blanks,
+        dragPairs: dragPairs,
+        variantChain: chain,
+        variantLevel: variantLevel,
+        variantBox: 0,
+        variantHistory: variantHistory,
+        variantMissStreak: 0,
+        stability: stability,
+        difficulty: difficulty,
+        elapsedDays: elapsedDays,
+        scheduledDays: scheduledDays,
+        reps: reps,
+        lapses: lapses,
+        state: state,
+        lastReview: lastReview,
+        unitId: unitId,
+      );
+      return (card: updated, nextType: chain[variantLevel + 1]);
+    }
+
+    final missStreak = isCorrect ? 0 : variantMissStreak + 1;
+    final canDemote = !isCorrect &&
+        variantLevel > 0 &&
+        missStreak >= demotionMissStreakThreshold &&
+        (variantHistory?.isNotEmpty ?? false);
+    if (canDemote) {
+      return (card: copyWithDemotedVariant(), nextType: null);
+    }
+
+    final newBox = isCorrect ? variantBox + 1 : (variantBox - 1).clamp(0, 999);
     final updated = Flashcard(
       id: id,
       moduleId: moduleId,
@@ -251,9 +374,11 @@ class Flashcard {
       correctText: correctText,
       blanks: blanks,
       dragPairs: dragPairs,
-      variantChain: chain,
+      variantChain: variantChain,
       variantLevel: variantLevel,
-      variantBox: canPromote ? 0 : newBox,
+      variantBox: newBox,
+      variantHistory: variantHistory,
+      variantMissStreak: missStreak,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -264,12 +389,14 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
     );
-    return (card: updated, nextType: canPromote ? chain[variantLevel + 1] : null);
+    return (card: updated, nextType: null);
   }
 
   /// Ersetzt Typ/Inhalt durch die nächste (schwerere) Eskalationsstufe -
   /// aufgerufen, nachdem [copyWithBoxUpdate] eine mögliche Beförderung
   /// signalisiert hat und der Aufrufer die neuen Inhalte per KI erzeugt hat.
+  /// Sichert den bisherigen (leichteren) Inhalt in [variantHistory], bevor
+  /// er überschrieben wird – Grundlage für eine spätere Rückstufung.
   Flashcard copyWithPromotedVariant({
     required QuestionType newType,
     required String front,
@@ -279,6 +406,15 @@ class Flashcard {
     List<String>? blanks,
     List<DragPair>? dragPairs,
   }) {
+    final snapshot = VariantSnapshot(
+      type: type,
+      front: this.front,
+      back: this.back,
+      options: this.options,
+      correctText: this.correctText,
+      blanks: this.blanks,
+      dragPairs: this.dragPairs,
+    );
     return Flashcard(
       id: id,
       moduleId: moduleId,
@@ -295,6 +431,48 @@ class Flashcard {
       variantChain: variantChain,
       variantLevel: variantLevel + 1,
       variantBox: 0,
+      variantHistory: [...?variantHistory, snapshot],
+      variantMissStreak: 0,
+      stability: stability,
+      difficulty: difficulty,
+      elapsedDays: elapsedDays,
+      scheduledDays: scheduledDays,
+      reps: reps,
+      lapses: lapses,
+      state: state,
+      lastReview: lastReview,
+      unitId: unitId,
+    );
+  }
+
+  /// Kehrt zur vorherigen (leichteren) Eskalationsstufe zurück, deren
+  /// Inhalt bereits in [variantHistory] liegt – kein KI-Aufruf nötig. Ohne
+  /// Historie (leere Liste) bleibt die Karte unverändert; der Aufrufer
+  /// prüft das bereits über [copyWithBoxUpdate], diese Methode ist aber
+  /// auch eigenständig sicher aufrufbar.
+  Flashcard copyWithDemotedVariant() {
+    final history = variantHistory;
+    if (history == null || history.isEmpty) return this;
+    final previous = history.last;
+    final remaining = history.sublist(0, history.length - 1);
+    return Flashcard(
+      id: id,
+      moduleId: moduleId,
+      conceptId: conceptId,
+      front: previous.front,
+      back: previous.back,
+      createdAt: createdAt,
+      due: due,
+      type: previous.type,
+      options: previous.options,
+      correctText: previous.correctText,
+      blanks: previous.blanks,
+      dragPairs: previous.dragPairs,
+      variantChain: variantChain,
+      variantLevel: variantLevel - 1,
+      variantBox: 0,
+      variantHistory: remaining,
+      variantMissStreak: 0,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -327,6 +505,8 @@ class Flashcard {
         'variantChain': variantChain?.map((t) => t.name).toList(),
         'variantLevel': variantLevel,
         'variantBox': variantBox,
+        'variantHistory': variantHistory?.map((v) => v.toMap()).toList(),
+        'variantMissStreak': variantMissStreak,
         'stability': stability,
         'difficulty': difficulty,
         'elapsedDays': elapsedDays,
@@ -359,6 +539,10 @@ class Flashcard {
             (map['variantChain'] as List?)?.map((t) => questionTypeFromString(t.toString())).toList(),
         variantLevel: map['variantLevel'] as int? ?? 0,
         variantBox: map['variantBox'] as int? ?? 0,
+        variantHistory: (map['variantHistory'] as List?)
+            ?.map((v) => VariantSnapshot.fromMap(Map<String, dynamic>.from(v as Map)))
+            .toList(),
+        variantMissStreak: map['variantMissStreak'] as int? ?? 0,
         stability: (map['stability'] as num).toDouble(),
         difficulty: (map['difficulty'] as num).toDouble(),
         elapsedDays: map['elapsedDays'] as int,

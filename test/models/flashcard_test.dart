@@ -238,6 +238,67 @@ void main() {
       expect(promoted.due, card.due);
       // unitId bleibt bei allen copyWith*-Methoden erhalten.
       expect(promoted.unitId, 'u1');
+      // Der Inhalt VOR der Beförderung landet in der Historie.
+      expect(promoted.variantHistory, hasLength(1));
+      expect(promoted.variantHistory!.single.type, QuestionType.singleChoice);
+      expect(promoted.variantHistory!.single.front, card.front);
+    });
+  });
+
+  group('Flashcard.copyWithBoxUpdate – Rückstufung', () {
+    test('zwei Fehlversuche in Folge auf einer beförderten Stufe stufen zurück', () {
+      final promoted = _base(
+        type: QuestionType.singleChoice,
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
+        variantLevel: 0,
+        variantBox: Flashcard.promotionThreshold - 1,
+      ).copyWithPromotedVariant(
+        newType: QuestionType.fillBlank,
+        front: 'Frage mit ___ Lücke',
+        blanks: const ['Lösung'],
+      );
+      expect(promoted.variantLevel, 1);
+      expect(promoted.variantBox, 0);
+
+      // Erster Fehlversuch auf der neuen Stufe: Box bleibt bei 0, noch keine Rückstufung.
+      final firstMiss = promoted.copyWithBoxUpdate(isCorrect: false);
+      expect(firstMiss.card.variantLevel, 1);
+      expect(firstMiss.card.variantBox, 0);
+
+      // Zweiter Fehlversuch in Folge: Rückstufung, alter Inhalt kommt zurück.
+      final secondMiss = firstMiss.card.copyWithBoxUpdate(isCorrect: false);
+      expect(secondMiss.card.variantLevel, 0);
+      expect(secondMiss.card.type, QuestionType.singleChoice);
+      expect(secondMiss.card.variantHistory, isEmpty);
+      expect(secondMiss.nextType, isNull);
+    });
+
+    test('ohne Historie (Level 0) keine Rückstufung möglich', () {
+      final card = _base(
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
+        variantLevel: 0,
+        variantBox: 0,
+      );
+      final result = card.copyWithBoxUpdate(isCorrect: false);
+      expect(result.card.variantLevel, 0);
+      expect(result.card.variantBox, 0);
+    });
+
+    test('ein einzelner Fehlversuch stuft noch nicht zurück', () {
+      final promoted = _base(
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
+        variantLevel: 0,
+        variantBox: Flashcard.promotionThreshold - 1,
+      ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Neu', blanks: const ['x']);
+      final result = promoted.copyWithBoxUpdate(isCorrect: false);
+      expect(result.card.variantLevel, 1);
+    });
+  });
+
+  group('Flashcard.copyWithDemotedVariant', () {
+    test('ohne Historie bleibt die Karte unverändert', () {
+      final card = _base();
+      expect(card.copyWithDemotedVariant(), same(card));
     });
   });
 }

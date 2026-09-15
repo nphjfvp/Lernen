@@ -60,9 +60,18 @@ engerem Fokus statt Feature-Fülle.
   → Freitext): wird eine Frage im Daily Quiz wiederholt richtig beantwortet
   (Leitner-Box, Schwelle 3), erzeugt die KI im Hintergrund lazy die nächst
   schwierigere Variante zur selben Karte – ohne alle Stufen vorab zu
-  generieren. Eine falsche Antwort senkt die Box wieder, ohne die Karte
-  zurückzustufen. Bewusst NICHT enthalten: der Mathe-Formel-Fragetyp der
-  Vorgänger-App.
+  generieren. Adaptiv in BEIDE Richtungen: zwei Fehlversuche IN FOLGE auf
+  einer beförderten Stufe stufen automatisch zur vorherigen (leichteren)
+  Stufe zurück – ohne erneuten KI-Aufruf, der alte Wortlaut liegt bereits in
+  `Flashcard.variantHistory` (siehe `Flashcard.copyWithBoxUpdate`). Bewusst
+  NICHT enthalten: der Mathe-Formel-Fragetyp der Vorgänger-App.
+- **Interleaving statt Blockübung** – die Session-Reihenfolge des Daily
+  Quiz mischt Karten aus verschiedenen Fächern per Round-Robin durch
+  (`DailySchedulerService.interleaveByModule`), statt erst alle fälligen/
+  neuen Karten eines Fachs zu zeigen und dann die des nächsten. Nachgewiesen
+  wirksamer als Blockübung (Interleaving-Effekt), ohne dass sich an
+  Fälligkeit oder Neu-Karten-Budget etwas ändert – nur die Reihenfolge
+  innerhalb der Session.
 - **Materialien & Vorarbeiten** – im Modul-Detail lässt sich beliebig viel
   Material (z.B. der komplette Semesterinhalt, als PDF/Word/PowerPoint)
   direkt hochladen, ohne dass dafür eine KI-Anfrage anfällt – reine

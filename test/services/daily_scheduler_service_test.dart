@@ -222,4 +222,55 @@ void main() {
       expect(plan.dueCards.map((c) => c.id), contains('d1'));
     });
   });
+
+  group('DailySchedulerService.interleaveByModule – Interleaving statt Blockübung', () {
+    test('mischt zwei Fächer per Round-Robin durch', () {
+      final cards = [
+        _newFlashcard('a1', 'A'),
+        _newFlashcard('a2', 'A'),
+        _newFlashcard('a3', 'A'),
+        _newFlashcard('b1', 'B'),
+        _newFlashcard('b2', 'B'),
+      ];
+      final interleaved = DailySchedulerService.interleaveByModule(cards);
+      expect(interleaved.map((c) => c.id).toList(), ['a1', 'b1', 'a2', 'b2', 'a3']);
+    });
+
+    test('behält die Reihenfolge INNERHALB eines Fachs bei', () {
+      final cards = [
+        _dueFlashcard('a-spaet', 'A', now),
+        _dueFlashcard('a-frueh', 'A', now.subtract(const Duration(days: 2))),
+        _newFlashcard('b1', 'B'),
+      ];
+      // Reihenfolge wie übergeben (hier bewusst NICHT nach Fälligkeit
+      // vorsortiert) - interleaveByModule sortiert nicht selbst um,
+      // sondern übernimmt genau die Fach-interne Reihenfolge des Aufrufers.
+      final interleaved = DailySchedulerService.interleaveByModule(cards);
+      final aOrder = interleaved.where((c) => c.moduleId == 'A').map((c) => c.id).toList();
+      expect(aOrder, ['a-spaet', 'a-frueh']);
+    });
+
+    test('ein einzelnes Fach bleibt unverändert', () {
+      final cards = List.generate(4, (i) => _newFlashcard('c$i', 'A'));
+      expect(DailySchedulerService.interleaveByModule(cards).map((c) => c.id).toList(),
+          cards.map((c) => c.id).toList());
+    });
+
+    test('leere Liste bleibt leer', () {
+      expect(DailySchedulerService.interleaveByModule(const []), isEmpty);
+    });
+
+    test('DailyPlan.allCards liefert alle Karten durchmischt, ohne welche zu verlieren', () {
+      final plan = DailyPlan(
+        dueCards: [
+          _dueFlashcard('a1', 'A', now),
+          _dueFlashcard('b1', 'B', now),
+        ],
+        newCards: [_newFlashcard('a2', 'A'), _newFlashcard('b2', 'B')],
+        newCardBudgetByModule: const {},
+      );
+      expect(plan.allCards.map((c) => c.id).toSet(), {'a1', 'b1', 'a2', 'b2'});
+      expect(plan.allCards.length, plan.total);
+    });
+  });
 }
