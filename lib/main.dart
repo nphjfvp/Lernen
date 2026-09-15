@@ -41,20 +41,34 @@ Future<void> main() async {
   await settingsRepository.load();
   unawaited(ReminderService().reschedule(settingsRepository.settings));
 
-  runApp(LernenApp(settingsRepository: settingsRepository));
+  // Ebenso VOR runApp() geladen statt per `create: (_) => ModuleRepository()
+  // ..load()` im Provider-Baum: RootShell hält alle Haupt-Tabs in einem
+  // IndexedStack, das ALLE Screens sofort baut (nicht erst beim Wechseln
+  // dorthin) – DailyQuizScreen/StatsScreen lesen `ModuleRepository.modules`
+  // dabei nur EINMALIG beim ersten Build (kein `context.watch`, kein erneutes
+  // Nachladen), nicht reaktiv. Wäre `load()` beim ersten Build noch nicht
+  // fertig, würden sie dauerhaft mit einer leeren Modulliste weiterlaufen –
+  // das Daily Quiz hätte dann z.B. für den Rest der Session KEIN Budget für
+  // neue Karten (nur fällige Wiederholungen hängen nicht an `modules`),
+  // je nachdem wie schnell der lokale DB-Read gegen den ersten Frame lief.
+  final moduleRepository = ModuleRepository();
+  await moduleRepository.load();
+
+  runApp(LernenApp(settingsRepository: settingsRepository, moduleRepository: moduleRepository));
 }
 
 class LernenApp extends StatelessWidget {
-  const LernenApp({super.key, required this.settingsRepository});
+  const LernenApp({super.key, required this.settingsRepository, required this.moduleRepository});
 
   final SettingsRepository settingsRepository;
+  final ModuleRepository moduleRepository;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthRepository()),
-        ChangeNotifierProvider(create: (_) => ModuleRepository()..load()),
+        ChangeNotifierProvider.value(value: moduleRepository),
         ChangeNotifierProvider(create: (_) => MaterialRepository()),
         ChangeNotifierProvider(create: (_) => ChatRepository()),
         ChangeNotifierProvider(create: (_) => SummaryRepository()),

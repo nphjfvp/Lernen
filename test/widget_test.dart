@@ -5,6 +5,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'package:lernen/main.dart';
+import 'package:lernen/repositories/module_repository.dart';
 import 'package:lernen/repositories/settings_repository.dart';
 
 /// path_provider hat in Widget-Tests keinen echten Platform-Channel – ohne
@@ -25,7 +26,10 @@ void main() {
   });
 
   testWidgets('App startet und zeigt die leere Fächer-Übersicht', (tester) async {
-    await tester.pumpWidget(LernenApp(settingsRepository: SettingsRepository()));
+    await tester.pumpWidget(LernenApp(
+      settingsRepository: SettingsRepository(),
+      moduleRepository: ModuleRepository(),
+    ));
     // pumpAndSettle wartet auf "keine Animation mehr aktiv" – die (im
     // Hintergrund weiterlaufende) CircularProgressIndicator im Daily-Quiz-
     // Tab (IndexedStack hält alle Tabs aktiv) würde das nie erfüllen, daher
