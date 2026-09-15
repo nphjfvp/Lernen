@@ -26,16 +26,43 @@ class DailyQuizScreen extends StatefulWidget {
   State<DailyQuizScreen> createState() => _DailyQuizScreenState();
 }
 
-class _DailyQuizScreenState extends State<DailyQuizScreen> {
+class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingObserver {
   DailyPlan? _plan;
   int _index = 0;
   int _reviewedCount = 0;
   final _fsrs = FsrsService();
 
+  /// Kalendertag, für den [_plan] zuletzt berechnet wurde – Grundlage für
+  /// [didChangeAppLifecycleState]: RootShell hält diesen Screen dauerhaft im
+  /// Speicher (IndexedStack, kein Dispose beim Tab-Wechsel), ein normales
+  /// App-Backgrounding beendet den Dart-Isolate NICHT. Ohne diese Prüfung
+  /// bliebe der Plan über Mitternacht hinweg stehen: wer die App abends
+  /// öffnet, tagsüber im Hintergrund lässt und nachts wieder aufruft, sähe
+  /// weiterhin den (jetzt veralteten) Plan von heute Morgen statt neu
+  /// fälliger Karten für den neuen Tag.
+  DateTime? _lastLoadedDay;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPlan());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final lastDay = _lastLoadedDay;
+    if (lastDay == null) return;
+    final today = DateTime.now();
+    final todayDay = DateTime(today.year, today.month, today.day);
+    if (todayDay.isAfter(lastDay)) _loadPlan();
   }
 
   Future<void> _loadPlan() async {
@@ -49,10 +76,12 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> {
     unawaited(HomeWidgetService()
         .refresh(modules: modules, allCards: allCards, unitCoveredById: unitCoveredById));
     if (!mounted) return;
+    final now = DateTime.now();
     setState(() {
       _plan = plan;
       _index = 0;
       _reviewedCount = 0;
+      _lastLoadedDay = DateTime(now.year, now.month, now.day);
     });
   }
 
