@@ -25,6 +25,7 @@ import '../../services/material_text_extractor.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
+import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
 
 enum _Step { pick, generating, preview }
@@ -462,7 +463,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ? ContentAnalyzer.analyze('$_slidesText\n\n$_exercisesText')
             : null;
         return _PickView(
-          slidesFiles: _slidesFiles.map((f) => f.fileName).toList(),
+          slidesFiles: _slidesFiles,
           exercisesFiles: _exercisesFiles.map((f) => f.fileName).toList(),
           extracting: _extracting,
           error: _error,
@@ -536,7 +537,7 @@ class _PickView extends StatelessWidget {
     this.rawResponse,
   });
 
-  final List<String> slidesFiles;
+  final List<_PickedFile> slidesFiles;
   final List<String> exercisesFiles;
   final bool extracting;
   final VoidCallback onPickSlides;
@@ -590,10 +591,27 @@ class _PickView extends StatelessWidget {
               ...slidesFiles.asMap().entries.map((e) => Card(
                     child: ListTile(
                       leading: const Icon(Icons.slideshow_outlined),
-                      title: Text(e.value),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => onRemoveSlide(e.key),
+                      title: Text(e.value.fileName),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (e.value.fileName.toLowerCase().endsWith('.pdf'))
+                            IconButton(
+                              tooltip: 'Folie ansehen',
+                              icon: const Icon(Icons.visibility_outlined),
+                              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => PdfPreviewScreen(
+                                  fileName: e.value.fileName,
+                                  bytes: e.value.bytes,
+                                  documentText: e.value.text,
+                                ),
+                              )),
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => onRemoveSlide(e.key),
+                          ),
+                        ],
                       ),
                     ),
                   )),

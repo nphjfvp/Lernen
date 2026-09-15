@@ -345,6 +345,23 @@ einsehbar, markierbar und für "Frage zur Seite" (siehe 5b) nutzbar – ohne
 das läge nach Vorbereiten/Nachbereiten nur der extrahierte Text vor
 (`hasViewablePdf == false`), die eigentlichen Folien wären unsichtbar.
 
+### 5a2. Folie direkt in Vorbereiten/Nachbereiten ansehen
+
+Die reine Bytes-Persistenz (siehe oben) reicht für sich genommen nicht: die
+Session-Ansicht von "Ausführlich vorbereiten" zeigte bis eben nur die von
+der KI markierten Textstellen + den Frage-Chat, nie die Folie selbst – die
+Bytes lagen zwar im Speicher, aber ohne UI-Zugriff darauf. Deshalb öffnet ein
+Augen-Symbol pro Foliendatei – im Dateien-Auswahlschritt (Kurz **und**
+Ausführlich, in `PrepareScreen`) sowie zusätzlich pro markierter Datei direkt
+in der Ausführlich-Session – `PdfPreviewScreen`: eine reine Lese-Ansicht der
+tatsächlichen, noch nicht gespeicherten PDF-Bytes samt eigenem "Frage zur
+Seite"-Button (nutzt denselben `PageQuestionSheet`/`AiService.answerPageQuestion`
+wie `MaterialViewerScreen`, nur ohne Markier-Funktion, da dafür ein
+gespeichertes `MaterialItem` fehlt). Dieselbe Ansicht steht in `ReviewScreen`
+(Nachbereiten) für die Folien-Liste zur Verfügung. Nach dem Speichern ist die
+Folie zusätzlich wie gewohnt über `MaterialViewerScreen` mit voller
+Markier-Funktion erreichbar.
+
 ### 5b. Frage zur aktuellen Seite (Vision-Modell)
 
 Im selben `MaterialViewerScreen` öffnet der Button "Frage zur Seite" (in der

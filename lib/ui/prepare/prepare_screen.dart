@@ -20,6 +20,7 @@ import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
+import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
 
 enum _Mode { kurz, ausfuehrlich }
@@ -457,7 +458,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
         final units = context.watch<LectureUnitRepository>().forModule(widget.moduleId);
         return _ReadyView(
           mode: _mode!,
-          files: _files.map((f) => f.fileName).toList(),
+          files: _files,
           combinedText: _combinedText,
           error: _error,
           onAddMore: _pickAndExtract,
@@ -481,6 +482,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
         return const _LoadingView(label: 'KI liest die Folien und markiert relevante Stellen …');
       case _Step.session:
         return _SessionView(
+          files: _files,
           highlightsByFile: _highlightsByFile,
           sessionError: _sessionError,
           qaTurns: _qaTurns,
@@ -656,7 +658,7 @@ class _ReadyView extends StatelessWidget {
   });
 
   final _Mode mode;
-  final List<String> files;
+  final List<_PickedFile> files;
   final String combinedText;
   final VoidCallback onAddMore;
   final void Function(int index) onRemove;
@@ -680,10 +682,27 @@ class _ReadyView extends StatelessWidget {
         ...files.asMap().entries.map((e) => Card(
               child: ListTile(
                 leading: const Icon(Icons.slideshow_outlined),
-                title: Text(e.value),
-                trailing: IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => onRemove(e.key),
+                title: Text(e.value.fileName),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (e.value.fileName.toLowerCase().endsWith('.pdf'))
+                      IconButton(
+                        tooltip: 'Folie ansehen',
+                        icon: const Icon(Icons.visibility_outlined),
+                        onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => PdfPreviewScreen(
+                            fileName: e.value.fileName,
+                            bytes: e.value.bytes,
+                            documentText: e.value.text,
+                          ),
+                        )),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => onRemove(e.key),
+                    ),
+                  ],
                 ),
               ),
             )),
@@ -787,6 +806,7 @@ class _PreviewView extends StatelessWidget {
 /// Abschließen (siehe onFinish) automatisch als Merkpunkt gespeichert.
 class _SessionView extends StatelessWidget {
   const _SessionView({
+    required this.files,
     required this.highlightsByFile,
     required this.qaTurns,
     required this.questionController,
@@ -797,6 +817,7 @@ class _SessionView extends StatelessWidget {
     this.askError,
   });
 
+  final List<_PickedFile> files;
   final Map<String, List<MaterialHighlight>> highlightsByFile;
   final String? sessionError;
   final List<({String question, String answer})> qaTurns;
@@ -843,7 +864,19 @@ class _SessionView extends StatelessWidget {
                           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                           child: ExpansionTile(
                             shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-                            title: Text(entry.key, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(entry.key,
+                                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                                ),
+                                if (entry.key.toLowerCase().endsWith('.pdf'))
+                                  _FileViewButton(
+                                    fileName: entry.key,
+                                    files: files,
+                                  ),
+                              ],
+                            ),
                             subtitle: Text('${entry.value.length} markiert', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
                             children: entry.value
                                 .map((h) => Padding(
@@ -936,6 +969,41 @@ class _SessionView extends StatelessWidget {
         const SizedBox(height: 10),
         FilledButton(onPressed: onFinish, child: const Text('Fertig & speichern')),
       ],
+    );
+  }
+}
+
+/// Öffnet die tatsächliche Folie (noch ungespeicherte Bytes aus [files]) in
+/// [PdfPreviewScreen] – siehe Doc-Kommentar dort: ohne das sähe man in
+/// dieser Session nur die von der KI markierten Textstellen, nie das
+/// eigentliche Dokument.
+class _FileViewButton extends StatelessWidget {
+  const _FileViewButton({required this.fileName, required this.files});
+
+  final String fileName;
+  final List<_PickedFile> files;
+
+  @override
+  Widget build(BuildContext context) {
+    _PickedFile? match;
+    for (final f in files) {
+      if (f.fileName == fileName) {
+        match = f;
+        break;
+      }
+    }
+    if (match == null) return const SizedBox.shrink();
+    final file = match;
+    return IconButton(
+      tooltip: 'Folie ansehen',
+      icon: const Icon(Icons.visibility_outlined, size: 20),
+      onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => PdfPreviewScreen(
+          fileName: file.fileName,
+          bytes: file.bytes,
+          documentText: file.text,
+        ),
+      )),
     );
   }
 }
