@@ -8,12 +8,13 @@ MaterialItem _material({
   required int textLength,
   required DateTime createdAt,
   String? topicIndex,
+  MaterialKind kind = MaterialKind.slide,
 }) {
   return MaterialItem(
     id: id,
     moduleId: 'm1',
     fileName: '$id.pdf',
-    kind: MaterialKind.slide,
+    kind: kind,
     extractedText: 'x' * textLength,
     createdAt: createdAt,
     covered: covered,
@@ -89,6 +90,17 @@ void main() {
       final result = ChatContextBuilder.build(materials, charBudget: 200);
       expect(result.contains('b.pdf'), isFalse);
     });
+
+    test('blendet Übungsklausuren aus (nur Stil-Referenz für die KI-Generierung, kein Chat-Stoff)', () {
+      final materials = [
+        _material(id: 'lecture', covered: true, textLength: 100, createdAt: DateTime(2026, 1, 1)),
+        _material(
+            id: 'exam', covered: true, textLength: 100, createdAt: DateTime(2026, 1, 2), kind: MaterialKind.practiceExam),
+      ];
+      final result = ChatContextBuilder.build(materials, charBudget: 100000);
+      expect(result.contains('lecture.pdf'), isTrue);
+      expect(result.contains('exam.pdf'), isFalse);
+    });
   });
 
   group('ChatContextBuilder.buildIndexContext', () {
@@ -125,6 +137,14 @@ void main() {
       expect(result.contains('[Noch nicht behandelt]'), isTrue);
       // Anriss ist klar kürzer als der volle Rohtext (5000 Zeichen).
       expect(result.length, lessThan(1000));
+    });
+
+    test('blendet Übungsklausuren aus', () {
+      final materials = [
+        _material(id: 'exam', covered: true, textLength: 100, createdAt: DateTime(2026, 1, 1), kind: MaterialKind.practiceExam),
+      ];
+      final result = ChatContextBuilder.buildIndexContext(materials);
+      expect(result, contains('keine Materialien'));
     });
   });
 }

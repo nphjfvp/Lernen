@@ -186,13 +186,15 @@ Antworte in der Sprache der Vorlage.
 
   static const _conceptsSystemPrompt = '''
 Du bist ein Lernassistent für Studierende und bereitest Stoff für die
-Nachbereitung vor. Du bekommst Vorlesungsfolien UND Übungsaufgaben zum
-gleichen Thema (möglicherweise nur einen Abschnitt eines längeren
-Materials, in dem Folien- und Übungsinhalte gemischt vorkommen können).
-Analysiere den Abschnitt und erstelle:
-1. Lernkonzepte, die erklären, WARUM die Übungsaufgaben so gelöst werden wie
-   sie gelöst werden (der Fokus liegt auf tiefem Verständnis der Übungen,
-   nicht auf reiner Theorie-Wiedergabe der Folien).
+Nachbereitung vor. Du bekommst Vorlesungsfolien, meist zusammen mit
+Übungsaufgaben zum gleichen Thema (möglicherweise nur einen Abschnitt eines
+längeren Materials, in dem Folien- und Übungsinhalte gemischt vorkommen
+können) – wurden keine Übungsaufgaben hochgeladen, arbeite allein anhand
+der Folien. Analysiere den Abschnitt und erstelle:
+1. Lernkonzepte: liegen Übungsaufgaben vor, erkläre WARUM sie so gelöst
+   werden wie sie gelöst werden (Fokus auf tiefem Verständnis der Übungen,
+   nicht auf reiner Theorie-Wiedergabe); ohne Übungsaufgaben die zentralen
+   Konzepte der Folien selbst.
 2. Karteikarten/Fragen zur Wiederholung dieser Konzepte.
 
 WICHTIG zur Typwahl: verwende NICHT für alle Karten denselben Typ. "flashcard"
@@ -269,6 +271,7 @@ Antworte in der Sprache der Vorlage.
     required String exercisesText,
     ChunkGranularity granularity = ChunkGranularity.auto,
     bool rollingContext = true,
+    String? examContext,
     void Function(int done, int total)? onProgress,
   }) async {
     final combinedText = (StringBuffer()
@@ -276,7 +279,12 @@ Antworte in der Sprache der Vorlage.
           ..writeln(slidesText)
           ..writeln()
           ..writeln('=== ÜBUNGSAUFGABEN ===')
-          ..writeln(exercisesText))
+          ..writeln(exercisesText.isEmpty ? '(keine hochgeladen)' : exercisesText)
+          ..writeln(examContext != null && examContext.trim().isNotEmpty
+              ? '\n=== STIL-REFERENZ: ÜBUNGSKLAUSUR (orientiere Frageart/-schwierigkeit '
+                  'daran, sofern thematisch passend, erfinde aber keine themenfremden Fragen) ===\n'
+                  '${_cap(examContext, _examContextCap)}'
+              : ''))
         .toString();
 
     final chunks = _chunksFor(combinedText, granularity);
@@ -317,6 +325,125 @@ Antworte in der Sprache der Vorlage.
     }
 
     return {'concepts': concepts, 'flashcards': flashcards};
+  }
+
+  static const _checkpointQuizSystemPrompt = '''
+Du bist ein Lernassistent für Studierende im "Lernmodus": der Nutzer liest
+gerade einen Foliensatz Seite für Seite und bekommt nach ein paar Seiten
+einen SEHR KURZEN Zwischen-Check zum Abschnitt, den er/sie gerade gelesen
+hat – kein vollständiges Nachbereiten, nur ein schneller Verständnis-Check.
+
+Erstelle 2-3 kurze Fragen NUR zu dem gegebenen Abschnitt (nicht zu Stoff,
+der dort nicht vorkommt). Wähle pro Frage einen passenden Typ (nicht immer
+denselben): "single_choice" (options mit isCorrect), "fill_blank" (Lücken
+im "front" als "___" markiert, "blanks" mit den Lösungen), "free_text"
+("correctText" mit der Lösung) oder "flashcard" (offenes front/back, back
+ist Pflicht) – wie im Hauptformat des Nachbereiten-Modus.
+
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text davor/danach:
+{"flashcards": [
+  {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
+  {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]},
+  {"type": "free_text", "front": "Frage", "correctText": "Lösung"},
+  {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"}
+]}
+Antworte in der Sprache der Vorlage.
+''';
+
+  static const int _checkpointQuizInputCap = 20000;
+  static const int _examContextCap = 15000;
+
+  /// Kurzer Zwischen-Check im "Lernmodus" (siehe MaterialViewerScreen): 2-3
+  /// Fragen NUR zu [pageRangeText] (dem Text der zuletzt gelesenen Seiten),
+  /// optional orientiert an einer hochgeladenen Übungsklausur
+  /// ([examContext], siehe MaterialKind.practiceExam) für realistischere
+  /// Frageart/-schwierigkeit. Liefert rohe Flashcard-JSON-Maps im selben
+  /// Format wie [generateConceptsAndFlashcards] (siehe QuestionParsing für
+  /// die Umwandlung in echte [Flashcard]-Objekte).
+  Future<List<Map<String, dynamic>>> generateCheckpointQuiz(
+    String pageRangeText, {
+    String? examContext,
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Gerade gelesener Abschnitt:')
+      ..writeln(_cap(pageRangeText, _checkpointQuizInputCap));
+    if (examContext != null && examContext.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Stil-Referenz, eine bereits hochgeladene Übungsklausur '
+            '(orientiere dich bei Frageart/-schwierigkeit daran, sofern '
+            'thematisch passend, erfinde aber KEINE Fragen zu Themen, die '
+            'nicht im obigen Abschnitt vorkommen):')
+        ..writeln(_cap(examContext, _examContextCap));
+    }
+    final raw = await _complete(_checkpointQuizSystemPrompt, buffer.toString());
+    final parsed = _parseJsonObject(raw);
+    return (parsed['flashcards'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  static const _importQuestionsSystemPrompt = '''
+Du bekommst den Text eines Übungsdokuments (z.B. eine alte Klausur, ein
+Übungsblatt mit Musterlösung o.ä.), das BEREITS FERTIGE Fragen samt Lösung
+enthält. Deine Aufgabe ist NICHT, neue Fragen zu erfinden, sondern die
+tatsächlich im Dokument vorhandenen Fragen/Aufgaben so originalgetreu wie
+möglich als Karteikarten zu übernehmen (Wortlaut der Frage beibehalten,
+nur so weit umformulieren wie für das Karteikarten-Format nötig, z.B. eine
+mehrteilige Aufgabe in mehrere einzelne Karten aufteilen).
+
+Wähle pro übernommener Frage den passenden Typ, je nachdem wie sie im
+Original gestellt/gelöst wird:
+   - "single_choice": Original ist Multiple-Choice mit genau einer richtigen
+     Antwort. Antwortformat: {"type": "single_choice", "front": "...",
+     "options": [{"text": "...", "isCorrect": true}, ...]}
+   - "multiple_choice": mehrere Antworten gleichzeitig richtig, analog.
+   - "fill_blank": Lückentext im Original. Markiere jede Lücke im
+     "front"-Text mit genau drei Unterstrichen "___", "blanks" enthält die
+     Lösungen in derselben Reihenfolge.
+   - "free_text": offene Rechen-/Erklär-/Kurzantwortaufgabe mit bekannter
+     Musterlösung. "correctText" enthält die Lösung.
+   - "flashcard": passt keiner der obigen Typen, offenes front/back. "back"
+     ist Pflicht und darf nie leer sein.
+
+Enthält das Dokument KEINE erkennbare Musterlösung zu einer Frage, überspringe
+diese Frage (keine Karte ohne bekannte Antwort erzeugen).
+
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text davor/danach:
+{"flashcards": [
+  {"type": "single_choice", "front": "Originalfrage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
+]}
+Übernimm ALLE im Dokument vorhandenen Fragen mit erkennbarer Lösung, auch
+wenn es viele sind. Antworte in der Sprache der Vorlage.
+''';
+
+  /// Statt neue Fragen zu ERFINDEN (siehe [generateConceptsAndFlashcards]):
+  /// übernimmt die bereits im Dokument vorhandenen Fragen samt Musterlösung
+  /// möglichst originalgetreu ("importieren" statt "generieren", siehe
+  /// ReviewScreen-Import-Modus – Pendant zum entsprechenden Feature der
+  /// Vorgänger-App).
+  Future<List<Map<String, dynamic>>> importQuestionsFromExercises(
+    String exercisesText, {
+    ChunkGranularity granularity = ChunkGranularity.auto,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final chunks = _chunksFor(exercisesText, granularity);
+    final flashcards = <Map<String, dynamic>>[];
+    for (var i = 0; i < chunks.length; i++) {
+      final userPrompt = chunks.length == 1
+          ? chunks.first
+          : 'Dies ist Abschnitt ${i + 1} von ${chunks.length} eines längeren '
+              'Übungsdokuments.\n\nAbschnitt-Text:\n\n${chunks[i]}';
+      final raw = await _complete(_importQuestionsSystemPrompt, userPrompt);
+      final parsed = _parseJsonObject(raw);
+      for (final entry in (parsed['flashcards'] as List? ?? const [])) {
+        flashcards.add(Map<String, dynamic>.from(entry as Map));
+      }
+      onProgress?.call(i + 1, chunks.length);
+    }
+    return flashcards;
   }
 
   static const _crosscheckSystemPrompt = '''

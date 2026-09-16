@@ -8,13 +8,18 @@ import 'package:syncfusion_flutter_pdf/pdf.dart' as sf_pdf;
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/flashcard.dart';
 import '../../models/material_item.dart';
+import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/fsrs_service.dart' show Grade;
 import '../../services/highlight_matcher.dart';
 import '../../services/material_file_store.dart';
+import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
+import '../daily/question_answer_view.dart';
 import '../widgets/page_question_sheet.dart';
 
 /// Zeigt eine hochgeladene PDF-Folie visuell an und erlaubt es, Textstellen
@@ -52,6 +57,13 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
   String? _suggestError;
 
   bool _capturingPageQuestion = false;
+
+  /// Seite, ab der die nächsten [AppSettings.checkpointQuizPageInterval]
+  /// gelesenen Seiten für den nächsten "Lernmodus"-Zwischen-Check zählen
+  /// (siehe [_handlePageChanged]). Null, bevor der Viewer die erste Seite
+  /// gemeldet hat.
+  int? _checkpointStartPage;
+  bool _checkpointBusy = false;
 
   @override
   void initState() {
@@ -273,6 +285,121 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     );
   }
 
+  /// Reagiert auf jeden Seitenwechsel im "Lernmodus": wurden seit dem
+  /// letzten Zwischen-Check [AppSettings.checkpointQuizPageInterval] (oder
+  /// mehr, z.B. bei Sprüngen) Seiten gelesen, wird ein kurzer,
+  /// überspringbarer Zwischen-Check angeboten (siehe [_offerCheckpointQuiz])
+  /// – rein informativ, blockiert das Weiterlesen nicht.
+  void _handlePageChanged(int newPage) {
+    final interval = context.read<SettingsRepository>().settings.checkpointQuizPageInterval;
+    final start = _checkpointStartPage ??= newPage;
+    if (interval <= 0 || _checkpointBusy) return;
+    if (newPage - start >= interval) {
+      _checkpointStartPage = newPage;
+      _offerCheckpointQuiz(fromPage: start, toPage: newPage);
+    }
+  }
+
+  void _offerCheckpointQuiz({required int fromPage, required int toPage}) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text('Kurzer Zwischen-Check zu Seite $fromPage–$toPage?'),
+      action: SnackBarAction(
+        label: 'Quiz starten',
+        onPressed: () => _startCheckpointQuiz(fromPage: fromPage, toPage: toPage),
+      ),
+    ));
+  }
+
+  /// Extrahiert NUR den Text der zuletzt gelesenen Seiten (0-basierte
+  /// Indizes bei Syncfusion, daher -1) – Grundlage für den Zwischen-Check,
+  /// damit er sich wirklich auf den gerade gelesenen Abschnitt bezieht statt
+  /// auf das gesamte Dokument.
+  String _textForPageRange(int fromPage, int toPage) {
+    final bytes = _bytes;
+    if (bytes == null) return '';
+    final document = sf_pdf.PdfDocument(inputBytes: bytes);
+    try {
+      final lines = sf_pdf.PdfTextExtractor(document)
+          .extractTextLines(startPageIndex: fromPage - 1, endPageIndex: toPage - 1);
+      return lines.map((l) => l.text).join('\n');
+    } finally {
+      document.dispose();
+    }
+  }
+
+  Future<void> _startCheckpointQuiz({required int fromPage, required int toPage}) async {
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Kein OpenRouter-API-Key hinterlegt.')));
+      return;
+    }
+    setState(() => _checkpointBusy = true);
+    try {
+      final pageText = _textForPageRange(fromPage, toPage);
+      if (pageText.trim().isEmpty) return;
+
+      final examContext = MaterialItem.practiceExamTextFrom(
+          context.read<MaterialRepository>().forModule(widget.material.moduleId));
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final raw = await ai.generateCheckpointQuiz(pageText, examContext: examContext);
+      final cards = _parseCheckpointCards(raw);
+      if (cards.isEmpty || !mounted) return;
+
+      final missed = await Navigator.of(context).push<List<Flashcard>>(
+        MaterialPageRoute(builder: (_) => _CheckpointQuizScreen(cards: cards)),
+      );
+      if (missed != null && missed.isNotEmpty && mounted) {
+        await context.read<FlashcardRepository>().saveAll(missed);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${missed.length} Frage${missed.length == 1 ? '' : 'n'} fürs Daily Quiz vorgemerkt.'),
+        ));
+      }
+    } on AiServiceException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Zwischen-Check fehlgeschlagen: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _checkpointBusy = false);
+    }
+  }
+
+  /// Wandelt die von der KI gelieferten rohen Flashcard-Maps (siehe
+  /// AiService.generateCheckpointQuiz) in echte, aber noch NICHT
+  /// gespeicherte [Flashcard]-Objekte um (siehe QuestionParsing für die
+  /// Feld-Normalisierung) – erst falsch beantwortete Karten werden nach dem
+  /// Quiz tatsächlich persistiert (siehe [_startCheckpointQuiz]).
+  List<Flashcard> _parseCheckpointCards(List<Map<String, dynamic>> raw) {
+    final now = DateTime.now();
+    final cards = <Flashcard>[];
+    for (final entry in raw) {
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(entry);
+      if (fixed == null) continue;
+      final type = QuestionParsing.parseType(fixed['type'] as String?);
+      cards.add(Flashcard(
+        id: const Uuid().v4(),
+        moduleId: widget.material.moduleId,
+        front: (fixed['front'] ?? '').toString(),
+        back: (fixed['back'] ?? '').toString(),
+        createdAt: now,
+        due: now,
+        type: type,
+        unitId: widget.material.unitId,
+        options: QuestionParsing.parseOptions(fixed['options']),
+        correctText: fixed['correctText'] as String?,
+        blanks: QuestionParsing.parseBlanks(fixed['blanks']),
+        dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
+      ));
+    }
+    return cards;
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -410,6 +537,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                               setState(
                                   () => _hasSelection = (details.selectedText ?? '').trim().isNotEmpty);
                             },
+                            onPageChanged: (details) => _handlePageChanged(details.newPageNumber),
                           ),
                         ),
                       ),
@@ -559,6 +687,67 @@ class _BottomPanel extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Zwischen-Check im "Lernmodus" (siehe [_MaterialViewerScreenState.
+/// _startCheckpointQuiz]): 2-3 kurze Fragen zum gerade gelesenen Abschnitt,
+/// nacheinander über [QuestionAnswerView] (dieselbe UI wie Daily
+/// Quiz/Üben). Bewusst OHNE FSRS-Auswirkung auf diese frischen Karten
+/// (reps=0 wäre ohnehin bedeutungslos) – stattdessen werden nur die FALSCH
+/// beantworteten Karten zurückgegeben (siehe [onFinish]/Aufrufer), damit sie
+/// dort erst gespeichert (und so Teil des Daily Quiz) werden: "die KI merkt
+/// sich, wo es Schwächen gibt", ohne dass richtig beantwortete Fragen
+/// unnötig im Datenbestand landen. Jederzeit über "Später" abbrechbar –
+/// kein Zwang, den Check zu Ende zu führen.
+class _CheckpointQuizScreen extends StatefulWidget {
+  const _CheckpointQuizScreen({required this.cards});
+
+  final List<Flashcard> cards;
+
+  @override
+  State<_CheckpointQuizScreen> createState() => _CheckpointQuizScreenState();
+}
+
+class _CheckpointQuizScreenState extends State<_CheckpointQuizScreen> {
+  int _index = 0;
+  final List<Flashcard> _missed = [];
+
+  void _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) {
+    final wasMissed = selfGrade == Grade.again || isCorrect == false;
+    if (wasMissed) _missed.add(card);
+    if (_index + 1 >= widget.cards.length) {
+      Navigator.of(context).pop(_missed);
+    } else {
+      setState(() => _index += 1);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final card = widget.cards[_index];
+    return Scaffold(
+      backgroundColor: c.bg,
+      appBar: AppBar(
+        title: Text('Zwischen-Check ${_index + 1}/${widget.cards.length}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_missed),
+            child: const Text('Später'),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: QuestionAnswerView(
+          key: ValueKey(card.id),
+          card: card,
+          isNew: true,
+          onComplete: ({selfGrade, isCorrect}) =>
+              _handleComplete(card, selfGrade: selfGrade, isCorrect: isCorrect),
         ),
       ),
     );

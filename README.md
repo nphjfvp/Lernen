@@ -18,16 +18,28 @@ engerem Fokus statt Feature-Fülle.
   diesen Foliensatz – jede gestellte Frage wird beim Abschließen automatisch
   als Merkpunkt an die gewählte Einheit angehängt, siehe
   `lib/ui/prepare/prepare_screen.dart`).
-- **Nachbereiten-Modus** – Folien UND Übungsaufgaben gemeinsam hochladen →
-  die KI erstellt Lernkonzepte und Karteikarten mit Fokus auf tiefem
-  Verständnis der Übungen (nicht nur Theorie-Wiedergabe). Einzelne Konzepte
-  und Karteikarten lassen sich im Modul-Detail bzw. in der Karteikarten-
+- **Nachbereiten-Modus, zwei Wege zu Karteikarten** – **KI erstellt**: Folien
+  hochladen (Übungsaufgaben optional, verbessern aber die generierten
+  Konzepte) → die KI erstellt Lernkonzepte und Karteikarten mit Fokus auf
+  tiefem Verständnis der Übungen, sofern vorhanden (nicht nur Theorie-
+  Wiedergabe). **Fragen importieren**: statt neuer Fragen werden die in
+  einem hochgeladenen Übungsdokument (z.B. einer alten Klausur) bereits
+  VORHANDENEN Fragen samt Musterlösung möglichst originalgetreu als
+  Karteikarten übernommen – Pendant zum Import-Feature der Vorgänger-App
+  (`AiService.importQuestionsFromExercises`). Einzelne Konzepte und
+  Karteikarten lassen sich im Modul-Detail bzw. in der Karteikarten-
   Übersicht jederzeit bearbeiten oder löschen. Zusätzlich: **Speedrun** –
   schneller Selbsteinschätzungs-Durchlauf durch alle Konzepte eines Fachs
   (Titel zeigen, selbst einschätzen, Erklärung aufdecken); was man nicht
   wusste, landet in einer wiederholbaren Vertiefen-Runde
   (`lib/ui/speedrun/speedrun_screen.dart`, bewusst ohne FSRS-Effekt – ein
   Verständnis-Check, keine spaced-repetition-wirksame Wiederholung).
+- **Übungsklausur als Stil-Referenz** – optional lässt sich pro Fach eine
+  alte Klausur hochladen (`MaterialKind.practiceExam`, ModuleDetailScreen →
+  "Material hochladen" → "Übungsklausur"). Die KI berücksichtigt sie dann bei
+  der Karteikarten-Generierung (Nachbereiten) und beim Lernmodus-Zwischen-
+  Check (siehe unten) als Stil-Referenz für Frageart/-schwierigkeit – ohne
+  selbst Teil des normalen Frage-Chat-Materials zu werden.
 - **Einheiten** – Materialien/Konzepte/Karteikarten eines Fachs lassen sich
   zu Vorlesungseinheiten gruppieren (z.B. "Einheit 3"); man kann ruhig den
   ganzen Semesterstoff im Voraus hochladen, das Daily Quiz fragt aber nur
@@ -377,6 +389,24 @@ einordnen, die an anderer Stelle im Dokument erklärt werden
 (`AiService.answerPageQuestion`). Der Chat ist session-lokal (nicht
 persistiert) und öffnet als Bottom-Sheet, ohne den restlichen
 Viewer-Zustand (Markierungen/Notiz) zu beeinflussen.
+
+### 5c. Lernmodus-Zwischen-Check (Checkpoint-Quiz)
+
+`MaterialViewerScreen` ist damit schon ein vollwertiger "Lernmodus": Folie
+ansehen, markieren, Notiz schreiben, Fragen zur Seite stellen, speichern –
+alles an einem Ort. Zusätzlich bietet der Viewer alle
+`AppSettings.checkpointQuizPageInterval` gelesenen Seiten (Einstellungen →
+"Lernmodus", Default 5, 0 = aus) einen kurzen, überspringbaren Zwischen-
+Check per SnackBar an: 2-3 KI-generierte Kurzfragen NUR zum gerade gelesenen
+Seitenabschnitt (`AiService.generateCheckpointQuiz`, per-Seite-Textextraktion
+über `PdfTextExtractor`), angezeigt über dieselbe `QuestionAnswerView` wie
+Daily Quiz/Üben. Wer den Check ignoriert oder abbricht ("Später"), verliert
+nichts – bewusst nicht blockierend. Falsch beantwortete Fragen werden aber
+automatisch als neue, fällige Karteikarte gespeichert (`due: jetzt`): so
+"merkt sich die KI", wo es hakt, ohne dass man selbst etwas dafür tun müsste
+– die nächste Daily-Quiz-Session enthält sie automatisch. Ist eine
+Übungsklausur hochgeladen (siehe oben), fließt sie hier als Stil-Referenz
+mit ein.
 
 ### 6. Ausführen
 

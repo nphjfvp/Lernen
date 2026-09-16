@@ -43,9 +43,10 @@ class ChatContextBuilder {
   /// ersten Frage nach; dieser Fallback greift nur, falls das für ein
   /// Material fehlschlägt).
   static String buildIndexContext(List<MaterialItem> materials) {
-    if (materials.isEmpty) return '(Noch keine Materialien hochgeladen.)';
+    final relevant = _excludingPracticeExam(materials);
+    if (relevant.isEmpty) return '(Noch keine Materialien hochgeladen.)';
 
-    final chronological = [...materials]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final chronological = [...relevant]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final buffer = StringBuffer();
     for (final m in chronological) {
       final kindLabel = m.kind == MaterialKind.slide ? 'Folien' : 'Übungsaufgabe';
@@ -60,10 +61,18 @@ class ChatContextBuilder {
     return buffer.toString();
   }
 
-  static String build(List<MaterialItem> materials, {required int charBudget}) {
-    if (materials.isEmpty) return '(Noch keine Materialien hochgeladen.)';
+  /// Übungsklausuren (siehe [MaterialKind.practiceExam]) dienen nur als
+  /// Stil-Referenz für die KI-Generierung (siehe AiService.examContext-
+  /// Parameter), sind aber kein normaler Fach-Stoff – im Frage-Chat würde
+  /// "Behandelt/Noch nicht behandelt" für sie ohnehin keinen Sinn ergeben.
+  static List<MaterialItem> _excludingPracticeExam(List<MaterialItem> materials) =>
+      materials.where((m) => m.kind != MaterialKind.practiceExam).toList();
 
-    final chronological = [...materials]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  static String build(List<MaterialItem> materials, {required int charBudget}) {
+    final relevant = _excludingPracticeExam(materials);
+    if (relevant.isEmpty) return '(Noch keine Materialien hochgeladen.)';
+
+    final chronological = [...relevant]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     final byPriority = [...chronological]
       ..sort((a, b) {
         if (a.covered != b.covered) return a.covered ? -1 : 1;

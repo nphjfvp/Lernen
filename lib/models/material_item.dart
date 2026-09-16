@@ -1,4 +1,4 @@
-enum MaterialKind { slide, exercise }
+enum MaterialKind { slide, exercise, practiceExam }
 
 MaterialKind materialKindFromString(String value) =>
     MaterialKind.values.firstWhere((e) => e.name == value);
@@ -146,6 +146,18 @@ class MaterialItem {
   /// Ob dieses Material eine visuelle PDF-Ansicht mit Markier-Funktion
   /// unterstützt (Original-Bytes wurden beim Upload gespeichert).
   bool get hasViewablePdf => filePath != null || fileBytesBase64 != null;
+
+  /// Text der zuerst hochgeladenen Übungsklausur eines Fachs (siehe
+  /// [MaterialKind.practiceExam]), falls vorhanden – Stil-Referenz für die
+  /// KI-Generierung (siehe AiService.generateConceptsAndFlashcards/
+  /// generateCheckpointQuiz, Parameter `examContext`), damit erzeugte
+  /// Fragen sich an Art/Schwierigkeit der echten Klausur orientieren.
+  static String? practiceExamTextFrom(List<MaterialItem> materials) {
+    for (final m in materials) {
+      if (m.kind == MaterialKind.practiceExam) return m.extractedText;
+    }
+    return null;
+  }
 
   MaterialItem copyWith({
     List<MaterialHighlight>? highlights,

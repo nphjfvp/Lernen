@@ -424,6 +424,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 26),
                     child: Divider(height: 1, color: c.border),
                   ),
+                  _SectionLabel('Lernmodus'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Beim Lesen einer Folie in MaterialViewerScreen wird alle N Seiten '
+                    'ein kurzer Zwischen-Check angeboten (überspringbar) – falsch '
+                    'beantwortete Fragen landen automatisch im Daily Quiz. 0 = aus.',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      IconButton.outlined(
+                        onPressed: settings.checkpointQuizPageInterval <= 0
+                            ? null
+                            : () => context.read<SettingsRepository>().update(
+                                  settings.copyWith(
+                                      checkpointQuizPageInterval: settings.checkpointQuizPageInterval - 1),
+                                ),
+                        icon: const Icon(Icons.remove),
+                      ),
+                      SizedBox(
+                        width: 64,
+                        child: Text(
+                          settings.checkpointQuizPageInterval <= 0
+                              ? 'Aus'
+                              : '${settings.checkpointQuizPageInterval} Seiten',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      IconButton.outlined(
+                        onPressed: () => context.read<SettingsRepository>().update(
+                              settings.copyWith(
+                                  checkpointQuizPageInterval: settings.checkpointQuizPageInterval + 1),
+                            ),
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 26),
+                    child: Divider(height: 1, color: c.border),
+                  ),
                   _SectionLabel('Lernerinnerung'),
                   const SizedBox(height: 4),
                   Text(

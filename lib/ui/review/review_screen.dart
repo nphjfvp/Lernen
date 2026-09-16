@@ -30,6 +30,13 @@ import '../widgets/raw_response_dialog.dart';
 
 enum _Step { pick, generating, preview }
 
+/// "create": KI erstellt neue Konzepte/Karteikarten aus Folien (+ optional
+/// Übungsaufgaben) – der bisherige, einzige Modus. "import": statt neuer
+/// Fragen werden die im hochgeladenen Übungsdokument bereits VORHANDENEN
+/// Fragen samt Musterlösung möglichst originalgetreu übernommen (z.B. eine
+/// alte Klausur) – Pendant zum Import-Feature der Vorgänger-App.
+enum _GenerateMode { create, import }
+
 class _PickedFile {
   _PickedFile({required this.fileName, required this.text, required this.bytes});
   final String fileName;
@@ -53,6 +60,7 @@ class ReviewScreen extends StatefulWidget {
 
 class _ReviewScreenState extends State<ReviewScreen> {
   _Step _step = _Step.pick;
+  _GenerateMode _mode = _GenerateMode.create;
   final List<_PickedFile> _slidesFiles = [];
   final List<_PickedFile> _exercisesFiles = [];
   Map<String, dynamic>? _result;
@@ -83,7 +91,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
   /// als stumme "nur Vorderseite"-Karte gespeichert zu werden.
   int _droppedFlashcardCount = 0;
 
-  bool get _readyToGenerate => _slidesFiles.isNotEmpty && _exercisesFiles.isNotEmpty;
+  /// "create": Folien allein reichen (Übungsaufgaben verbessern die
+  /// Konzepte, sind aber nicht mehr Pflicht – "nur erstellen" direkt aus
+  /// der Vorlesung). "import": braucht ein Übungsdokument mit tatsächlich
+  /// vorhandenen Fragen zum Übernehmen, Folien sind hier optional/nur
+  /// zusätzlicher Kontext.
+  bool get _readyToGenerate => switch (_mode) {
+        _GenerateMode.create => _slidesFiles.isNotEmpty || _exercisesFiles.isNotEmpty,
+        _GenerateMode.import => _exercisesFiles.isNotEmpty,
+      };
 
   String get _slidesText =>
       _slidesFiles.map((f) => '=== Datei: ${f.fileName} ===\n${f.text}').join('\n\n');
@@ -178,12 +194,24 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
     try {
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
-      final result = await ai.generateConceptsAndFlashcards(
-        slidesText: _slidesText,
-        exercisesText: _exercisesText,
-        granularity: settings.chunkGranularity,
-        rollingContext: settings.rollingContextEnabled,
-      );
+      final Map<String, dynamic> result;
+      if (_mode == _GenerateMode.create) {
+        final examContext =
+            MaterialItem.practiceExamTextFrom(context.read<MaterialRepository>().forModule(widget.moduleId));
+        result = await ai.generateConceptsAndFlashcards(
+          slidesText: _slidesText,
+          exercisesText: _exercisesText,
+          granularity: settings.chunkGranularity,
+          rollingContext: settings.rollingContextEnabled,
+          examContext: examContext,
+        );
+      } else {
+        final imported = await ai.importQuestionsFromExercises(
+          _exercisesText,
+          granularity: settings.chunkGranularity,
+        );
+        result = {'concepts': [], 'flashcards': imported};
+      }
 
       // Manche Modelle liefern trotz Anweisung unvollständige Karten (z.B.
       // "options" bei einer Single-Choice-Frage vergessen). Statt eine
@@ -463,6 +491,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
             ? ContentAnalyzer.analyze('$_slidesText\n\n$_exercisesText')
             : null;
         return _PickView(
+          mode: _mode,
+          onModeChanged: (m) => setState(() => _mode = m),
           slidesFiles: _slidesFiles,
           exercisesFiles: _exercisesFiles.map((f) => f.fileName).toList(),
           extracting: _extracting,
@@ -517,6 +547,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
 class _PickView extends StatelessWidget {
   const _PickView({
+    required this.mode,
+    required this.onModeChanged,
     required this.slidesFiles,
     required this.exercisesFiles,
     required this.extracting,
@@ -537,6 +569,8 @@ class _PickView extends StatelessWidget {
     this.rawResponse,
   });
 
+  final _GenerateMode mode;
+  final void Function(_GenerateMode mode) onModeChanged;
   final List<_PickedFile> slidesFiles;
   final List<String> exercisesFiles;
   final bool extracting;
@@ -560,11 +594,30 @@ class _PickView extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       children: [
-        const Text(
-          'Lade Folien und die zugehörigen Übungsaufgaben hoch (auch mehrere '
-          'Dateien je Kategorie). Die KI analysiert beides zusammen – der '
-          'Fokus liegt darauf, WARUM die Übungen so gelöst werden, nicht nur '
-          'auf Theorie.',
+        SegmentedButton<_GenerateMode>(
+          segments: const [
+            ButtonSegment(
+                value: _GenerateMode.create,
+                icon: Icon(Icons.auto_awesome_outlined),
+                label: Text('KI erstellt')),
+            ButtonSegment(
+                value: _GenerateMode.import,
+                icon: Icon(Icons.file_download_outlined),
+                label: Text('Fragen importieren')),
+          ],
+          selected: {mode},
+          onSelectionChanged: (s) => onModeChanged(s.first),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          mode == _GenerateMode.create
+              ? 'Lade Folien hoch (Übungsaufgaben optional, verbessern aber die '
+                  'generierten Konzepte/Karteikarten) – die KI erstellt daraus '
+                  'gezielte Lernkonzepte und Karteikarten.'
+              : 'Lade ein Übungsdokument mit bereits vorhandenen Fragen samt '
+                  'Musterlösung hoch (z.B. eine alte Klausur) – die tatsächlich '
+                  'enthaltenen Fragen werden möglichst originalgetreu als '
+                  'Karteikarten übernommen statt neue zu erfinden.',
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
@@ -581,13 +634,14 @@ class _PickView extends StatelessWidget {
           onChanged: onUnitChanged,
         ),
         const SizedBox(height: 24),
-        _DropZone(
-          onDrop: onDropSlides,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Folien', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
+        if (mode == _GenerateMode.create) ...[
+          _DropZone(
+            onDrop: onDropSlides,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Folien', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
               ...slidesFiles.asMap().entries.map((e) => Card(
                     child: ListTile(
                       leading: const Icon(Icons.slideshow_outlined),
@@ -622,16 +676,20 @@ class _PickView extends StatelessWidget {
                     ? 'Folien auswählen oder hierher ziehen'
                     : 'Weitere Folien hinzufügen'),
               ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 16),
+        ],
         _DropZone(
           onDrop: onDropExercises,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Übungsaufgaben', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                mode == _GenerateMode.create ? 'Übungsaufgaben' : 'Übungsdokument (mit Musterlösung)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 8),
               ...exercisesFiles.asMap().entries.map((e) => Card(
                     child: ListTile(
@@ -647,7 +705,9 @@ class _PickView extends StatelessWidget {
                 onPressed: extracting ? null : onPickExercises,
                 icon: const Icon(Icons.add),
                 label: Text(exercisesFiles.isEmpty
-                    ? 'Übungsaufgaben auswählen oder hierher ziehen'
+                    ? (mode == _GenerateMode.create
+                        ? 'Übungsaufgaben auswählen oder hierher ziehen'
+                        : 'Übungsdokument auswählen oder hierher ziehen')
                     : 'Weitere Übungen hinzufügen'),
               ),
             ],
@@ -655,18 +715,19 @@ class _PickView extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         if (extracting) const Center(child: CircularProgressIndicator()),
-        if (analysis case final a?) ...[
-          AnalysisRecommendationCard(
-            analysis: a,
-            currentGranularity: currentGranularity,
-            onApply: () => onApplyRecommendation(a.recommendedGranularity),
-          ),
-          const SizedBox(height: 16),
-        ],
+        if (mode == _GenerateMode.create)
+          if (analysis case final a?) ...[
+            AnalysisRecommendationCard(
+              analysis: a,
+              currentGranularity: currentGranularity,
+              onApply: () => onApplyRecommendation(a.recommendedGranularity),
+            ),
+            const SizedBox(height: 16),
+          ],
         FilledButton.icon(
           onPressed: onGenerate,
-          icon: const Icon(Icons.auto_awesome_outlined),
-          label: const Text('Konzepte & Karteikarten erstellen'),
+          icon: Icon(mode == _GenerateMode.create ? Icons.auto_awesome_outlined : Icons.file_download_outlined),
+          label: Text(mode == _GenerateMode.create ? 'Konzepte & Karteikarten erstellen' : 'Fragen importieren'),
         ),
         if (error != null) ...[
           const SizedBox(height: 16),

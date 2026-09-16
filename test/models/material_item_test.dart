@@ -194,4 +194,28 @@ void main() {
       expect(updated.id, material.id);
     });
   });
+
+  group('MaterialItem.practiceExamTextFrom', () {
+    MaterialItem material(MaterialKind kind, String text) => MaterialItem(
+          id: kind.name,
+          moduleId: 'm1',
+          fileName: '${kind.name}.pdf',
+          kind: kind,
+          extractedText: text,
+          createdAt: DateTime(2026, 1, 1),
+        );
+
+    test('liefert den Text der Übungsklausur, wenn vorhanden', () {
+      final materials = [
+        material(MaterialKind.slide, 'Folientext'),
+        material(MaterialKind.practiceExam, 'Klausurtext'),
+      ];
+      expect(MaterialItem.practiceExamTextFrom(materials), 'Klausurtext');
+    });
+
+    test('liefert null, wenn keine Übungsklausur hochgeladen wurde', () {
+      final materials = [material(MaterialKind.slide, 'Folientext')];
+      expect(MaterialItem.practiceExamTextFrom(materials), isNull);
+    });
+  });
 }

@@ -543,6 +543,10 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
               onPressed: () => Navigator.of(ctx).pop(MaterialKind.exercise),
               child: const Text('Übungsaufgaben'),
             ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(MaterialKind.practiceExam),
+              child: const Text('Übungsklausur (Stil-Referenz für die KI)'),
+            ),
           ],
         ),
       );
@@ -603,13 +607,16 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           continue;
         }
         final id = const Uuid().v4();
-        // Original-PDF-Bytes zusätzlich speichern (nur für Folien im
-        // PDF-Format) – Grundlage für die visuelle Ansicht + Markier-
-        // Funktion in MaterialViewerScreen. Andere Formate/Übungsaufgaben
-        // funktionieren wie bisher rein textbasiert.
+        // Original-PDF-Bytes zusätzlich speichern (für Folien UND
+        // Übungsklausuren im PDF-Format) – Grundlage für die visuelle
+        // Ansicht + Markier-Funktion in MaterialViewerScreen. Andere
+        // Formate/Übungsaufgaben funktionieren wie bisher rein textbasiert.
         String? filePath;
         String? fileBytesBase64;
-        if (kind == MaterialKind.slide && file.name.toLowerCase().endsWith('.pdf')) {
+        final isPdfViewable =
+            (kind == MaterialKind.slide || kind == MaterialKind.practiceExam) &&
+                file.name.toLowerCase().endsWith('.pdf');
+        if (isPdfViewable) {
           (filePath, fileBytesBase64) = await MaterialFileStore.store(id, bytes);
         }
         await repo.save(MaterialItem(
@@ -854,7 +861,11 @@ class _MaterialRow extends StatelessWidget {
                 decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(11)),
                 alignment: Alignment.center,
                 child: Icon(
-                  material.kind == MaterialKind.slide ? Icons.slideshow_outlined : Icons.assignment_outlined,
+                  switch (material.kind) {
+                    MaterialKind.slide => Icons.slideshow_outlined,
+                    MaterialKind.exercise => Icons.assignment_outlined,
+                    MaterialKind.practiceExam => Icons.school_outlined,
+                  },
                   size: 16,
                   color: c.inkMuted,
                 ),
@@ -872,11 +883,13 @@ class _MaterialRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      material.kind == MaterialKind.slide
-                          ? (material.highlights.isNotEmpty
-                              ? 'Folien · ${material.highlights.length} markiert'
-                              : 'Folien')
-                          : 'Übungsaufgabe',
+                      switch (material.kind) {
+                        MaterialKind.slide => material.highlights.isNotEmpty
+                            ? 'Folien · ${material.highlights.length} markiert'
+                            : 'Folien',
+                        MaterialKind.exercise => 'Übungsaufgabe',
+                        MaterialKind.practiceExam => 'Übungsklausur (Stil-Referenz)',
+                      },
                       style: TextStyle(fontSize: 12, color: c.inkMuted),
                     ),
                   ],

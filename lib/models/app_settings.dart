@@ -44,10 +44,17 @@ class AppSettings {
   /// früheren Stand motiviert nachhaltiger als sozialer Vergleich.
   final int bestSprintScore;
 
+  /// Alle wie viele gelesenen Seiten der "Lernmodus" (siehe
+  /// MaterialViewerScreen) einen kurzen Zwischen-Check anbietet – 0
+  /// deaktiviert das Feature komplett. Rein informativ/nicht blockierend:
+  /// der Nutzer kann den Check jederzeit wegtippen und weiterlesen.
+  final int checkpointQuizPageInterval;
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
   static const defaultReminderMinuteOfDay = 18 * 60;
+  static const defaultCheckpointQuizPageInterval = 5;
 
   const AppSettings({
     this.openRouterApiKey,
@@ -61,6 +68,7 @@ class AppSettings {
     this.dailyReminderEnabled = false,
     this.dailyReminderMinuteOfDay = defaultReminderMinuteOfDay,
     this.bestSprintScore = 0,
+    this.checkpointQuizPageInterval = defaultCheckpointQuizPageInterval,
   });
 
   bool get hasApiKey =>
@@ -81,6 +89,7 @@ class AppSettings {
     bool? dailyReminderEnabled,
     int? dailyReminderMinuteOfDay,
     int? bestSprintScore,
+    int? checkpointQuizPageInterval,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -94,6 +103,7 @@ class AppSettings {
       dailyReminderEnabled: dailyReminderEnabled ?? this.dailyReminderEnabled,
       dailyReminderMinuteOfDay: dailyReminderMinuteOfDay ?? this.dailyReminderMinuteOfDay,
       bestSprintScore: bestSprintScore ?? this.bestSprintScore,
+      checkpointQuizPageInterval: checkpointQuizPageInterval ?? this.checkpointQuizPageInterval,
     );
   }
 
@@ -109,6 +119,7 @@ class AppSettings {
         'dailyReminderEnabled': dailyReminderEnabled,
         'dailyReminderMinuteOfDay': dailyReminderMinuteOfDay,
         'bestSprintScore': bestSprintScore,
+        'checkpointQuizPageInterval': checkpointQuizPageInterval,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -128,5 +139,7 @@ class AppSettings {
         dailyReminderEnabled: map['dailyReminderEnabled'] as bool? ?? false,
         dailyReminderMinuteOfDay: map['dailyReminderMinuteOfDay'] as int? ?? defaultReminderMinuteOfDay,
         bestSprintScore: map['bestSprintScore'] as int? ?? 0,
+        checkpointQuizPageInterval:
+            map['checkpointQuizPageInterval'] as int? ?? defaultCheckpointQuizPageInterval,
       );
 }

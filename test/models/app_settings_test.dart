@@ -61,4 +61,22 @@ void main() {
       expect(AppSettings.fromMap(map).bestSprintScore, 0);
     });
   });
+
+  group('AppSettings.checkpointQuizPageInterval', () {
+    test('defaultet auf 5', () {
+      expect(const AppSettings().checkpointQuizPageInterval, 5);
+    });
+
+    test('Round-Trip erhält den Wert (inkl. 0 = deaktiviert)', () {
+      const settings = AppSettings(checkpointQuizPageInterval: 0);
+      expect(AppSettings.fromMap(settings.toMap()).checkpointQuizPageInterval, 0);
+      const other = AppSettings(checkpointQuizPageInterval: 10);
+      expect(AppSettings.fromMap(other.toMap()).checkpointQuizPageInterval, 10);
+    });
+
+    test('ist abwärtskompatibel zu älteren Datensätzen ohne das Feld', () {
+      final map = const AppSettings().toMap()..remove('checkpointQuizPageInterval');
+      expect(AppSettings.fromMap(map).checkpointQuizPageInterval, 5);
+    });
+  });
 }
