@@ -456,10 +456,16 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
   /// Öffnet [PageQuestionCreationSheet] für die aktuell sichtbare Seite:
   /// erfasst zusätzlich einen Screenshot (immer an ein Vision-Modell
   /// gesendet, siehe AiService.generateQuestionsFromPage) und übergibt die
-  /// auf DIESER Seite bereits vorhandenen Markierungen als mögliche
-  /// Frage/Antwort-Grundlage.
+  /// gerade im PDF ausgewählte Textstelle (falls vorhanden – die einfachste
+  /// Art zu markieren, worauf sich die Frage beziehen soll, siehe
+  /// [_addManualHighlight]) sowie die auf DIESER Seite bereits vorhandenen
+  /// Markierungen als Vorbelegung.
   Future<void> _createQuestionFromPage() async {
     if (_bytes == null || _creatingQuestion) return;
+    // VOR dem Erfassen des Screenshots/Öffnen des Sheets lesen: der
+    // PDF-Viewer verliert seine Textauswahl, sobald der Fokus wechselt.
+    final selectedLines = _pdfViewerKey.currentState?.getSelectedTextLines() ?? const [];
+    final liveSelectionText = selectedLines.map((l) => l.text).join(' ').trim();
     setState(() => _creatingQuestion = true);
     try {
       final page = _currentPage;
@@ -484,6 +490,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
           pageText: pageText,
           pageImageBytes: imageBytes,
           highlightsOnPage: highlightsOnPage,
+          initialQuestionText: liveSelectionText.isEmpty ? null : liveSelectionText,
           examContext: examContext,
         ),
       );

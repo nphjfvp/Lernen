@@ -429,16 +429,23 @@ Nachbereiten-Modus zu wechseln.
   im Modul-Detail öffnet den Viewer direkt auf genau dieser Seite
   (`MaterialViewerScreen.initialPage`).
 - **Frage erstellen** (`PageQuestionCreationSheet`) – erzeugt aus derselben
-  Seite 1-3 Karteikarten-Varianten DESSELBEN Fakts in unterschiedlichen
-  Typen/Schwierigkeitsgraden (`AiService.generateQuestionsFromPage`, nutzt
-  dieselbe Typ-Formatlogik wie die bestehende Schwierigkeits-Eskalation,
-  siehe `_variantTypeRule`). Hat der Nutzer auf der Seite bereits eine
-  "Frage" (rot) markiert, wird sie als verbindliche Grundlage angeboten
-  statt die KI frei wählen zu lassen. Bewusst IMMER multimodal (Seiten-
-  Screenshot ans Vision-Modell) statt optional umschaltbar – einfacher UND
-  robuster, da Folienseiten oft Diagramme/Formeln enthalten, die reiner
-  Text nicht wiedergibt. Gespeicherte Karten landen sofort fällig
-  (`due: jetzt`) im Daily Quiz.
+  Seite bis zu 3 Karteikarten-Varianten DESSELBEN Fakts, je eine für
+  **Leicht/Mittel/Schwer** (jede Stufe einzeln an/abwählbar, Fragetyp pro
+  Stufe frei per Dropdown wählbar – Default Single-Choice/Lückentext/
+  Freitext, siehe `_variantTypeRule`/Schwierigkeits-Eskalation). Was genau
+  abgefragt werden soll, markiert man einfach direkt vorher im PDF per
+  normaler Textauswahl (kein extra Klick auf einen Markier-Button nötig –
+  die Auswahl wird automatisch als Vorbelegung übernommen); alternativ dient
+  eine bereits gespeicherte rote/grüne Markierung als Vorbelegung, und
+  Frage/Antwort-Text lassen sich im Sheet jederzeit frei eintippen/anpassen.
+  Bewusst IMMER multimodal (Seiten-Screenshot ans Vision-Modell) statt
+  optional umschaltbar – einfacher UND robuster, da Folienseiten oft
+  Diagramme/Formeln enthalten, die reiner Text nicht wiedergibt. Die
+  generierten Karten lassen sich vor dem Speichern eins zu eins wie im
+  echten Quiz durchklicken (`QuestionAnswerView`, dieselbe Ansicht wie
+  Daily Quiz/Üben statt einer reinen Textvorschau) und per freier Anweisung
+  ("einfacher formulieren", "anderer Fokus") überarbeiten. Gespeicherte
+  Karten landen sofort fällig (`due: jetzt`) im Daily Quiz.
 
 ### 6. Ausführen
 

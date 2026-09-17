@@ -160,5 +160,32 @@ void main() {
       final text = ((capturedBody!['messages'] as List)[1]['content'] as List)[0]['text'] as String;
       expect(text.contains('Alte-Klausur-Inhalt'), isTrue);
     });
+
+    test('Überarbeitung schickt bereits erstellte Karten + Anweisung mit', () async {
+      Map<String, dynamic>? capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return _chatResponse(jsonEncode({
+          'flashcards': [
+            {'type': 'single_choice', 'front': 'Einfachere Frage?', 'options': [{'text': 'A', 'isCorrect': true}]},
+          ],
+        }));
+      });
+      final ai = AiService(apiKey: 'key', model: 'vision-model', client: client);
+
+      await ai.generateQuestionsFromPage(
+        pageImageBytes: Uint8List.fromList([1]),
+        pageText: 'Seitentext',
+        types: const [QuestionType.singleChoice],
+        previousFlashcards: const [
+          {'type': 'single_choice', 'front': 'Komplizierte Frage?'},
+        ],
+        instruction: 'einfacher formulieren',
+      );
+
+      final text = ((capturedBody!['messages'] as List)[1]['content'] as List)[0]['text'] as String;
+      expect(text.contains('Komplizierte Frage?'), isTrue);
+      expect(text.contains('einfacher formulieren'), isTrue);
+    });
   });
 }

@@ -535,6 +535,11 @@ Format/die Schwierigkeit unterscheidet sich zwischen den Karten, nicht der
 geprüfte Inhalt. Die Typ-spezifischen Formatvorgaben:
 {{TYPE_RULES}}
 
+Bekommst du zusätzlich bereits erstellte Karten samt Überarbeitungs-
+Anweisung, überarbeite GENAU diese Karten gemäß der Anweisung (z.B. anderer
+Fokus, einfacher formuliert, mehr Kontext) statt neue zu erfinden – behalte
+dabei weiterhin Typ und Reihenfolge der gewünschten Fragetypen bei.
+
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {"flashcards": [{"type": "...", "front": "...", "...": "je nach Typ weitere Felder, siehe oben"}]}
@@ -544,16 +549,18 @@ gewünschten Typen. Antworte in der Sprache der Vorlage.
 
   static const int _pageQuestionGenerationTextCap = 20000;
 
-  /// Erstellt 1-3 Karteikarten-Varianten (unterschiedliche Typen/
-  /// Schwierigkeitsgrade DESSELBEN Fakts, siehe [_variantTypeRule]) direkt
-  /// aus einer betrachteten Seite (siehe MaterialViewerScreen-Button "Frage
-  /// erstellen" im Lernmodus). Bewusst immer multimodal (Screenshot +
+  /// Erstellt (oder überarbeitet) 1-3 Karteikarten-Varianten (unterschiedliche
+  /// Typen/Schwierigkeitsgrade DESSELBEN Fakts, siehe [_variantTypeRule])
+  /// direkt aus einer betrachteten Seite (siehe MaterialViewerScreen-Button
+  /// "Frage erstellen" im Lernmodus). Bewusst immer multimodal (Screenshot +
   /// [model] muss vision-fähig sein) statt optional – einfacher UND
   /// robuster als ein Text/Vision-Umschalter, da Folienseiten oft Diagramme/
   /// Formeln enthalten, die reiner Text nicht wiedergibt. Optional
-  /// [questionHighlight]/[answerHighlight]: vom Nutzer selbst markiertes
-  /// Frage/Antwort-Paar (siehe MaterialHighlight) als VERBINDLICHE
-  /// Grundlage statt freier KI-Wahl.
+  /// [questionHighlight]/[answerHighlight]: vom Nutzer selbst markierter/
+  /// eingegebener Frage/Antwort-Fakt (siehe MaterialHighlight) als
+  /// VERBINDLICHE Grundlage statt freier KI-Wahl. Für eine Überarbeitung
+  /// bestehender Ergebnisse [previousFlashcards] + [instruction] mitgeben
+  /// (z.B. "einfacher formulieren", "anderer Fokus").
   Future<List<Map<String, dynamic>>> generateQuestionsFromPage({
     required Uint8List pageImageBytes,
     required String pageText,
@@ -561,6 +568,8 @@ gewünschten Typen. Antworte in der Sprache der Vorlage.
     String? questionHighlight,
     String? answerHighlight,
     String? examContext,
+    List<Map<String, dynamic>>? previousFlashcards,
+    String? instruction,
   }) async {
     final typeRules = types.map((t) => '- ${_variantTypeRule(t)}').join('\n');
     final systemPrompt = _pageQuestionGenerationSystemPrompt.replaceFirst('{{TYPE_RULES}}', typeRules);
@@ -571,9 +580,9 @@ gewünschten Typen. Antworte in der Sprache der Vorlage.
     if (questionHighlight != null && questionHighlight.trim().isNotEmpty) {
       buffer
         ..writeln()
-        ..writeln('Vom Nutzer markiertes Frage/Antwort-Paar (VERBINDLICHE Grundlage):')
+        ..writeln('Vom Nutzer markierter/eingegebener Frage/Antwort-Fakt (VERBINDLICHE Grundlage):')
         ..writeln('Frage-Stelle: $questionHighlight')
-        ..writeln('Antwort-Stelle: ${(answerHighlight ?? '').trim().isEmpty ? '(keine markiert)' : answerHighlight}');
+        ..writeln('Antwort-Stelle: ${(answerHighlight ?? '').trim().isEmpty ? '(keine angegeben)' : answerHighlight}');
     }
     if (examContext != null && examContext.trim().isNotEmpty) {
       buffer
@@ -581,6 +590,14 @@ gewünschten Typen. Antworte in der Sprache der Vorlage.
         ..writeln('Stil-Referenz, eine bereits hochgeladene Übungsklausur (orientiere '
             'dich bei Schwierigkeit/Formulierung daran, sofern thematisch passend):')
         ..writeln(_cap(examContext, _examContextCap));
+    }
+    if (previousFlashcards != null && instruction != null && instruction.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Bereits erstellte Karten (überarbeiten statt neu erfinden):')
+        ..writeln(jsonEncode(previousFlashcards))
+        ..writeln()
+        ..writeln('Anweisung des Nutzers zur Überarbeitung: $instruction');
     }
 
     final content = [
