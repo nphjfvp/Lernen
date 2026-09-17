@@ -43,5 +43,35 @@ void main() {
       };
       expect(Concept.fromMap(legacyMap).unitId, isNull);
     });
+
+    test('erhält den Seiten-Quasi-Link (linkedMaterialId/linkedPageNumber)', () {
+      final concept = Concept(
+        id: '1',
+        moduleId: 'm1',
+        title: 'Titel',
+        explanation: 'Erklärung',
+        sourceMaterialIds: const [],
+        createdAt: DateTime(2026, 1, 1),
+        linkedMaterialId: 'mat1',
+        linkedPageNumber: 4,
+      );
+      final restored = Concept.fromMap(concept.toMap());
+      expect(restored.linkedMaterialId, 'mat1');
+      expect(restored.linkedPageNumber, 4);
+    });
+
+    test('Seiten-Quasi-Link ist null, wenn nicht angegeben (abwärtskompatibel)', () {
+      final legacyMap = {
+        'id': '1',
+        'moduleId': 'm1',
+        'title': 'Titel',
+        'explanation': 'Erklärung',
+        'sourceMaterialIds': <String>[],
+        'createdAt': DateTime(2026, 1, 1).toIso8601String(),
+      };
+      final restored = Concept.fromMap(legacyMap);
+      expect(restored.linkedMaterialId, isNull);
+      expect(restored.linkedPageNumber, isNull);
+    });
   });
 }

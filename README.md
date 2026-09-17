@@ -408,6 +408,38 @@ automatisch als neue, fällige Karteikarte gespeichert (`due: jetzt`): so
 Übungsklausur hochgeladen (siehe oben), fließt sie hier als Stil-Referenz
 mit ein.
 
+### 5d. Direkt aus einer Seite: Konzept speichern / Frage erstellen
+
+Zwei weitere Buttons in derselben AppBar machen den Lernmodus vollständig:
+Während man eine Vorlesung durchgeht, lässt sich zu JEDER einzelnen Seite
+sofort ein Konzept oder eine Frage erzeugen, statt dafür extra in den
+Nachbereiten-Modus zu wechseln.
+
+- **Konzept speichern** (`PageConceptSheet`) – die KI erstellt aus dem Text
+  GENAU dieser Seite einen Titel + eine ausführliche Erklärung
+  (`AiService.generatePageConcept`). Nachbarseiten-Text wird nur als
+  optionaler Zusatzkontext mitgegeben – die KI nutzt ihn laut Systemprompt
+  ausschließlich, wenn die aktuelle Seite allein sonst unklar/unvollständig
+  wäre, statt ihn immer einzuarbeiten. Vor dem Speichern lässt sich das
+  Ergebnis direkt bearbeiten oder per freier Anweisung ("kürzer",
+  "umformulieren", "mehr Fokus auf …") iterativ überarbeiten. Gespeichert
+  wird es als ganz normales Konzept in der Konzepte-Liste des Fachs, aber
+  mit einem Quasi-Link zurück zu Material + Seite
+  (`Concept.linkedMaterialId`/`linkedPageNumber`) – ein Klick auf "Seite N"
+  im Modul-Detail öffnet den Viewer direkt auf genau dieser Seite
+  (`MaterialViewerScreen.initialPage`).
+- **Frage erstellen** (`PageQuestionCreationSheet`) – erzeugt aus derselben
+  Seite 1-3 Karteikarten-Varianten DESSELBEN Fakts in unterschiedlichen
+  Typen/Schwierigkeitsgraden (`AiService.generateQuestionsFromPage`, nutzt
+  dieselbe Typ-Formatlogik wie die bestehende Schwierigkeits-Eskalation,
+  siehe `_variantTypeRule`). Hat der Nutzer auf der Seite bereits eine
+  "Frage" (rot) markiert, wird sie als verbindliche Grundlage angeboten
+  statt die KI frei wählen zu lassen. Bewusst IMMER multimodal (Seiten-
+  Screenshot ans Vision-Modell) statt optional umschaltbar – einfacher UND
+  robuster, da Folienseiten oft Diagramme/Formeln enthalten, die reiner
+  Text nicht wiedergibt. Gespeicherte Karten landen sofort fällig
+  (`due: jetzt`) im Daily Quiz.
+
 ### 6. Ausführen
 
 **Am einfachsten zum Ausprobieren: im Browser**, kein Visual Studio/Android

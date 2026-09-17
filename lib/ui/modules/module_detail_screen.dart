@@ -259,6 +259,12 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                                       child: Row(
                                         mainAxisAlignment: MainAxisAlignment.end,
                                         children: [
+                                          if (concept.linkedMaterialId != null && concept.linkedPageNumber != null)
+                                            TextButton.icon(
+                                              onPressed: () => _openConceptSourcePage(concept, materials),
+                                              icon: const Icon(Icons.description_outlined, size: 16),
+                                              label: Text('Seite ${concept.linkedPageNumber}'),
+                                            ),
                                           TextButton.icon(
                                             onPressed: () => _editConcept(concept),
                                             icon: const Icon(Icons.edit_outlined, size: 16),
@@ -643,6 +649,29 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
   void _openMaterial(MaterialItem material) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => MaterialViewerScreen(material: material)),
+    );
+  }
+
+  /// Folgt dem Quasi-Link eines im Lernmodus erstellten Konzepts (siehe
+  /// Concept.linkedMaterialId/linkedPageNumber) zurück zu genau der Seite,
+  /// auf der es entstanden ist.
+  void _openConceptSourcePage(Concept concept, List<MaterialItem> materials) {
+    MaterialItem? material;
+    for (final m in materials) {
+      if (m.id == concept.linkedMaterialId) {
+        material = m;
+        break;
+      }
+    }
+    if (material == null || !material.hasViewablePdf) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Quell-Material nicht mehr verfügbar.')));
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialViewerScreen(material: material!, initialPage: concept.linkedPageNumber),
+      ),
     );
   }
 

@@ -446,6 +446,157 @@ wenn es viele sind. Antworte in der Sprache der Vorlage.
     return flashcards;
   }
 
+  static const _pageConceptSystemPrompt = '''
+Du bist ein Lernassistent für Studierende im Lernmodus: der Nutzer betrachtet
+gerade EINE konkrete Seite eines Foliensatzes und möchte daraus ein
+eigenständiges Lernkonzept erstellen (Titel + ausführliche Erklärung).
+
+Grundlage ist in erster Linie der Text dieser EINEN Seite. Text der
+vorherigen/nachfolgenden Seite wird dir NUR als zusätzlicher Kontext
+mitgegeben (falls verfügbar) – nutze ihn AUSSCHLIESSLICH, wenn das Konzept
+auf dieser Seite ohne ihn unvollständig oder unverständlich wäre (z.B. eine
+Definition beginnt auf der vorherigen Seite, eine Formel wird erst auf der
+nächsten hergeleitet). Ist der Seiteninhalt für sich verständlich, ignoriere
+den Nachbar-Kontext komplett – erweitere das Konzept NICHT unnötig auf
+Nachbarthemen.
+
+Bekommst du zusätzlich ein BEREITS erstelltes Konzept samt Überarbeitungs-
+Anweisung, überarbeite GENAU dieses Konzept gemäß der Anweisung (z.B.
+umformulieren, kürzen, mehr Fokus auf einen Aspekt) statt ein neues zu
+erfinden.
+
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text davor/danach:
+{"title": "Kurzer, prägnanter Konzepttitel", "explanation": "Ausführliche, klar strukturierte Erklärung"}
+Antworte in der Sprache der Vorlage.
+''';
+
+  static const int _pageConceptCap = 20000;
+  static const int _pageConceptNeighborCap = 8000;
+
+  /// Erstellt (oder überarbeitet) ein Lernkonzept aus GENAU einer Seite
+  /// (siehe MaterialViewerScreen-Button "Konzept speichern" im Lernmodus).
+  /// [previousPageText]/[nextPageText] sind rein optionaler Zusatzkontext –
+  /// die KI entscheidet selbst (siehe Systemprompt), ob sie ihn tatsächlich
+  /// braucht, statt ihn immer einzuarbeiten. Für eine Überarbeitung
+  /// bestehender Ergebnisse [currentTitle]/[currentExplanation] +
+  /// [instruction] mitgeben (z.B. "kürzer", "mehr Fokus auf die Formel").
+  Future<Map<String, dynamic>> generatePageConcept({
+    required String pageText,
+    String? previousPageText,
+    String? nextPageText,
+    String? currentTitle,
+    String? currentExplanation,
+    String? instruction,
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Text der aktuellen Seite:')
+      ..writeln(_cap(pageText, _pageConceptCap));
+    if (previousPageText != null && previousPageText.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Text der VORHERIGEN Seite (nur bei Bedarf nutzen):')
+        ..writeln(_cap(previousPageText, _pageConceptNeighborCap));
+    }
+    if (nextPageText != null && nextPageText.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Text der NACHFOLGENDEN Seite (nur bei Bedarf nutzen):')
+        ..writeln(_cap(nextPageText, _pageConceptNeighborCap));
+    }
+    if (currentExplanation != null && instruction != null && instruction.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Bereits erstelltes Konzept (überarbeiten statt neu erfinden):')
+        ..writeln('Titel: ${currentTitle ?? ''}')
+        ..writeln('Erklärung: $currentExplanation')
+        ..writeln()
+        ..writeln('Anweisung des Nutzers zur Überarbeitung: $instruction');
+    }
+    final raw = await _complete(_pageConceptSystemPrompt, buffer.toString());
+    return _parseJsonObject(raw);
+  }
+
+  static const _pageQuestionGenerationSystemPrompt = '''
+Du bist ein Lernassistent für Studierende im Lernmodus: der Nutzer betrachtet
+gerade EINE konkrete Seite eines Foliensatzes (als Bild beigefügt, Text der
+Seite als zusätzlicher Kontext) und möchte daraus gezielt eine Prüfungsfrage
+erstellen. Stütze dich in erster Linie auf das Bild (Diagramme, Formeln,
+Layout, was reiner Text nicht wiedergibt), der Text hilft bei der Einordnung.
+
+Wurde dir ein konkretes Frage/Antwort-Paar mitgegeben (der Nutzer hat es auf
+der Seite selbst markiert), MUSS sich JEDE erzeugte Karte auf GENAU diesen
+Fakt beziehen – erfinde keinen anderen Inhalt. Andernfalls wähle selbst den
+wichtigsten, klar abfragbaren Fakt auf der Seite.
+
+Du bekommst eine Liste gewünschter Fragetypen. Erzeuge für JEDEN dieser Typen
+in der gegebenen Reihenfolge GENAU EINE Karte zu DEMSELBEN Fakt – nur das
+Format/die Schwierigkeit unterscheidet sich zwischen den Karten, nicht der
+geprüfte Inhalt. Die Typ-spezifischen Formatvorgaben:
+{{TYPE_RULES}}
+
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text davor/danach:
+{"flashcards": [{"type": "...", "front": "...", "...": "je nach Typ weitere Felder, siehe oben"}]}
+Die Reihenfolge im "flashcards"-Array entspricht der Reihenfolge der
+gewünschten Typen. Antworte in der Sprache der Vorlage.
+''';
+
+  static const int _pageQuestionGenerationTextCap = 20000;
+
+  /// Erstellt 1-3 Karteikarten-Varianten (unterschiedliche Typen/
+  /// Schwierigkeitsgrade DESSELBEN Fakts, siehe [_variantTypeRule]) direkt
+  /// aus einer betrachteten Seite (siehe MaterialViewerScreen-Button "Frage
+  /// erstellen" im Lernmodus). Bewusst immer multimodal (Screenshot +
+  /// [model] muss vision-fähig sein) statt optional – einfacher UND
+  /// robuster als ein Text/Vision-Umschalter, da Folienseiten oft Diagramme/
+  /// Formeln enthalten, die reiner Text nicht wiedergibt. Optional
+  /// [questionHighlight]/[answerHighlight]: vom Nutzer selbst markiertes
+  /// Frage/Antwort-Paar (siehe MaterialHighlight) als VERBINDLICHE
+  /// Grundlage statt freier KI-Wahl.
+  Future<List<Map<String, dynamic>>> generateQuestionsFromPage({
+    required Uint8List pageImageBytes,
+    required String pageText,
+    required List<QuestionType> types,
+    String? questionHighlight,
+    String? answerHighlight,
+    String? examContext,
+  }) async {
+    final typeRules = types.map((t) => '- ${_variantTypeRule(t)}').join('\n');
+    final systemPrompt = _pageQuestionGenerationSystemPrompt.replaceFirst('{{TYPE_RULES}}', typeRules);
+
+    final buffer = StringBuffer()
+      ..writeln('Text dieser Seite (Kontext, Grundlage ist primär das Bild):')
+      ..writeln(_cap(pageText, _pageQuestionGenerationTextCap));
+    if (questionHighlight != null && questionHighlight.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Vom Nutzer markiertes Frage/Antwort-Paar (VERBINDLICHE Grundlage):')
+        ..writeln('Frage-Stelle: $questionHighlight')
+        ..writeln('Antwort-Stelle: ${(answerHighlight ?? '').trim().isEmpty ? '(keine markiert)' : answerHighlight}');
+    }
+    if (examContext != null && examContext.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Stil-Referenz, eine bereits hochgeladene Übungsklausur (orientiere '
+            'dich bei Schwierigkeit/Formulierung daran, sofern thematisch passend):')
+        ..writeln(_cap(examContext, _examContextCap));
+    }
+
+    final content = [
+      {'type': 'text', 'text': buffer.toString()},
+      {
+        'type': 'image_url',
+        'image_url': {'url': 'data:image/png;base64,${base64Encode(pageImageBytes)}'},
+      },
+    ];
+    final raw = await _complete(systemPrompt, content);
+    final parsed = _parseJsonObject(raw);
+    return (parsed['flashcards'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
   static const _crosscheckSystemPrompt = '''
 Du bist ein fachlicher Prüfer für Lernmaterial. Du bekommst
 Vorlesungsfolien, Übungsaufgaben und bereits von einer anderen KI erstellte

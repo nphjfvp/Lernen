@@ -20,6 +20,8 @@ import '../../services/material_file_store.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
+import '../widgets/page_concept_sheet.dart';
+import '../widgets/page_question_creation_sheet.dart';
 import '../widgets/page_question_sheet.dart';
 
 /// Zeigt eine hochgeladene PDF-Folie visuell an und erlaubt es, Textstellen
@@ -29,10 +31,19 @@ import '../widgets/page_question_sheet.dart';
 /// KI-Vorschlag (siehe AiService.suggestHighlights). Die Markierungen +
 /// eine kurze Notiz fließen als "besonders relevant"-Kontext in
 /// Vorbereiten/Nachbereiten/Chat ein (siehe MaterialItem.highlights/notes).
+/// Zusätzlich der volle "Lernmodus": direkt aus einer Seite ein Konzept
+/// (siehe [PageConceptSheet]) oder eine Frage (siehe
+/// [PageQuestionCreationSheet]) erstellen, plus der periodische
+/// Zwischen-Check (siehe [_handlePageChanged]).
 class MaterialViewerScreen extends StatefulWidget {
-  const MaterialViewerScreen({super.key, required this.material});
+  const MaterialViewerScreen({super.key, required this.material, this.initialPage});
 
   final MaterialItem material;
+
+  /// Springt beim Öffnen direkt zu dieser Seite – Grundlage für den
+  /// Quasi-Link von Konzepten zurück zu ihrer Ursprungsseite (siehe
+  /// Concept.linkedMaterialId/linkedPageNumber).
+  final int? initialPage;
 
   @override
   State<MaterialViewerScreen> createState() => _MaterialViewerScreenState();
@@ -64,6 +75,14 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
   /// gemeldet hat.
   int? _checkpointStartPage;
   bool _checkpointBusy = false;
+
+  /// Aktuell sichtbare Seite – Grundlage für "Konzept speichern"/"Frage
+  /// erstellen" (siehe [_saveConceptFromPage]/[_createQuestionFromPage]).
+  /// Startet bei [MaterialViewerScreen.initialPage] bzw. 1, wird über
+  /// [_handlePageChanged] aktuell gehalten.
+  late int _currentPage = widget.initialPage ?? 1;
+  bool _creatingConcept = false;
+  bool _creatingQuestion = false;
 
   @override
   void initState() {
@@ -291,6 +310,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
   /// überspringbarer Zwischen-Check angeboten (siehe [_offerCheckpointQuiz])
   /// – rein informativ, blockiert das Weiterlesen nicht.
   void _handlePageChanged(int newPage) {
+    setState(() => _currentPage = newPage);
     final interval = context.read<SettingsRepository>().settings.checkpointQuizPageInterval;
     final start = _checkpointStartPage ??= newPage;
     if (interval <= 0 || _checkpointBusy) return;
@@ -400,6 +420,83 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     return cards;
   }
 
+  /// Öffnet [PageConceptSheet] für die aktuell sichtbare Seite: liest deren
+  /// Text sowie (rein optional, die KI entscheidet selbst ob nötig) den
+  /// Text der Nachbarseiten aus.
+  Future<void> _saveConceptFromPage() async {
+    if (_bytes == null || _creatingConcept) return;
+    setState(() => _creatingConcept = true);
+    try {
+      final totalPages = _pdfController.pageCount;
+      final page = _currentPage;
+      final pageText = _textForPageRange(page, page);
+      final previousText = page > 1 ? _textForPageRange(page - 1, page - 1) : null;
+      final nextText = totalPages > 0 && page < totalPages ? _textForPageRange(page + 1, page + 1) : null;
+      if (!mounted) return;
+      final saved = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => PageConceptSheet(
+          material: widget.material,
+          pageNumber: page,
+          pageText: pageText,
+          previousPageText: previousText,
+          nextPageText: nextText,
+        ),
+      );
+      if (saved == true && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Konzept gespeichert.')));
+      }
+    } finally {
+      if (mounted) setState(() => _creatingConcept = false);
+    }
+  }
+
+  /// Öffnet [PageQuestionCreationSheet] für die aktuell sichtbare Seite:
+  /// erfasst zusätzlich einen Screenshot (immer an ein Vision-Modell
+  /// gesendet, siehe AiService.generateQuestionsFromPage) und übergibt die
+  /// auf DIESER Seite bereits vorhandenen Markierungen als mögliche
+  /// Frage/Antwort-Grundlage.
+  Future<void> _createQuestionFromPage() async {
+    if (_bytes == null || _creatingQuestion) return;
+    setState(() => _creatingQuestion = true);
+    try {
+      final page = _currentPage;
+      final imageBytes = await _capturePageImage();
+      if (!mounted) return;
+      if (imageBytes == null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Seite konnte nicht erfasst werden.')));
+        return;
+      }
+      final pageText = _textForPageRange(page, page);
+      final highlightsOnPage = _highlights.where((h) => h.pageNumber == page).toList();
+      final examContext = MaterialItem.practiceExamTextFrom(
+          context.read<MaterialRepository>().forModule(widget.material.moduleId));
+      if (!mounted) return;
+      final savedCount = await showModalBottomSheet<int>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) => PageQuestionCreationSheet(
+          material: widget.material,
+          pageNumber: page,
+          pageText: pageText,
+          pageImageBytes: imageBytes,
+          highlightsOnPage: highlightsOnPage,
+          examContext: examContext,
+        ),
+      );
+      if (savedCount != null && savedCount > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$savedCount Frage${savedCount == 1 ? '' : 'n'} gespeichert.'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _creatingQuestion = false);
+    }
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -456,6 +553,22 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
         appBar: AppBar(
           title: Text(widget.material.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
+            IconButton(
+              tooltip: 'Konzept speichern',
+              icon: _creatingConcept
+                  ? const SizedBox(
+                      width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.note_add_outlined),
+              onPressed: (_creatingConcept || _bytes == null) ? null : _saveConceptFromPage,
+            ),
+            IconButton(
+              tooltip: 'Frage erstellen',
+              icon: _creatingQuestion
+                  ? const SizedBox(
+                      width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.quiz_outlined),
+              onPressed: (_creatingQuestion || _bytes == null) ? null : _createQuestionFromPage,
+            ),
             IconButton(
               tooltip: 'Frage zur Seite',
               icon: _capturingPageQuestion
@@ -533,6 +646,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                             _bytes!,
                             key: _pdfViewerKey,
                             controller: _pdfController,
+                            initialPageNumber: widget.initialPage ?? 1,
                             onTextSelectionChanged: (details) {
                               setState(
                                   () => _hasSelection = (details.selectedText ?? '').trim().isNotEmpty);
