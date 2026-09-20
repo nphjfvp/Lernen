@@ -415,6 +415,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
         correctText: fixed['correctText'] as String?,
         blanks: QuestionParsing.parseBlanks(fixed['blanks']),
         dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
+        htmlContent: fixed['htmlContent'] as String?,
       ));
     }
     return cards;

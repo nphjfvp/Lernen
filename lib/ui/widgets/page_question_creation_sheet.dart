@@ -153,6 +153,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet> {
           correctText: fixed['correctText'] as String?,
           blanks: QuestionParsing.parseBlanks(fixed['blanks']),
           dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
+          htmlContent: fixed['htmlContent'] as String?,
         ));
       }
       if (!mounted) return;

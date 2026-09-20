@@ -47,6 +47,90 @@ class AiService {
   /// den Prompt bei sehr vielen Chunks trotzdem beschränkt.
   static const int _rollingContextLimit = 40;
 
+  /// Eigenständiger Prompt zum Kopieren in ein EXTERNES KI-Chat-Fenster
+  /// (ChatGPT, Gemini, Claude.ai, ...), wenn ein stärkeres Modell gebraucht
+  /// wird als die in dieser App per BYOK hinterlegten – z.B. bei besonders
+  /// unüblichen Vorlagen (Zuordnungs-Matrizen, Diskussionsfragen ohne
+  /// exakte Musterlösung), an denen ein schwächeres Modell scheitert. Anders
+  /// als [_importQuestionsSystemPrompt]/[_conceptsSystemPrompt] wird dieser
+  /// Text NIE direkt an OpenRouter geschickt (kein API-Call, keine Kosten) –
+  /// er wird nur in der UI angezeigt/in die Zwischenablage kopiert (siehe
+  /// ReviewScreen-Modus "JSON einfügen"). Das externe Modell liefert damit
+  /// GENAU das JSON-Format, das `QuestionParsing.normalizeGeneratedFlashcard`
+  /// auch von den beiden anderen Erzeugungswegen erwartet, daher hier bewusst
+  /// dieselbe Feld-/Typ-Beschreibung dupliziert statt geteilt: der Text muss
+  /// für sich allein stehen, ohne Bezug auf Dart-Code, das ihn ein Mensch
+  /// woanders einfügt.
+  static const externalJsonPromptTemplate = '''
+Du hilfst mir, Lernmaterial für die App "Lernen" aufzubereiten. Ich füge dir
+unten den Text eines Dokuments an (Klausur, Übungsblatt, Folien o.ä.).
+
+AUFGABE: Erstelle daraus Karteikarten/Fragen zur Wiederholung – entweder
+ORIGINALGETREU übernommen (wenn das Dokument bereits fertige Fragen samt
+Lösung enthält, z.B. eine alte Klausur) oder SELBST ERSTELLT (wenn es reine
+Theorie/Folien ohne vorformulierte Fragen sind). Wenn unklar, entscheide
+sinnvoll je nach Abschnitt.
+
+Wähle pro Frage den technisch passenden Typ – nutze NICHT für alles denselben
+Typ, sondern möglichst den spezifischsten:
+   - "single_choice": genau eine richtige Antwort unter mehreren Optionen.
+     {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
+   - "multiple_choice": mehrere Antworten gleichzeitig richtig, gleiches Format.
+   - "fill_blank": Lückentext. Markiere jede Lücke im "front"-Text mit genau
+     drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
+     Reihenfolge. {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]}
+   - "free_text": offene, aber eindeutig prüfbare Kurzantwort. "correctText"
+     enthält die Lösung (bei mehreren akzeptierten Formulierungen durch ";"
+     getrennt). {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative"}
+   - "drag_drop": Begriffe einander zuordnen (Paare). "dragPairs" enthält
+     {"source","target"}-Paare. {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]}
+   - "drag_category": Begriffe in Kategorien einsortieren. "dragPairs" wie bei
+     drag_drop, "target" ist hier der Kategoriename (mehrere "source" können
+     denselben "target"-Wert haben).
+   - "flashcard": einfaches front/back, nur wenn kein anderer Typ passt.
+     "back" ist PFLICHT und darf nie leer sein.
+   - "html": AUSNAHME für alles, was strukturell in keinen der obigen Typen
+     passt – typische Beispiele: eine Zuordnungs-Matrix/Tabelle mit mehreren
+     Kriterien-Zeilen (pro Zeile eine von mehreren Spalten auswählen), eine
+     Drag&Drop-Zeichnung, oder eine offene Erläuterungs-/Diskussionsfrage, bei
+     der ein reiner Text-Exakt-Vergleich zu streng wäre. Für diesen Typ baust
+     du selbst eine eigenständige, interaktive HTML-Seite:
+       * "htmlContent" enthält NUR den Inhalt, der in <body> gehört (also KEIN
+         <html>/<head>/<style>-Rahmen, keine <!DOCTYPE>-Zeile) – reines
+         Inline-HTML/CSS/JS in einem einzigen String.
+       * Kein externes Skript, Bild, keine Netzwerk-Anfrage/kein fetch/XHR –
+         wird ohnehin blockiert (die App zeigt die Seite in einer
+         abgeriegelten Sandbox ohne Netzwerkzugriff an).
+       * Du kennst die richtige Lösung bereits jetzt beim Erstellen – baue die
+         Prüf-Logik direkt als Inline-JavaScript in die Seite ein (z.B. bei
+         Klick auf einen "Prüfen"-Button).
+       * Beim Auswerten MUSS die Seite GENAU diesen Aufruf machen, sonst
+         bekommt die App nie ein Ergebnis und die Karte ist unbrauchbar:
+         window.FlutterAnswer.postMessage(JSON.stringify({correct: true}))
+         (bzw. {correct: false} bei falscher Antwort).
+       * Gib zusätzlich "front" (kurze Frage-Überschrift) und "back" (kurze
+         Text-Zusammenfassung der Lösung) an – dient als Fallback-Anzeige auf
+         Geräten, die keine interaktive Seite anzeigen können (z.B. Windows-
+         Desktop statt Android/iOS).
+
+JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
+enthalten (siehe Beispiele oben) – ein Eintrag mit nur "front" und sonst
+nichts ist ungültig und wird von der App verworfen. Enthält das Dokument zu
+einer Frage KEINE erkennbare Musterlösung, überspringe diese Frage.
+
+WICHTIG – Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format,
+ohne Markdown-Codefences (kein ```), ohne jeden Text davor oder danach, sonst
+kann ich deine Antwort nicht in die App einfügen:
+{"flashcards": [
+  {"type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}]}
+]}
+Antworte in der Sprache der Vorlage.
+
+Hier ist der Dokumenttext:
+
+[FÜGE HIER DEN TEXT/DIE FRAGEN DEINES DOKUMENTS EIN]
+''';
+
   /// [userContent] ist entweder ein einfacher String (Text-Anfrage, der
   /// Normalfall) oder eine OpenRouter/OpenAI-kompatible Content-Parts-Liste
   /// (`[{"type": "text", ...}, {"type": "image_url", ...}]`) für multimodale
@@ -221,6 +305,26 @@ Frage den zum Inhalt passenden Typ:
    - "flashcard": nur als letzte Wahl (siehe oben) – "front"/"back" wie
      bisher. Das Feld "back" ist dabei PFLICHT und darf NIE leer sein – eine
      Karteikarte ohne Antwort ist nutzlos.
+   - "html": AUSNAHME, noch seltener als "flashcard" – nur wenn WIRKLICH
+     keiner der obigen Typen die Struktur der Vorlage abbilden kann.
+     Typische Beispiele: eine Zuordnungs-Matrix/Tabelle mit mehreren
+     Kriterien-Zeilen, bei der man pro Zeile eine von mehreren Spalten
+     wählt; oder eine offene Erläuterungs-/Diskussionsfrage, bei der ein
+     reiner Text-Exakt-Vergleich zu streng wäre (dann prüft dein eigenes
+     JavaScript großzügiger, z.B. ob mehrere der erwarteten Kernpunkte
+     sinngemäß vorkommen, statt eine einzige exakte Formulierung zu
+     verlangen). "htmlContent" enthält NUR den `<body>`-Inhalt (kein
+     `<html>`/`<head>`/`<style>`-Rahmen, die App bettet das selbst sicher
+     ein) als eigenständige, interaktive Seite: reines Inline-HTML/CSS/JS,
+     kein externes Skript/Bild/keine Netzwerk-Anfrage (wird ohnehin
+     blockiert). Die Seite MUSS ihre eigene Prüf-Logik enthalten (du kennst
+     die Lösung bereits jetzt) und beim Auswerten GENAU diesen Aufruf
+     machen: `window.FlutterAnswer.postMessage(JSON.stringify({correct:
+     true}))` (bzw. `correct: false` bei falscher Antwort) – ohne diesen
+     Aufruf bekommt die App nie ein Ergebnis und die Karte ist unbrauchbar.
+     Gib zusätzlich "front" (kurze Frage-Überschrift) und "back" (kurze
+     Text-Zusammenfassung der Lösung) an – dient als Fallback-Anzeige auf
+     Geräten ohne WebView-Unterstützung (z.B. Windows-Desktop).
 
 JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
 enthalten (siehe Beispiele unten) – ein Eintrag mit nur "front" und sonst
@@ -248,7 +352,9 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
     {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative"},
     {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]},
     {"type": "drag_category", "front": "Sortiere ein", "dragPairs": [{"source": "A", "target": "Kategorie 1"}]},
-    {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"}
+    {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"},
+    {"type": "html", "front": "Kurzfassung der Frage", "back": "Kurzfassung der Lösung",
+     "htmlContent": "<div>...Inline-HTML/CSS/JS mit eigener Prüf-Logik, siehe oben...</div>"}
   ]
 }
 Erstelle so viele Konzepte/Karteikarten wie der Abschnitt hergibt (auch
@@ -406,6 +512,22 @@ Original gestellt/gelöst wird:
      Musterlösung. "correctText" enthält die Lösung.
    - "flashcard": passt keiner der obigen Typen, offenes front/back. "back"
      ist Pflicht und darf nie leer sein.
+   - "html": AUSNAHME – nur wenn die Original-Frage strukturell keinem der
+     obigen Typen entspricht, z.B. eine Zuordnungs-Matrix/Tabelle (mehrere
+     Kriterien-Zeilen, pro Zeile eine von mehreren Spalten wählen) ODER eine
+     offene Erläuterungs-/Diskussionsfrage mit einer im Dokument erkennbaren
+     Musterlösung/Stichpunkten, bei der ein reiner Text-Exakt-Vergleich zu
+     streng wäre (dann prüft dein eigenes JavaScript großzügiger, z.B. ob
+     mehrere der erwarteten Kernpunkte sinngemäß vorkommen). "htmlContent"
+     enthält NUR den `<body>`-Inhalt (kein `<html>`/`<head>`/`<style>`-
+     Rahmen) als eigenständige, interaktive Seite: reines Inline-HTML/CSS/JS,
+     kein externes Skript/Bild/keine Netzwerk-Anfrage (wird ohnehin
+     blockiert). Die Seite MUSS ihre eigene Prüf-Logik enthalten (du kennst
+     die Musterlösung bereits jetzt) und beim Auswerten GENAU diesen Aufruf
+     machen: `window.FlutterAnswer.postMessage(JSON.stringify({correct:
+     true}))` (bzw. `correct: false`) – ohne diesen Aufruf bekommt die App
+     nie ein Ergebnis. Gib zusätzlich "front"/"back" als kurze Text-
+     Zusammenfassung an (Fallback-Anzeige ohne WebView-Unterstützung).
 
 Enthält das Dokument KEINE erkennbare Musterlösung zu einer Frage, überspringe
 diese Frage (keine Karte ohne bekannte Antwort erzeugen).
@@ -705,6 +827,10 @@ Antworte in der Sprache der Vorlage.
         QuestionType.flashcard =>
           'Zieltyp "flashcard": offene Frage/Antwort. Antwortformat: '
               '{"front": "...", "back": "..."}',
+        QuestionType.html =>
+          'Zieltyp "html": kein Bestandteil dieser einfachen Schwierigkeits-'
+              'Eskalation (siehe eigener Abschnitt zum html-Typ) – wird hier '
+              'nicht als Zielstufe verwendet.',
       };
 
   /// Erster Schritt der Schwierigkeits-Eskalation (siehe

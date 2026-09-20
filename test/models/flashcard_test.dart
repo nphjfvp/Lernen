@@ -125,6 +125,42 @@ void main() {
       final restored = Flashcard.fromMap(card.toMap());
       expect(restored.unitId, 'u1');
     });
+
+    test('erhält htmlContent für den html-Typ', () {
+      final card = Flashcard(
+        id: '1',
+        moduleId: 'm1',
+        front: 'Frage',
+        back: 'Kurzfassung der Lösung',
+        createdAt: DateTime(2026, 1, 1),
+        due: DateTime(2026, 1, 1),
+        type: QuestionType.html,
+        htmlContent: '<div>Interaktives Quiz</div>',
+      );
+      final restored = Flashcard.fromMap(card.toMap());
+      expect(restored.type, QuestionType.html);
+      expect(restored.htmlContent, '<div>Interaktives Quiz</div>');
+    });
+
+    test('htmlContent ist bei älteren Datensätzen ohne das Feld null', () {
+      final legacyMap = {
+        'id': '1',
+        'moduleId': 'm1',
+        'front': 'F',
+        'back': 'B',
+        'createdAt': DateTime(2026, 1, 1).toIso8601String(),
+        'due': DateTime(2026, 1, 1).toIso8601String(),
+        'stability': 0.0,
+        'difficulty': 0.0,
+        'elapsedDays': 0,
+        'scheduledDays': 0,
+        'reps': 0,
+        'lapses': 0,
+        'state': 'new',
+      };
+      final restored = Flashcard.fromMap(legacyMap);
+      expect(restored.htmlContent, isNull);
+    });
   });
 
   group('Flashcard.answerSummary', () {
@@ -162,6 +198,20 @@ void main() {
         dragPairs: const [DragPair(source: 'Hund', target: 'Tier')],
       );
       expect(card.answerSummary, 'Hund -> Tier');
+    });
+
+    test('html-Typ nutzt back als Kurzfassung (die eigentliche Prüfung steckt im HTML)', () {
+      final card = Flashcard(
+        id: '1',
+        moduleId: 'm1',
+        front: 'F',
+        back: 'Kurzfassung der Lösung',
+        createdAt: DateTime(2026, 1, 1),
+        due: DateTime(2026, 1, 1),
+        type: QuestionType.html,
+        htmlContent: '<div>Quiz</div>',
+      );
+      expect(card.answerSummary, 'Kurzfassung der Lösung');
     });
   });
 

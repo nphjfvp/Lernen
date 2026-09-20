@@ -1,8 +1,13 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/flashcard.dart';
 import '../../services/answer_checker.dart';
 import '../../services/fsrs_service.dart';
+import '../../services/html_question_contract.dart';
 import '../../theme/app_colors.dart';
 
 /// Rendert und beantwortet EINE Frage, passend zu ihrem [Flashcard.type].
@@ -51,6 +56,16 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   bool _checked = false;
   AnswerCheckResult? _result;
 
+  // -- html-Typ: interaktive Seite in einer sandboxed WebView -------------
+  WebViewController? _webViewController;
+  bool _webViewLoading = true;
+
+  /// false, sobald die Seite nicht geladen werden konnte ODER die Plattform
+  /// gar keine WebView unterstützt (nur Android/iOS, siehe webview_flutter) –
+  /// zeigt dann stattdessen [_buildFlashcard] als Fallback mit
+  /// Selbstbewertung (front/back sind bei diesem Typ genau dafür gedacht).
+  bool _webViewAvailable = true;
+
   bool get _isCategoryDrag => widget.card.type == QuestionType.dragCategory;
 
   @override
@@ -59,6 +74,51 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     final blanksCount = widget.card.blanks?.length ?? 0;
     _blankControllers = List.generate(blanksCount, (_) => TextEditingController());
     _pool = (widget.card.dragPairs ?? const []).map((p) => p.source).toList()..shuffle();
+    if (widget.card.type == QuestionType.html) _setupWebView();
+  }
+
+  void _setupWebView() {
+    final html = widget.card.htmlContent;
+    final supportsWebView = defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    if (html == null || html.trim().isEmpty || !supportsWebView) {
+      setState(() => _webViewAvailable = false);
+      return;
+    }
+    try {
+      _webViewController = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(NavigationDelegate(
+          onNavigationRequest: (_) => NavigationDecision.prevent,
+          onPageFinished: (_) {
+            if (mounted) setState(() => _webViewLoading = false);
+          },
+          onWebResourceError: (_) {
+            if (mounted) setState(() => _webViewAvailable = false);
+          },
+        ))
+        ..addJavaScriptChannel(htmlAnswerChannelName, onMessageReceived: _handleHtmlAnswerMessage)
+        ..loadHtmlString(wrapHtmlQuestionPage(html));
+    } catch (_) {
+      setState(() => _webViewAvailable = false);
+    }
+  }
+
+  /// Reagiert auf `window.FlutterAnswer.postMessage(...)` aus der
+  /// KI-generierten Seite (siehe AiService-Prompts für den Vertrag). Eine
+  /// kaputte/unerwartete Nachricht wird still ignoriert statt die App
+  /// abstürzen zu lassen – der Nutzer kann die Seite dann einfach nicht
+  /// sinnvoll beenden und würde zum nächsten Öffnen dieser Karte erneut
+  /// einen Versuch bekommen.
+  void _handleHtmlAnswerMessage(JavaScriptMessage message) {
+    try {
+      final data = jsonDecode(message.message);
+      if (data is Map && data['correct'] is bool) {
+        widget.onComplete(isCorrect: data['correct'] as bool);
+      }
+    } catch (_) {
+      // Siehe Doc-Kommentar oben.
+    }
   }
 
   @override
@@ -119,6 +179,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.dragDrop:
       case QuestionType.dragCategory:
         return _pool.isEmpty;
+      case QuestionType.html:
+        return false; // eigener build()-Zweig, siehe _buildHtmlQuestion.
     }
   }
 
@@ -139,7 +201,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.dragCategory:
         result = AnswerChecker.checkDragCategory(card, Map.of(_assignments));
       case QuestionType.flashcard:
-        return;
+      case QuestionType.html:
+        return; // eigene build()-Zweige, siehe _buildFlashcard/_buildHtmlQuestion.
     }
     setState(() {
       _checked = true;
@@ -153,7 +216,26 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     if (widget.card.type == QuestionType.flashcard) {
       return _buildFlashcard(c);
     }
+    if (widget.card.type == QuestionType.html) {
+      return _buildHtmlQuestion(c);
+    }
     return _buildInteractive(c);
+  }
+
+  // ---------------------------------------------------------------------
+  // html: KI-generierte interaktive Seite (siehe AiService-Prompts) in
+  // einer sandboxed WebView; ohne WebView-Unterstützung (Windows/Web/
+  // Linux) oder bei Ladefehler Fallback auf dieselbe Umdrehen +
+  // Selbstbewertung-Ansicht wie beim einfachen `flashcard`-Typ.
+  // ---------------------------------------------------------------------
+  Widget _buildHtmlQuestion(AppColors c) {
+    if (!_webViewAvailable) return _buildFlashcard(c);
+    return Column(
+      children: [
+        if (_webViewLoading) const LinearProgressIndicator(minHeight: 2),
+        Expanded(child: WebViewWidget(controller: _webViewController!)),
+      ],
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -311,7 +393,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   Widget _buildAnswerInput(AppColors c) {
     switch (widget.card.type) {
       case QuestionType.flashcard:
-        return const SizedBox.shrink();
+      case QuestionType.html:
+        return const SizedBox.shrink(); // eigene build()-Zweige.
       case QuestionType.singleChoice:
         return _buildChoiceOptions(c, multiple: false);
       case QuestionType.multipleChoice:

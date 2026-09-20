@@ -1,9 +1,10 @@
-import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -34,8 +35,13 @@ enum _Step { pick, generating, preview }
 /// Übungsaufgaben) – der bisherige, einzige Modus. "import": statt neuer
 /// Fragen werden die im hochgeladenen Übungsdokument bereits VORHANDENEN
 /// Fragen samt Musterlösung möglichst originalgetreu übernommen (z.B. eine
-/// alte Klausur) – Pendant zum Import-Feature der Vorgänger-App.
-enum _GenerateMode { create, import }
+/// alte Klausur) – Pendant zum Import-Feature der Vorgänger-App. "pasteJson":
+/// kein API-Call dieser App – der Nutzer hat den Dokumenttext bereits selbst
+/// in ein EXTERNES (ggf. stärkeres) KI-Modell eingefügt (siehe
+/// AiService.externalJsonPromptTemplate zum Kopieren) und fügt dessen fertige
+/// JSON-Antwort hier nur noch ein. Braucht deshalb keinen in dieser App
+/// hinterlegten OpenRouter-Key.
+enum _GenerateMode { create, import, pasteJson }
 
 class _PickedFile {
   _PickedFile({required this.fileName, required this.text, required this.bytes});
@@ -68,6 +74,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
   String? _rawResponse;
   bool _extracting = false;
 
+  /// Rohtext, den der Nutzer im Modus "JSON einfügen" aus einem externen
+  /// KI-Chat kopiert hat (siehe [_GenerateMode.pasteJson]).
+  String _pastedJson = '';
+
   @override
   void initState() {
     super.initState();
@@ -99,6 +109,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   bool get _readyToGenerate => switch (_mode) {
         _GenerateMode.create => _slidesFiles.isNotEmpty || _exercisesFiles.isNotEmpty,
         _GenerateMode.import => _exercisesFiles.isNotEmpty,
+        _GenerateMode.pasteJson => _pastedJson.trim().isNotEmpty,
       };
 
   String get _slidesText =>
@@ -179,7 +190,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   Future<void> _generate() async {
     final settings = context.read<SettingsRepository>().settings;
-    if (!settings.hasApiKey) {
+    // Modus "JSON einfügen" braucht bewusst KEINEN API-Key dieser App – das
+    // JSON kommt bereits fertig von einem extern befragten Modell.
+    if (_mode != _GenerateMode.pasteJson && !settings.hasApiKey) {
       setState(() => _error = 'Kein OpenRouter-API-Key hinterlegt. Bitte zuerst in den Einstellungen eintragen.');
       return;
     }
@@ -193,24 +206,41 @@ class _ReviewScreenState extends State<ReviewScreen> {
     });
 
     try {
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
       final Map<String, dynamic> result;
-      if (_mode == _GenerateMode.create) {
-        final examContext =
-            MaterialItem.practiceExamTextFrom(context.read<MaterialRepository>().forModule(widget.moduleId));
-        result = await ai.generateConceptsAndFlashcards(
-          slidesText: _slidesText,
-          exercisesText: _exercisesText,
-          granularity: settings.chunkGranularity,
-          rollingContext: settings.rollingContextEnabled,
-          examContext: examContext,
-        );
-      } else {
-        final imported = await ai.importQuestionsFromExercises(
-          _exercisesText,
-          granularity: settings.chunkGranularity,
-        );
-        result = {'concepts': [], 'flashcards': imported};
+      switch (_mode) {
+        case _GenerateMode.create:
+          final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+          final examContext =
+              MaterialItem.practiceExamTextFrom(context.read<MaterialRepository>().forModule(widget.moduleId));
+          result = await ai.generateConceptsAndFlashcards(
+            slidesText: _slidesText,
+            exercisesText: _exercisesText,
+            granularity: settings.chunkGranularity,
+            rollingContext: settings.rollingContextEnabled,
+            examContext: examContext,
+          );
+        case _GenerateMode.import:
+          final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+          final imported = await ai.importQuestionsFromExercises(
+            _exercisesText,
+            granularity: settings.chunkGranularity,
+          );
+          result = {'concepts': [], 'flashcards': imported};
+        case _GenerateMode.pasteJson:
+          // Kein AiService-Aufruf: das JSON wurde bereits fertig von einem
+          // extern befragten Modell geliefert (siehe
+          // AiService.externalJsonPromptTemplate) und wird hier nur noch
+          // lokal geparst – exakt derselbe Rettungs-/Validierungspfad
+          // (QuestionParsing.normalizeGeneratedFlashcard) wie bei den beiden
+          // anderen Modi greift unten identisch.
+          final decoded = jsonDecode(_pastedJson);
+          final rawFlashcards = decoded is Map
+              ? (decoded['flashcards'] as List? ?? const [])
+              : (decoded is List ? decoded : const []);
+          result = {
+            'concepts': (decoded is Map ? decoded['concepts'] as List? : null) ?? [],
+            'flashcards': rawFlashcards,
+          };
       }
 
       // Manche Modelle liefern trotz Anweisung unvollständige Karten (z.B.
@@ -243,7 +273,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       });
     } catch (e) {
       setState(() {
-        _error = 'Unerwarteter Fehler: $e';
+        _error = _mode == _GenerateMode.pasteJson ? 'Ungültiges JSON: $e' : 'Unerwarteter Fehler: $e';
         _step = _Step.pick;
       });
     }
@@ -456,6 +486,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         correctText: f['correctText'] as String?,
         blanks: QuestionParsing.parseBlanks(f['blanks']),
         dragPairs: QuestionParsing.parseDragPairs(f['dragPairs']),
+        htmlContent: f['htmlContent'] as String?,
         variantChain: escalate ? QuestionParsing.escalationChain : null,
       );
     }).toList();
@@ -511,15 +542,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
           units: units,
           selectedUnitChoice: _unitChoice,
           onUnitChanged: _handleUnitChanged,
+          onPastedJsonChanged: (v) => setState(() => _pastedJson = v),
         );
       case _Step.generating:
-        return const Center(
+        return Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('KI erstellt Konzepte und Karteikarten …'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(_mode == _GenerateMode.pasteJson
+                  ? 'JSON wird eingelesen …'
+                  : 'KI erstellt Konzepte und Karteikarten …'),
             ],
           ),
         );
@@ -564,6 +598,7 @@ class _PickView extends StatelessWidget {
     required this.units,
     required this.selectedUnitChoice,
     required this.onUnitChanged,
+    required this.onPastedJsonChanged,
     this.analysis,
     this.error,
     this.rawResponse,
@@ -586,6 +621,7 @@ class _PickView extends StatelessWidget {
   final List<LectureUnit> units;
   final String selectedUnitChoice;
   final void Function(String? choice) onUnitChanged;
+  final void Function(String value) onPastedJsonChanged;
   final ContentAnalysis? analysis;
   final String? error;
   final String? rawResponse;
@@ -604,21 +640,33 @@ class _PickView extends StatelessWidget {
                 value: _GenerateMode.import,
                 icon: Icon(Icons.file_download_outlined),
                 label: Text('Fragen importieren')),
+            ButtonSegment(
+                value: _GenerateMode.pasteJson,
+                icon: Icon(Icons.content_paste_outlined),
+                label: Text('JSON einfügen')),
           ],
           selected: {mode},
           onSelectionChanged: (s) => onModeChanged(s.first),
         ),
         const SizedBox(height: 12),
-        Text(
-          mode == _GenerateMode.create
-              ? 'Lade Folien hoch (Übungsaufgaben optional, verbessern aber die '
-                  'generierten Konzepte/Karteikarten) – die KI erstellt daraus '
-                  'gezielte Lernkonzepte und Karteikarten.'
-              : 'Lade ein Übungsdokument mit bereits vorhandenen Fragen samt '
-                  'Musterlösung hoch (z.B. eine alte Klausur) – die tatsächlich '
-                  'enthaltenen Fragen werden möglichst originalgetreu als '
-                  'Karteikarten übernommen statt neue zu erfinden.',
-        ),
+        Text(switch (mode) {
+          _GenerateMode.create =>
+            'Lade Folien hoch (Übungsaufgaben optional, verbessern aber die '
+                'generierten Konzepte/Karteikarten) – die KI erstellt daraus '
+                'gezielte Lernkonzepte und Karteikarten.',
+          _GenerateMode.import =>
+            'Lade ein Übungsdokument mit bereits vorhandenen Fragen samt '
+                'Musterlösung hoch (z.B. eine alte Klausur) – die tatsächlich '
+                'enthaltenen Fragen werden möglichst originalgetreu als '
+                'Karteikarten übernommen statt neue zu erfinden.',
+          _GenerateMode.pasteJson =>
+            'Für Fragetypen, an denen ein hier hinterlegtes Modell scheitert '
+                '(z.B. Zuordnungs-Matrizen, offene Diskussionsfragen): kopiere '
+                'den Prompt unten in ein externes, ggf. stärkeres KI-Modell '
+                '(ChatGPT, Gemini, Claude.ai, ...), füge dort deinen Dokumenttext '
+                'ein und füge die fertige JSON-Antwort hier wieder ein – ganz '
+                'ohne API-Key dieser App.',
+        }),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           initialValue: selectedUnitChoice,
@@ -681,39 +729,45 @@ class _PickView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
         ],
-        _DropZone(
-          onDrop: onDropExercises,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                mode == _GenerateMode.create ? 'Übungsaufgaben' : 'Übungsdokument (mit Musterlösung)',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              ...exercisesFiles.asMap().entries.map((e) => Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.assignment_outlined),
-                      title: Text(e.value),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => onRemoveExercise(e.key),
+        if (mode != _GenerateMode.pasteJson) ...[
+          _DropZone(
+            onDrop: onDropExercises,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  mode == _GenerateMode.create ? 'Übungsaufgaben' : 'Übungsdokument (mit Musterlösung)',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                ...exercisesFiles.asMap().entries.map((e) => Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.assignment_outlined),
+                        title: Text(e.value),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => onRemoveExercise(e.key),
+                        ),
                       ),
-                    ),
-                  )),
-              OutlinedButton.icon(
-                onPressed: extracting ? null : onPickExercises,
-                icon: const Icon(Icons.add),
-                label: Text(exercisesFiles.isEmpty
-                    ? (mode == _GenerateMode.create
-                        ? 'Übungsaufgaben auswählen oder hierher ziehen'
-                        : 'Übungsdokument auswählen oder hierher ziehen')
-                    : 'Weitere Übungen hinzufügen'),
-              ),
-            ],
+                    )),
+                OutlinedButton.icon(
+                  onPressed: extracting ? null : onPickExercises,
+                  icon: const Icon(Icons.add),
+                  label: Text(exercisesFiles.isEmpty
+                      ? (mode == _GenerateMode.create
+                          ? 'Übungsaufgaben auswählen oder hierher ziehen'
+                          : 'Übungsdokument auswählen oder hierher ziehen')
+                      : 'Weitere Übungen hinzufügen'),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 16),
+        ],
+        if (mode == _GenerateMode.pasteJson) ...[
+          _JsonPasteSection(onChanged: onPastedJsonChanged),
+          const SizedBox(height: 16),
+        ],
         if (extracting) const Center(child: CircularProgressIndicator()),
         if (mode == _GenerateMode.create)
           if (analysis case final a?) ...[
@@ -726,8 +780,16 @@ class _PickView extends StatelessWidget {
           ],
         FilledButton.icon(
           onPressed: onGenerate,
-          icon: Icon(mode == _GenerateMode.create ? Icons.auto_awesome_outlined : Icons.file_download_outlined),
-          label: Text(mode == _GenerateMode.create ? 'Konzepte & Karteikarten erstellen' : 'Fragen importieren'),
+          icon: Icon(switch (mode) {
+            _GenerateMode.create => Icons.auto_awesome_outlined,
+            _GenerateMode.import => Icons.file_download_outlined,
+            _GenerateMode.pasteJson => Icons.playlist_add_check_outlined,
+          }),
+          label: Text(switch (mode) {
+            _GenerateMode.create => 'Konzepte & Karteikarten erstellen',
+            _GenerateMode.import => 'Fragen importieren',
+            _GenerateMode.pasteJson => 'JSON einfügen',
+          }),
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
@@ -738,6 +800,69 @@ class _PickView extends StatelessWidget {
               child: const Text('KI-Antwort anzeigen'),
             ),
         ],
+      ],
+    );
+  }
+}
+
+/// UI für [_GenerateMode.pasteJson]: ein Button kopiert den eigenständigen
+/// externen Prompt (siehe [AiService.externalJsonPromptTemplate]) in die
+/// Zwischenablage, darunter ein mehrzeiliges Textfeld für die fertige
+/// JSON-Antwort. Bewusst ein eigenes StatefulWidget (statt den Text direkt
+/// im zustandslosen [_PickView] zu verwalten): der [TextEditingController]
+/// muss über Neuaufbauten des Elternteils hinweg (z.B. beim Umschalten des
+/// Einheit-Dropdowns) erhalten bleiben, sonst würde jedes Tippen die
+/// Cursor-Position zurücksetzen – exakt dasselbe Prinzip wie bei
+/// [_DropZoneState._isDragOver] weiter unten.
+class _JsonPasteSection extends StatefulWidget {
+  const _JsonPasteSection({required this.onChanged});
+  final void Function(String value) onChanged;
+
+  @override
+  State<_JsonPasteSection> createState() => _JsonPasteSectionState();
+}
+
+class _JsonPasteSectionState extends State<_JsonPasteSection> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _copyPrompt() async {
+    await Clipboard.setData(const ClipboardData(text: AiService.externalJsonPromptTemplate));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Prompt in die Zwischenablage kopiert.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _copyPrompt,
+          icon: const Icon(Icons.copy_outlined),
+          label: const Text('Externen KI-Prompt kopieren'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _controller,
+          onChanged: widget.onChanged,
+          minLines: 8,
+          maxLines: 16,
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
+          decoration: const InputDecoration(
+            labelText: 'JSON-Antwort einfügen',
+            hintText: '{"flashcards": [...]}',
+            alignLabelWithHint: true,
+            border: OutlineInputBorder(),
+          ),
+        ),
       ],
     );
   }
@@ -978,6 +1103,7 @@ class _PreviewView extends StatelessWidget {
         QuestionType.fillBlank => Icons.space_bar,
         QuestionType.dragDrop => Icons.compare_arrows,
         QuestionType.dragCategory => Icons.category_outlined,
+        QuestionType.html => Icons.web_outlined,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
@@ -999,6 +1125,8 @@ class _PreviewView extends StatelessWidget {
       case QuestionType.dragCategory:
         final pairs = (f['dragPairs'] as List?) ?? const [];
         return pairs.map((p) => '${(p as Map)['source']} → ${p['target']}').join(', ');
+      case QuestionType.html:
+        return (f['back'] ?? '(Interaktive Seite)').toString();
     }
   }
 }

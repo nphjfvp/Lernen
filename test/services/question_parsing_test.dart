@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/flashcard.dart';
+import 'package:lernen/services/html_question_contract.dart';
 import 'package:lernen/services/question_parsing.dart';
 
 void main() {
@@ -138,6 +139,49 @@ void main() {
       };
       final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw);
       expect(fixed!['conceptTitle'], 'Newtons zweites Gesetz');
+    });
+  });
+
+  group('QuestionParsing.parseType – html', () {
+    test('"html" wird auf QuestionType.html gemappt (nicht auf den flashcard-Default)', () {
+      expect(QuestionParsing.parseType('html'), QuestionType.html);
+    });
+  });
+
+  group('QuestionParsing.normalizeGeneratedFlashcard – html-Typ', () {
+    test('lässt einen vollständigen html-Eintrag mit Rückkanal-Aufruf unverändert', () {
+      final raw = {
+        'type': 'html',
+        'front': 'Frage',
+        'back': 'Kurzfassung der Lösung',
+        'htmlContent': '<div>...</div><script>window.$htmlAnswerChannelName.postMessage("{}");</script>',
+      };
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw);
+      expect(fixed, raw);
+      expect(fixed!['type'], 'html');
+    });
+
+    test('rettet html ohne Rückkanal-Aufruf über "back" als einfache flashcard', () {
+      final raw = {
+        'type': 'html',
+        'front': 'Frage',
+        'back': 'Kurzfassung der Lösung',
+        'htmlContent': '<div>Seite ohne jede Prüf-Logik</div>',
+      };
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw);
+      expect(fixed, isNotNull);
+      expect(fixed!['type'], 'flashcard');
+      expect(fixed['back'], 'Kurzfassung der Lösung');
+    });
+
+    test('gibt null zurück, wenn html ohne Rückkanal-Aufruf UND ohne jeden Fallback-Inhalt ist', () {
+      final raw = {'type': 'html', 'front': 'Frage', 'htmlContent': '<div>Kaputte Seite</div>'};
+      expect(QuestionParsing.normalizeGeneratedFlashcard(raw), isNull);
+    });
+
+    test('gibt null zurück, wenn "htmlContent" ganz fehlt und kein Fallback existiert', () {
+      final raw = {'type': 'html', 'front': 'Frage'};
+      expect(QuestionParsing.normalizeGeneratedFlashcard(raw), isNull);
     });
   });
 

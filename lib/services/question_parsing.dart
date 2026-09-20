@@ -1,4 +1,5 @@
 import '../models/flashcard.dart';
+import 'html_question_contract.dart';
 
 /// Gemeinsame Parsing-Hilfen für von der KI generierte Fragen-JSON-Objekte
 /// (siehe AiService.generateConceptsAndFlashcards / generateHarderVariant) –
@@ -41,6 +42,7 @@ class QuestionParsing {
     'fill_blank': QuestionType.fillBlank,
     'drag_drop': QuestionType.dragDrop,
     'drag_category': QuestionType.dragCategory,
+    'html': QuestionType.html,
   };
 
   /// Wandelt den von der KI gelieferten "type"-String (snake_case, siehe
@@ -99,6 +101,14 @@ class QuestionParsing {
       case QuestionType.dragCategory:
         final pairs = parseDragPairs(raw['dragPairs']);
         return pairs != null && pairs.isNotEmpty;
+      case QuestionType.html:
+        final html = (raw['htmlContent'] ?? '').toString();
+        // Grobe Vertragsprüfung: die Seite muss den JS-Rückkanal tatsächlich
+        // ansprechen, sonst bekäme die App nie ein Ergebnis zurück – ohne
+        // brauchbaren Fallback-Inhalt (siehe _bestAvailableAnswer) wird ein
+        // solcher Eintrag dann komplett verworfen statt als kaputte
+        // interaktive Seite gespeichert zu werden.
+        return html.trim().isNotEmpty && html.contains(htmlAnswerChannelName);
     }
   }
 

@@ -18,7 +18,7 @@ engerem Fokus statt Feature-Fülle.
   diesen Foliensatz – jede gestellte Frage wird beim Abschließen automatisch
   als Merkpunkt an die gewählte Einheit angehängt, siehe
   `lib/ui/prepare/prepare_screen.dart`).
-- **Nachbereiten-Modus, zwei Wege zu Karteikarten** – **KI erstellt**: Folien
+- **Nachbereiten-Modus, drei Wege zu Karteikarten** – **KI erstellt**: Folien
   hochladen (Übungsaufgaben optional, verbessern aber die generierten
   Konzepte) → die KI erstellt Lernkonzepte und Karteikarten mit Fokus auf
   tiefem Verständnis der Übungen, sofern vorhanden (nicht nur Theorie-
@@ -26,7 +26,10 @@ engerem Fokus statt Feature-Fülle.
   einem hochgeladenen Übungsdokument (z.B. einer alten Klausur) bereits
   VORHANDENEN Fragen samt Musterlösung möglichst originalgetreu als
   Karteikarten übernommen – Pendant zum Import-Feature der Vorgänger-App
-  (`AiService.importQuestionsFromExercises`). Einzelne Konzepte und
+  (`AiService.importQuestionsFromExercises`). **JSON einfügen**: kein
+  API-Call dieser App – ein extern (z.B. ChatGPT/Gemini/Claude.ai) bereits
+  fertig generiertes JSON wird direkt eingefügt (siehe Fragetyp "Interaktiv"
+  weiter unten für den genauen Anwendungsfall). Einzelne Konzepte und
   Karteikarten lassen sich im Modul-Detail bzw. in der Karteikarten-
   Übersicht jederzeit bearbeiten oder löschen. Zusätzlich: **Speedrun** –
   schneller Selbsteinschätzungs-Durchlauf durch alle Konzepte eines Fachs
@@ -77,6 +80,28 @@ engerem Fokus statt Feature-Fülle.
   Stufe zurück – ohne erneuten KI-Aufruf, der alte Wortlaut liegt bereits in
   `Flashcard.variantHistory` (siehe `Flashcard.copyWithBoxUpdate`). Bewusst
   NICHT enthalten: der Mathe-Formel-Fragetyp der Vorgänger-App.
+- **Fragetyp "Interaktiv" (html) + externer KI-Prompt** – für Vorlagen, die in
+  keinen der obigen Typen passen (z.B. eine Zuordnungs-Matrix/Tabelle mit
+  mehreren Kriterien-Zeilen, oder eine offene Diskussionsfrage, bei der ein
+  Text-Exakt-Vergleich zu streng wäre): die KI baut dafür selbst eine
+  eigenständige, interaktive HTML/CSS/JS-Seite inkl. eigener Prüf-Logik
+  (`Flashcard.htmlContent`, gerendert über `webview_flutter` in einer per
+  Content-Security-Policy abgeriegelten Sandbox ohne jeden Netzwerkzugriff,
+  siehe `lib/services/html_question_contract.dart`). Die Seite meldet ihr
+  Ergebnis rein lokal über einen JavaScript-Kanal zurück – keine erneute
+  API-Anfrage beim Beantworten. Nur auf Android/iOS tatsächlich interaktiv;
+  auf Plattformen ohne WebView-Unterstützung (z.B. Windows-Desktop) oder bei
+  einem Ladefehler fällt die Karte automatisch auf eine einfache
+  Frage/Antwort-Ansicht mit manueller Selbstbewertung zurück (wie beim
+  einfachen `flashcard`-Typ). Reicht das hier per BYOK hinterlegte Modell für
+  eine besonders ungewöhnliche Vorlage nicht aus, bietet der
+  Nachbereiten-Modus einen dritten Weg **"JSON einfügen"**: ein Button kopiert
+  einen eigenständigen Prompt (`AiService.externalJsonPromptTemplate`) in die
+  Zwischenablage, der sich in ein beliebiges externes KI-Modell (ChatGPT,
+  Gemini, Claude.ai, ...) einfügen lässt – die dortige JSON-Antwort wird ohne
+  weiteren API-Call dieser App direkt eingelesen und übernimmt exakt denselben
+  Validierungs-/Rettungspfad wie die beiden anderen Erzeugungswege
+  (`QuestionParsing.normalizeGeneratedFlashcard`).
 - **Interleaving statt Blockübung** – die Session-Reihenfolge des Daily
   Quiz mischt Karten aus verschiedenen Fächern per Round-Robin durch
   (`DailySchedulerService.interleaveByModule`), statt erst alle fälligen/
@@ -237,6 +262,10 @@ lib/
     stats_service.dart              Streak/Wiederholungen/Behaltensrate aus
                                      vorhandenen Modul-/Karteikarten-Daten
     sync_service.dart               Firestore Sync-Code Push/Pull (optional)
+    question_parsing.dart           Parst/validiert von der KI (oder extern) gelieferte
+                                     Fragen-JSON-Objekte, rettet unvollständige Einträge
+    html_question_contract.dart     CSP-Sandbox-Rahmen + JS-Rückkanal-Vertrag für den
+                                     Fragetyp "Interaktiv" (siehe oben), reine Strings
   repositories/    ChangeNotifier-Wrapper um die DB, für Provider/Consumer
   theme/           Design-Tokens ("Ruhig & Fokussiert") + Light-/Dark-Theme
   ui/              home, modules, prepare, review, daily, stats, chat,

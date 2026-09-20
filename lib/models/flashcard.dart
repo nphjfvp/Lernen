@@ -9,6 +9,7 @@ enum QuestionType {
   fillBlank,
   dragDrop,
   dragCategory,
+  html,
 }
 
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
@@ -25,6 +26,7 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.fillBlank => 'Lückentext',
         QuestionType.dragDrop => 'Zuordnen',
         QuestionType.dragCategory => 'Kategorien',
+        QuestionType.html => 'Interaktiv',
       };
 }
 
@@ -74,6 +76,7 @@ class VariantSnapshot {
     this.correctText,
     this.blanks,
     this.dragPairs,
+    this.htmlContent,
   });
 
   final QuestionType type;
@@ -83,6 +86,7 @@ class VariantSnapshot {
   final String? correctText;
   final List<String>? blanks;
   final List<DragPair>? dragPairs;
+  final String? htmlContent;
 
   Map<String, dynamic> toMap() => {
         'type': type.name,
@@ -92,6 +96,7 @@ class VariantSnapshot {
         'correctText': correctText,
         'blanks': blanks,
         'dragPairs': dragPairs?.map((p) => p.toMap()).toList(),
+        'htmlContent': htmlContent,
       };
 
   factory VariantSnapshot.fromMap(Map<String, dynamic> map) => VariantSnapshot(
@@ -106,6 +111,7 @@ class VariantSnapshot {
         dragPairs: (map['dragPairs'] as List?)
             ?.map((p) => DragPair.fromMap(Map<String, dynamic>.from(p as Map)))
             .toList(),
+        htmlContent: map['htmlContent'] as String?,
       );
 }
 
@@ -141,6 +147,16 @@ class Flashcard {
   final String? correctText;
   final List<String>? blanks;
   final List<DragPair>? dragPairs;
+
+  /// Selbstständige HTML/CSS/JS-Seite für [QuestionType.html] (siehe
+  /// AiService-Prompts für den genauen Vertrag: die Seite prüft ihre eigene
+  /// Antwort und meldet das Ergebnis über einen JavaScript-Kanal zurück,
+  /// die App muss dafür nicht online sein). Nur auf Plattformen mit
+  /// WebView-Unterstützung (Android/iOS) tatsächlich interaktiv gerendert;
+  /// [front]/[back] dienen überall sonst (Windows/Web/Fehlerfall) als
+  /// Fallback-Anzeige mit manueller Selbstbewertung wie beim einfachen
+  /// `flashcard`-Typ (siehe QuestionAnswerView).
+  final String? htmlContent;
 
   final List<QuestionType>? variantChain;
   final int variantLevel;
@@ -193,6 +209,7 @@ class Flashcard {
     this.correctText,
     this.blanks,
     this.dragPairs,
+    this.htmlContent,
     this.variantChain,
     this.variantLevel = 0,
     this.variantBox = 0,
@@ -223,6 +240,9 @@ class Flashcard {
         QuestionType.dragDrop ||
         QuestionType.dragCategory =>
           (dragPairs ?? const []).map((p) => '${p.source} -> ${p.target}').join('; '),
+        // Die Antwort-Prüfung steckt in htmlContent selbst (siehe dort) -
+        // back dient hier nur als textuelle Kurzfassung/Fallback-Anzeige.
+        QuestionType.html => back,
       };
 
   Flashcard copyWithReview({
@@ -249,6 +269,7 @@ class Flashcard {
       correctText: correctText,
       blanks: blanks,
       dragPairs: dragPairs,
+      htmlContent: htmlContent,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -283,6 +304,7 @@ class Flashcard {
       correctText: correctText,
       blanks: blanks,
       dragPairs: dragPairs,
+      htmlContent: htmlContent,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -333,6 +355,7 @@ class Flashcard {
         correctText: correctText,
         blanks: blanks,
         dragPairs: dragPairs,
+        htmlContent: htmlContent,
         variantChain: chain,
         variantLevel: variantLevel,
         variantBox: 0,
@@ -374,6 +397,7 @@ class Flashcard {
       correctText: correctText,
       blanks: blanks,
       dragPairs: dragPairs,
+      htmlContent: htmlContent,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: newBox,
@@ -405,6 +429,7 @@ class Flashcard {
     String? correctText,
     List<String>? blanks,
     List<DragPair>? dragPairs,
+    String? htmlContent,
   }) {
     final snapshot = VariantSnapshot(
       type: type,
@@ -414,6 +439,7 @@ class Flashcard {
       correctText: this.correctText,
       blanks: this.blanks,
       dragPairs: this.dragPairs,
+      htmlContent: this.htmlContent,
     );
     return Flashcard(
       id: id,
@@ -428,6 +454,7 @@ class Flashcard {
       correctText: correctText,
       blanks: blanks,
       dragPairs: dragPairs,
+      htmlContent: htmlContent,
       variantChain: variantChain,
       variantLevel: variantLevel + 1,
       variantBox: 0,
@@ -468,6 +495,7 @@ class Flashcard {
       correctText: previous.correctText,
       blanks: previous.blanks,
       dragPairs: previous.dragPairs,
+      htmlContent: previous.htmlContent,
       variantChain: variantChain,
       variantLevel: variantLevel - 1,
       variantBox: 0,
@@ -502,6 +530,7 @@ class Flashcard {
         'correctText': correctText,
         'blanks': blanks,
         'dragPairs': dragPairs?.map((p) => p.toMap()).toList(),
+        'htmlContent': htmlContent,
         'variantChain': variantChain?.map((t) => t.name).toList(),
         'variantLevel': variantLevel,
         'variantBox': variantBox,
@@ -535,6 +564,7 @@ class Flashcard {
         dragPairs: (map['dragPairs'] as List?)
             ?.map((p) => DragPair.fromMap(Map<String, dynamic>.from(p as Map)))
             .toList(),
+        htmlContent: map['htmlContent'] as String?,
         variantChain:
             (map['variantChain'] as List?)?.map((t) => questionTypeFromString(t.toString())).toList(),
         variantLevel: map['variantLevel'] as int? ?? 0,

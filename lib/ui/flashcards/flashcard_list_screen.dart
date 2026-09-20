@@ -228,6 +228,12 @@ class _AnswerDetail extends StatelessWidget {
                   ))
               .toList(),
         );
+
+      case QuestionType.html:
+        return Text(
+          card.back.isEmpty ? '(Interaktive Seite – Antwort-Prüfung steckt im HTML-Inhalt.)' : card.back,
+          style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5),
+        );
     }
   }
 }

@@ -60,6 +60,7 @@ dependencies:
   cross_file: ^0.3.5+5
   url_launcher: ^6.3.2
   package_info_plus: ^10.2.1
+  webview_flutter: ^4.14.1
 
 dev_dependencies:
   flutter_test:
