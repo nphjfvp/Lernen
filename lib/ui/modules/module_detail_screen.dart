@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cross_file/cross_file.dart';
@@ -8,8 +9,10 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/concept.dart';
+import '../../models/flashcard.dart';
 import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
+import '../../models/module.dart';
 import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
@@ -19,6 +22,7 @@ import '../../repositories/summary_repository.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/mastery_service.dart';
+import '../../services/module_export_service.dart';
 import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
 import '../flashcards/flashcard_list_screen.dart';
@@ -103,6 +107,11 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                   ),
                   Row(
                     children: [
+                      _RoundIconButton(
+                        icon: Icons.ios_share_outlined,
+                        onTap: () => _exportModule(module, units, materials, concepts, flashcards),
+                      ),
+                      const SizedBox(width: 8),
                       _RoundIconButton(
                         icon: Icons.edit_outlined,
                         onTap: () => Navigator.of(context).push(
@@ -720,6 +729,43 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     );
     if (ok && mounted) {
       await context.read<ConceptRepository>().delete(concept.id, concept.moduleId);
+    }
+  }
+
+  /// Exportiert dieses Fach (Modul + Einheiten + Materialien inkl. PDF-
+  /// Bytes + Konzepte + Karteikarten) als eigenständige JSON-Datei zum
+  /// Sichern/Weitergeben – unabhängig vom (Firebase-basierten) Cloud-Sync,
+  /// siehe ModuleExportService. Nutzt denselben plattformübergreifenden
+  /// Speichern-Dialog wie file_picker ihn schon fürs Hochladen bereitstellt.
+  Future<void> _exportModule(
+    Module module,
+    List<LectureUnit> units,
+    List<MaterialItem> materials,
+    List<Concept> concepts,
+    List<Flashcard> flashcards,
+  ) async {
+    final materialsWithBytes = await ModuleExportService.embedBytes(materials);
+    if (!mounted) return;
+    final payload = ModuleExportService.buildPayload(
+      module: module,
+      lectureUnits: units,
+      materialsWithBytes: materialsWithBytes,
+      concepts: concepts,
+      flashcards: flashcards,
+    );
+    final bytes = Uint8List.fromList(utf8.encode(jsonEncode(payload)));
+    final safeName = module.name.replaceAll(RegExp(r'[^\w\säöüÄÖÜß-]'), '').trim();
+    final fileName = '${safeName.isEmpty ? 'Fach' : safeName}.json';
+    try {
+      final uri = await FilePicker.saveFile(fileName: fileName, bytes: bytes, mimeType: 'application/json');
+      if (!mounted) return;
+      if (uri != null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fach exportiert.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export fehlgeschlagen: $e')));
+      }
     }
   }
 

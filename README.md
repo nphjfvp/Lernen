@@ -305,6 +305,29 @@ Für ein komplett eigenes Firebase-Projekt (z.B. eigener Fork): Projekt unter
 die angezeigte `firebaseConfig` in `lib/firebase_options.dart` eintragen,
 Firestore Database aktivieren, obige Rules einfügen.
 
+### 3a. Fach exportieren/importieren (JSON-Datei)
+
+Unabhängig vom Cloud-Sync (der immer den GESAMTEN lokalen Datenbestand
+spiegelt): ein einzelnes Fach lässt sich als eigenständige JSON-Datei
+sichern oder weitergeben – z.B. um es an ein anderes Gerät ohne Account zu
+übertragen, mit jemand anderem zu teilen, oder einfach als Backup vor dem
+Löschen (`ModuleExportService`).
+
+- **Exportieren**: Im Modul-Detail oben rechts (Teilen-Symbol) – schreibt
+  Modul, Einheiten, Materialien (inkl. Original-PDF-Bytes, plattform-
+  unabhängig als Base64 eingebettet, siehe `ModuleExportService.embedBytes`),
+  Konzepte und Karteikarten in eine `.json`-Datei (Speichern-Dialog über
+  `file_picker`, funktioniert auch im Web als Download). Bewusst NICHT
+  enthalten: Chat-Verlauf und Ampel-Trend-Snapshots – geräte-/sitzungs-
+  bezogene Verlaufsdaten ohne Bezug zum eigentlichen Fach-Inhalt.
+- **Importieren**: Auf dem Start-Bildschirm ("Meine Fächer") über das
+  Symbol neben dem Titel – legt aus einer solchen Datei ein NEUES Fach an.
+  Alle IDs (Modul, Einheiten, Materialien, Konzepte, Karteikarten) werden
+  dabei frisch vergeben, alle Querverweise dazwischen konsistent
+  mitübersetzt (`ModuleExportService.parse`) – dieselbe Datei lässt sich
+  daher beliebig oft importieren, auch mehrfach auf demselben Gerät, ohne
+  mit vorhandenen Daten zu kollidieren.
+
 ### 4. Account (E-Mail/Passwort + Google)
 
 Nutzt dasselbe Firebase-Projekt wie Cloud-Sync, braucht aber zusätzlich

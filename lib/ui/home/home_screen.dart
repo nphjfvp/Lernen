@@ -1,8 +1,17 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/module.dart';
+import '../../repositories/concept_repository.dart';
+import '../../repositories/flashcard_repository.dart';
+import '../../repositories/lecture_unit_repository.dart';
+import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../services/module_export_service.dart';
 import '../../theme/app_colors.dart';
 import '../modules/module_detail_screen.dart';
 import '../modules/module_form_screen.dart';
@@ -10,6 +19,48 @@ import '../widgets/exam_countdown_badge.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
+
+  /// Importiert ein zuvor über ModuleDetailScreen exportiertes Fach (siehe
+  /// ModuleExportService) aus einer JSON-Datei – vergibt dabei frische IDs
+  /// für alles (Modul, Einheiten, Materialien, Konzepte, Karteikarten), also
+  /// unabhängig davon ob es sich um ein neues Gerät oder eine zweite Kopie
+  /// auf demselben Gerät handelt.
+  Future<void> _importModule(BuildContext context) async {
+    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['json']);
+    if (file == null) return;
+    try {
+      final Uint8List bytes = await file.readAsBytes();
+      final json = jsonDecode(utf8.decode(bytes));
+      if (json is! Map) {
+        throw const FormatException('Keine gültige Fach-Export-Datei.');
+      }
+      final imported = ModuleExportService.parse(Map<String, dynamic>.from(json));
+
+      if (!context.mounted) return;
+      await context.read<ModuleRepository>().save(imported.module);
+      for (final unit in imported.lectureUnits) {
+        if (!context.mounted) return;
+        await context.read<LectureUnitRepository>().save(unit);
+      }
+      for (final material in imported.materials) {
+        if (!context.mounted) return;
+        await context.read<MaterialRepository>().save(material);
+      }
+      if (!context.mounted) return;
+      await context.read<ConceptRepository>().saveAll(imported.concepts);
+      if (!context.mounted) return;
+      await context.read<FlashcardRepository>().saveAll(imported.flashcards);
+      if (!context.mounted) return;
+
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ModuleDetailScreen(moduleId: imported.module.id)),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import fehlgeschlagen: $e')));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,14 +75,27 @@ class HomeScreen extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 22, 24, 4),
-              child: Column(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Meine Fächer', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Text(
-                    modules.isEmpty ? 'Noch keine Fächer' : '${modules.length} Fächer',
-                    style: TextStyle(fontSize: 13, color: c.inkMuted),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Meine Fächer',
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(
+                          modules.isEmpty ? 'Noch keine Fächer' : '${modules.length} Fächer',
+                          style: TextStyle(fontSize: 13, color: c.inkMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Fach importieren',
+                    icon: const Icon(Icons.file_download_outlined),
+                    onPressed: () => _importModule(context),
                   ),
                 ],
               ),
