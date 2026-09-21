@@ -200,4 +200,45 @@ class DailySchedulerService {
       newCardBudgetByModule: newCardBudget,
     );
   }
+
+  /// Rein FREIWILLIGE Zusatz-Charge über das Tagesbudget hinaus – für den
+  /// "Trotzdem weiterlernen"-Button, nachdem der reguläre Tagesplan bereits
+  /// abgeschlossen ist (siehe DailyQuizScreen). Ignoriert bewusst die
+  /// Klausurnähe-/Wissensstand-Pacing-Formel aus [buildPlan] (die gilt nur
+  /// für das REGULÄRE Tagesbudget) und mischt bei Bedarf noch nicht fällige,
+  /// aber grundsätzlich eingeplante Wiederholungen mit ein, damit
+  /// "weiterlernen" auch dann etwas anzubieten hat, wenn für heute bereits
+  /// alle neuen Karten eingeführt wurden. [excludeIds] verhindert
+  /// Überschneidungen mit bereits in der laufenden Session gezeigten Karten.
+  DailyPlan buildExtraBatch({
+    required List<Module> modules,
+    required List<Flashcard> allCards,
+    required Set<String> excludeIds,
+    Map<String, bool> unitCoveredById = const {},
+    DateTime? now,
+    int batchSize = 10,
+  }) {
+    bool isEligible(Flashcard c) {
+      final unitId = c.unitId;
+      if (unitId == null) return true;
+      return unitCoveredById[unitId] ?? true;
+    }
+
+    final eligibleCards =
+        allCards.where(isEligible).where((c) => !excludeIds.contains(c.id)).toList();
+
+    final freshNew = eligibleCards.where((c) => c.reps == 0).toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final newCards = freshNew.take(batchSize).toList();
+
+    final remainingSlots = batchSize - newCards.length;
+    var dueCards = <Flashcard>[];
+    if (remainingSlots > 0) {
+      dueCards = eligibleCards.where((c) => c.reps > 0).toList()
+        ..sort((a, b) => a.due.compareTo(b.due));
+      dueCards = dueCards.take(remainingSlots).toList();
+    }
+
+    return DailyPlan(dueCards: dueCards, newCards: newCards, newCardBudgetByModule: const {});
+  }
 }

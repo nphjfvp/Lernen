@@ -181,11 +181,58 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet> {
     }
   }
 
+  /// Mehrere gewählte Schwierigkeitsgrade (Leicht/Mittel/Schwer) wollen
+  /// NACHEINANDER gelernt werden, nicht gleichzeitig als unabhängige Karten
+  /// im selben Pool (siehe [Flashcard.variantChain]/[Flashcard.pendingVariants]
+  /// Doc-Kommentare) – deshalb werden sie hier zu EINER Karte
+  /// zusammengeführt: die leichteste Stufe ist sofort aktiv, die anderen
+  /// liegen bereits fertig ausformuliert (derselbe Screenshot als Grundlage)
+  /// als [Flashcard.pendingVariants] bereit und werden erst bei Beförderung
+  /// sichtbar – ganz ohne erneuten KI-Aufruf. Nur EINE gewählte Stufe bleibt
+  /// unverändert eine eigenständige Karte.
+  Flashcard _mergeIntoChain(List<Flashcard> tiers) {
+    final base = tiers.first;
+    if (tiers.length == 1) return base;
+    final pending = tiers
+        .sublist(1)
+        .map((t) => VariantSnapshot(
+              type: t.type,
+              front: t.front,
+              back: t.back,
+              options: t.options,
+              correctText: t.correctText,
+              blanks: t.blanks,
+              dragPairs: t.dragPairs,
+              htmlContent: t.htmlContent,
+              imageBase64: t.imageBase64,
+            ))
+        .toList();
+    return Flashcard(
+      id: base.id,
+      moduleId: base.moduleId,
+      conceptId: base.conceptId,
+      front: base.front,
+      back: base.back,
+      createdAt: base.createdAt,
+      due: base.due,
+      type: base.type,
+      options: base.options,
+      correctText: base.correctText,
+      blanks: base.blanks,
+      dragPairs: base.dragPairs,
+      htmlContent: base.htmlContent,
+      imageBase64: base.imageBase64,
+      variantChain: tiers.map((t) => t.type).toList(),
+      pendingVariants: pending,
+      unitId: base.unitId,
+    );
+  }
+
   Future<void> _save() async {
     final cards = _previewCards;
     if (cards == null || cards.isEmpty) return;
     setState(() => _saving = true);
-    await context.read<FlashcardRepository>().saveAll(cards);
+    await context.read<FlashcardRepository>().saveAll([_mergeIntoChain(cards)]);
     if (!mounted) return;
     setState(() => _saving = false);
     Navigator.of(context).pop(cards.length);

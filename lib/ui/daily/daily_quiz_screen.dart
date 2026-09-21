@@ -16,6 +16,13 @@ import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import 'question_answer_view.dart';
 
+/// Welche Runde einer Session eine Karte gerade angezeigt wird – steuert in
+/// [_DailyQuizScreenState._handleComplete], aus welcher Warteschlange sie
+/// entfernt wird (statt das anhand von [_DailyQuizScreenState._index]
+/// zurückzuraten, was bei mehreren parallel möglichen Runden mehrdeutig
+/// wäre).
+enum _QuizStage { main, revisit, bonus }
+
 /// Daily Quiz / Exam-Scheduler: tägliche Lernsession über alle Fächer
 /// hinweg. Fällige Wiederholungen + eine je nach Wissensstand und
 /// Klausurnähe dosierte Menge neuer Karten.
@@ -45,6 +52,18 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
   /// beantwortet wird.
   final Map<String, int> _wrongAttempts = {};
   static const int _maxWrongRequeueAttempts = 3;
+
+  /// Freiwillige Zusatzrunde über das Tagesbudget hinaus (siehe
+  /// [_continueVoluntarily]/DailySchedulerService.buildExtraBatch) – FIFO
+  /// wie [_wrongQueue], aber erst befüllt, NACHDEM Haupt- und
+  /// Wiederholungsrunde durch sind, und nur auf Nutzerwunsch (Button auf
+  /// _AllDoneView/_SessionDoneView). Bewusst eine EIGENE Queue statt den
+  /// bestehenden [_plan] zu vergrößern: [_index] indiziert positional in
+  /// `plan.allCards` (das Fächer-Interleaving neu mischt, sobald sich die
+  /// zugrundeliegenden Listen ändern) – ein nachträgliches Anhängen dort
+  /// hätte bereits gezeigte Karten verschieben und erneut anzeigen können.
+  final List<Flashcard> _bonusQueue = [];
+  bool _bonusLoading = false;
 
   /// Kalendertag, für den [_plan] zuletzt berechnet wurde – Grundlage für
   /// [didChangeAppLifecycleState]: RootShell hält diesen Screen dauerhaft im
@@ -97,23 +116,59 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
       _reviewedCount = 0;
       _wrongQueue.clear();
       _wrongAttempts.clear();
+      _bonusQueue.clear();
       _lastLoadedDay = DateTime(now.year, now.month, now.day);
     });
   }
 
-  Future<void> _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
+  /// Zusätzliche, rein freiwillige Charge über das Tagesbudget hinaus (siehe
+  /// [_bonusQueue]) – für den "Trotzdem weiterlernen"-Button, wenn der
+  /// reguläre Tagesplan (inkl. Wiederholungsrunde) bereits abgeschlossen ist.
+  Future<void> _continueVoluntarily() async {
+    setState(() => _bonusLoading = true);
+    final modules = context.read<ModuleRepository>().modules;
+    final flashcardRepo = context.read<FlashcardRepository>();
+    final lectureUnitRepo = context.read<LectureUnitRepository>();
+    final allCards = await flashcardRepo.loadAll();
+    final unitCoveredById = await lectureUnitRepo.loadAllCoveredById();
+    if (!mounted) return;
+    final excludeIds = <String>{
+      ...?_plan?.allCards.map((c) => c.id),
+      ..._wrongQueue.map((c) => c.id),
+      ..._bonusQueue.map((c) => c.id),
+    };
+    final extra = DailySchedulerService().buildExtraBatch(
+      modules: modules,
+      allCards: allCards,
+      unitCoveredById: unitCoveredById,
+      excludeIds: excludeIds,
+    );
+    if (!mounted) return;
+    setState(() {
+      _bonusLoading = false;
+      _bonusQueue.addAll(extra.allCards);
+    });
+    if (extra.total == 0) _showLevelChangeSnackBar('Aktuell keine weiteren Karten verfügbar.');
+  }
+
+  Future<void> _handleComplete(Flashcard card, {required _QuizStage stage, Grade? selfGrade, bool? isCorrect}) async {
     final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
     var updated = _fsrs.review(card, grade);
 
     if (isCorrect != null && updated.variantChain != null) {
+      final beforeType = updated.type;
       final boxResult = updated.copyWithBoxUpdate(isCorrect: isCorrect);
       updated = boxResult.card;
       await context.read<FlashcardRepository>().update(updated);
       final nextType = boxResult.nextType;
-      if (nextType != null) {
+      if (nextType != null && boxResult.needsGeneration) {
         unawaited(_promoteInBackground(updated, nextType));
         _showLevelChangeSnackBar('⬆️ Stufe geschafft – nächstes Mal: ${nextType.label}');
-      } else if (updated.type != card.type) {
+      } else if (nextType != null) {
+        // Inhalt lag bereits vorbereitet vor (siehe Flashcard.pendingVariants)
+        // – kein KI-Aufruf nötig, die Karte ist schon jetzt befördert.
+        _showLevelChangeSnackBar('⬆️ Stufe geschafft – jetzt: ${nextType.label}');
+      } else if (updated.type != beforeType) {
         // copyWithBoxUpdate stuft bei wiederholten Fehlversuchen intern
         // zurück (siehe Flashcard.copyWithDemotedVariant) – erkennbar daran,
         // dass sich der Typ geändert hat, obwohl keine Beförderung vorlag.
@@ -129,22 +184,28 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
     // Wiederholungsrunde – beides bedeutet, der Nutzer wusste die Antwort
     // gerade nicht.
     final wasWrong = isCorrect == false || selfGrade == Grade.again;
-    final inMainStage = _index < (_plan?.total ?? 0);
 
     if (!mounted) return;
     setState(() {
-      if (inMainStage) {
-        _index += 1;
-        if (wasWrong) _wrongQueue.add(updated);
-      } else {
-        // Wiederholungsrunde: die gerade abgeschlossene Karte stand vorn in
-        // der Queue (siehe build()).
-        _wrongQueue.removeAt(0);
-        final attempts = (_wrongAttempts[card.id] ?? 0) + 1;
-        _wrongAttempts[card.id] = attempts;
-        if (wasWrong && attempts < _maxWrongRequeueAttempts) {
-          _wrongQueue.add(updated);
-        }
+      switch (stage) {
+        case _QuizStage.main:
+          _index += 1;
+          if (wasWrong) _wrongQueue.add(updated);
+        case _QuizStage.revisit:
+          // Wiederholungsrunde: die gerade abgeschlossene Karte stand vorn in
+          // der Queue (siehe build()).
+          _wrongQueue.removeAt(0);
+          final attempts = (_wrongAttempts[card.id] ?? 0) + 1;
+          _wrongAttempts[card.id] = attempts;
+          if (wasWrong && attempts < _maxWrongRequeueAttempts) {
+            _wrongQueue.add(updated);
+          }
+        case _QuizStage.bonus:
+          // Freiwillige Zusatzrunde: falsch beantwortete Karten bekommen
+          // trotzdem eine Wiederholungschance über dieselbe _wrongQueue wie
+          // die Hauptrunde.
+          _bonusQueue.removeAt(0);
+          if (wasWrong) _wrongQueue.add(updated);
       }
       _reviewedCount += 1;
     });
@@ -208,8 +269,6 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
     Widget body;
     if (plan == null) {
       body = const Center(child: CircularProgressIndicator());
-    } else if (plan.total == 0 && _wrongQueue.isEmpty) {
-      body = const _AllDoneView();
     } else if (_index < plan.total) {
       final card = plan.allCards[_index];
       body = _SessionView(
@@ -220,7 +279,8 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
         total: plan.total,
         position: _index + 1,
         isNew: plan.newCards.contains(card),
-        onComplete: ({selfGrade, isCorrect}) => _handleComplete(card, selfGrade: selfGrade, isCorrect: isCorrect),
+        onComplete: ({selfGrade, isCorrect}) =>
+            _handleComplete(card, stage: _QuizStage.main, selfGrade: selfGrade, isCorrect: isCorrect),
       );
     } else if (_wrongQueue.isNotEmpty) {
       // Wiederholungsrunde: Hauptrunde ist durch, aber es gibt noch falsch
@@ -236,17 +296,45 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
         isNew: false,
         isRevisit: true,
         revisitRemaining: _wrongQueue.length,
-        onComplete: ({selfGrade, isCorrect}) => _handleComplete(card, selfGrade: selfGrade, isCorrect: isCorrect),
+        onComplete: ({selfGrade, isCorrect}) =>
+            _handleComplete(card, stage: _QuizStage.revisit, selfGrade: selfGrade, isCorrect: isCorrect),
       );
+    } else if (_bonusQueue.isNotEmpty) {
+      // Freiwillige Zusatzrunde (siehe _continueVoluntarily): Haupt- und
+      // Wiederholungsrunde sind durch, der Nutzer wollte trotzdem
+      // weiterlernen.
+      final card = _bonusQueue.first;
+      body = _SessionView(
+        key: ValueKey('bonus-${card.id}'),
+        card: card,
+        moduleName: context.read<ModuleRepository>().byId(card.moduleId)?.name ?? '',
+        progress: 1,
+        total: plan.total,
+        position: plan.total,
+        isNew: card.reps == 0,
+        isBonus: true,
+        revisitRemaining: _bonusQueue.length,
+        onComplete: ({selfGrade, isCorrect}) =>
+            _handleComplete(card, stage: _QuizStage.bonus, selfGrade: selfGrade, isCorrect: isCorrect),
+      );
+    } else if (plan.total == 0) {
+      body = _AllDoneView(onContinue: _continueVoluntarily, loading: _bonusLoading);
     } else {
-      body = _SessionDoneView(count: _reviewedCount, onRestart: _loadPlan);
+      body = _SessionDoneView(
+        count: _reviewedCount,
+        onRestart: _loadPlan,
+        onContinue: _continueVoluntarily,
+        loading: _bonusLoading,
+      );
     }
     return Material(color: c.bg, child: SafeArea(child: body));
   }
 }
 
 class _AllDoneView extends StatelessWidget {
-  const _AllDoneView();
+  const _AllDoneView({required this.onContinue, required this.loading});
+  final VoidCallback onContinue;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -265,6 +353,14 @@ class _AllDoneView extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(color: c.inkMuted),
             ),
+            const SizedBox(height: 20),
+            OutlinedButton.icon(
+              onPressed: loading ? null : onContinue,
+              icon: loading
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.add_circle_outline),
+              label: const Text('Trotzdem freiwillig weiterlernen'),
+            ),
           ],
         ),
       ),
@@ -273,9 +369,16 @@ class _AllDoneView extends StatelessWidget {
 }
 
 class _SessionDoneView extends StatelessWidget {
-  const _SessionDoneView({required this.count, required this.onRestart});
+  const _SessionDoneView({
+    required this.count,
+    required this.onRestart,
+    required this.onContinue,
+    required this.loading,
+  });
   final int count;
   final VoidCallback onRestart;
+  final VoidCallback onContinue;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -290,7 +393,21 @@ class _SessionDoneView extends StatelessWidget {
             const SizedBox(height: 16),
             Text('Session abgeschlossen! $count Karten wiederholt.', textAlign: TextAlign.center),
             const SizedBox(height: 16),
-            FilledButton(onPressed: onRestart, child: const Text('Aktualisieren')),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: loading ? null : onContinue,
+                  icon: loading
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.add_circle_outline),
+                  label: const Text('Freiwillig weiterlernen'),
+                ),
+                FilledButton(onPressed: onRestart, child: const Text('Aktualisieren')),
+              ],
+            ),
           ],
         ),
       ),
@@ -309,6 +426,7 @@ class _SessionView extends StatelessWidget {
     required this.isNew,
     required this.onComplete,
     this.isRevisit = false,
+    this.isBonus = false,
     this.revisitRemaining = 0,
   });
 
@@ -325,6 +443,12 @@ class _SessionView extends StatelessWidget {
   /// [_DailyQuizScreenState._wrongQueue]) – zeigt statt "Position / Total"
   /// die Anzahl verbleibender Wiederholungen.
   final bool isRevisit;
+
+  /// true, wenn dies die freiwillige Zusatzrunde nach Sessionende ist (siehe
+  /// [_DailyQuizScreenState._bonusQueue]/_continueVoluntarily) – nutzt
+  /// [revisitRemaining] für die Restanzeige, mit eigenem Label statt
+  /// "Wiederholung".
+  final bool isBonus;
   final int revisitRemaining;
 
   @override
@@ -350,7 +474,11 @@ class _SessionView extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    isRevisit ? '🔄 Wiederholung · noch $revisitRemaining' : '$position / $total',
+                    isRevisit
+                        ? '🔄 Wiederholung · noch $revisitRemaining'
+                        : isBonus
+                            ? '🙋 Freiwillig · noch $revisitRemaining'
+                            : '$position / $total',
                     style: TextStyle(fontSize: 12.5, color: c.inkMuted),
                   ),
                   if (moduleName.isNotEmpty)

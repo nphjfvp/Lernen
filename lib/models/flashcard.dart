@@ -183,6 +183,22 @@ class Flashcard {
   /// kürzer.
   final List<VariantSnapshot>? variantHistory;
 
+  /// Bereits vorbereiteter (aber noch nicht erreichter) Inhalt für die
+  /// NÄCHSTEN Eskalationsstufen, in der Reihenfolge, in der sie als Nächstes
+  /// erreicht werden (erster Eintrag = direkt nächste Stufe). Nur gesetzt,
+  /// wenn der komplette Inhalt aller Stufen schon beim Erstellen bekannt war
+  /// (siehe PageQuestionCreationSheet: EIN KI-Aufruf erzeugt dort direkt alle
+  /// gewählten Schwierigkeitsgrade auf einmal, jeweils gegründet auf
+  /// denselben Seiten-Screenshot). [copyWithBoxUpdate] nutzt diesen Inhalt
+  /// dann bei einer Beförderung direkt, OHNE weiteren (schwächer
+  /// gegründeten, nur textbasierten) KI-Aufruf wie sonst über
+  /// AiService.generateHarderVariant. Wird bei einer Rückstufung
+  /// ([copyWithDemotedVariant]) automatisch um die gerade verlassene Stufe
+  /// ergänzt (Spiegelbild zu [variantHistory]), damit ein späteres
+  /// Wiedererreichen erneut denselben, bereits bekannten Inhalt nutzt statt
+  /// die KI erneut zu bemühen.
+  final List<VariantSnapshot>? pendingVariants;
+
   /// Anzahl FALSCHER Antworten in Folge auf der aktuellen Eskalationsstufe
   /// (jede richtige Antwort setzt ihn auf 0 zurück) – getrennt von
   /// [variantBox] geführt, damit "Box ist gerade frisch auf 0, weil eben
@@ -242,6 +258,7 @@ class Flashcard {
     this.variantLevel = 0,
     this.variantBox = 0,
     this.variantHistory,
+    this.pendingVariants,
     this.variantMissStreak = 0,
     this.masteryBox = 0,
     this.stability = 0,
@@ -305,6 +322,7 @@ class Flashcard {
       variantLevel: variantLevel,
       variantBox: variantBox,
       variantHistory: variantHistory,
+      pendingVariants: pendingVariants,
       variantMissStreak: variantMissStreak,
       masteryBox: masteryBox ?? this.masteryBox,
       stability: stability,
@@ -342,6 +360,7 @@ class Flashcard {
       variantLevel: variantLevel,
       variantBox: variantBox,
       variantHistory: variantHistory,
+      pendingVariants: pendingVariants,
       variantMissStreak: variantMissStreak,
       masteryBox: masteryBox,
       stability: stability,
@@ -358,24 +377,44 @@ class Flashcard {
 
   /// Ab wie vielen FALSCHEN Antworten in Folge auf derselben Eskalationsstufe
   /// [copyWithBoxUpdate] automatisch zurückstuft (siehe [variantMissStreak]).
+  /// Gilt für alle Stufen AUSSER der schwersten (siehe
+  /// [demotionMissStreakThresholdOnLastStage]).
   static const int demotionMissStreakThreshold = 2;
+
+  /// Ab wie vielen FALSCHEN Antworten in Folge auf der SCHWERSTEN Stufe der
+  /// Kette automatisch zurückgestuft wird – bewusst deutlich höher als
+  /// [demotionMissStreakThreshold]: diese Stufe gilt als bereits nachgewiesen
+  /// gut gelernt (die Ampel stand hier grün, siehe MasteryService) und wird
+  /// durch normale Spaced-Repetition ohnehin nur noch selten wiederholt – ein
+  /// einzelner Ausrutscher soll sie nicht sofort zurückwerfen, erst
+  /// mehrfaches Vergessen in Folge.
+  static const int demotionMissStreakThresholdOnLastStage = 5;
 
   /// Nach einer Antwort: Leitner-Box fortschreiben (rein für die
   /// Varianten-Eskalation, unabhängig vom FSRS-Zustand) – in BEIDE
   /// Richtungen. Erreicht die Box die "grüne" Schwelle und ist eine nächste
-  /// Stufe in [variantChain] vorhanden, wird das über die zurückgegebene
-  /// [nextType] signalisiert - das eigentliche Umwandeln (KI-Aufruf)
-  /// übernimmt der Aufrufer, damit dieses Modell frei von I/O bleibt.
+  /// Stufe in [variantChain] vorhanden, wird befördert: liegt ihr Inhalt
+  /// bereits fertig in [pendingVariants] vor (siehe dort), passiert das
+  /// SOFORT, ohne KI-Aufruf ([needsGeneration] = false). Andernfalls wird nur
+  /// die Box zurückgesetzt und die Ziel-Stufe über [nextType] signalisiert
+  /// ([needsGeneration] = true) – das eigentliche Umwandeln (KI-Aufruf)
+  /// übernimmt dann der Aufrufer, damit dieses Modell frei von I/O bleibt.
   /// Umgekehrt: erreicht [variantMissStreak] (Fehlversuche IN FOLGE auf
-  /// dieser Stufe) [demotionMissStreakThreshold], wird sofort zur
-  /// vorherigen, leichteren Stufe zurückgestuft (siehe
-  /// [copyWithDemotedVariant]) – dafür ist KEIN weiterer KI-Aufruf nötig,
-  /// der alte Wortlaut liegt bereits in [variantHistory].
-  ({Flashcard card, QuestionType? nextType}) copyWithBoxUpdate({required bool isCorrect}) {
+  /// dieser Stufe) die passende Schwelle ([demotionMissStreakThreshold] bzw.
+  /// [demotionMissStreakThresholdOnLastStage] auf der schwersten Stufe), wird
+  /// sofort zur vorherigen, leichteren Stufe zurückgestuft (siehe
+  /// [copyWithDemotedVariant]) – dafür ist KEIN weiterer KI-Aufruf nötig, der
+  /// alte Wortlaut liegt bereits in [variantHistory].
+  ({Flashcard card, QuestionType? nextType, bool needsGeneration}) copyWithBoxUpdate({required bool isCorrect}) {
     final chain = variantChain;
     final canPromote =
         chain != null && variantLevel < chain.length - 1 && variantBox + 1 >= Flashcard.promotionThreshold && isCorrect;
     if (canPromote) {
+      final pending = pendingVariants;
+      if (pending != null && pending.isNotEmpty) {
+        final promoted = copyWithPromotedVariantFromPending();
+        return (card: promoted, nextType: promoted.type, needsGeneration: false);
+      }
       final updated = Flashcard(
         id: id,
         moduleId: moduleId,
@@ -395,6 +434,7 @@ class Flashcard {
         variantLevel: variantLevel,
         variantBox: 0,
         variantHistory: variantHistory,
+        pendingVariants: pendingVariants,
         variantMissStreak: 0,
         masteryBox: masteryBox,
         stability: stability,
@@ -407,16 +447,25 @@ class Flashcard {
         lastReview: lastReview,
         unitId: unitId,
       );
-      return (card: updated, nextType: chain[variantLevel + 1]);
+      return (card: updated, nextType: chain[variantLevel + 1], needsGeneration: true);
     }
 
     final missStreak = isCorrect ? 0 : variantMissStreak + 1;
+    final isOnLastStage = chain != null && variantLevel >= chain.length - 1;
+    final effectiveDemotionThreshold =
+        isOnLastStage ? demotionMissStreakThresholdOnLastStage : demotionMissStreakThreshold;
     final canDemote = !isCorrect &&
         variantLevel > 0 &&
-        missStreak >= demotionMissStreakThreshold &&
+        missStreak >= effectiveDemotionThreshold &&
         (variantHistory?.isNotEmpty ?? false);
     if (canDemote) {
-      return (card: copyWithDemotedVariant(), nextType: null);
+      final demoted = copyWithDemotedVariant(
+        // Gibt beim Rückfall von der schwersten Stufe einen Vertrauens-
+        // vorschuss (gelb statt rot/leer) – die Karte war ja nachgewiesen
+        // gut gelernt, ein Rückfall soll nicht komplett bei Null anfangen.
+        masteryBoxOverride: isOnLastStage ? Flashcard.masteryBoxCap - 1 : null,
+      );
+      return (card: demoted, nextType: null, needsGeneration: false);
     }
 
     final newBox = isCorrect ? variantBox + 1 : (variantBox - 1).clamp(0, 999);
@@ -439,6 +488,7 @@ class Flashcard {
       variantLevel: variantLevel,
       variantBox: newBox,
       variantHistory: variantHistory,
+      pendingVariants: pendingVariants,
       variantMissStreak: missStreak,
       masteryBox: masteryBox,
       stability: stability,
@@ -451,7 +501,7 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
     );
-    return (card: updated, nextType: null);
+    return (card: updated, nextType: null, needsGeneration: false);
   }
 
   /// Ersetzt Typ/Inhalt durch die nächste (schwerere) Eskalationsstufe -
@@ -469,6 +519,7 @@ class Flashcard {
     List<DragPair>? dragPairs,
     String? htmlContent,
     String? imageBase64,
+    List<VariantSnapshot>? pendingVariants,
   }) {
     final snapshot = VariantSnapshot(
       type: type,
@@ -500,6 +551,7 @@ class Flashcard {
       variantLevel: variantLevel + 1,
       variantBox: 0,
       variantHistory: [...?variantHistory, snapshot],
+      pendingVariants: pendingVariants ?? this.pendingVariants,
       variantMissStreak: 0,
       masteryBox: masteryBox,
       stability: stability,
@@ -514,16 +566,58 @@ class Flashcard {
     );
   }
 
+  /// Wie [copyWithPromotedVariant], nutzt aber den bereits vorbereiteten
+  /// Inhalt der nächsten Stufe aus [pendingVariants] statt Parametern des
+  /// Aufrufers – KEIN KI-Aufruf nötig (siehe Doc-Kommentar dort). Nur
+  /// sinnvoll aufzurufen, wenn [pendingVariants] nicht leer ist;
+  /// [copyWithBoxUpdate] prüft das bereits, diese Methode ist aber auch
+  /// eigenständig sicher aufrufbar (ohne Wirkung, wenn nichts vorbereitet ist).
+  Flashcard copyWithPromotedVariantFromPending() {
+    final pending = pendingVariants;
+    if (pending == null || pending.isEmpty) return this;
+    final next = pending.first;
+    final remaining = pending.sublist(1);
+    return copyWithPromotedVariant(
+      newType: next.type,
+      front: next.front,
+      back: next.back,
+      options: next.options,
+      correctText: next.correctText,
+      blanks: next.blanks,
+      dragPairs: next.dragPairs,
+      htmlContent: next.htmlContent,
+      imageBase64: next.imageBase64,
+      pendingVariants: remaining,
+    );
+  }
+
   /// Kehrt zur vorherigen (leichteren) Eskalationsstufe zurück, deren
   /// Inhalt bereits in [variantHistory] liegt – kein KI-Aufruf nötig. Ohne
   /// Historie (leere Liste) bleibt die Karte unverändert; der Aufrufer
   /// prüft das bereits über [copyWithBoxUpdate], diese Methode ist aber
-  /// auch eigenständig sicher aufrufbar.
-  Flashcard copyWithDemotedVariant() {
+  /// auch eigenständig sicher aufrufbar. Die gerade verlassene (schwerere)
+  /// Stufe wandert dabei in [pendingVariants] (Spiegelbild zu
+  /// [variantHistory]) – wird sie später erneut erreicht, steht ihr Inhalt
+  /// sofort wieder zur Verfügung, ohne erneuten KI-Aufruf.
+  /// [masteryBoxOverride] setzt bei Bedarf einen abweichenden Ampel-Stand
+  /// (siehe [copyWithBoxUpdate]: ein Rückfall von der schwersten Stufe
+  /// bekommt einen Vertrauensvorschuss statt bei Null anzufangen).
+  Flashcard copyWithDemotedVariant({int? masteryBoxOverride}) {
     final history = variantHistory;
     if (history == null || history.isEmpty) return this;
     final previous = history.last;
     final remaining = history.sublist(0, history.length - 1);
+    final vacated = VariantSnapshot(
+      type: type,
+      front: front,
+      back: back,
+      options: options,
+      correctText: correctText,
+      blanks: blanks,
+      dragPairs: dragPairs,
+      htmlContent: htmlContent,
+      imageBase64: imageBase64,
+    );
     return Flashcard(
       id: id,
       moduleId: moduleId,
@@ -543,8 +637,9 @@ class Flashcard {
       variantLevel: variantLevel - 1,
       variantBox: 0,
       variantHistory: remaining,
+      pendingVariants: [vacated, ...?pendingVariants],
       variantMissStreak: 0,
-      masteryBox: masteryBox,
+      masteryBox: masteryBoxOverride ?? masteryBox,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -585,6 +680,7 @@ class Flashcard {
         'variantLevel': variantLevel,
         'variantBox': variantBox,
         'variantHistory': variantHistory?.map((v) => v.toMap()).toList(),
+        'pendingVariants': pendingVariants?.map((v) => v.toMap()).toList(),
         'variantMissStreak': variantMissStreak,
         'masteryBox': masteryBox,
         'stability': stability,
@@ -622,6 +718,9 @@ class Flashcard {
         variantLevel: map['variantLevel'] as int? ?? 0,
         variantBox: map['variantBox'] as int? ?? 0,
         variantHistory: (map['variantHistory'] as List?)
+            ?.map((v) => VariantSnapshot.fromMap(Map<String, dynamic>.from(v as Map)))
+            .toList(),
+        pendingVariants: (map['pendingVariants'] as List?)
             ?.map((v) => VariantSnapshot.fromMap(Map<String, dynamic>.from(v as Map)))
             .toList(),
         variantMissStreak: map['variantMissStreak'] as int? ?? 0,

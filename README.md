@@ -69,8 +69,14 @@ engerem Fokus statt Feature-Fülle.
   Rückstand vorhanden ist (siehe `lib/services/daily_scheduler_service.dart`).
   Falsch beantwortete Karten der Hauptrunde werden am Ende derselben Session
   automatisch nochmal abgefragt (max. 3 Versuche je Karte), statt erst am
-  nächsten natürlichen FSRS-Fälligkeitsdatum wiederzukommen. Ergänzend dazu
-  pro Fach ein freier **Üben-Modus** (`lib/ui/practice/practice_screen.dart`):
+  nächsten natürlichen FSRS-Fälligkeitsdatum wiederzukommen. Ist die Session
+  (inkl. Wiederholungsrunde) fertig, lässt sich per Button "Freiwillig
+  weiterlernen" trotzdem freiwillig weitermachen: `DailySchedulerService.
+  buildExtraBatch` ignoriert dafür bewusst das Klausur-Pacing-Budget und holt
+  bis zu 10 weitere neue bzw. (falls keine mehr da sind) noch nicht fällige
+  Karten nach – als eigene Warteschlange statt den laufenden Tagesplan zu
+  vergrößern, um das positionsbasierte Session-Tracking nicht durcheinander
+  zu bringen. Ergänzend dazu pro Fach ein freier **Üben-Modus** (`lib/ui/practice/practice_screen.dart`):
   übt das gesamte Kartenset unabhängig von Fälligkeit/Klausur-Pacing/
   Einheiten-Status, optional gefiltert nach Ampel-Stufe (siehe unten) – jede
   Antwort aktualisiert trotzdem den echten FSRS-Zustand.
@@ -109,9 +115,25 @@ engerem Fokus statt Feature-Fülle.
   generieren. Adaptiv in BEIDE Richtungen: zwei Fehlversuche IN FOLGE auf
   einer beförderten Stufe stufen automatisch zur vorherigen (leichteren)
   Stufe zurück – ohne erneuten KI-Aufruf, der alte Wortlaut liegt bereits in
-  `Flashcard.variantHistory` (siehe `Flashcard.copyWithBoxUpdate`). Auf-/
-  Abstufung wird per SnackBar direkt sichtbar gemacht (Daily Quiz + Üben-
-  Modus), lief vorher komplett unsichtbar im Hintergrund; der
+  `Flashcard.variantHistory` (siehe `Flashcard.copyWithBoxUpdate`). Auf der
+  SCHWERSTEN Stufe der Kette gilt eine höhere Rückstufungs-Schwelle
+  (`Flashcard.demotionMissStreakThresholdOnLastStage`, 5 statt 2
+  Fehlversuche in Folge): diese Stufe wurde bereits als sicher gelernt
+  nachgewiesen (Ampel stand grün) und wird ohnehin durch normale Spaced-
+  Repetition nur noch selten wiederholt, ein einzelner Ausrutscher soll sie
+  nicht sofort zurückwerfen. Die Rückstufung startet die Ampel danach
+  bewusst bei Gelb statt Rot (`masteryBox = masteryBoxCap - 1`) – ein
+  Vertrauensvorschuss für den bereits nachgewiesenen Kenntnisstand. Über die
+  Seiten-Frage-Funktion (siehe unten) erzeugte Mehrfach-Schwierigkeitsgrade
+  landen dabei NICHT als unabhängige Karten im selben Lern-Pool, sondern
+  werden zu genau einer solchen Kette zusammengeführt: nur die leichteste
+  gewählte Stufe ist sofort aktiv, die übrigen liegen als
+  `Flashcard.pendingVariants` bereits fertig ausformuliert bereit (derselbe
+  Screenshot als Grundlage aller Stufen) und werden bei Beförderung ohne
+  weiteren KI-Aufruf sichtbar – genau das war vorher der gemeldete Bug
+  ("leicht/mittel/schwer landen gemischt im selben Pool statt nacheinander").
+  Auf-/Abstufung wird per SnackBar direkt sichtbar gemacht (Daily Quiz +
+  Üben-Modus), lief vorher komplett unsichtbar im Hintergrund; der
   Generierungs-Prompt verlangt außerdem pro erkanntem Konzept nach
   Möglichkeit mindestens eine Frage mit voller Eskalationskette, damit das
   Feature spürbar öfter zum Einsatz kommt statt nur bei zufällig passenden
@@ -544,8 +566,12 @@ Nachbereiten-Modus zu wechseln.
   generierten Karten lassen sich vor dem Speichern eins zu eins wie im
   echten Quiz durchklicken (`QuestionAnswerView`, dieselbe Ansicht wie
   Daily Quiz/Üben statt einer reinen Textvorschau) und per freier Anweisung
-  ("einfacher formulieren", "anderer Fokus") überarbeiten. Gespeicherte
-  Karten landen sofort fällig (`due: jetzt`) im Daily Quiz.
+  ("einfacher formulieren", "anderer Fokus") überarbeiten. Beim Speichern
+  werden mehrere gewählte Stufen NICHT als unabhängige Karten abgelegt,
+  sondern zu einer Eskalationskette zusammengeführt (siehe oben): nur die
+  leichteste Stufe landet sofort fällig (`due: jetzt`) im Daily Quiz, die
+  übrigen liegen bereits fertig ausformuliert als `Flashcard.pendingVariants`
+  bereit und werden erst bei Beförderung sichtbar.
   Die KI entscheidet zusätzlich pro Karte, ob der Seiten-Screenshot für den
   Kontext der Frage nötig ist (`"needsImage"` im JSON-Ergebnis, z.B. bei
   einem Diagramm/einer Formel/einer Skizze, ohne die die Frage nicht

@@ -292,4 +292,81 @@ void main() {
       expect(plan.allCards.length, plan.total);
     });
   });
+
+  group('DailySchedulerService.buildExtraBatch – freiwillige Zusatzrunde', () {
+    test('ignoriert das Klausur-Pacing-Budget und liefert trotzdem neue Karten', () {
+      // Klausur weit in der Zukunft => reguläres buildPlan würde hier nur den
+      // Mindestboden (10) einplanen, obwohl 30 Karten rückständig sind.
+      final module = _module('m1', examDate: DateTime(2027, 1, 1));
+      final cards = List.generate(30, (i) => _newFlashcard('n$i', 'm1', createdAt: DateTime(2026, 1, 1 + i)));
+
+      final extra = scheduler.buildExtraBatch(
+        modules: [module],
+        allCards: cards,
+        excludeIds: const {},
+        now: now,
+      );
+
+      expect(extra.newCards.length, 10); // Standard-batchSize
+      // Älteste (zuerst erstellte) Karten zuerst, wie beim regulären Budget.
+      expect(extra.newCards.first.id, 'n0');
+    });
+
+    test('excludeIds verhindert Überschneidungen mit der laufenden Session', () {
+      final module = _module('m1');
+      final cards = List.generate(5, (i) => _newFlashcard('n$i', 'm1', createdAt: DateTime(2026, 1, 1 + i)));
+
+      final extra = scheduler.buildExtraBatch(
+        modules: [module],
+        allCards: cards,
+        excludeIds: {'n0', 'n1'},
+        now: now,
+      );
+
+      expect(extra.newCards.map((c) => c.id), ['n2', 'n3', 'n4']);
+    });
+
+    test('füllt mit noch nicht fälligen Wiederholungen auf, wenn keine neuen Karten mehr da sind', () {
+      final module = _module('m1');
+      final dueCards = [
+        _dueFlashcard('d1', 'm1', now.add(const Duration(days: 3))),
+        _dueFlashcard('d2', 'm1', now.add(const Duration(days: 1))),
+      ];
+
+      final extra = scheduler.buildExtraBatch(
+        modules: [module],
+        allCards: dueCards,
+        excludeIds: const {},
+        now: now,
+      );
+
+      expect(extra.newCards, isEmpty);
+      // Nächstfällige zuerst.
+      expect(extra.dueCards.map((c) => c.id), ['d2', 'd1']);
+    });
+
+    test('respektiert unitCoveredById genau wie das reguläre Budget', () {
+      final module = _module('m1');
+      final cards = [
+        _newFlashcard('covered', 'm1', unitId: 'u1'),
+        _newFlashcard('notCovered', 'm1', unitId: 'u2'),
+      ];
+
+      final extra = scheduler.buildExtraBatch(
+        modules: [module],
+        allCards: cards,
+        excludeIds: const {},
+        unitCoveredById: const {'u1': true, 'u2': false},
+        now: now,
+      );
+
+      expect(extra.newCards.map((c) => c.id), ['covered']);
+    });
+
+    test('liefert eine leere Charge, wenn nichts mehr verfügbar ist', () {
+      final module = _module('m1');
+      final extra = scheduler.buildExtraBatch(modules: [module], allCards: const [], excludeIds: const {}, now: now);
+      expect(extra.total, 0);
+    });
+  });
 }

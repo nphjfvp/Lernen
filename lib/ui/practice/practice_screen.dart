@@ -92,14 +92,19 @@ class _PracticeScreenState extends State<PracticeScreen> {
     var updated = _fsrs.review(card, grade);
 
     if (isCorrect != null && updated.variantChain != null) {
+      final beforeType = updated.type;
       final boxResult = updated.copyWithBoxUpdate(isCorrect: isCorrect);
       updated = boxResult.card;
       await context.read<FlashcardRepository>().update(updated);
       final nextType = boxResult.nextType;
-      if (nextType != null) {
+      if (nextType != null && boxResult.needsGeneration) {
         unawaited(_promoteInBackground(updated, nextType));
         _showLevelChangeSnackBar('⬆️ Stufe geschafft – nächstes Mal: ${nextType.label}');
-      } else if (updated.type != card.type) {
+      } else if (nextType != null) {
+        // Inhalt lag bereits vorbereitet vor (siehe Flashcard.pendingVariants)
+        // – kein KI-Aufruf nötig, die Karte ist schon jetzt befördert.
+        _showLevelChangeSnackBar('⬆️ Stufe geschafft – jetzt: ${nextType.label}');
+      } else if (updated.type != beforeType) {
         _showLevelChangeSnackBar('⬇️ Zurück zu: ${updated.type.label}');
       }
     } else {

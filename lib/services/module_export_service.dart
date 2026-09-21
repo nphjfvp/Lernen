@@ -216,6 +216,7 @@ class ModuleExportService {
               variantLevel: f.variantLevel,
               variantBox: f.variantBox,
               variantHistory: f.variantHistory,
+              pendingVariants: f.pendingVariants,
               variantMissStreak: f.variantMissStreak,
               masteryBox: f.masteryBox,
               stability: f.stability,
