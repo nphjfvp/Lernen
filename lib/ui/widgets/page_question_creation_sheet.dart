@@ -151,6 +151,11 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet> {
           due: now,
           type: type,
           unitId: widget.material.unitId,
+          // Bewusst gerade jetzt beim Betrachten dieser Seite gestellt –
+          // soll unabhängig vom Einheiten-"behandelt"-Status zeitnah im
+          // Daily Quiz auftauchen statt hinter einem Altbestand zu warten
+          // (siehe Flashcard.priorityIntroduction).
+          priorityIntroduction: true,
           options: QuestionParsing.parseOptions(fixed['options']),
           correctText: fixed['correctText'] as String?,
           blanks: QuestionParsing.parseBlanks(fixed['blanks']),
@@ -225,6 +230,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet> {
       variantChain: tiers.map((t) => t.type).toList(),
       pendingVariants: pending,
       unitId: base.unitId,
+      priorityIntroduction: base.priorityIntroduction,
     );
   }
 

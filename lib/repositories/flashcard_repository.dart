@@ -52,4 +52,18 @@ class FlashcardRepository extends ChangeNotifier {
     await DatabaseService.flashcards.record(id).delete(db);
     await loadForModule(moduleId);
   }
+
+  /// Löscht mehrere Karten in EINER Transaktion (statt [delete] wiederholt
+  /// aufzurufen, was pro Karte einen eigenen Modul-Reload auslösen würde) –
+  /// Grundlage für die Mehrfachauswahl in FlashcardListScreen.
+  Future<void> deleteMany(List<String> ids, String moduleId) async {
+    if (ids.isEmpty) return;
+    final db = await DatabaseService.instance.database;
+    await db.transaction((txn) async {
+      for (final id in ids) {
+        await DatabaseService.flashcards.record(id).delete(txn);
+      }
+    });
+    await loadForModule(moduleId);
+  }
 }

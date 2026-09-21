@@ -236,8 +236,24 @@ class Flashcard {
   /// Null = keine Einheit (ältere Karten, oder ohne Einheiten-Auswahl
   /// generiert) – solche Karten bleiben immer verfügbar. Ist eine Einheit
   /// gesetzt, aber (noch) nicht als "behandelt" markiert, lässt der
-  /// DailyScheduler die Karte aus (siehe DailySchedulerService.buildPlan).
+  /// DailyScheduler die Karte aus (siehe DailySchedulerService.buildPlan) –
+  /// AUSSER [priorityIntroduction] ist gesetzt.
   final String? unitId;
+
+  /// true für Karten, die der Nutzer gezielt JETZT beim Betrachten einer
+  /// Seite selbst erstellt hat (siehe PageQuestionCreationSheet/"Frage
+  /// erstellen"), statt aus einer Bulk-Generierung (Nachbereiten-Modus)
+  /// hervorzugehen. Zwei Konsequenzen in [DailySchedulerService.buildPlan]:
+  /// (1) umgeht das Einheiten-"behandelt"-Gate, das eigentlich verhindern
+  /// soll, dass automatisch generierter Stoff künftiger (noch nicht
+  /// gehaltener) Vorlesungen ungefragt im Daily Quiz auftaucht – eine
+  /// einzelne, bewusst gerade jetzt gestellte Frage ist per Definition schon
+  /// "aktuell relevant", unabhängig vom Einheiten-Status. (2) wird beim
+  /// Auffüllen des Tages-Budgets VOR der reinen createdAt-Reihenfolge
+  /// einsortiert, damit eine frisch erstellte Frage nicht hinter einem
+  /// großen Altbestand noch nicht eingeführter Karten verschwindet und erst
+  /// nach Tagen drankommt.
+  final bool priorityIntroduction;
 
   const Flashcard({
     required this.id,
@@ -270,6 +286,7 @@ class Flashcard {
     this.state = 'new',
     this.lastReview,
     this.unitId,
+    this.priorityIntroduction = false,
   });
 
   /// Kanonische Antwort-Darstellung, unabhängig vom Fragetyp - Grundlage,
@@ -334,6 +351,7 @@ class Flashcard {
       state: state,
       lastReview: lastReview,
       unitId: unitId,
+      priorityIntroduction: priorityIntroduction,
     );
   }
 
@@ -372,6 +390,7 @@ class Flashcard {
       state: state,
       lastReview: lastReview,
       unitId: unitId,
+      priorityIntroduction: priorityIntroduction,
     );
   }
 
@@ -446,6 +465,7 @@ class Flashcard {
         state: state,
         lastReview: lastReview,
         unitId: unitId,
+        priorityIntroduction: priorityIntroduction,
       );
       return (card: updated, nextType: chain[variantLevel + 1], needsGeneration: true);
     }
@@ -500,6 +520,7 @@ class Flashcard {
       state: state,
       lastReview: lastReview,
       unitId: unitId,
+      priorityIntroduction: priorityIntroduction,
     );
     return (card: updated, nextType: null, needsGeneration: false);
   }
@@ -563,6 +584,7 @@ class Flashcard {
       state: state,
       lastReview: lastReview,
       unitId: unitId,
+      priorityIntroduction: priorityIntroduction,
     );
   }
 
@@ -649,6 +671,7 @@ class Flashcard {
       state: state,
       lastReview: lastReview,
       unitId: unitId,
+      priorityIntroduction: priorityIntroduction,
     );
   }
 
@@ -692,6 +715,7 @@ class Flashcard {
         'state': state,
         'lastReview': lastReview?.toIso8601String(),
         'unitId': unitId,
+        'priorityIntroduction': priorityIntroduction,
       };
 
   factory Flashcard.fromMap(Map<String, dynamic> map) => Flashcard(
@@ -736,5 +760,6 @@ class Flashcard {
             ? null
             : DateTime.parse(map['lastReview'] as String),
         unitId: map['unitId'] as String?,
+        priorityIntroduction: map['priorityIntroduction'] as bool? ?? false,
       );
 }

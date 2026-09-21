@@ -12,37 +12,107 @@ import '../widgets/mastery_dot.dart';
 /// Listet alle Karteikarten eines Fachs auf – zum gezielten Bearbeiten oder
 /// Löschen einzelner Karten, unabhängig vom Daily-Quiz-Wiederholungsflow
 /// (dort sieht man immer nur die jeweils fällige Karte, keine Übersicht).
-class FlashcardListScreen extends StatelessWidget {
+/// Lang drücken auf eine Karte startet den Auswahlmodus (mehrere Karten
+/// markieren, dann gemeinsam löschen) – für Aufräumarbeiten nach einer
+/// größeren Generierung, ohne jede Karte einzeln aufklappen zu müssen.
+class FlashcardListScreen extends StatefulWidget {
   const FlashcardListScreen({super.key, required this.moduleId, required this.moduleName});
 
   final String moduleId;
   final String moduleName;
 
   @override
+  State<FlashcardListScreen> createState() => _FlashcardListScreenState();
+}
+
+class _FlashcardListScreenState extends State<FlashcardListScreen> {
+  final Set<String> _selected = {};
+
+  bool get _selecting => _selected.isNotEmpty;
+
+  void _toggle(String id) {
+    setState(() {
+      if (!_selected.remove(id)) _selected.add(id);
+    });
+  }
+
+  Future<void> _deleteSelected(List<Flashcard> cards) async {
+    final count = _selected.length;
+    final ok = await confirmDelete(
+      context,
+      title: '$count ${count == 1 ? 'Karte' : 'Karten'} löschen?',
+      message: 'Diese Karteikarten werden endgültig gelöscht.',
+    );
+    if (!ok || !mounted) return;
+    await context.read<FlashcardRepository>().deleteMany(_selected.toList(), widget.moduleId);
+    if (!mounted) return;
+    setState(() => _selected.clear());
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final cards = context.watch<FlashcardRepository>().forModule(moduleId);
+    final cards = context.watch<FlashcardRepository>().forModule(widget.moduleId);
 
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: AppBar(title: Text('Karteikarten · $moduleName')),
+      appBar: AppBar(
+        title: Text(_selecting ? '${_selected.length} ausgewählt' : 'Karteikarten · ${widget.moduleName}'),
+        leading: _selecting
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Auswahl aufheben',
+                onPressed: () => setState(_selected.clear),
+              )
+            : null,
+        actions: _selecting
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.select_all),
+                  tooltip: 'Alle auswählen',
+                  onPressed: () => setState(() => _selected.addAll(cards.map((c) => c.id))),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Ausgewählte löschen',
+                  onPressed: () => _deleteSelected(cards),
+                ),
+              ]
+            : null,
+      ),
       body: cards.isEmpty
           ? Center(child: Text('Noch keine Karteikarten.', style: TextStyle(color: c.inkMuted)))
           : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: cards.length,
-              itemBuilder: (ctx, i) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _FlashcardTile(card: cards[i]),
-              ),
+              itemBuilder: (ctx, i) {
+                final card = cards[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _FlashcardTile(
+                    card: card,
+                    selecting: _selecting,
+                    selected: _selected.contains(card.id),
+                    onToggleSelected: () => _toggle(card.id),
+                  ),
+                );
+              },
             ),
     );
   }
 }
 
 class _FlashcardTile extends StatelessWidget {
-  const _FlashcardTile({required this.card});
+  const _FlashcardTile({
+    required this.card,
+    required this.selecting,
+    required this.selected,
+    required this.onToggleSelected,
+  });
   final Flashcard card;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback onToggleSelected;
 
   Future<void> _edit(BuildContext context) async {
     final result = await editTwoFieldsDialog(
@@ -78,52 +148,72 @@ class _FlashcardTile extends StatelessWidget {
       card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
       if (card.variantChain != null) 'Stufe ${card.variantLevel + 1}/${card.variantChain!.length}',
     ];
+    final decoration = BoxDecoration(
+      color: selected ? c.accentSoft : c.surface,
+      border: Border.all(color: selected ? c.accent : c.border),
+      borderRadius: BorderRadius.circular(16),
+    );
+
+    if (selecting) {
+      // Kein ExpansionTile im Auswahlmodus: ein Tippen soll ausschließlich
+      // (De-)Selektieren, nicht Auf-/Zuklappen auslösen.
+      return DecoratedBox(
+        decoration: decoration,
+        child: ListTile(
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          leading: Checkbox(value: selected, onChanged: (_) => onToggleSelected()),
+          title: Text(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+          subtitle: Text(statusParts.join(' · '), style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+          onTap: onToggleSelected,
+        ),
+      );
+    }
+
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: c.surface,
-        border: Border.all(color: c.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: decoration,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-          leading: MasteryDot(level: level),
-          title: Text(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
-          subtitle: Text(
-            statusParts.join(' · '),
-            style: TextStyle(fontSize: 11.5, color: c.inkMuted),
-          ),
-          iconColor: c.inkMuted,
-          collapsedIconColor: c.inkMuted,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: _AnswerDetail(card: card),
-              ),
+        child: GestureDetector(
+          onLongPress: onToggleSelected,
+          child: ExpansionTile(
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+            leading: MasteryDot(level: level),
+            title: Text(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+            subtitle: Text(
+              statusParts.join(' · '),
+              style: TextStyle(fontSize: 11.5, color: c.inkMuted),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (card.type == QuestionType.flashcard)
+            iconColor: c.inkMuted,
+            collapsedIconColor: c.inkMuted,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _AnswerDetail(card: card),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (card.type == QuestionType.flashcard)
+                      TextButton.icon(
+                        onPressed: () => _edit(context),
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        label: const Text('Bearbeiten'),
+                      ),
                     TextButton.icon(
-                      onPressed: () => _edit(context),
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('Bearbeiten'),
+                      onPressed: () => _delete(context),
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: const Text('Löschen'),
                     ),
-                  TextButton.icon(
-                    onPressed: () => _delete(context),
-                    icon: const Icon(Icons.delete_outline, size: 16),
-                    label: const Text('Löschen'),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

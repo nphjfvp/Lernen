@@ -219,6 +219,7 @@ class ModuleExportService {
               pendingVariants: f.pendingVariants,
               variantMissStreak: f.variantMissStreak,
               masteryBox: f.masteryBox,
+              priorityIntroduction: f.priorityIntroduction,
               stability: f.stability,
               difficulty: f.difficulty,
               elapsedDays: f.elapsedDays,

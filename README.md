@@ -80,6 +80,13 @@ engerem Fokus statt Feature-Fülle.
   übt das gesamte Kartenset unabhängig von Fälligkeit/Klausur-Pacing/
   Einheiten-Status, optional gefiltert nach Ampel-Stufe (siehe unten) – jede
   Antwort aktualisiert trotzdem den echten FSRS-Zustand.
+- **Karteikarten-Liste: Mehrfachauswahl + Löschen** (`lib/ui/flashcards/
+  flashcard_list_screen.dart`) – lang auf eine Karte drücken startet den
+  Auswahlmodus (Checkbox pro Karte, "Alle auswählen", gemeinsames Löschen in
+  einer Transaktion über `FlashcardRepository.deleteMany`), zum Aufräumen
+  nach einer größeren Generierung ohne jede Karte einzeln aufklappen zu
+  müssen. Einzelne Karten lassen sich weiterhin wie bisher aufklappen und
+  per Button bearbeiten/löschen.
 - **Wissensstand-Ampel** – jede Karte bekommt eine Rot/Gelb/Grün-Einstufung
   (siehe `lib/services/mastery_service.dart`), sichtbar in der
   Karteikarten-Liste, im Modul-Detail (Aufschlüsselung) und in der
@@ -580,6 +587,15 @@ Nachbereiten-Modus zu wechseln.
   `QuestionAnswerView` genutzt wird) oberhalb der Frage angezeigt. Rein
   textbasierte Fragen bekommen bewusst KEIN Bild angehängt, um die lokale
   Datenbank nicht unnötig aufzublähen.
+  Solche direkt beim Betrachten selbst erstellten Fragen tragen zusätzlich
+  `Flashcard.priorityIntroduction = true`: sie umgehen damit das Einheiten-
+  "behandelt"-Gate im DailyScheduler (eine bewusst JETZT gestellte Frage ist
+  per Definition schon relevant, unabhängig davon, ob die zugehörige
+  Vorlesungseinheit separat als "behandelt" markiert wurde) und werden beim
+  Auffüllen des Tages-Budgets vor der reinen createdAt-Reihenfolge
+  einsortiert – ohne das würde eine frisch gestellte Frage sonst hinter
+  einem großen Altbestand noch nicht eingeführter Bulk-generierter Karten
+  verschwinden und tagelang nicht im Daily Quiz auftauchen.
 
 ### 6. Ausführen
 

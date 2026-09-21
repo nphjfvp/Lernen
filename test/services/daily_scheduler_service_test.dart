@@ -12,7 +12,14 @@ Module _module(String id, {DateTime? examDate}) => Module(
       createdAt: DateTime(2026, 1, 1),
     );
 
-Flashcard _newFlashcard(String id, String moduleId, {DateTime? createdAt, String? unitId}) => Flashcard(
+Flashcard _newFlashcard(
+  String id,
+  String moduleId, {
+  DateTime? createdAt,
+  String? unitId,
+  bool priorityIntroduction = false,
+}) =>
+    Flashcard(
       id: id,
       moduleId: moduleId,
       front: 'F$id',
@@ -20,6 +27,7 @@ Flashcard _newFlashcard(String id, String moduleId, {DateTime? createdAt, String
       createdAt: createdAt ?? DateTime(2026, 1, 1),
       due: DateTime(2026, 1, 1),
       unitId: unitId,
+      priorityIntroduction: priorityIntroduction,
     );
 
 Flashcard _dueFlashcard(String id, String moduleId, DateTime due, {String? unitId}) => Flashcard(
@@ -239,6 +247,48 @@ void main() {
       );
 
       expect(plan.dueCards.map((c) => c.id), contains('d1'));
+    });
+
+    test('priorityIntroduction umgeht das Gate auch bei nicht behandelter Einheit', () {
+      final module = _module('m1');
+      final card = _newFlashcard('n1', 'm1', unitId: 'u1', priorityIntroduction: true);
+
+      final plan = scheduler.buildPlan(
+        modules: [module],
+        allCards: [card],
+        unitCoveredById: const {'u1': false},
+        now: now,
+      );
+
+      expect(plan.newCards.map((c) => c.id), contains('n1'));
+    });
+  });
+
+  group('priorityIntroduction – Vorrang vor Altbestand', () {
+    test('eine gerade erstellte priorisierte Karte kommt vor älteren, nicht priorisierten Karten dran', () {
+      final module = _module('m1');
+      // 20 ältere, nicht priorisierte Karten (Altbestand) + 1 ganz frisch
+      // erstellte, priorisierte Karte – trotz neuestem createdAt soll sie
+      // NICHT hinter dem Budget-Limit verschwinden.
+      final backlog = List.generate(
+        20,
+        (i) => _newFlashcard('old$i', 'm1', createdAt: DateTime(2026, 1, 1 + i)),
+      );
+      final justCreated = _newFlashcard(
+        'fresh',
+        'm1',
+        createdAt: DateTime(2026, 6, 1),
+        priorityIntroduction: true,
+      );
+
+      final plan = scheduler.buildPlan(
+        modules: [module],
+        allCards: [...backlog, justCreated],
+        now: now,
+      );
+
+      expect(plan.newCards.first.id, 'fresh');
+      expect(plan.newCards.map((c) => c.id), contains('fresh'));
     });
   });
 

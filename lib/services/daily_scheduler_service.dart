@@ -109,7 +109,7 @@ class DailySchedulerService {
 
     bool isEligible(Flashcard c) {
       final unitId = c.unitId;
-      if (unitId == null) return true;
+      if (unitId == null || c.priorityIntroduction) return true;
       return unitCoveredById[unitId] ?? true;
     }
 
@@ -126,9 +126,16 @@ class DailySchedulerService {
 
     for (final module in modules) {
       final moduleCards = eligibleCards.where((c) => c.moduleId == module.id);
-      final notIntroduced =
-          moduleCards.where((c) => c.reps == 0).toList()
-            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final notIntroduced = moduleCards.where((c) => c.reps == 0).toList()
+        ..sort((a, b) {
+          // Gezielt JETZT selbst erstellte Fragen (siehe Flashcard.
+          // priorityIntroduction) sollen nicht hinter einem großen, rein
+          // chronologisch älteren Altbestand verschwinden.
+          if (a.priorityIntroduction != b.priorityIntroduction) {
+            return a.priorityIntroduction ? -1 : 1;
+          }
+          return a.createdAt.compareTo(b.createdAt);
+        });
       if (notIntroduced.isEmpty) {
         newCardBudget[module.id] = 0;
         continue;
@@ -220,7 +227,7 @@ class DailySchedulerService {
   }) {
     bool isEligible(Flashcard c) {
       final unitId = c.unitId;
-      if (unitId == null) return true;
+      if (unitId == null || c.priorityIntroduction) return true;
       return unitCoveredById[unitId] ?? true;
     }
 

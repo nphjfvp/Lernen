@@ -197,6 +197,22 @@ void main() {
       final legacyMap = Map<String, dynamic>.from(card.toMap())..remove('imageBase64');
       expect(Flashcard.fromMap(legacyMap).imageBase64, isNull);
     });
+
+    test('erhält priorityIntroduction und defaultet bei älteren Datensätzen auf false', () {
+      final card = Flashcard(
+        id: '1',
+        moduleId: 'm1',
+        front: 'F',
+        back: 'B',
+        createdAt: DateTime(2026, 1, 1),
+        due: DateTime(2026, 1, 1),
+        priorityIntroduction: true,
+      );
+      expect(Flashcard.fromMap(card.toMap()).priorityIntroduction, isTrue);
+
+      final legacyMap = Map<String, dynamic>.from(card.toMap())..remove('priorityIntroduction');
+      expect(Flashcard.fromMap(legacyMap).priorityIntroduction, isFalse);
+    });
   });
 
   group('Flashcard.answerSummary', () {
