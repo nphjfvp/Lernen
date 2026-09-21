@@ -26,6 +26,7 @@ import '../../services/material_text_extractor.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
+import '../widgets/existing_material_picker.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
 
@@ -44,10 +45,17 @@ enum _Step { pick, generating, preview }
 enum _GenerateMode { create, import, pasteJson }
 
 class _PickedFile {
-  _PickedFile({required this.fileName, required this.text, required this.bytes});
+  _PickedFile({required this.fileName, required this.text, required this.bytes, this.existingMaterialId});
   final String fileName;
   final String text;
   final Uint8List bytes;
+
+  /// Gesetzt, wenn diese Datei nicht frisch hochgeladen, sondern aus bereits
+  /// vorhandenem Fach-Material übernommen wurde (siehe
+  /// showExistingMaterialPicker) – beim Speichern wird für sie KEIN neues
+  /// MaterialItem angelegt (existiert ja schon), nur ihr Text fließt in die
+  /// KI-Generierung ein.
+  final String? existingMaterialId;
 }
 
 /// Nachbereiten-Modus: Folien UND Übungsaufgaben gemeinsam hochladen (auch
@@ -127,6 +135,35 @@ class _ReviewScreenState extends State<ReviewScreen> {
       isSlides: isSlides,
       files: picked.map((f) => (name: f.name, readBytes: f.readAsBytes)).toList(),
     );
+  }
+
+  /// Statt jedes Mal neu hochzuladen: bereits im Fach abgelegtes Material
+  /// (z.B. über ModuleDetailScreen direkt hochgeladen) direkt übernehmen –
+  /// kein erneuter FilePicker, keine erneute Textextraktion.
+  Future<void> _pickExisting({required bool isSlides}) async {
+    final available = context.read<MaterialRepository>().forModule(widget.moduleId);
+    final target = isSlides ? _slidesFiles : _exercisesFiles;
+    final alreadyPicked = target.map((f) => f.existingMaterialId).whereType<String>().toSet();
+
+    final selected = await showExistingMaterialPicker(
+      context,
+      available: available,
+      alreadyPickedIds: alreadyPicked,
+    );
+    if (selected == null || selected.isEmpty || !mounted) return;
+
+    setState(() {
+      for (final material in selected) {
+        final highlightBlock = HighlightContext.build(material);
+        final combined = highlightBlock.isEmpty ? material.extractedText : '${material.extractedText}\n\n$highlightBlock';
+        target.add(_PickedFile(
+          fileName: material.fileName,
+          text: combined,
+          bytes: material.fileBytesBase64 == null ? Uint8List(0) : base64Decode(material.fileBytesBase64!),
+          existingMaterialId: material.id,
+        ));
+      }
+    });
   }
 
   /// Per Drag-and-Drop auf die Folien-/Übungsaufgaben-Zone gezogene Dateien
@@ -407,8 +444,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
     // Übungen gemeinsam nachbereitet, hat das Thema damit i.d.R. bereits in
     // der Vorlesung gehabt (Übungen kommen meist erst danach). Lässt sich im
     // Modul-Detail jederzeit manuell umstellen.
+    // Wiederverwendetes Material (existingMaterialId gesetzt, siehe
+    // _pickExisting) bekommt KEIN neues MaterialItem – das gibt es ja schon –
+    // trägt aber weiterhin über seine bestehende ID zu sourceIds bei.
     final slidesMaterials = <MaterialItem>[];
     for (final f in _slidesFiles) {
+      if (f.existingMaterialId != null) continue;
       final id = const Uuid().v4();
       // Original-PDF-Bytes zusätzlich speichern (wie beim direkten Upload in
       // ModuleDetailScreen) – sonst bleibt die Folie unsichtbar: ohne
@@ -434,6 +475,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       ));
     }
     final exercisesMaterials = _exercisesFiles
+        .where((f) => f.existingMaterialId == null)
         .map((f) => MaterialItem(
               id: const Uuid().v4(),
               moduleId: widget.moduleId,
@@ -448,6 +490,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final sourceIds = [
       ...slidesMaterials.map((m) => m.id),
       ...exercisesMaterials.map((m) => m.id),
+      ..._slidesFiles.map((f) => f.existingMaterialId).whereType<String>(),
+      ..._exercisesFiles.map((f) => f.existingMaterialId).whereType<String>(),
     ];
 
     final concepts = ((result['concepts'] as List?) ?? [])
@@ -531,6 +575,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
           rawResponse: _rawResponse,
           onPickSlides: () => _pick(isSlides: true),
           onPickExercises: () => _pick(isSlides: false),
+          onPickExistingSlides: () => _pickExisting(isSlides: true),
+          onPickExistingExercises: () => _pickExisting(isSlides: false),
           onDropSlides: (files) => _handleDroppedFiles(isSlides: true, files: files),
           onDropExercises: (files) => _handleDroppedFiles(isSlides: false, files: files),
           onRemoveSlide: (i) => _removeFile(isSlides: true, index: i),
@@ -588,6 +634,8 @@ class _PickView extends StatelessWidget {
     required this.extracting,
     required this.onPickSlides,
     required this.onPickExercises,
+    required this.onPickExistingSlides,
+    required this.onPickExistingExercises,
     required this.onDropSlides,
     required this.onDropExercises,
     required this.onRemoveSlide,
@@ -611,6 +659,8 @@ class _PickView extends StatelessWidget {
   final bool extracting;
   final VoidCallback onPickSlides;
   final VoidCallback onPickExercises;
+  final VoidCallback onPickExistingSlides;
+  final VoidCallback onPickExistingExercises;
   final void Function(List<XFile> files) onDropSlides;
   final void Function(List<XFile> files) onDropExercises;
   final void Function(int index) onRemoveSlide;
@@ -697,7 +747,7 @@ class _PickView extends StatelessWidget {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (e.value.fileName.toLowerCase().endsWith('.pdf'))
+                          if (e.value.fileName.toLowerCase().endsWith('.pdf') && e.value.bytes.isNotEmpty)
                             IconButton(
                               tooltip: 'Folie ansehen',
                               icon: const Icon(Icons.visibility_outlined),
@@ -717,12 +767,23 @@ class _PickView extends StatelessWidget {
                       ),
                     ),
                   )),
-              OutlinedButton.icon(
-                onPressed: extracting ? null : onPickSlides,
-                icon: const Icon(Icons.add),
-                label: Text(slidesFiles.isEmpty
-                    ? 'Folien auswählen oder hierher ziehen'
-                    : 'Weitere Folien hinzufügen'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: extracting ? null : onPickSlides,
+                    icon: const Icon(Icons.add),
+                    label: Text(slidesFiles.isEmpty
+                        ? 'Folien auswählen oder hierher ziehen'
+                        : 'Weitere Folien hinzufügen'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: extracting ? null : onPickExistingSlides,
+                    icon: const Icon(Icons.folder_open_outlined),
+                    label: const Text('Vorhandenes Material verwenden'),
+                  ),
+                ],
               ),
               ],
             ),
@@ -750,14 +811,25 @@ class _PickView extends StatelessWidget {
                         ),
                       ),
                     )),
-                OutlinedButton.icon(
-                  onPressed: extracting ? null : onPickExercises,
-                  icon: const Icon(Icons.add),
-                  label: Text(exercisesFiles.isEmpty
-                      ? (mode == _GenerateMode.create
-                          ? 'Übungsaufgaben auswählen oder hierher ziehen'
-                          : 'Übungsdokument auswählen oder hierher ziehen')
-                      : 'Weitere Übungen hinzufügen'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: extracting ? null : onPickExercises,
+                      icon: const Icon(Icons.add),
+                      label: Text(exercisesFiles.isEmpty
+                          ? (mode == _GenerateMode.create
+                              ? 'Übungsaufgaben auswählen oder hierher ziehen'
+                              : 'Übungsdokument auswählen oder hierher ziehen')
+                          : 'Weitere Übungen hinzufügen'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: extracting ? null : onPickExistingExercises,
+                      icon: const Icon(Icons.folder_open_outlined),
+                      label: const Text('Vorhandenes Material verwenden'),
+                    ),
+                  ],
                 ),
               ],
             ),

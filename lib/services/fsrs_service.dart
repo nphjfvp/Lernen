@@ -112,6 +112,14 @@ class FsrsService {
     final due = DateTime(reviewedAt.year, reviewedAt.month, reviewedAt.day)
         .add(Duration(days: scheduled));
 
+    // Generischer Mastery-Box-Zähler für die Ampel (siehe Flashcard.masteryBox
+    // Doc-Kommentar): "gewusst" (good/easy) steigt ihn, alles andere
+    // (again/hard, also auch ein bloß mühsam Erratenes) senkt ihn wieder.
+    final knewIt = grade == Grade.good || grade == Grade.easy;
+    final masteryBox = knewIt
+        ? (card.masteryBox + 1).clamp(0, Flashcard.masteryBoxCap)
+        : (card.masteryBox - 1).clamp(0, Flashcard.masteryBoxCap);
+
     return card.copyWithReview(
       due: due,
       stability: stability,
@@ -124,6 +132,7 @@ class FsrsService {
       lapses: grade == Grade.again ? card.lapses + 1 : card.lapses,
       state: grade == Grade.again ? 'relearning' : 'review',
       lastReview: reviewedAt,
+      masteryBox: masteryBox,
     );
   }
 

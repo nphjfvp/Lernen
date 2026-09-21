@@ -85,6 +85,42 @@ void main() {
     expect(later, greaterThanOrEqualTo(0.0));
   });
 
+  group('FsrsService.review – masteryBox (Grundlage der Ampel)', () {
+    test('steigt bei "Gut"/"Leicht", sinkt bei "Nochmal"/"Schwer"', () {
+      var card = _newCard();
+      var now = DateTime(2026, 1, 1);
+
+      card = fsrs.review(card, Grade.good, now: now);
+      expect(card.masteryBox, 1);
+      now = card.due;
+
+      card = fsrs.review(card, Grade.easy, now: now);
+      expect(card.masteryBox, 2);
+      now = card.due;
+
+      card = fsrs.review(card, Grade.hard, now: now);
+      expect(card.masteryBox, 1);
+      now = card.due;
+
+      card = fsrs.review(card, Grade.again, now: now);
+      expect(card.masteryBox, 0);
+    });
+
+    test('sinkt nicht unter 0 und steigt nicht über Flashcard.masteryBoxCap', () {
+      var card = _newCard();
+      var now = DateTime(2026, 1, 1);
+
+      card = fsrs.review(card, Grade.again, now: now);
+      expect(card.masteryBox, 0);
+
+      for (var i = 0; i < 10; i++) {
+        card = fsrs.review(card, Grade.easy, now: now);
+        now = card.due;
+      }
+      expect(card.masteryBox, Flashcard.masteryBoxCap);
+    });
+  });
+
   group('FsrsService.gradeFromResult', () {
     test('richtige Antwort ergibt Easy', () {
       expect(fsrs.gradeFromResult(true), Grade.easy);

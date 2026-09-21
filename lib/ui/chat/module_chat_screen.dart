@@ -136,6 +136,11 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
 
       String? materialsContext;
+      // Dateinamen der tatsächlich als Kontext genutzten Materialien – null,
+      // solange "Mit Materialien" aus ist (nicht anwendbar), sonst mindestens
+      // eine (ggf. leere) Liste, sichtbar in _ChatBubble statt einer stillen
+      // Blackbox-Entscheidung.
+      List<String>? usedFileNames;
       if (_useContext) {
         final charBudget = ChatContextBuilder.charBudgetForContextTokens(modelInfo?.contextLength);
 
@@ -157,6 +162,7 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
 
         if (relevantIds == null) {
           materialsContext = ChatContextBuilder.build(indexedMaterials, charBudget: charBudget);
+          usedFileNames = indexedMaterials.map((m) => m.fileName).toList();
         } else if (relevantIds.isNotEmpty) {
           final ids = relevantIds.toSet();
           final matched = indexedMaterials.where((m) => ids.contains(m.id)).toList();
@@ -164,6 +170,9 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
           // halluzinierten) IDs zu einem echten Material, bleibt es bei
           // "kein Material relevant" statt alles reinzukippen.
           materialsContext = matched.isEmpty ? null : ChatContextBuilder.build(matched, charBudget: charBudget);
+          usedFileNames = matched.map((m) => m.fileName).toList();
+        } else {
+          usedFileNames = const [];
         }
         // relevantIds == [] (bewusst "nichts passt"): materialsContext
         // bleibt null, die Frage wird dann ganz normal ohne Materialbezug
@@ -183,6 +192,7 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> {
         role: ChatRole.assistant,
         content: answer,
         createdAt: DateTime.now(),
+        sourceFileNames: usedFileNames,
       ));
       if (!mounted) return;
       _scrollToBottom();
@@ -304,6 +314,7 @@ class _ChatBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final isUser = message.role == ChatRole.user;
+    final sources = message.sourceFileNames;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -315,7 +326,30 @@ class _ChatBubble extends StatelessWidget {
           border: isUser ? null : Border.all(color: c.border),
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Text(message.content, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(message.content, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink)),
+            if (!isUser && sources != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(sources.isEmpty ? Icons.folder_off_outlined : Icons.folder_outlined,
+                      size: 12, color: c.inkMuted),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      sources.isEmpty ? 'Ohne Material-Kontext beantwortet' : 'Quellen: ${sources.join(', ')}',
+                      style: TextStyle(fontSize: 11, color: c.inkMuted, fontStyle: FontStyle.italic),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -55,16 +55,31 @@ engerem Fokus statt Feature-Fülle.
 - **Daily Quiz (Exam-Scheduler) + freier Lernmodus** – tägliche Lernsession
   über alle Fächer hinweg. FSRS-Spaced-Repetition für fällige
   Wiederholungen; die Menge neuer Karten wird pro Fach dynamisch an
-  Wissensstand und Klausarnähe angepasst (siehe
-  `lib/services/daily_scheduler_service.dart`). Ergänzend dazu pro Fach ein
-  freier **Üben-Modus** (`lib/ui/practice/practice_screen.dart`): übt das
-  gesamte Kartenset unabhängig von Fälligkeit/Klausur-Pacing/Einheiten-
-  Status, optional gefiltert nach Ampel-Stufe (siehe unten) – jede Antwort
-  aktualisiert trotzdem den echten FSRS-Zustand.
-- **Wissensstand-Ampel** – jede Karte bekommt anhand ihrer geschätzten
-  FSRS-Behaltensrate eine Rot/Gelb/Grün-Einstufung (siehe
-  `lib/services/mastery_service.dart`), sichtbar in der Karteikarten-Liste,
-  im Modul-Detail (Aufschlüsselung) und in der Fortschritts-Übersicht.
+  Wissensstand und Klausurnähe angepasst, mit einem Mindestbudget-Boden
+  (`DailySchedulerService.minDailyNewCardsPerModule`, Standard 10): bei
+  fernem Klausurdatum (z.B. zu Semesterbeginn ein ganzes Semester Stoff
+  hochgeladen) würde die reine Pacing-Formel sonst auf 1-2 Karten/Tag
+  einfrieren – der Boden garantiert eine sinnvolle Lernmenge, solange
+  Rückstand vorhanden ist (siehe `lib/services/daily_scheduler_service.dart`).
+  Falsch beantwortete Karten der Hauptrunde werden am Ende derselben Session
+  automatisch nochmal abgefragt (max. 3 Versuche je Karte), statt erst am
+  nächsten natürlichen FSRS-Fälligkeitsdatum wiederzukommen. Ergänzend dazu
+  pro Fach ein freier **Üben-Modus** (`lib/ui/practice/practice_screen.dart`):
+  übt das gesamte Kartenset unabhängig von Fälligkeit/Klausur-Pacing/
+  Einheiten-Status, optional gefiltert nach Ampel-Stufe (siehe unten) – jede
+  Antwort aktualisiert trotzdem den echten FSRS-Zustand.
+- **Wissensstand-Ampel** – jede Karte bekommt eine Rot/Gelb/Grün-Einstufung
+  (siehe `lib/services/mastery_service.dart`), sichtbar in der
+  Karteikarten-Liste, im Modul-Detail (Aufschlüsselung) und in der
+  Fortschritts-Übersicht. "Grün" braucht ZWEI Dinge: eine ausreichende
+  geschätzte FSRS-Behaltensrate UND einen eigenständigen Mastery-Box-Zähler
+  (`Flashcard.masteryBox`, Schwelle `Flashcard.masteryBoxCap` = 4 erfolgreiche
+  Wiederholungen, separat von der Typ-Eskalationskette unten) – reine
+  Behaltensrate allein reicht bewusst NICHT, da sie direkt nach jeder
+  Wiederholung ohnehin nahe 100% liegt (die Vergessenskurve bei Elapsed-Zeit
+  0 ist per Definition ~1); zwei schnell hintereinander (ggf. geratene)
+  richtige Antworten sollen eine Karte nicht sofort als "gut gelernt"
+  ausweisen.
 - **Fragetypen & adaptive Schwierigkeit** – die KI erzeugt beim Nachbereiten
   neben klassischen Karteikarten auch Single-Choice, Multiple-Choice,
   Freitext, Lückentext sowie Drag&Drop-Zuordnung/-Kategorisierung (Auswahl je
@@ -78,8 +93,14 @@ engerem Fokus statt Feature-Fülle.
   generieren. Adaptiv in BEIDE Richtungen: zwei Fehlversuche IN FOLGE auf
   einer beförderten Stufe stufen automatisch zur vorherigen (leichteren)
   Stufe zurück – ohne erneuten KI-Aufruf, der alte Wortlaut liegt bereits in
-  `Flashcard.variantHistory` (siehe `Flashcard.copyWithBoxUpdate`). Bewusst
-  NICHT enthalten: der Mathe-Formel-Fragetyp der Vorgänger-App.
+  `Flashcard.variantHistory` (siehe `Flashcard.copyWithBoxUpdate`). Auf-/
+  Abstufung wird per SnackBar direkt sichtbar gemacht (Daily Quiz + Üben-
+  Modus), lief vorher komplett unsichtbar im Hintergrund; der
+  Generierungs-Prompt verlangt außerdem pro erkanntem Konzept nach
+  Möglichkeit mindestens eine Frage mit voller Eskalationskette, damit das
+  Feature spürbar öfter zum Einsatz kommt statt nur bei zufällig passenden
+  Einzelfragen. Bewusst NICHT enthalten: der Mathe-Formel-Fragetyp der
+  Vorgänger-App.
 - **Fragetyp "Interaktiv" (html) + externer KI-Prompt** – für Vorlagen, die in
   keinen der obigen Typen passen (z.B. eine Zuordnungs-Matrix/Tabelle mit
   mehreren Kriterien-Zeilen, oder eine offene Diskussionsfrage, bei der ein
@@ -134,6 +155,11 @@ engerem Fokus statt Feature-Fülle.
   "Behandelt"-Markierung, die der Nutzer setzt, sobald das Thema in der
   Vorlesung dran war; sie blockiert nichts (man kann jederzeit weiter
   vorarbeiten), dient aber als zusätzlicher Kontext für den Frage-Chat.
+  Einmal hochgeladenes Material lässt sich in Vorbereiten UND Nachbereiten
+  über "Vorhandenes Material verwenden" direkt wiederverwenden (siehe
+  `lib/ui/widgets/existing_material_picker.dart`) – kein erneutes Hochladen
+  derselben Datei nötig, kein erneuter Extraktions-Aufwand; für diese Dateien
+  wird beim Speichern kein doppeltes MaterialItem angelegt.
 - **Fortschritt** – eigener Tab mit Streak (aufeinanderfolgende Lerntage),
   Gesamtzahl Wiederholungen und geschätzter Behaltensrate (aus dem
   FSRS-Zustand der Karten), gesamt und pro Fach. Komplett aus vorhandenen
@@ -175,14 +201,20 @@ engerem Fokus statt Feature-Fülle.
   `.selectRelevantMaterials`). Bezieht sich die Frage auf frühere oder noch
   nicht behandelte Folien, kann die Auswahl das entsprechend einbeziehen.
   Die Auswahl ist bewusst NICHT verpflichtend: findet sich zu einer Frage
-  kein wirklich passendes Material (allgemeine Frage, kein Bezug zum
-  Fach), liefert sie eine leere Auswahl statt krampfhaft irgendetwas
-  Naheliegendes einzubeziehen – die Frage wird dann ganz normal ohne
-  Materialbezug beantwortet. Über den "Mit Materialien"-Schalter im Chat
-  kann der Nutzer den Materialbezug auch komplett abschalten, um bewusst
-  allgemein zu fragen. Schlägt die Auswahl-Anfrage selbst fehl (Fehler statt
-  Ergebnis), greift ein Sicherheitsnetz auf ein Zeichenbudget-basiertes
-  Zusammenstellen aller Materialien zurück (Vorrang für behandelte).
+  erkennbar KEIN Bezug zum Fach (reiner Small Talk), liefert sie eine leere
+  Auswahl statt krampfhaft irgendetwas einzubeziehen – die Frage wird dann
+  ganz normal ohne Materialbezug beantwortet. Der Auswahl-Prompt ist bewusst
+  eher großzügig als streng formuliert: schon ein plausibler thematischer
+  Bezug reicht, damit ein Material einbezogen wird, statt Material nur bei
+  eindeutigem Volltreffer zu nutzen. Unter jeder Antwort zeigt der Chat
+  zudem an, welche Materialien (falls welche) tatsächlich als Kontext
+  herangezogen wurden (`ChatMessage.sourceFileNames`) – macht die
+  Entscheidung nachvollziehbar statt einer stillen Blackbox. Über den "Mit
+  Materialien"-Schalter im Chat kann der Nutzer den Materialbezug auch
+  komplett abschalten, um bewusst allgemein zu fragen. Schlägt die
+  Auswahl-Anfrage selbst fehl (Fehler statt Ergebnis), greift ein
+  Sicherheitsnetz auf ein Zeichenbudget-basiertes Zusammenstellen aller
+  Materialien zurück (Vorrang für behandelte).
 - **BYOK** – die KI läuft über [OpenRouter](https://openrouter.ai) mit einem
   selbst mitgebrachten API-Key. Es gibt keinen App-eigenen Server; Anfragen
   gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von

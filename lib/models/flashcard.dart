@@ -177,6 +177,19 @@ class Flashcard {
   /// [copyWithBoxUpdate] automatisch zurück.
   final int variantMissStreak;
 
+  /// Generischer Leitner-Zähler für die Wissensstand-Ampel (siehe
+  /// MasteryService), UNABHÄNGIG von [variantBox] (das ist rein für die
+  /// Typ-Eskalationskette reserviert). Steigt bei jeder Antwort, die als
+  /// "gewusst" zählt (FSRS-Grade good/easy) um 1 (Obergrenze
+  /// [masteryBoxCap]), sinkt sonst um 1 (Boden 0) – siehe FsrsService.review.
+  /// Grund: die reine FSRS-Retrievability ist direkt nach jeder Wiederholung
+  /// per Definition ~100% (Vergessenskurve bei Elapsed-Zeit 0), zwei schnell
+  /// aufeinanderfolgende (ggf. geratene) richtige Antworten würden sonst
+  /// sofort als "Gut" (grün) durchgehen. Erst mehrere, tatsächlich über
+  /// mehrere Sessions verteilte erfolgreiche Wiederholungen zählen als
+  /// nachgewiesenes Wissen (analog zur "mature"-Einstufung der Vorgänger-App).
+  final int masteryBox;
+
   // FSRS-Zustand
   final DateTime due;
   final double stability;
@@ -215,6 +228,7 @@ class Flashcard {
     this.variantBox = 0,
     this.variantHistory,
     this.variantMissStreak = 0,
+    this.masteryBox = 0,
     this.stability = 0,
     this.difficulty = 0,
     this.elapsedDays = 0,
@@ -255,6 +269,7 @@ class Flashcard {
     required int lapses,
     required String state,
     required DateTime lastReview,
+    int? masteryBox,
   }) {
     return Flashcard(
       id: id,
@@ -275,6 +290,7 @@ class Flashcard {
       variantBox: variantBox,
       variantHistory: variantHistory,
       variantMissStreak: variantMissStreak,
+      masteryBox: masteryBox ?? this.masteryBox,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -310,6 +326,7 @@ class Flashcard {
       variantBox: variantBox,
       variantHistory: variantHistory,
       variantMissStreak: variantMissStreak,
+      masteryBox: masteryBox,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -361,6 +378,7 @@ class Flashcard {
         variantBox: 0,
         variantHistory: variantHistory,
         variantMissStreak: 0,
+        masteryBox: masteryBox,
         stability: stability,
         difficulty: difficulty,
         elapsedDays: elapsedDays,
@@ -403,6 +421,7 @@ class Flashcard {
       variantBox: newBox,
       variantHistory: variantHistory,
       variantMissStreak: missStreak,
+      masteryBox: masteryBox,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -460,6 +479,7 @@ class Flashcard {
       variantBox: 0,
       variantHistory: [...?variantHistory, snapshot],
       variantMissStreak: 0,
+      masteryBox: masteryBox,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -501,6 +521,7 @@ class Flashcard {
       variantBox: 0,
       variantHistory: remaining,
       variantMissStreak: 0,
+      masteryBox: masteryBox,
       stability: stability,
       difficulty: difficulty,
       elapsedDays: elapsedDays,
@@ -516,6 +537,11 @@ class Flashcard {
   /// Anzahl richtiger Antworten in Folge, ab der eine Frage mit
   /// [variantChain] in die nächste Stufe befördert wird.
   static const int promotionThreshold = 3;
+
+  /// Obergrenze für [masteryBox] – ab hier zählt eine Karte für die Ampel
+  /// als nachgewiesen gut gelernt (siehe MasteryService), weiteres Wachstum
+  /// bringt keinen zusätzlichen Nutzen mehr.
+  static const int masteryBoxCap = 4;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -536,6 +562,7 @@ class Flashcard {
         'variantBox': variantBox,
         'variantHistory': variantHistory?.map((v) => v.toMap()).toList(),
         'variantMissStreak': variantMissStreak,
+        'masteryBox': masteryBox,
         'stability': stability,
         'difficulty': difficulty,
         'elapsedDays': elapsedDays,
@@ -573,6 +600,7 @@ class Flashcard {
             ?.map((v) => VariantSnapshot.fromMap(Map<String, dynamic>.from(v as Map)))
             .toList(),
         variantMissStreak: map['variantMissStreak'] as int? ?? 0,
+        masteryBox: map['masteryBox'] as int? ?? 0,
         stability: (map['stability'] as num).toDouble(),
         difficulty: (map['difficulty'] as num).toDouble(),
         elapsedDays: map['elapsedDays'] as int,

@@ -161,6 +161,22 @@ void main() {
       final restored = Flashcard.fromMap(legacyMap);
       expect(restored.htmlContent, isNull);
     });
+
+    test('erhält masteryBox und defaultet bei älteren Datensätzen auf 0', () {
+      final card = Flashcard(
+        id: '1',
+        moduleId: 'm1',
+        front: 'F',
+        back: 'B',
+        createdAt: DateTime(2026, 1, 1),
+        due: DateTime(2026, 1, 1),
+        masteryBox: 3,
+      );
+      expect(Flashcard.fromMap(card.toMap()).masteryBox, 3);
+
+      final legacyMap = Map<String, dynamic>.from(card.toMap())..remove('masteryBox');
+      expect(Flashcard.fromMap(legacyMap).masteryBox, 0);
+    });
   });
 
   group('Flashcard.answerSummary', () {

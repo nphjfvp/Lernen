@@ -40,7 +40,12 @@ class MasteryService {
     final r = _fsrs.currentRetrievability(card, now: now);
     if (r < redThreshold) return MasteryLevel.red;
     if (r < yellowThreshold) return MasteryLevel.yellow;
-    return MasteryLevel.green;
+    // "Grün" braucht zusätzlich zur momentanen Retrievability (die direkt
+    // nach JEDER Wiederholung per Definition ~100% beträgt, siehe
+    // Flashcard.masteryBox Doc-Kommentar) mehrfach über die Zeit bestätigtes
+    // Wissen – sonst würden zwei schnell hintereinander (ggf. geratene)
+    // richtige Antworten schon reichen.
+    return card.masteryBox >= Flashcard.masteryBoxCap ? MasteryLevel.green : MasteryLevel.yellow;
   }
 
   /// Anzahl Karten je Ampel-Stufe – Grundlage für Übersichten (Modul-Detail,

@@ -12,12 +12,21 @@ class ChatMessage {
   final String content;
   final DateTime createdAt;
 
+  /// Nur für Assistant-Nachrichten gesetzt: die Dateinamen der Materialien,
+  /// die als Kontext für diese Antwort herangezogen wurden – `null`, wenn
+  /// der Material-Kontext-Schalter ausgeschaltet war (nicht anwendbar),
+  /// eine LEERE Liste, wenn er an war, aber kein Material als relevant
+  /// ausgewählt wurde. Macht sichtbar, ob/welches Material genutzt wurde,
+  /// statt einer stillen Blackbox-Entscheidung (siehe ModuleChatScreen).
+  final List<String>? sourceFileNames;
+
   const ChatMessage({
     required this.id,
     required this.moduleId,
     required this.role,
     required this.content,
     required this.createdAt,
+    this.sourceFileNames,
   });
 
   Map<String, dynamic> toMap() => {
@@ -26,6 +35,7 @@ class ChatMessage {
         'role': role.name,
         'content': content,
         'createdAt': createdAt.toIso8601String(),
+        'sourceFileNames': sourceFileNames,
       };
 
   factory ChatMessage.fromMap(Map<String, dynamic> map) => ChatMessage(
@@ -34,5 +44,6 @@ class ChatMessage {
         role: chatRoleFromString(map['role'] as String),
         content: map['content'] as String,
         createdAt: DateTime.parse(map['createdAt'] as String),
+        sourceFileNames: (map['sourceFileNames'] as List?)?.map((e) => e.toString()).toList(),
       );
 }

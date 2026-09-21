@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -20,6 +21,7 @@ import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
+import '../widgets/existing_material_picker.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
 
@@ -28,10 +30,17 @@ enum _Mode { kurz, ausfuehrlich }
 enum _Step { modeSelect, pick, extracting, ready, generating, preview, preparingSession, session }
 
 class _PickedFile {
-  _PickedFile({required this.fileName, required this.text, required this.bytes});
+  _PickedFile({required this.fileName, required this.text, required this.bytes, this.existingMaterialId});
   final String fileName;
   final String text;
   final Uint8List bytes;
+
+  /// Gesetzt, wenn diese Datei nicht frisch hochgeladen, sondern aus bereits
+  /// vorhandenem Fach-Material übernommen wurde (siehe
+  /// showExistingMaterialPicker) – beim Speichern wird für sie KEIN neues
+  /// MaterialItem angelegt (existiert ja schon), nur ihr Text fließt in die
+  /// KI-Generierung ein.
+  final String? existingMaterialId;
 }
 
 /// Vorbereiten-Modus, in zwei Varianten:
@@ -156,6 +165,35 @@ class _PrepareScreenState extends State<PrepareScreen> {
     });
   }
 
+  /// Statt jedes Mal neu hochzuladen: bereits im Fach abgelegtes Material
+  /// (z.B. über ModuleDetailScreen direkt hochgeladen) direkt übernehmen –
+  /// kein erneuter FilePicker, keine erneute Textextraktion.
+  Future<void> _pickExisting() async {
+    final available = context.read<MaterialRepository>().forModule(widget.moduleId);
+    final alreadyPicked = _files.map((f) => f.existingMaterialId).whereType<String>().toSet();
+
+    final selected = await showExistingMaterialPicker(
+      context,
+      available: available,
+      alreadyPickedIds: alreadyPicked,
+    );
+    if (selected == null || selected.isEmpty || !mounted) return;
+
+    setState(() {
+      for (final material in selected) {
+        final highlightBlock = HighlightContext.build(material);
+        final combined = highlightBlock.isEmpty ? material.extractedText : '${material.extractedText}\n\n$highlightBlock';
+        _files.add(_PickedFile(
+          fileName: material.fileName,
+          text: combined,
+          bytes: material.fileBytesBase64 == null ? Uint8List(0) : base64Decode(material.fileBytesBase64!),
+          existingMaterialId: material.id,
+        ));
+      }
+      _step = _Step.ready;
+    });
+  }
+
   Future<void> _applyRecommendation(ChunkGranularity granularity) async {
     final repo = context.read<SettingsRepository>();
     await repo.update(repo.settings.copyWith(chunkGranularity: granularity));
@@ -244,8 +282,11 @@ class _PrepareScreenState extends State<PrepareScreen> {
     final result = _result!;
     final now = DateTime.now();
     final unitId = _unitChoice.isEmpty ? null : _unitChoice;
+    // Wiederverwendetes Material (existingMaterialId gesetzt, siehe
+    // _pickExisting) bekommt KEIN neues MaterialItem – das gibt es ja schon.
     final materials = <MaterialItem>[];
     for (final f in _files) {
+      if (f.existingMaterialId != null) continue;
       final id = const Uuid().v4();
       // Original-PDF-Bytes zusätzlich speichern (wie beim direkten Upload in
       // ModuleDetailScreen) – sonst bleibt die Folie unsichtbar: ohne
@@ -273,7 +314,10 @@ class _PrepareScreenState extends State<PrepareScreen> {
     final summary = Summary(
       id: const Uuid().v4(),
       moduleId: widget.moduleId,
-      sourceMaterialIds: materials.map((m) => m.id).toList(),
+      sourceMaterialIds: [
+        ...materials.map((m) => m.id),
+        ..._files.map((f) => f.existingMaterialId).whereType<String>(),
+      ],
       title: (result['title'] as String?)?.trim().isNotEmpty == true
           ? result['title'] as String
           : _files.first.fileName,
@@ -380,8 +424,15 @@ class _PrepareScreenState extends State<PrepareScreen> {
   Future<void> _finishSession() async {
     final now = DateTime.now();
     final unitId = _unitChoice.isEmpty ? null : _unitChoice;
+    // Wiederverwendetes Material (existingMaterialId gesetzt, siehe
+    // _pickExisting) bekommt KEIN neues MaterialItem – die für diese Session
+    // ggf. neu vorgeschlagenen Markierungen bleiben dafür bewusst nur
+    // session-lokal sichtbar (siehe _SessionView), statt das Risiko
+    // einzugehen, bereits vorhandene Markierungen/Notizen des Materials zu
+    // überschreiben.
     final materials = <MaterialItem>[];
     for (final f in _files) {
+      if (f.existingMaterialId != null) continue;
       final id = const Uuid().v4();
       String? filePath;
       String? fileBytesBase64;
@@ -447,6 +498,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
           error: _error,
           rawResponse: _rawResponse,
           onPick: _pickAndExtract,
+          onPickExisting: _pickExisting,
           onChangeMode: () => setState(() {
             _step = _Step.modeSelect;
             _mode = null;
@@ -462,6 +514,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
           combinedText: _combinedText,
           error: _error,
           onAddMore: _pickAndExtract,
+          onAddExisting: _pickExisting,
           onRemove: _removeFile,
           onApplyRecommendation: _applyRecommendation,
           onGenerate: _mode == _Mode.kurz ? _generate : _startSession,
@@ -580,9 +633,16 @@ class _ModeOption extends StatelessWidget {
 }
 
 class _PickView extends StatelessWidget {
-  const _PickView({required this.onPick, required this.onChangeMode, this.error, this.rawResponse});
+  const _PickView({
+    required this.onPick,
+    required this.onPickExisting,
+    required this.onChangeMode,
+    this.error,
+    this.rawResponse,
+  });
 
   final VoidCallback onPick;
+  final VoidCallback onPickExisting;
   final VoidCallback onChangeMode;
   final String? error;
   final String? rawResponse;
@@ -605,6 +665,12 @@ class _PickView extends StatelessWidget {
             onPressed: onPick,
             icon: const Icon(Icons.upload_file_outlined),
             label: const Text('Dateien auswählen'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onPickExisting,
+            icon: const Icon(Icons.folder_open_outlined),
+            label: const Text('Vorhandenes Material verwenden'),
           ),
           const SizedBox(height: 8),
           TextButton(onPressed: onChangeMode, child: const Text('Anderen Modus wählen')),
@@ -648,6 +714,7 @@ class _ReadyView extends StatelessWidget {
     required this.files,
     required this.combinedText,
     required this.onAddMore,
+    required this.onAddExisting,
     required this.onRemove,
     required this.onApplyRecommendation,
     required this.onGenerate,
@@ -661,6 +728,7 @@ class _ReadyView extends StatelessWidget {
   final List<_PickedFile> files;
   final String combinedText;
   final VoidCallback onAddMore;
+  final VoidCallback onAddExisting;
   final void Function(int index) onRemove;
   final void Function(ChunkGranularity granularity) onApplyRecommendation;
   final VoidCallback onGenerate;
@@ -686,7 +754,7 @@ class _ReadyView extends StatelessWidget {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (e.value.fileName.toLowerCase().endsWith('.pdf'))
+                    if (e.value.fileName.toLowerCase().endsWith('.pdf') && e.value.bytes.isNotEmpty)
                       IconButton(
                         tooltip: 'Folie ansehen',
                         icon: const Icon(Icons.visibility_outlined),
@@ -707,10 +775,21 @@ class _ReadyView extends StatelessWidget {
               ),
             )),
         const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: onAddMore,
-          icon: const Icon(Icons.add),
-          label: const Text('Weitere Datei hinzufügen'),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: onAddMore,
+              icon: const Icon(Icons.add),
+              label: const Text('Weitere Datei hinzufügen'),
+            ),
+            OutlinedButton.icon(
+              onPressed: onAddExisting,
+              icon: const Icon(Icons.folder_open_outlined),
+              label: const Text('Vorhandenes Material verwenden'),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(

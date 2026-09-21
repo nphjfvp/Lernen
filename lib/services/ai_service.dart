@@ -281,6 +281,14 @@ der Folien. Analysiere den Abschnitt und erstelle:
    Konzepte der Folien selbst.
 2. Karteikarten/Fragen zur Wiederholung dieser Konzepte.
 
+WICHTIG zur inhaltlichen Korrektheit: stütze JEDE Erklärung, Frage und
+Antwort AUSSCHLIESSLICH auf das gegebene Material. Erfinde keine Fakten,
+Zahlen, Formeln oder Definitionen, die dort nicht vorkommen oder sich nicht
+direkt daraus ableiten lassen – auch nicht aus vermeintlichem
+Allgemeinwissen zum Thema, das vom konkreten Material abweichen könnte.
+Bist du dir bei einem Detail nicht sicher, ob es im Material so steht, lass
+die Frage lieber weg statt zu raten.
+
 WICHTIG zur Typwahl: verwende NICHT für alle Karten denselben Typ. "flashcard"
 (freies front/back) ist die LETZTE Wahl, nur wenn WIRKLICH keiner der
 anderen Typen passt – erzeuge höchstens für etwa ein Fünftel der Karten
@@ -288,8 +296,14 @@ diesen Typ, den Rest möglichst mit den spezifischeren Typen unten. Wähle pro
 Frage den zum Inhalt passenden Typ:
    - "single_choice": klares Faktenwissen mit genau einer richtigen Antwort.
      Setze zusätzlich "escalate": true – das System steigert den
-     Schwierigkeitsgrad solcher Fragen automatisch, sobald sie zuverlässig
-     richtig beantwortet werden.
+     Schwierigkeitsgrad solcher Fragen automatisch in mehreren Stufen
+     (Single-Choice -> Lückentext -> Freitext), sobald sie zuverlässig
+     richtig beantwortet werden, und stuft bei wiederholten Fehlversuchen
+     wieder zurück. WICHTIG: erzeuge zu JEDEM Konzept, sofern das Thema
+     dafür überhaupt geeignetes Faktenwissen hergibt, MINDESTENS eine
+     "single_choice"-Frage mit "escalate": true (nicht nur gelegentlich bei
+     zufällig passenden Fragen) – dieses Stufensystem soll für den Lernenden
+     tatsächlich regelmäßig zum Einsatz kommen, nicht nur in Ausnahmefällen.
    - "multiple_choice": wenn mehrere Aussagen gleichzeitig zutreffen können.
    - "fill_blank": Lückentext – markiere jede Lücke im "front"-Text mit genau
      drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
@@ -996,13 +1010,15 @@ Frage auf den Zusammenhang mit früherem oder späterem Stoff, wähle auch
 diese Materialien aus (auch noch nicht behandelte, wenn explizit danach
 gefragt wird).
 
-Sei dabei STRENG: wähle NUR Materialien, die für die Antwort tatsächlich
-gebraucht werden – nicht "um jeden Preis" irgendetwas, nur weil es
-thematisch entfernt passen könnte. Ist die Frage allgemein, hat sie keinen
-erkennbaren Bezug zu einem der Themen im Index, oder lässt sie sich auch
-ohne ein bestimmtes Material beantworten, liefere eine LEERE Liste – das
-ist ein völlig normales, gutes Ergebnis, kein Fehler und keine Notlösung.
-Es ist besser, zu wenig auszuwählen als zu viel.
+Sei dabei GROSSZÜGIG statt zurückhaltend: erkennst du auch nur einen
+plausiblen thematischen Bezug zwischen der Frage und einem Material im
+Index, wähle es lieber MIT aus – der Nutzer lernt für genau dieses Fach,
+ein zusätzliches, am Ende doch nicht gebrauchtes Material kostet nur ein
+wenig Kontext, ein fälschlich übergangenes Material liefert dagegen eine
+Antwort ohne echten Bezug zu seinem eigenen Material, was sich für ihn wie
+ein Fehler anfühlt. Nur wenn die Frage erkennbar NICHTS mit dem Fach zu tun
+hat (z.B. reiner Small Talk) oder keines der Materialien im Index
+irgendeinen erkennbaren Bezug zeigt, liefere eine leere Liste.
 
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text:

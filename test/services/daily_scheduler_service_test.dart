@@ -46,9 +46,24 @@ void main() {
     final plan = scheduler.buildPlan(modules: [module], allCards: cards, now: now);
 
     // 28 Karten / 14 Tage Standard-Horizont, volles Wissen (keine bisherigen
-    // Reviews) => voller Takt = ceil(28/14) = 2.
-    expect(plan.newCardBudgetByModule['m1'], 2);
-    expect(plan.newCards.length, 2);
+    // Reviews) => voller Takt = ceil(28/14) = 2 – liegt aber unter dem
+    // Mindestbudget-Boden (minDailyNewCardsPerModule = 10), der bei
+    // vorhandenem Rückstand IMMER greift, damit eine Session trotz fernem
+    // Standard-Horizont nicht auf 1-2 Karten/Tag einfriert.
+    expect(plan.newCardBudgetByModule['m1'], DailySchedulerService.minDailyNewCardsPerModule);
+    expect(plan.newCards.length, DailySchedulerService.minDailyNewCardsPerModule);
+  });
+
+  test('reicht der Rückstand über den Mindestboden hinaus, greift wieder die reine Pacing-Formel', () {
+    final module = _module('m1');
+    // 154 Karten / 14 Tage Standard-Horizont => ceil(154/14) = 11, klar über
+    // dem Mindestboden von 10 – hier soll also die Formel selbst zählen,
+    // nicht der Boden.
+    final cards = List.generate(154, (i) => _newFlashcard('n$i', 'm1'));
+
+    final plan = scheduler.buildPlan(modules: [module], allCards: cards, now: now);
+
+    expect(plan.newCardBudgetByModule['m1'], 11);
   });
 
   test('Klausurdatum in der Vergangenheit bremst neue Karten nicht dauerhaft ein', () {
@@ -60,8 +75,8 @@ void main() {
 
     final plan = scheduler.buildPlan(modules: [module], allCards: cards, now: now);
 
-    expect(plan.newCardBudgetByModule['m1'], 2);
-    expect(plan.newCards.length, 2);
+    expect(plan.newCardBudgetByModule['m1'], DailySchedulerService.minDailyNewCardsPerModule);
+    expect(plan.newCards.length, DailySchedulerService.minDailyNewCardsPerModule);
   });
 
   test('kurz vor der Klausur werden keine neuen Karten mehr eingeführt', () {
@@ -119,11 +134,13 @@ void main() {
   test('schwacher Wissensstand bremst das Tempo neuer Karten', () {
     final now2 = DateTime(2026, 6, 1);
     final module = _module('m2');
-    // 42 neue Karten / 14 Tage Standard-Horizont => Basis-Takt ceil(42/14)=3.
-    final newCards = List.generate(42, (i) => _newFlashcard('n$i', 'm2'));
+    // 154 neue Karten / 14 Tage Standard-Horizont => Basis-Takt ceil(154/14)
+    // = 11 – bewusst über dem Mindestbudget-Boden (10), sonst würde dieser
+    // die Wissensstand-Bremse für beide Fälle gleichermaßen überdecken.
+    final newCards = List.generate(154, (i) => _newFlashcard('n$i', 'm2'));
 
     final baselinePlan = scheduler.buildPlan(modules: [module], allCards: newCards, now: now2);
-    expect(baselinePlan.newCardBudgetByModule['m2'], 3,
+    expect(baselinePlan.newCardBudgetByModule['m2'], 11,
         reason: 'Baseline ohne bisherige Reviews (volles Wissen angenommen)');
 
     final weakReviewed = Flashcard(
@@ -146,7 +163,7 @@ void main() {
 
     // Bei schlechtem Wissensstand (niedrige Retrievability) wird das Tempo
     // auf 50%-100% gebremst -> spürbar weniger neue Karten als die Baseline.
-    expect(weakPlan.newCardBudgetByModule['m2'], lessThan(3));
+    expect(weakPlan.newCardBudgetByModule['m2'], lessThan(baselinePlan.newCardBudgetByModule['m2']!));
   });
 
   group('unitCoveredById – Einheiten-Gate', () {
@@ -205,8 +222,10 @@ void main() {
       );
 
       expect(plan.newCards.every((c) => c.unitId != 'u2'), isTrue);
-      // 5 Karten / 14 Tage Standard-Horizont => ceil(5/14) = 1.
-      expect(plan.newCardBudgetByModule['m1'], 1);
+      // 5 Karten / 14 Tage Standard-Horizont => ceil(5/14) = 1, liegt aber
+      // unter dem Mindestbudget-Boden – der greift hier nur bis zur Anzahl
+      // tatsächlich vorhandener (behandelter) Karten, also 5 statt 10.
+      expect(plan.newCardBudgetByModule['m1'], 5);
     });
 
     test('fehlt eine Einheit-ID in der Map, bleibt die Karte im Zweifel eingeplant', () {

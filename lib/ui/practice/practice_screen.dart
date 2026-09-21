@@ -98,6 +98,9 @@ class _PracticeScreenState extends State<PracticeScreen> {
       final nextType = boxResult.nextType;
       if (nextType != null) {
         unawaited(_promoteInBackground(updated, nextType));
+        _showLevelChangeSnackBar('⬆️ Stufe geschafft – nächstes Mal: ${nextType.label}');
+      } else if (updated.type != card.type) {
+        _showLevelChangeSnackBar('⬇️ Zurück zu: ${updated.type.label}');
       }
     } else {
       await context.read<FlashcardRepository>().update(updated);
@@ -108,6 +111,16 @@ class _PracticeScreenState extends State<PracticeScreen> {
       _index += 1;
       _reviewedCount += 1;
     });
+  }
+
+  /// Siehe DailyQuizScreen._showLevelChangeSnackBar – identisches, bewusst
+  /// dupliziertes Feedback bei Auf-/Abstufung, damit dieser Screen
+  /// unabhängig von DailyQuizScreen bleibt.
+  void _showLevelChangeSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
   }
 
   /// Identisch zur Eskalations-Logik im Daily Quiz (siehe dort) – bewusst

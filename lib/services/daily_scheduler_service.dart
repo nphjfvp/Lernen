@@ -49,6 +49,15 @@ class DailySchedulerService {
   static const int maxNewCardsPerModulePerDay = 15;
   static const int maxSessionSize = 60;
 
+  /// Mindest-Boden für das Tagesbudget, solange rückständige ("notIntroduced")
+  /// Karten vorhanden sind: die Klausurnähe-/Wissensstand-Pacing-Formel darf
+  /// das Budget bei fernem Klausurdatum (z.B. Semesterbeginn) nicht unter
+  /// diesen Wert drücken, sonst dauert es bei z.B. 90 Tagen bis zur Klausur
+  /// und 20 neuen Karten gefühlt ewig, bis überhaupt neuer Stoff auftaucht.
+  /// Greift NICHT im reinen Wiederholungs-Endspurt kurz vor der Klausur
+  /// (dort ist `budget = 0` weiterhin bewusst gewollt, siehe unten).
+  static const int minDailyNewCardsPerModule = 10;
+
   /// Mischt Karten aus verschiedenen Fächern per Round-Robin durch
   /// (Interleaving statt Blockübung, siehe Rohrer & Taylor 2007: Durchmischen
   /// unterschiedlicher Themen/Konzepte verbessert nachweislich die
@@ -164,7 +173,12 @@ class DailySchedulerService {
         // Wissensstand 0..1 -> Tempo 50%..100%: bei Schwäche wird gebremst,
         // damit nicht noch mehr unverstandener Stoff nachgeschoben wird.
         final adjusted = (basePace * (0.5 + 0.5 * knowledgeLevel)).ceil();
-        budget = adjusted.clamp(0, maxNewCardsPerModulePerDay);
+        final paced = adjusted.clamp(0, maxNewCardsPerModulePerDay);
+        // Mindest-Boden statt reiner Pacing-Formel: bei fernem Klausurdatum
+        // (z.B. Semesterbeginn) würde die Formel sonst auf ~1 Karte/Tag
+        // einfrieren, obwohl reichlich Rückstand vorhanden ist.
+        final floor = notIntroduced.length.clamp(0, minDailyNewCardsPerModule);
+        budget = (paced < floor ? floor : paced).clamp(0, maxNewCardsPerModulePerDay);
       }
 
       newCardBudget[module.id] = budget;
