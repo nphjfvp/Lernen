@@ -26,7 +26,13 @@ engerem Fokus statt Feature-Fülle.
   einem hochgeladenen Übungsdokument (z.B. einer alten Klausur) bereits
   VORHANDENEN Fragen samt Musterlösung möglichst originalgetreu als
   Karteikarten übernommen – Pendant zum Import-Feature der Vorgänger-App
-  (`AiService.importQuestionsFromExercises`). **JSON einfügen**: kein
+  (`AiService.importQuestionsFromExercises`). Der Typ wird dabei
+  AUSSCHLIESSLICH aus der tatsächlichen Original-Struktur bestimmt (Prompt
+  gibt eine feste Prüfreihenfolge vor) statt "free_text" als bequemen
+  Auffangtyp für alles zu nutzen, das nicht auf Anhieb offensichtlich passt –
+  eine Zuordnungs-/Matrixstruktur oder eine Frage mit mehreren erwarteten
+  Kernpunkten wird zu "html" (siehe Fragetyp "Interaktiv" unten), nicht zu
+  einer vereinfachten Freitextfrage. **JSON einfügen**: kein
   API-Call dieser App – ein extern (z.B. ChatGPT/Gemini/Claude.ai) bereits
   fertig generiertes JSON wird direkt eingefügt (siehe Fragetyp "Interaktiv"
   weiter unten für den genauen Anwendungsfall). Einzelne Konzepte und
@@ -71,21 +77,31 @@ engerem Fokus statt Feature-Fülle.
 - **Wissensstand-Ampel** – jede Karte bekommt eine Rot/Gelb/Grün-Einstufung
   (siehe `lib/services/mastery_service.dart`), sichtbar in der
   Karteikarten-Liste, im Modul-Detail (Aufschlüsselung) und in der
-  Fortschritts-Übersicht. "Grün" braucht ZWEI Dinge: eine ausreichende
-  geschätzte FSRS-Behaltensrate UND einen eigenständigen Mastery-Box-Zähler
-  (`Flashcard.masteryBox`, Schwelle `Flashcard.masteryBoxCap` = 4 erfolgreiche
-  Wiederholungen, separat von der Typ-Eskalationskette unten) – reine
-  Behaltensrate allein reicht bewusst NICHT, da sie direkt nach jeder
-  Wiederholung ohnehin nahe 100% liegt (die Vergessenskurve bei Elapsed-Zeit
-  0 ist per Definition ~1); zwei schnell hintereinander (ggf. geratene)
-  richtige Antworten sollen eine Karte nicht sofort als "gut gelernt"
-  ausweisen.
+  Fortschritts-Übersicht. Primäre Grundlage ist ein eigenständiger
+  Mastery-Box-Zähler (`Flashcard.masteryBox`, separat von der Typ-
+  Eskalationskette unten): `masteryBox <= 0` (kein einziger bestätigter
+  Kenntnisstand, z.B. direkt nach einer komplett falsch beantworteten Karte)
+  ist immer sofort "Rot" – bewusst NICHT primär die momentane FSRS-
+  Behaltensrate, die direkt nach JEDER Wiederholung (egal ob richtig oder
+  falsch) ohnehin nahe 100% liegt (die Vergessenskurve bei Elapsed-Zeit 0 ist
+  per Definition ~1) und eine frisch falsch beantwortete Karte sonst
+  fälschlich nicht als "Rot" zeigen würde. "Grün" braucht zusätzlich
+  `masteryBox >= Flashcard.masteryBoxCap` (4 erfolgreiche Wiederholungen)
+  UND eine weiterhin ausreichende Behaltensrate – die Retrievability dient
+  hier nur noch als Verfalls-Signal, das eine lange nicht wiederholte,
+  eigentlich gemeisterte Karte wieder zurückstuft.
 - **Fragetypen & adaptive Schwierigkeit** – die KI erzeugt beim Nachbereiten
   neben klassischen Karteikarten auch Single-Choice, Multiple-Choice,
   Freitext, Lückentext sowie Drag&Drop-Zuordnung/-Kategorisierung (Auswahl je
   nach Inhalt, `lib/models/flashcard.dart` `QuestionType`,
   `lib/services/answer_checker.dart` prüft automatisch inkl. toleranter
-  Tippfehler-Erkennung bei Freitext/Lückentext). Ausgewählte Single-Choice-
+  Tippfehler-Erkennung bei Freitext/Lückentext). Freitext-Antworten laufen
+  zweistufig: zuerst der schnelle lokale Fuzzy-Vergleich (kein API-Call);
+  lehnt der die Antwort ab, holt `AiService.checkFreeTextAnswer` eine
+  KI-Zweitmeinung ein, die inhaltlich andere Formulierungen als richtig
+  erkennt (ein reiner 1:1-Textvergleich wäre für frei formulierte Antworten
+  fast unmöglich zu erfüllen) – ohne API-Key oder bei einem Fehler bleibt es
+  beim strengeren lokalen Ergebnis. Ausgewählte Single-Choice-
   Fragen tragen zusätzlich eine Eskalationskette (Single-Choice → Lückentext
   → Freitext): wird eine Frage im Daily Quiz wiederholt richtig beantwortet
   (Leitner-Box, Schwelle 3), erzeugt die KI im Hintergrund lazy die nächst

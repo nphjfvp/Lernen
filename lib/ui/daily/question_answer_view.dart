@@ -2,9 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/flashcard.dart';
+import '../../repositories/settings_repository.dart';
+import '../../services/ai_service.dart';
 import '../../services/answer_checker.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/html_question_contract.dart';
@@ -55,6 +58,11 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
   bool _checked = false;
   AnswerCheckResult? _result;
+
+  /// true, während für eine Freitext-Antwort auf die KI-Zweitmeinung
+  /// gewartet wird (siehe [_checkFreeTextAnswer]) – deaktiviert währenddessen
+  /// den "Prüfen"-Button, damit nicht doppelt angefragt wird.
+  bool _freeTextAiChecking = false;
 
   // -- html-Typ: interaktive Seite in einer sandboxed WebView -------------
   WebViewController? _webViewController;
@@ -165,6 +173,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   }
 
   bool get _canCheck {
+    if (_freeTextAiChecking) return false;
     switch (widget.card.type) {
       case QuestionType.flashcard:
         return false;
@@ -184,30 +193,87 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     }
   }
 
-  void _check() {
+  Future<void> _check() async {
     final card = widget.card;
+    if (card.type == QuestionType.freeText) {
+      await _checkFreeTextAnswer();
+      return;
+    }
     final AnswerCheckResult result;
     switch (card.type) {
       case QuestionType.singleChoice:
         result = AnswerChecker.checkSingleChoice(card, _selectedIndex);
       case QuestionType.multipleChoice:
         result = AnswerChecker.checkMultipleChoice(card, _selectedIndices);
-      case QuestionType.freeText:
-        result = AnswerChecker.checkFreeText(card, _freeTextController.text);
       case QuestionType.fillBlank:
         result = AnswerChecker.checkFillBlank(card, _blankControllers.map((c) => c.text).toList());
       case QuestionType.dragDrop:
         result = AnswerChecker.checkDragDrop(card, Map.of(_assignments));
       case QuestionType.dragCategory:
         result = AnswerChecker.checkDragCategory(card, Map.of(_assignments));
+      case QuestionType.freeText:
       case QuestionType.flashcard:
       case QuestionType.html:
-        return; // eigene build()-Zweige, siehe _buildFlashcard/_buildHtmlQuestion.
+        return; // freeText: siehe oben; flashcard/html: eigene build()-Zweige.
     }
     setState(() {
       _checked = true;
       _result = result;
     });
+  }
+
+  /// Zweistufige Freitext-Prüfung: zuerst der schnelle, rein lokale
+  /// Fuzzy-Vergleich (siehe AnswerChecker.checkFreeText) – erkennt er die
+  /// Antwort als richtig, reicht das (kein API-Call nötig). Ein reiner
+  /// Text-/Tippfehler-Abgleich ist für frei formulierte Antworten aber fast
+  /// unmöglich zu erfüllen (eine inhaltlich richtige, nur anders formulierte
+  /// Antwort würde sonst als falsch gewertet) – deshalb bei lokaler Ablehnung
+  /// eine KI-Zweitmeinung einholen (AiService.checkFreeTextAnswer), die
+  /// Umformulierungen versteht. Ohne hinterlegten API-Key oder bei einem
+  /// Fehler bleibt es beim (strengeren) lokalen Ergebnis statt die Frage
+  /// unbeantwortet zu lassen.
+  Future<void> _checkFreeTextAnswer() async {
+    final card = widget.card;
+    final localResult = AnswerChecker.checkFreeText(card, _freeTextController.text);
+    if (localResult.isCorrect) {
+      setState(() {
+        _checked = true;
+        _result = localResult;
+      });
+      return;
+    }
+
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) {
+      setState(() {
+        _checked = true;
+        _result = localResult;
+      });
+      return;
+    }
+
+    setState(() => _freeTextAiChecking = true);
+    try {
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final aiCorrect = await ai.checkFreeTextAnswer(
+        question: card.front,
+        correctAnswer: card.correctText ?? '',
+        userAnswer: _freeTextController.text,
+      );
+      if (!mounted) return;
+      setState(() {
+        _checked = true;
+        _freeTextAiChecking = false;
+        _result = AnswerCheckResult(isCorrect: aiCorrect, correctAnswerLabel: localResult.correctAnswerLabel);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _checked = true;
+        _freeTextAiChecking = false;
+        _result = localResult;
+      });
+    }
   }
 
   @override
@@ -384,7 +450,13 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         else
           FilledButton(
             onPressed: _canCheck ? _check : null,
-            child: const Text('Prüfen'),
+            child: _freeTextAiChecking
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Prüfen'),
           ),
       ],
     );

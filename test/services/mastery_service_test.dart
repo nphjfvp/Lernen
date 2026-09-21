@@ -36,7 +36,8 @@ void main() {
     // (die direkt nach jeder Wiederholung per Definition ~100% beträgt) für
     // "grün" – zwei schnell hintereinander (ggf. geratene) richtige
     // Antworten hätten das schon ausgelöst.
-    final card = _card(reps: 3, stability: 20, lastReview: now.subtract(const Duration(days: 1)));
+    final card =
+        _card(reps: 3, stability: 20, lastReview: now.subtract(const Duration(days: 1)), masteryBox: 2);
     expect(service.levelFor(card, now: now), MasteryLevel.yellow);
   });
 
@@ -50,17 +51,29 @@ void main() {
     expect(service.levelFor(card, now: now), MasteryLevel.green);
   });
 
-  test('stark verfallene Retrievability gilt als rot', () {
-    final card = _card(reps: 5, stability: 1, lastReview: now.subtract(const Duration(days: 60)));
+  test('stark verfallene Retrievability stuft auch eine zuvor gemeisterte Karte zurück auf rot', () {
+    final card = _card(
+      reps: 5,
+      stability: 1,
+      lastReview: now.subtract(const Duration(days: 60)),
+      masteryBox: Flashcard.masteryBoxCap,
+    );
     expect(service.levelFor(card, now: now), MasteryLevel.red);
   });
 
-  test('mittlere Retrievability gilt als gelb', () {
+  test('mittlere Retrievability (mit vorhandenem masteryBox) gilt als gelb', () {
     // elapsed/stability = 2 -> Retrievability ≈ 0.825, zwischen den beiden
     // Schwellen (0.7 und 0.9).
-    final card = _card(reps: 3, stability: 10, lastReview: now.subtract(const Duration(days: 20)));
+    final card = _card(reps: 3, stability: 10, lastReview: now.subtract(const Duration(days: 20)), masteryBox: 2);
     final level = service.levelFor(card, now: now);
     expect(level, MasteryLevel.yellow);
+  });
+
+  test(
+      'Regression: eine gerade komplett falsch beantwortete (neue) Karte gilt sofort als rot, '
+      'nicht gelb – trotz Retrievability ~100% direkt nach der Wiederholung', () {
+    final card = _card(reps: 1, stability: 2, lastReview: now, masteryBox: 0);
+    expect(service.levelFor(card, now: now), MasteryLevel.red);
   });
 
   test('breakdown zählt jede Stufe korrekt', () {

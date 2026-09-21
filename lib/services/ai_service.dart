@@ -71,15 +71,23 @@ Lösung enthält, z.B. eine alte Klausur) oder SELBST ERSTELLT (wenn es reine
 Theorie/Folien ohne vorformulierte Fragen sind). Wenn unklar, entscheide
 sinnvoll je nach Abschnitt.
 
-Wähle pro Frage den technisch passenden Typ – nutze NICHT für alles denselben
-Typ, sondern möglichst den spezifischsten:
+Wähle pro Frage den technisch passenden Typ AUSSCHLIESSLICH aus der
+tatsächlichen Struktur der Original-Frage im Dokument – nicht nach dem, was
+am bequemsten zu erzeugen wäre. "free_text" ist NICHT der Standard-
+Auffangtyp für alles, was nicht auf Anhieb offensichtlich in einen anderen
+Typ passt: hat die Frage eine Tabellen-/Matrixstruktur, eine
+Zuordnungsaufgabe, oder verlangt sie erkennbar mehrere separate
+Stichpunkte/Kernaussagen als Antwort, gehört sie zu "html" (siehe unten),
+NICHT zu "free_text" – auch wenn "html" mehr Aufwand bedeutet. Nutze
+NICHT für alles denselben Typ, sondern möglichst den spezifischsten:
    - "single_choice": genau eine richtige Antwort unter mehreren Optionen.
      {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
    - "multiple_choice": mehrere Antworten gleichzeitig richtig, gleiches Format.
    - "fill_blank": Lückentext. Markiere jede Lücke im "front"-Text mit genau
      drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
      Reihenfolge. {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]}
-   - "free_text": offene, aber eindeutig prüfbare Kurzantwort. "correctText"
+   - "free_text": offene, aber eindeutig prüfbare Kurzantwort MIT EINER
+     EINZELNEN, kompakten Musterlösung (Zahl, Formel, ein Satz). "correctText"
      enthält die Lösung (bei mehreren akzeptierten Formulierungen durch ";"
      getrennt). {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative"}
    - "drag_drop": Begriffe einander zuordnen (Paare). "dragPairs" enthält
@@ -89,12 +97,12 @@ Typ, sondern möglichst den spezifischsten:
      denselben "target"-Wert haben).
    - "flashcard": einfaches front/back, nur wenn kein anderer Typ passt.
      "back" ist PFLICHT und darf nie leer sein.
-   - "html": AUSNAHME für alles, was strukturell in keinen der obigen Typen
-     passt – typische Beispiele: eine Zuordnungs-Matrix/Tabelle mit mehreren
-     Kriterien-Zeilen (pro Zeile eine von mehreren Spalten auswählen), eine
-     Drag&Drop-Zeichnung, oder eine offene Erläuterungs-/Diskussionsfrage, bei
-     der ein reiner Text-Exakt-Vergleich zu streng wäre. Für diesen Typ baust
-     du selbst eine eigenständige, interaktive HTML-Seite:
+   - "html": bei Zuordnungs-/Matrix-/Tabellenstruktur mit mehreren
+     Kriterien-Zeilen (pro Zeile eine von mehreren Spalten auswählen), einer
+     Drag&Drop-Zeichnung, ODER einer offenen Erläuterungs-/Diskussionsfrage
+     mit MEHREREN erkennbaren Kernpunkten als Musterlösung, bei der ein
+     reiner Text-Exakt-Vergleich zu streng wäre. Für diesen Typ baust du
+     selbst eine eigenständige, interaktive HTML-Seite:
        * "htmlContent" enthält NUR den Inhalt, der in <body> gehört (also KEIN
          <html>/<head>/<style>-Rahmen, keine <!DOCTYPE>-Zeile) – reines
          Inline-HTML/CSS/JS in einem einzigen String.
@@ -513,8 +521,24 @@ möglich als Karteikarten zu übernehmen (Wortlaut der Frage beibehalten,
 nur so weit umformulieren wie für das Karteikarten-Format nötig, z.B. eine
 mehrteilige Aufgabe in mehrere einzelne Karten aufteilen).
 
-Wähle pro übernommener Frage den passenden Typ, je nachdem wie sie im
-Original gestellt/gelöst wird:
+WICHTIG zur Typwahl: bestimme den Typ AUSSCHLIESSLICH aus der tatsächlichen
+Struktur der Original-Frage im Dokument – wie ist sie dort GESTELLT (nicht:
+welcher Typ am bequemsten zu erzeugen wäre). "free_text" ist NICHT der
+Standard-Auffangtyp für alles, was nicht auf Anhieb offensichtlich in einen
+anderen Typ passt – bevor du "free_text" wählst, prüfe der Reihe nach:
+  1. Sind im Original mehrere Antwortoptionen zum Ankreuzen vorgegeben?
+     -> "single_choice"/"multiple_choice".
+  2. Ist es ein Lückentext? -> "fill_blank".
+  3. Hat die Frage eine Tabellen-/Matrixstruktur (mehrere Kriterien-Zeilen,
+     pro Zeile eine von mehreren Spalten/Kategorien zuordnen), eine
+     Zuordnungsaufgabe (Begriff <-> Begriff/Kategorie per Linie/Pfeil), oder
+     verlangt sie erkennbar mehrere separate Stichpunkte/Kernaussagen als
+     Antwort (bei denen ein einziger Textvergleich zu starr wäre)? -> "html"
+     (siehe unten) – NICHT in eine vereinfachte free_text-Frage umwandeln,
+     nur weil das weniger Aufwand bedeutet.
+  4. Erst wenn NICHTS davon zutrifft und es sich um eine wirklich offene
+     Frage mit einer einzelnen, kurzen erwarteten Antwort handelt (Zahl,
+     Formel, ein Satz): "free_text".
    - "single_choice": Original ist Multiple-Choice mit genau einer richtigen
      Antwort. Antwortformat: {"type": "single_choice", "front": "...",
      "options": [{"text": "...", "isCorrect": true}, ...]}
@@ -522,26 +546,25 @@ Original gestellt/gelöst wird:
    - "fill_blank": Lückentext im Original. Markiere jede Lücke im
      "front"-Text mit genau drei Unterstrichen "___", "blanks" enthält die
      Lösungen in derselben Reihenfolge.
-   - "free_text": offene Rechen-/Erklär-/Kurzantwortaufgabe mit bekannter
-     Musterlösung. "correctText" enthält die Lösung.
+   - "free_text": offene Rechen-/Kurzantwortaufgabe mit einer einzelnen,
+     kompakten Musterlösung. "correctText" enthält die Lösung.
    - "flashcard": passt keiner der obigen Typen, offenes front/back. "back"
      ist Pflicht und darf nie leer sein.
-   - "html": AUSNAHME – nur wenn die Original-Frage strukturell keinem der
-     obigen Typen entspricht, z.B. eine Zuordnungs-Matrix/Tabelle (mehrere
-     Kriterien-Zeilen, pro Zeile eine von mehreren Spalten wählen) ODER eine
-     offene Erläuterungs-/Diskussionsfrage mit einer im Dokument erkennbaren
-     Musterlösung/Stichpunkten, bei der ein reiner Text-Exakt-Vergleich zu
-     streng wäre (dann prüft dein eigenes JavaScript großzügiger, z.B. ob
-     mehrere der erwarteten Kernpunkte sinngemäß vorkommen). "htmlContent"
-     enthält NUR den `<body>`-Inhalt (kein `<html>`/`<head>`/`<style>`-
-     Rahmen) als eigenständige, interaktive Seite: reines Inline-HTML/CSS/JS,
-     kein externes Skript/Bild/keine Netzwerk-Anfrage (wird ohnehin
-     blockiert). Die Seite MUSS ihre eigene Prüf-Logik enthalten (du kennst
-     die Musterlösung bereits jetzt) und beim Auswerten GENAU diesen Aufruf
-     machen: `window.FlutterAnswer.postMessage(JSON.stringify({correct:
-     true}))` (bzw. `correct: false`) – ohne diesen Aufruf bekommt die App
-     nie ein Ergebnis. Gib zusätzlich "front"/"back" als kurze Text-
-     Zusammenfassung an (Fallback-Anzeige ohne WebView-Unterstützung).
+   - "html": bei Zuordnungs-/Matrix-/Tabellenstruktur ODER einer offenen
+     Erläuterungs-/Diskussionsfrage mit MEHREREN im Dokument erkennbaren
+     Kernpunkten/Stichpunkten als Musterlösung, bei der ein reiner
+     Text-Exakt-Vergleich zu streng wäre (dann prüft dein eigenes JavaScript
+     großzügiger, z.B. ob mehrere der erwarteten Kernpunkte sinngemäß
+     vorkommen). "htmlContent" enthält NUR den `<body>`-Inhalt (kein
+     `<html>`/`<head>`/`<style>`-Rahmen) als eigenständige, interaktive
+     Seite: reines Inline-HTML/CSS/JS, kein externes Skript/Bild/keine
+     Netzwerk-Anfrage (wird ohnehin blockiert). Die Seite MUSS ihre eigene
+     Prüf-Logik enthalten (du kennst die Musterlösung bereits jetzt) und
+     beim Auswerten GENAU diesen Aufruf machen:
+     `window.FlutterAnswer.postMessage(JSON.stringify({correct: true}))`
+     (bzw. `correct: false`) – ohne diesen Aufruf bekommt die App nie ein
+     Ergebnis. Gib zusätzlich "front"/"back" als kurze Text-Zusammenfassung
+     an (Fallback-Anzeige ohne WebView-Unterstützung).
 
 Enthält das Dokument KEINE erkennbare Musterlösung zu einer Frage, überspringe
 diese Frage (keine Karte ohne bekannte Antwort erzeugen).
@@ -871,6 +894,46 @@ Antworte in der Sprache der Vorlage.
     final userPrompt = 'Ursprüngliche Frage: $questionText\nBekannte Lösung: $currentAnswer';
     final raw = await _complete(systemPrompt, userPrompt);
     return _parseJsonObject(raw);
+  }
+
+  static const _checkFreeTextSystemPrompt = '''
+Du bewertest, ob die Antwort eines Lernenden auf eine Freitext-Frage
+INHALTLICH mit der hinterlegten Musterlösung übereinstimmt. Die Formulierung
+darf komplett anders sein als die Musterlösung – andere Wortwahl, andere
+Satzstruktur, mehr oder weniger ausführlich: das alles ist in Ordnung,
+solange der fachliche Kern stimmt. Ein Wort-für-Wort-Vergleich ist NICHT
+das Ziel (den gibt es bereits vorgeschaltet, du bist die Zweitmeinung für
+Fälle, in denen dieser Vergleich fehlgeschlagen ist, obwohl die Antwort
+inhaltlich richtig sein könnte).
+Enthält die Musterlösung mehrere durch ";" getrennte akzeptierte
+Formulierungen, reicht Übereinstimmung mit EINER davon.
+Sei fair, aber nicht beliebig großzügig: fehlt der für die Musterlösung
+zentrale fachliche Punkt komplett, ist die Antwort erkennbar nur geraten
+oder widerspricht sie der Musterlösung inhaltlich, ist sie falsch.
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text:
+{"correct": true}
+''';
+
+  /// Zweitmeinung für Freitext-Antworten: der lokale Vergleich
+  /// (AnswerChecker.checkFreeText) ist ein reiner Text-/Tippfehler-Abgleich
+  /// und damit für echte, frei formulierte Antworten fast unmöglich zu
+  /// erfüllen – schon eine inhaltlich richtige, aber anders formulierte
+  /// Antwort fällt durch. Wird deshalb NUR aufgerufen, wenn der lokale
+  /// Vergleich die Antwort bereits als falsch eingestuft hat (siehe
+  /// QuestionAnswerView._checkFreeTextAnswer): kein API-Call für den
+  /// Normalfall einer nahen Übereinstimmung, nur als Rettungsanker für
+  /// abweichende Formulierungen.
+  Future<bool> checkFreeTextAnswer({
+    required String question,
+    required String correctAnswer,
+    required String userAnswer,
+  }) async {
+    final userPrompt =
+        'Frage: $question\nMusterlösung: $correctAnswer\nAntwort des Lernenden: $userAnswer';
+    final raw = await _complete(_checkFreeTextSystemPrompt, userPrompt);
+    final parsed = _parseJsonObject(raw);
+    return parsed['correct'] == true;
   }
 
   static const _chatSystemPrompt = '''

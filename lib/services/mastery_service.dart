@@ -17,11 +17,12 @@ extension MasteryLevelLabel on MasteryLevel {
       };
 }
 
-/// Leitet aus dem FSRS-Zustand einer Karte (siehe FsrsService) eine simple
-/// Rot/Gelb/Grün-Einstufung ab – die Grundlage ist dieselbe geschätzte
-/// Erinnerungswahrscheinlichkeit, die auch der Scheduler nutzt, nur direkt
-/// für den Nutzer sichtbar gemacht statt nur intern zur Fälligkeitsberechnung
-/// zu dienen.
+/// Leitet aus [Flashcard.masteryBox] (primär) und der FSRS-Retrievability
+/// (sekundär, nur als Verfalls-Signal für bereits gemeisterte Karten) eine
+/// simple Rot/Gelb/Grün-Einstufung ab. Bewusst NICHT primär auf reiner
+/// Retrievability – die ist direkt nach jeder Wiederholung (egal ob richtig
+/// oder falsch) immer ~100%, würde also frisch falsch beantwortete Karten
+/// fälschlich nicht sofort als "Rot" zeigen (siehe [levelFor]).
 class MasteryService {
   MasteryService({FsrsService? fsrs}) : _fsrs = fsrs ?? FsrsService();
 
@@ -37,15 +38,30 @@ class MasteryService {
 
   MasteryLevel levelFor(Flashcard card, {DateTime? now}) {
     if (card.reps == 0) return MasteryLevel.neu;
+    // masteryBox ist die PRIMÄRE Grundlage, nicht die momentane
+    // Retrievability: die ist direkt nach JEDER Wiederholung (egal ob
+    // richtig oder falsch beantwortet) per Definition ~100%, da die
+    // Vergessenskurve bei Elapsed-Zeit 0 immer bei 1 startet. Würde man
+    // stattdessen zuerst nach Retrievability filtern, würde eine gerade
+    // komplett falsch beantwortete Karte (masteryBox fällt auf 0) sofort
+    // danach fälschlich als "Gelb" statt "Rot" erscheinen. masteryBox <= 0
+    // heißt: kein einziger bestätigter Kenntnisstand vorhanden -> Rot,
+    // unabhängig von der (hier bedeutungslosen) Retrievability.
+    if (card.masteryBox <= 0) return MasteryLevel.red;
+    // Retrievability dient hier nur noch als VERFALLS-Signal für bereits
+    // einmal erfolgreich gelernte Karten: wurde eine Karte lange nicht mehr
+    // wiederholt und ist ihre geschätzte Behaltensrate stark gesunken, soll
+    // sie trotz vorhandener masteryBox-Historie wieder als "Schwach" gelten
+    // (vermutlich inzwischen vergessen).
     final r = _fsrs.currentRetrievability(card, now: now);
     if (r < redThreshold) return MasteryLevel.red;
-    if (r < yellowThreshold) return MasteryLevel.yellow;
-    // "Grün" braucht zusätzlich zur momentanen Retrievability (die direkt
-    // nach JEDER Wiederholung per Definition ~100% beträgt, siehe
-    // Flashcard.masteryBox Doc-Kommentar) mehrfach über die Zeit bestätigtes
-    // Wissen – sonst würden zwei schnell hintereinander (ggf. geratene)
-    // richtige Antworten schon reichen.
-    return card.masteryBox >= Flashcard.masteryBoxCap ? MasteryLevel.green : MasteryLevel.yellow;
+    // "Grün" braucht zusätzlich zur ausreichenden Retrievability mehrfach
+    // über die Zeit bestätigtes Wissen (masteryBox am Cap) – sonst würden
+    // zwei schnell hintereinander (ggf. geratene) richtige Antworten schon
+    // reichen.
+    return (card.masteryBox >= Flashcard.masteryBoxCap && r >= yellowThreshold)
+        ? MasteryLevel.green
+        : MasteryLevel.yellow;
   }
 
   /// Anzahl Karten je Ampel-Stufe – Grundlage für Übersichten (Modul-Detail,
