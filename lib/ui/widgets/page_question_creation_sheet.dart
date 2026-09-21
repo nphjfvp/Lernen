@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -135,6 +136,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet> {
       );
 
       final now = DateTime.now();
+      final imageBase64 = base64Encode(widget.pageImageBytes);
       final cards = <Flashcard>[];
       for (final entry in raw) {
         final fixed = QuestionParsing.normalizeGeneratedFlashcard(entry);
@@ -154,6 +156,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet> {
           blanks: QuestionParsing.parseBlanks(fixed['blanks']),
           dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
           htmlContent: fixed['htmlContent'] as String?,
+          imageBase64: entry['needsImage'] == true ? imageBase64 : null,
         ));
       }
       if (!mounted) return;

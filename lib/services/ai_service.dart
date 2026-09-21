@@ -699,9 +699,18 @@ Anweisung, überarbeite GENAU diese Karten gemäß der Anweisung (z.B. anderer
 Fokus, einfacher formuliert, mehr Kontext) statt neue zu erfinden – behalte
 dabei weiterhin Typ und Reihenfolge der gewünschten Fragetypen bei.
 
+Entscheide zusätzlich pro Karte, ob der Seiten-Screenshot als Bild an die
+Karte angehängt werden soll ("needsImage": true/false). Setze "needsImage"
+NUR auf true, wenn die Frage OHNE das Bild nicht sinnvoll verständlich oder
+beantwortbar ist – z.B. weil sie sich auf ein Diagramm, eine Formel, eine
+Skizze, ein Foto oder ein Layout bezieht, das sich nicht vollständig in
+Worten wiedergeben lässt. Bei rein textbasierten Fakten (die man auch ohne
+das Bild klar verstehen und beantworten kann) setze "needsImage": false –
+das ist der Regelfall, hänge also nicht bei jeder Karte ein Bild an.
+
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{"flashcards": [{"type": "...", "front": "...", "...": "je nach Typ weitere Felder, siehe oben"}]}
+{"flashcards": [{"type": "...", "front": "...", "needsImage": false, "...": "je nach Typ weitere Felder, siehe oben"}]}
 Die Reihenfolge im "flashcards"-Array entspricht der Reihenfolge der
 gewünschten Typen. Antworte in der Sprache der Vorlage.
 ''';

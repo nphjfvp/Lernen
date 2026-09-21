@@ -546,6 +546,14 @@ Nachbereiten-Modus zu wechseln.
   Daily Quiz/Üben statt einer reinen Textvorschau) und per freier Anweisung
   ("einfacher formulieren", "anderer Fokus") überarbeiten. Gespeicherte
   Karten landen sofort fällig (`due: jetzt`) im Daily Quiz.
+  Die KI entscheidet zusätzlich pro Karte, ob der Seiten-Screenshot für den
+  Kontext der Frage nötig ist (`"needsImage"` im JSON-Ergebnis, z.B. bei
+  einem Diagramm/einer Formel/einer Skizze, ohne die die Frage nicht
+  verständlich wäre) – nur dann wird der Screenshot als `Flashcard.imageBase64`
+  mitgespeichert und später beim Beantworten (Daily Quiz, Üben, überall wo
+  `QuestionAnswerView` genutzt wird) oberhalb der Frage angezeigt. Rein
+  textbasierte Fragen bekommen bewusst KEIN Bild angehängt, um die lokale
+  Datenbank nicht unnötig aufzublähen.
 
 ### 6. Ausführen
 

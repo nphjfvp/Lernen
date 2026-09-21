@@ -329,6 +329,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _newBadge(c),
+                      _buildCardImage(c),
                       Text(
                         widget.card.front,
                         textAlign: TextAlign.center,
@@ -396,6 +397,32 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     );
   }
 
+  /// Zeigt den an [Flashcard.imageBase64] hängenden Seiten-Screenshot,
+  /// falls vorhanden (siehe PageQuestionCreationSheet – nur bei Fragen
+  /// gesetzt, die das Vision-Modell als "needsImage" markiert hat, z.B. weil
+  /// sie sich auf ein Diagramm/eine Grafik beziehen). Ein defektes Base64
+  /// wird still ignoriert statt die Karte unbenutzbar zu machen.
+  Widget _buildCardImage(AppColors c) {
+    final base64 = widget.card.imageBase64;
+    if (base64 == null || base64.isEmpty) return const SizedBox.shrink();
+    Uint8List bytes;
+    try {
+      bytes = base64Decode(base64);
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 220),
+          child: Image.memory(bytes, fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+        ),
+      ),
+    );
+  }
+
   Widget _newBadge(AppColors c) {
     if (!widget.isNew) return const SizedBox.shrink();
     return Padding(
@@ -430,6 +457,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                     style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.accentOnSoft, letterSpacing: 0.03)),
               ),
               const SizedBox(height: 12),
+              _buildCardImage(c),
               if (card.type != QuestionType.fillBlank)
                 Text(card.front, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4)),
               const SizedBox(height: 16),

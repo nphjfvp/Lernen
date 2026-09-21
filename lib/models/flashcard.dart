@@ -77,6 +77,7 @@ class VariantSnapshot {
     this.blanks,
     this.dragPairs,
     this.htmlContent,
+    this.imageBase64,
   });
 
   final QuestionType type;
@@ -87,6 +88,7 @@ class VariantSnapshot {
   final List<String>? blanks;
   final List<DragPair>? dragPairs;
   final String? htmlContent;
+  final String? imageBase64;
 
   Map<String, dynamic> toMap() => {
         'type': type.name,
@@ -97,6 +99,7 @@ class VariantSnapshot {
         'blanks': blanks,
         'dragPairs': dragPairs?.map((p) => p.toMap()).toList(),
         'htmlContent': htmlContent,
+        'imageBase64': imageBase64,
       };
 
   factory VariantSnapshot.fromMap(Map<String, dynamic> map) => VariantSnapshot(
@@ -112,6 +115,7 @@ class VariantSnapshot {
             ?.map((p) => DragPair.fromMap(Map<String, dynamic>.from(p as Map)))
             .toList(),
         htmlContent: map['htmlContent'] as String?,
+        imageBase64: map['imageBase64'] as String?,
       );
 }
 
@@ -157,6 +161,16 @@ class Flashcard {
   /// Fallback-Anzeige mit manueller Selbstbewertung wie beim einfachen
   /// `flashcard`-Typ (siehe QuestionAnswerView).
   final String? htmlContent;
+
+  /// Base64-kodierter Screenshot der Vorlesungsseite, aus der diese Frage
+  /// erzeugt wurde (siehe PageQuestionCreationSheet/
+  /// AiService.generateQuestionsFromPage) – NICHT bei jeder Karte gesetzt,
+  /// sondern nur, wenn das Vision-Modell die Seite selbst als "needsImage"
+  /// markiert hat (z.B. ein Diagramm/eine Grafik, ohne die die Frage keinen
+  /// Sinn ergibt) – rein textbasierte Fragen bekommen bewusst KEIN Bild
+  /// angehängt, um die lokale Datenbank nicht unnötig aufzublähen. Wird in
+  /// [QuestionAnswerView] oberhalb der Frage angezeigt, wenn gesetzt.
+  final String? imageBase64;
 
   final List<QuestionType>? variantChain;
   final int variantLevel;
@@ -223,6 +237,7 @@ class Flashcard {
     this.blanks,
     this.dragPairs,
     this.htmlContent,
+    this.imageBase64,
     this.variantChain,
     this.variantLevel = 0,
     this.variantBox = 0,
@@ -285,6 +300,7 @@ class Flashcard {
       blanks: blanks,
       dragPairs: dragPairs,
       htmlContent: htmlContent,
+      imageBase64: imageBase64,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -321,6 +337,7 @@ class Flashcard {
       blanks: blanks,
       dragPairs: dragPairs,
       htmlContent: htmlContent,
+      imageBase64: imageBase64,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -373,6 +390,7 @@ class Flashcard {
         blanks: blanks,
         dragPairs: dragPairs,
         htmlContent: htmlContent,
+        imageBase64: imageBase64,
         variantChain: chain,
         variantLevel: variantLevel,
         variantBox: 0,
@@ -416,6 +434,7 @@ class Flashcard {
       blanks: blanks,
       dragPairs: dragPairs,
       htmlContent: htmlContent,
+      imageBase64: imageBase64,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: newBox,
@@ -449,6 +468,7 @@ class Flashcard {
     List<String>? blanks,
     List<DragPair>? dragPairs,
     String? htmlContent,
+    String? imageBase64,
   }) {
     final snapshot = VariantSnapshot(
       type: type,
@@ -459,6 +479,7 @@ class Flashcard {
       blanks: this.blanks,
       dragPairs: this.dragPairs,
       htmlContent: this.htmlContent,
+      imageBase64: this.imageBase64,
     );
     return Flashcard(
       id: id,
@@ -474,6 +495,7 @@ class Flashcard {
       blanks: blanks,
       dragPairs: dragPairs,
       htmlContent: htmlContent,
+      imageBase64: imageBase64,
       variantChain: variantChain,
       variantLevel: variantLevel + 1,
       variantBox: 0,
@@ -516,6 +538,7 @@ class Flashcard {
       blanks: previous.blanks,
       dragPairs: previous.dragPairs,
       htmlContent: previous.htmlContent,
+      imageBase64: previous.imageBase64,
       variantChain: variantChain,
       variantLevel: variantLevel - 1,
       variantBox: 0,
@@ -557,6 +580,7 @@ class Flashcard {
         'blanks': blanks,
         'dragPairs': dragPairs?.map((p) => p.toMap()).toList(),
         'htmlContent': htmlContent,
+        'imageBase64': imageBase64,
         'variantChain': variantChain?.map((t) => t.name).toList(),
         'variantLevel': variantLevel,
         'variantBox': variantBox,
@@ -592,6 +616,7 @@ class Flashcard {
             ?.map((p) => DragPair.fromMap(Map<String, dynamic>.from(p as Map)))
             .toList(),
         htmlContent: map['htmlContent'] as String?,
+        imageBase64: map['imageBase64'] as String?,
         variantChain:
             (map['variantChain'] as List?)?.map((t) => questionTypeFromString(t.toString())).toList(),
         variantLevel: map['variantLevel'] as int? ?? 0,
