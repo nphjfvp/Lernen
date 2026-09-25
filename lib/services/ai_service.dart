@@ -1035,6 +1035,36 @@ Sprache der Frage.
     return raw.trim();
   }
 
+  static const _weaknessSystemPrompt = '''
+Du bist ein Lerncoach. Du bekommst die Lernfragen, mit denen sich ein
+Studierender gerade am schwersten tut (jeweils mit richtiger Lösung und wie
+oft sie falsch war). Finde die GEMEINSAMEN Muster: welche Themen, Begriffe
+oder Denkfehler stecken dahinter (z.B. zwei Begriffe werden verwechselt,
+eine Formel sitzt nicht, Details einer Definition fehlen)? Antworte kurz und
+konkret:
+1. Die 2–4 wichtigsten Muster als Stichpunkte, jeweils mit einem Satz,
+   was genau schiefläuft.
+2. Pro Muster eine konkrete Empfehlung, was man wiederholen oder wie man es
+   sich merken kann.
+Erfinde keine Themen, die in den Fragen nicht vorkommen. Normaler Text mit
+Aufzählungszeichen, kein JSON, keine Codefences, in der Sprache der Fragen.
+''';
+
+  /// Fehlertagebuch: erkennt Muster in den aktuell schwächsten Karten
+  /// (siehe WeaknessService) und schlägt vor, was gezielt zu wiederholen ist.
+  Future<String> analyzeWeaknesses(List<({String question, String answer, String reasons})> items) async {
+    final buffer = StringBuffer();
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      buffer
+        ..writeln('${i + 1}. Frage: ${item.question}')
+        ..writeln('   Lösung: ${item.answer}')
+        ..writeln('   Probleme: ${item.reasons}');
+    }
+    final raw = await _complete(_weaknessSystemPrompt, buffer.toString());
+    return raw.trim();
+  }
+
   static const _chatSystemPrompt = '''
 Du bist ein Lernassistent für Studierende. Wird dir Material bereitgestellt
 (hochgeladenes Vorlesungs-/Übungsmaterial eines Fachs, chronologisch

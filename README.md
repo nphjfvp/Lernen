@@ -201,6 +201,15 @@ engerem Fokus statt Feature-Fülle.
   Logik). Bewusst ein Vergleich mit dem EIGENEN früheren Stand statt mit
   anderen Nutzern – Kompetenz-Feedback motiviert nachhaltiger als sozialer
   Vergleich/Leaderboards (Selbstbestimmungstheorie, Deci & Ryan).
+- **Schwachstellen (Fehlertagebuch)** (`lib/ui/stats/weakness_screen.dart`,
+  Einstieg im Fortschritt-Tab): sammelt die Karten, mit denen man sich
+  schwertut, direkt aus dem Lernzustand (`WeaknessService`: wie oft eine
+  gelernte Karte vergessen wurde, zuletzt falsch, Fehlerserie auf der
+  aktuellen Stufe, Ampel rot) – sortiert nach Dringlichkeit, filterbar nach
+  Fach, Lösung aufklappbar. "Die 20 schwächsten üben" startet eine
+  Übungsrunde genau damit (`PracticeScreen.cards`, zählt normal für
+  FSRS/Ampel); "KI: Muster erkennen" (mit API-Key) fasst zusammen, welche
+  Themen/Denkfehler dahinterstecken und was gezielt zu wiederholen ist.
 - **Sprint (Pausenmodus)** – ein optionales, klar vom Kernlernkreislauf
   abgegrenztes Mini-Spiel im Fortschritts-Tab: 60 Sekunden Zeitdruck gegen
   die fachübergreifend schwächsten (Ampel-rot, notfalls +gelb) Karten,

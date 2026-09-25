@@ -9,9 +9,11 @@ import '../../repositories/study_log_repository.dart';
 import '../../services/mastery_service.dart';
 import '../../services/mastery_trend_service.dart';
 import '../../services/stats_service.dart';
+import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
 import '../sprint/sprint_screen.dart';
 import '../widgets/mastery_dot.dart';
+import 'weakness_screen.dart';
 
 /// Fortschritts-Übersicht: Streak, Gesamtzahl Wiederholungen, durchschnitt-
 /// liche geschätzte Behaltensrate, und eine Aufschlüsselung pro Fach.
@@ -31,6 +33,7 @@ class StatsScreen extends StatefulWidget {
 class _StatsScreenState extends State<StatsScreen> {
   OverallStats? _stats;
   MasteryTrend? _trend;
+  int _weakCount = 0;
   final _snapshotRepo = MasterySnapshotRepository();
 
   @override
@@ -73,6 +76,7 @@ class _StatsScreenState extends State<StatsScreen> {
     setState(() {
       _stats = stats;
       _trend = MasteryTrendService.compare(today: today, history: history);
+      _weakCount = WeaknessService().rank(allCards).length;
     });
   }
 
@@ -134,6 +138,16 @@ class _StatsScreenState extends State<StatsScreen> {
                       const SizedBox(height: 10),
                       _TrendCard(trend: _trend!),
                     ],
+                    const SizedBox(height: 10),
+                    _WeaknessEntryCard(
+                      count: _weakCount,
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const WeaknessScreen()),
+                        );
+                        if (mounted) await _load();
+                      },
+                    ),
                     const SizedBox(height: 10),
                     _SprintEntryCard(
                       onTap: () => Navigator.of(context).push(
@@ -258,6 +272,50 @@ class _TrendLine extends StatelessWidget {
       child: Text(
         '$label: $sign$rounded Prozentpunkte',
         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
+      ),
+    );
+  }
+}
+
+/// Einstieg ins Fehlertagebuch (siehe WeaknessScreen).
+class _WeaknessEntryCard extends StatelessWidget {
+  const _WeaknessEntryCard({required this.count, required this.onTap});
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(color: c.dangerSoft, borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Icon(Icons.report_gmailerrorred_rounded, color: c.danger, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Schwachstellen', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink)),
+                    const SizedBox(height: 2),
+                    Text(
+                      count == 0
+                          ? 'Aktuell keine – gut so!'
+                          : '$count Karte${count == 1 ? '' : 'n'} gezielt wiederholen',
+                      style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 18, color: c.inkMuted),
+            ],
+          ),
+        ),
       ),
     );
   }

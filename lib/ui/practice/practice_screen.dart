@@ -38,10 +38,18 @@ extension on _Filter {
 /// echten FSRS-Zustand (siehe FsrsService.review) – kein folgenloses
 /// "Probeüben", sondern zusätzliches, spaced-repetition-wirksames Training.
 class PracticeScreen extends StatefulWidget {
-  const PracticeScreen({super.key, required this.moduleId, required this.moduleName});
+  const PracticeScreen({super.key, required this.moduleId, required this.moduleName}) : initialCards = null;
+
+  /// Übt direkt eine vorgegebene Auswahl (z.B. aus dem Fehlertagebuch, siehe
+  /// WeaknessScreen) – ohne Fach-/Ampel-Filter, in der übergebenen Reihenfolge.
+  const PracticeScreen.cards({super.key, required String title, required List<Flashcard> cards})
+      : moduleId = '',
+        moduleName = title,
+        initialCards = cards;
 
   final String moduleId;
   final String moduleName;
+  final List<Flashcard>? initialCards;
 
   @override
   State<PracticeScreen> createState() => _PracticeScreenState();
@@ -58,6 +66,11 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialCards;
+    if (initial != null) {
+      _queue = List.of(initial);
+      return;
+    }
     WidgetsBinding.instance
         .addPostFrameCallback((_) => context.read<FlashcardRepository>().loadForModule(widget.moduleId));
   }
@@ -108,7 +121,13 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
             : queue.isEmpty
                 ? _EmptyView(filter: _filter, onBack: () => setState(() => _queue = null))
                 : _index >= queue.length
-                    ? _DoneView(count: _reviewedCount, onRestart: () => setState(() => _queue = null))
+                    ? _DoneView(
+                        count: _reviewedCount,
+                        onRestart: widget.initialCards != null
+                            ? () => Navigator.of(context).pop()
+                            : () => setState(() => _queue = null),
+                        restartLabel: widget.initialCards != null ? 'Fertig' : 'Weitere Runde',
+                      )
                     : Column(
                         children: [
                           Padding(
@@ -225,9 +244,10 @@ class _EmptyView extends StatelessWidget {
 }
 
 class _DoneView extends StatelessWidget {
-  const _DoneView({required this.count, required this.onRestart});
+  const _DoneView({required this.count, required this.onRestart, this.restartLabel = 'Weitere Runde'});
   final int count;
   final VoidCallback onRestart;
+  final String restartLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +262,7 @@ class _DoneView extends StatelessWidget {
             const SizedBox(height: 16),
             Text('Runde abgeschlossen! $count Karten geübt.', textAlign: TextAlign.center),
             const SizedBox(height: 16),
-            FilledButton(onPressed: onRestart, child: const Text('Weitere Runde')),
+            FilledButton(onPressed: onRestart, child: Text(restartLabel)),
           ],
         ),
       ),
