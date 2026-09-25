@@ -227,3 +227,16 @@ Freigegebener Backlog (vom Nutzer bestätigt, noch umzusetzen):
    `DailyQuizScreen` und `PracticeScreen`.
 6. **„Aktualisieren“** nach fertiger Session vergibt kein neues volles
    Neu-Karten-Budget (bereits heute eingeführte Karten zählen mit).
+
+Zusätzlich freigegeben (aus dem Vergleich mit der Vorgänger-App):
+7. KI-Erklärung („Erklär mir das“, „einfacher erklären“) + Tipp nach/vor
+   einer Antwort im Daily Quiz und beim Üben.
+8. Schwachstellen üben (Fehlertagebuch): Karten mit Fehlern sammeln und
+   gezielt üben.
+9. Probeklausur mit Note.
+10. Mathe/LaTeX-Darstellung in Fragen und Antworten.
+
+Umsetzungsreihenfolge (Chunks, je ein Commit): 1) gemeinsamer
+Bewertungs-Service (Punkt 5) → 2) Punkte 2/3/4 → 3) Daily-Stand speichern +
+Punkt 6 → 4) Sync (Punkt 1) → 5) KI-Erklärung → 6) Schwachstellen →
+7) Probeklausur → 8) LaTeX.
