@@ -7,14 +7,11 @@ import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/module_repository.dart';
-import '../../repositories/settings_repository.dart';
-import '../../repositories/study_log_repository.dart';
-import '../../services/ai_service.dart';
 import '../../services/daily_scheduler_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/home_widget_service.dart';
-import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
+import 'card_review_mixin.dart';
 import 'question_answer_view.dart';
 
 /// Welche Runde einer Session eine Karte gerade angezeigt wird – steuert in
@@ -37,11 +34,11 @@ class DailyQuizScreen extends StatefulWidget {
   State<DailyQuizScreen> createState() => _DailyQuizScreenState();
 }
 
-class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingObserver {
+class _DailyQuizScreenState extends State<DailyQuizScreen>
+    with WidgetsBindingObserver, CardReviewMixin<DailyQuizScreen> {
   DailyPlan? _plan;
   int _index = 0;
   int _reviewedCount = 0;
-  final _fsrs = FsrsService();
 
   /// Wiederholungsrunde für falsch beantwortete Karten der Hauptrunde
   /// (siehe Klassenkommentar unten): FIFO – das erste Element ist die
@@ -162,43 +159,17 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
       _bonusLoading = false;
       _bonusQueue.addAll(extra.allCards);
     });
-    if (extra.total == 0) _showLevelChangeSnackBar('Aktuell keine weiteren Karten verfügbar.');
+    if (extra.total == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aktuell keine weiteren Karten verfügbar.'), duration: Duration(seconds: 2)),
+      );
+    }
   }
 
   Future<void> _handleComplete(Flashcard card, {required _QuizStage stage, Grade? selfGrade, bool? isCorrect}) async {
-    final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
-    var updated = _fsrs.review(card, grade);
-    unawaited(StudyLogRepository().recordDay(DateTime.now()));
-
-    if (isCorrect != null && updated.variantChain != null) {
-      final beforeType = updated.type;
-      final boxResult = updated.copyWithBoxUpdate(isCorrect: isCorrect);
-      updated = boxResult.card;
-      await context.read<FlashcardRepository>().update(updated);
-      final nextType = boxResult.nextType;
-      if (nextType != null && boxResult.needsGeneration) {
-        unawaited(_promoteInBackground(updated, nextType));
-        _showLevelChangeSnackBar('⬆️ Stufe geschafft – nächstes Mal: ${nextType.label}');
-      } else if (nextType != null) {
-        // Inhalt lag bereits vorbereitet vor (siehe Flashcard.pendingVariants)
-        // – kein KI-Aufruf nötig, die Karte ist schon jetzt befördert.
-        _showLevelChangeSnackBar('⬆️ Stufe geschafft – jetzt: ${nextType.label}');
-      } else if (updated.type != beforeType) {
-        // copyWithBoxUpdate stuft bei wiederholten Fehlversuchen intern
-        // zurück (siehe Flashcard.copyWithDemotedVariant) – erkennbar daran,
-        // dass sich der Typ geändert hat, obwohl keine Beförderung vorlag.
-        _showLevelChangeSnackBar('⬇️ Zurück zu: ${updated.type.label}');
-      }
-    } else {
-      await context.read<FlashcardRepository>().update(updated);
-    }
-
-    // Sowohl explizit falsch beantwortete interaktive Fragen (isCorrect ==
-    // false) als auch selbst als "Nochmal" eingestufte einfache Karteikarten
-    // (selfGrade == Grade.again) gelten als "falsch" für die
-    // Wiederholungsrunde – beides bedeutet, der Nutzer wusste die Antwort
-    // gerade nicht.
-    final wasWrong = isCorrect == false || selfGrade == Grade.again;
+    final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
+    final updated = outcome.card;
+    final wasWrong = outcome.wasWrong;
 
     if (!mounted) return;
     setState(() {
@@ -237,49 +208,6 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
     // das Widget auch Karten noch nicht behandelter Einheiten als fällig.
     await HomeWidgetService()
         .refresh(modules: modules, allCards: allCards, unitCoveredById: unitCoveredById);
-  }
-
-  /// Kurzes, nicht-blockierendes Feedback bei Auf-/Abstufung innerhalb der
-  /// Schwierigkeits-Eskalationskette (siehe [Flashcard.copyWithBoxUpdate]) –
-  /// vorher lief das komplett unsichtbar im Hintergrund, wodurch das
-  /// eigentlich schon vorhandene Feature ("erst weiter, wenn verstanden")
-  /// dem Nutzer nie auffiel.
-  void _showLevelChangeSnackBar(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
-  }
-
-  /// Erzeugt lazy die nächste (schwerere) Eskalationsstufe per KI und
-  /// speichert sie – läuft bewusst im Hintergrund weiter, auch nachdem die
-  /// Session zur nächsten Frage übergegangen ist: schlägt es fehl oder ist
-  /// kein API-Key hinterlegt, bleibt die Frage einfach auf ihrer aktuellen
-  /// Stufe (nächster richtiger Versuch probiert die Beförderung erneut).
-  Future<void> _promoteInBackground(Flashcard card, QuestionType nextType) async {
-    try {
-      final settings = context.read<SettingsRepository>().settings;
-      if (!settings.hasApiKey) return;
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
-      final result = await ai.generateHarderVariant(
-        questionText: card.front,
-        currentAnswer: card.answerSummary,
-        targetType: nextType,
-      );
-      final promoted = card.copyWithPromotedVariant(
-        newType: nextType,
-        front: (result['front'] ?? card.front).toString(),
-        back: (result['back'] ?? '').toString(),
-        options: QuestionParsing.parseOptions(result['options']),
-        correctText: result['correctText'] as String?,
-        blanks: QuestionParsing.parseBlanks(result['blanks']),
-        dragPairs: QuestionParsing.parseDragPairs(result['dragPairs']),
-      );
-      if (!mounted) return;
-      await context.read<FlashcardRepository>().update(promoted);
-    } catch (_) {
-      // Stille Behandlung, siehe Doc-Kommentar oben.
-    }
   }
 
   @override

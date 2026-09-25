@@ -1,17 +1,12 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
-import '../../repositories/settings_repository.dart';
-import '../../repositories/study_log_repository.dart';
-import '../../services/ai_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
-import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
+import '../daily/card_review_mixin.dart';
 import '../daily/question_answer_view.dart';
 import '../widgets/mastery_dot.dart';
 
@@ -52,8 +47,7 @@ class PracticeScreen extends StatefulWidget {
   State<PracticeScreen> createState() => _PracticeScreenState();
 }
 
-class _PracticeScreenState extends State<PracticeScreen> {
-  final _fsrs = FsrsService();
+class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<PracticeScreen> {
   final _mastery = MasteryService();
 
   List<Flashcard>? _queue;
@@ -89,74 +83,12 @@ class _PracticeScreenState extends State<PracticeScreen> {
   }
 
   Future<void> _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
-    final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
-    var updated = _fsrs.review(card, grade);
-    unawaited(StudyLogRepository().recordDay(DateTime.now()));
-
-    if (isCorrect != null && updated.variantChain != null) {
-      final beforeType = updated.type;
-      final boxResult = updated.copyWithBoxUpdate(isCorrect: isCorrect);
-      updated = boxResult.card;
-      await context.read<FlashcardRepository>().update(updated);
-      final nextType = boxResult.nextType;
-      if (nextType != null && boxResult.needsGeneration) {
-        unawaited(_promoteInBackground(updated, nextType));
-        _showLevelChangeSnackBar('⬆️ Stufe geschafft – nächstes Mal: ${nextType.label}');
-      } else if (nextType != null) {
-        // Inhalt lag bereits vorbereitet vor (siehe Flashcard.pendingVariants)
-        // – kein KI-Aufruf nötig, die Karte ist schon jetzt befördert.
-        _showLevelChangeSnackBar('⬆️ Stufe geschafft – jetzt: ${nextType.label}');
-      } else if (updated.type != beforeType) {
-        _showLevelChangeSnackBar('⬇️ Zurück zu: ${updated.type.label}');
-      }
-    } else {
-      await context.read<FlashcardRepository>().update(updated);
-    }
-
+    await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
     if (!mounted) return;
     setState(() {
       _index += 1;
       _reviewedCount += 1;
     });
-  }
-
-  /// Siehe DailyQuizScreen._showLevelChangeSnackBar – identisches, bewusst
-  /// dupliziertes Feedback bei Auf-/Abstufung, damit dieser Screen
-  /// unabhängig von DailyQuizScreen bleibt.
-  void _showLevelChangeSnackBar(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
-  }
-
-  /// Identisch zur Eskalations-Logik im Daily Quiz (siehe dort) – bewusst
-  /// dupliziert statt geteilt, um diesen Screen unabhängig von
-  /// DailyQuizScreen zu halten.
-  Future<void> _promoteInBackground(Flashcard card, QuestionType nextType) async {
-    try {
-      final settings = context.read<SettingsRepository>().settings;
-      if (!settings.hasApiKey) return;
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
-      final result = await ai.generateHarderVariant(
-        questionText: card.front,
-        currentAnswer: card.answerSummary,
-        targetType: nextType,
-      );
-      final promoted = card.copyWithPromotedVariant(
-        newType: nextType,
-        front: (result['front'] ?? card.front).toString(),
-        back: (result['back'] ?? '').toString(),
-        options: QuestionParsing.parseOptions(result['options']),
-        correctText: result['correctText'] as String?,
-        blanks: QuestionParsing.parseBlanks(result['blanks']),
-        dragPairs: QuestionParsing.parseDragPairs(result['dragPairs']),
-      );
-      if (!mounted) return;
-      await context.read<FlashcardRepository>().update(promoted);
-    } catch (_) {
-      // Stille Behandlung, siehe Doc-Kommentar in DailyQuizScreen.
-    }
   }
 
   @override
