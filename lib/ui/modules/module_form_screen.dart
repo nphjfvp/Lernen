@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/module.dart';
+import '../../repositories/daily_session_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/module_repository.dart';
@@ -157,13 +158,18 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
     final lectureUnitRepo = context.read<LectureUnitRepository>();
     final allCards = await context.read<FlashcardRepository>().loadAll();
     final unitCoveredById = await lectureUnitRepo.loadAllCoveredById();
+    final introducedToday = await DailySessionRepository().introducedTodayByModule(allCards);
     // Bewusst AWAITED statt unawaited: direkt danach navigieren wir weg
     // (Navigator.pop), und auf manchen Geräten wird die App danach schnell
     // in den Hintergrund gedrängt – ein nicht abgewartetes Future könnte
     // dann abgebrochen werden, bevor die Plattform-Channel-Aufrufe
     // durchlaufen sind, und das Widget bliebe auf dem alten Stand hängen.
-    await HomeWidgetService()
-        .refresh(modules: repo.modules, allCards: allCards, unitCoveredById: unitCoveredById);
+    await HomeWidgetService().refresh(
+      modules: repo.modules,
+      allCards: allCards,
+      unitCoveredById: unitCoveredById,
+      introducedTodayByModule: introducedToday,
+    );
     if (mounted) Navigator.of(context).pop();
   }
 

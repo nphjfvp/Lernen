@@ -419,4 +419,46 @@ void main() {
       expect(extra.total, 0);
     });
   });
+
+  group('introducedTodayByModule – kein zweites Tagesbudget', () {
+    test('heute schon eingeführte neue Karten werden vom Budget abgezogen', () {
+      final module = _module('m1');
+      final cards = List.generate(30, (i) => _newFlashcard('n$i', 'm1', createdAt: DateTime(2026, 1, 1 + i)));
+
+      final fresh = scheduler.buildPlan(modules: [module], allCards: cards, now: now);
+      final budget = fresh.newCardBudgetByModule['m1']!;
+      expect(fresh.newCards, hasLength(budget));
+
+      final afterSession = scheduler.buildPlan(
+        modules: [module],
+        allCards: cards,
+        introducedTodayByModule: {'m1': budget},
+        now: now,
+      );
+      expect(afterSession.newCards, isEmpty);
+
+      final halfway = scheduler.buildPlan(
+        modules: [module],
+        allCards: cards,
+        introducedTodayByModule: {'m1': 4},
+        now: now,
+      );
+      expect(halfway.newCards, hasLength(budget - 4));
+    });
+
+    test('gezielt selbst erstellte Fragen kommen trotz verbrauchtem Budget heute noch dran', () {
+      final module = _module('m1');
+      final cards = [
+        ...List.generate(20, (i) => _newFlashcard('n$i', 'm1')),
+        _newFlashcard('fresh', 'm1', priorityIntroduction: true),
+      ];
+      final plan = scheduler.buildPlan(
+        modules: [module],
+        allCards: cards,
+        introducedTodayByModule: {'m1': 50},
+        now: now,
+      );
+      expect(plan.newCards.map((c) => c.id), ['fresh']);
+    });
+  });
 }

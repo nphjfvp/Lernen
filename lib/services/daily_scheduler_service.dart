@@ -98,10 +98,18 @@ class DailySchedulerService {
   /// Einführung der Einheiten) bleiben wie bisher immer eingeplant. Fehlt
   /// eine Einheit-ID in der Map (z.B. Dateninkonsistenz), wird die Karte im
   /// Zweifel eingeplant statt sie stillschweigend zu verstecken.
+  ///
+  /// [introducedTodayByModule]: wie viele neue Karten je Fach heute schon im
+  /// Daily Quiz eingeführt wurden (siehe DailySessionState) – wird vom
+  /// Tagesbudget abgezogen, damit "Aktualisieren" nach einer fertigen
+  /// Session oder ein App-Neustart nicht ein zweites volles Budget vergibt.
+  /// Gezielt selbst erstellte Fragen ([Flashcard.priorityIntroduction])
+  /// kommen trotzdem immer noch heute dran.
   DailyPlan buildPlan({
     required List<Module> modules,
     required List<Flashcard> allCards,
     Map<String, bool> unitCoveredById = const {},
+    Map<String, int> introducedTodayByModule = const {},
     DateTime? now,
   }) {
     final today = now ?? DateTime.now();
@@ -189,7 +197,12 @@ class DailySchedulerService {
       }
 
       newCardBudget[module.id] = budget;
-      newCards.addAll(notIntroduced.take(budget));
+      final remaining = budget - (introducedTodayByModule[module.id] ?? 0);
+      final priority = notIntroduced.where((c) => c.priorityIntroduction).toList();
+      final regularSlots = remaining - priority.length;
+      newCards
+        ..addAll(priority)
+        ..addAll(notIntroduced.where((c) => !c.priorityIntroduction).take(regularSlots < 0 ? 0 : regularSlots));
     }
 
     // Fällige Wiederholungen sind zeitkritisch (sonst sinkt die

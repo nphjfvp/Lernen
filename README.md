@@ -76,7 +76,12 @@ engerem Fokus statt Feature-Fülle.
   bis zu 10 weitere neue bzw. (falls keine mehr da sind) noch nicht fällige
   Karten nach – als eigene Warteschlange statt den laufenden Tagesplan zu
   vergrößern, um das positionsbasierte Session-Tracking nicht durcheinander
-  zu bringen. Ergänzend dazu pro Fach ein freier **Üben-Modus** (`lib/ui/practice/practice_screen.dart`):
+  zu bringen. Der Tagesfortschritt (erledigte Karten, Wiederholungsrunde,
+  heute eingeführte neue Karten) wird gespeichert (`DailySessionState`/
+  `DailySessionRepository`): ein App-Neustart setzt dort fort, und
+  "Aktualisieren" vergibt kein zweites volles Neu-Karten-Budget – heute schon
+  eingeführte Karten werden abgezogen (gezielt selbst erstellte Fragen kommen
+  trotzdem noch heute dran). Ergänzend dazu pro Fach ein freier **Üben-Modus** (`lib/ui/practice/practice_screen.dart`):
   übt das gesamte Kartenset unabhängig von Fälligkeit/Klausur-Pacing/
   Einheiten-Status, optional gefiltert nach Ampel-Stufe (siehe unten) – jede
   Antwort aktualisiert trotzdem den echten FSRS-Zustand.

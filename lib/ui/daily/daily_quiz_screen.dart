@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/daily_session_state.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../repositories/daily_session_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../services/daily_scheduler_service.dart';
@@ -76,6 +78,19 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
   /// fälliger Karten für den neuen Tag.
   DateTime? _lastLoadedDay;
 
+  /// Gespeicherter Tagesfortschritt (siehe DailySessionState) – übersteht
+  /// App-Neustart und "Aktualisieren".
+  DailySessionState _session = DailySessionState.empty(DateTime.now());
+
+  /// Antworten seit dem letzten [_loadPlan] – solange 0, darf ein Tab-Wechsel
+  /// den Plan neu berechnen, ohne eine laufende Karte zu unterbrechen.
+  int _answeredSinceLoad = 0;
+
+  bool get _sessionFinished {
+    final plan = _plan;
+    return plan != null && _index >= plan.total && _wrongQueue.isEmpty && _bonusQueue.isEmpty;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -95,8 +110,12 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     // Ohne Neuladen beim Tab-Wechsel zeigte dieser Screen nur den Stand vom
     // App-Start – seither (Nachbereiten, "Frage erstellen", Zwischen-Check)
     // angelegte Karten tauchten nicht auf, "nichts fällig" blieb stehen.
-    // Eine bereits begonnene Session wird dabei nicht zurückgesetzt.
-    if (widget.isActive && !oldWidget.isActive && _reviewedCount == 0) _loadPlan();
+    // Mitten in einer Runde wird nicht neu geplant (die aktuelle Karte
+    // bliebe sonst nicht stehen); vorher oder nach Abschluss schon – der
+    // Tagesfortschritt selbst liegt in [_session] und geht dabei nicht verloren.
+    if (widget.isActive && !oldWidget.isActive && (_answeredSinceLoad == 0 || _sessionFinished)) {
+      _loadPlan();
+    }
   }
 
   @override
@@ -115,21 +134,53 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     final lectureUnitRepo = context.read<LectureUnitRepository>();
     final allCards = await flashcardRepo.loadAll();
     final unitCoveredById = await lectureUnitRepo.loadAllCoveredById();
-    final plan = DailySchedulerService()
-        .buildPlan(modules: modules, allCards: allCards, unitCoveredById: unitCoveredById);
-    unawaited(HomeWidgetService()
-        .refresh(modules: modules, allCards: allCards, unitCoveredById: unitCoveredById));
-    if (!mounted) return;
     final now = DateTime.now();
+    final session = await DailySessionRepository().load(now);
+    final cardsById = {for (final c in allCards) c.id: c};
+    final introducedToday = session.introducedByModule({for (final c in allCards) c.id: c.moduleId});
+    final plan = DailySchedulerService().buildPlan(
+      modules: modules,
+      allCards: allCards,
+      unitCoveredById: unitCoveredById,
+      introducedTodayByModule: introducedToday,
+    );
+    unawaited(HomeWidgetService().refresh(
+      modules: modules,
+      allCards: allCards,
+      unitCoveredById: unitCoveredById,
+      introducedTodayByModule: introducedToday,
+    ));
+    if (!mounted) return;
+    final plannedIds = {for (final c in plan.allCards) c.id};
     setState(() {
       _plan = plan;
+      _session = session;
       _index = 0;
-      _reviewedCount = 0;
-      _wrongQueue.clear();
-      _wrongAttempts.clear();
+      _answeredSinceLoad = 0;
+      _reviewedCount = session.reviewedCount;
+      _wrongQueue
+        ..clear()
+        ..addAll([
+          for (final id in session.wrongIds)
+            if (cardsById[id] != null && !plannedIds.contains(id)) cardsById[id]!,
+        ]);
+      _wrongAttempts
+        ..clear()
+        ..addAll(session.wrongAttempts);
       _bonusQueue.clear();
-      _lastLoadedDay = DateTime(now.year, now.month, now.day);
+      _lastLoadedDay = DailySessionState.dayOf(now);
     });
+  }
+
+  void _persistSession({required Flashcard answered}) {
+    final wasNew = answered.reps == 0;
+    _session = _session.copyWith(
+      reviewedCount: _reviewedCount,
+      introducedIds: wasNew ? {..._session.introducedIds, answered.id} : null,
+      wrongIds: _wrongQueue.map((c) => c.id).toList(),
+      wrongAttempts: Map.of(_wrongAttempts),
+    );
+    unawaited(DailySessionRepository().save(_session));
   }
 
   /// Zusätzliche, rein freiwillige Charge über das Tagesbudget hinaus (siehe
@@ -194,7 +245,9 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
           if (wasWrong) _wrongQueue.add(updated);
       }
       _reviewedCount += 1;
+      _answeredSinceLoad += 1;
     });
+    _persistSession(answered: card);
     unawaited(_refreshHomeWidget());
   }
 
@@ -206,8 +259,12 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     final unitCoveredById = await lectureUnitRepo.loadAllCoveredById();
     // Mit derselben Einheiten-Freigabe wie der Tagesplan selbst, sonst zählte
     // das Widget auch Karten noch nicht behandelter Einheiten als fällig.
-    await HomeWidgetService()
-        .refresh(modules: modules, allCards: allCards, unitCoveredById: unitCoveredById);
+    await HomeWidgetService().refresh(
+      modules: modules,
+      allCards: allCards,
+      unitCoveredById: unitCoveredById,
+      introducedTodayByModule: _session.introducedByModule({for (final c in allCards) c.id: c.moduleId}),
+    );
   }
 
   @override
@@ -268,7 +325,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         onComplete: ({selfGrade, isCorrect}) =>
             _handleComplete(card, stage: _QuizStage.bonus, selfGrade: selfGrade, isCorrect: isCorrect),
       );
-    } else if (plan.total == 0) {
+    } else if (plan.total == 0 && _reviewedCount == 0) {
       body = _AllDoneView(onContinue: _continueVoluntarily, loading: _bonusLoading);
     } else {
       body = _SessionDoneView(
@@ -342,7 +399,7 @@ class _SessionDoneView extends StatelessWidget {
           children: [
             Icon(Icons.check_circle_outline, size: 56, color: c.good),
             const SizedBox(height: 16),
-            Text('Session abgeschlossen! $count Karten wiederholt.', textAlign: TextAlign.center),
+            Text('Für heute geschafft! $count Karten wiederholt.', textAlign: TextAlign.center),
             const SizedBox(height: 16),
             Wrap(
               alignment: WrapAlignment.center,

@@ -46,12 +46,14 @@ class HomeWidgetService {
     List<Module> modules,
     List<Flashcard> allCards, {
     Map<String, bool> unitCoveredById = const {},
+    Map<String, int> introducedTodayByModule = const {},
     DateTime? now,
   }) {
     final plan = _schedulerService.buildPlan(
       modules: modules,
       allCards: allCards,
       unitCoveredById: unitCoveredById,
+      introducedTodayByModule: introducedTodayByModule,
       now: now,
     );
     final count = plan.total;
@@ -79,11 +81,14 @@ class HomeWidgetService {
     required List<Module> modules,
     required List<Flashcard> allCards,
     Map<String, bool> unitCoveredById = const {},
+    Map<String, int> introducedTodayByModule = const {},
   }) async {
     try {
       await HomeWidget.saveWidgetData<String>(keyLecture, buildLectureLine(modules));
       await HomeWidget.saveWidgetData<String>(
-          keyReminder, buildReminderLine(modules, allCards, unitCoveredById: unitCoveredById));
+          keyReminder,
+          buildReminderLine(modules, allCards,
+              unitCoveredById: unitCoveredById, introducedTodayByModule: introducedTodayByModule));
       await HomeWidget.saveWidgetData<String>(keyCountdown, buildCountdownLine(modules));
       await HomeWidget.updateWidget(androidName: androidProviderName);
     } catch (_) {
