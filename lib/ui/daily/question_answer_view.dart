@@ -37,8 +37,10 @@ class QuestionAnswerView extends StatefulWidget {
   final Flashcard card;
   final bool isNew;
 
-  /// Genau eines von beidem wird gesetzt: [selfGrade] für den offenen
-  /// `flashcard`-Typ, [isCorrect] für alle automatisch geprüften Typen.
+  /// [selfGrade] für den offenen `flashcard`-Typ, [isCorrect] für alle
+  /// automatisch geprüften Typen. Ausnahme: richtig beantwortet, aber mit
+  /// Tipp – dann kommt beides ([isCorrect] true, [selfGrade] "Schwer"), damit
+  /// die Antwort zählt, die Ampel aber nicht steigt (siehe ReviewService).
   final void Function({Grade? selfGrade, bool? isCorrect}) onComplete;
 
   @override
@@ -73,6 +75,14 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// zeigt dann stattdessen [_buildFlashcard] als Fallback mit
   /// Selbstbewertung (front/back sind bei diesem Typ genau dafür gedacht).
   bool _webViewAvailable = true;
+
+  // -- KI-Hilfe: Tipp vor dem Antworten, Erklärung danach -----------------
+  String? _hint;
+  bool _hintLoading = false;
+  String? _explanation;
+  bool _explanationLoading = false;
+  bool _explainedSimpler = false;
+  String? _aiHelpError;
 
   /// Die Aufrufer speichern asynchron (DB-Write), bevor sie zur nächsten
   /// Karte wechseln – ohne diese Sperre würde ein zweites Tippen auf
@@ -296,6 +306,165 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     }
   }
 
+  /// Nullable gelesen: in eingebetteten Vorschauen/Tests ohne
+  /// SettingsRepository gibt es einfach keine KI-Hilfe.
+  AiService? _aiOrNull() {
+    final settings = context.read<SettingsRepository?>()?.settings;
+    if (settings == null || !settings.hasApiKey) return null;
+    return AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+  }
+
+  bool get _aiHelpAvailable => context.read<SettingsRepository?>()?.settings.hasApiKey ?? false;
+
+  /// Die richtige Lösung als Text – Grundlage für Tipp und Erklärung.
+  String get _correctAnswerText {
+    final label = _result?.correctAnswerLabel;
+    if (label != null && label.isNotEmpty) return label;
+    final summary = widget.card.answerSummary;
+    return summary.isNotEmpty ? summary : widget.card.back;
+  }
+
+  /// Was der Nutzer geantwortet hat, als Text für die Erklärung.
+  String? get _userAnswerText {
+    final card = widget.card;
+    final options = card.options ?? const [];
+    switch (card.type) {
+      case QuestionType.singleChoice:
+        final i = _selectedIndex;
+        return i == null || i >= options.length ? null : options[i].text;
+      case QuestionType.multipleChoice:
+        final indices = _selectedIndices.toList()..sort();
+        return [for (final i in indices) if (i < options.length) options[i].text].join('; ');
+      case QuestionType.freeText:
+        return _freeTextController.text;
+      case QuestionType.fillBlank:
+        return _blankControllers.map((c) => c.text).join('; ');
+      case QuestionType.dragDrop:
+        return [for (final e in _assignments.entries) '${e.value} -> ${e.key}'].join('; ');
+      case QuestionType.dragCategory:
+        return [for (final e in _assignments.entries) '${e.key} -> ${e.value}'].join('; ');
+      case QuestionType.flashcard:
+      case QuestionType.html:
+        return null;
+    }
+  }
+
+  Future<void> _loadHint() async {
+    final ai = _aiOrNull();
+    if (ai == null) return;
+    setState(() {
+      _hintLoading = true;
+      _aiHelpError = null;
+    });
+    try {
+      final hint = await ai.generateHint(question: widget.card.front, correctAnswer: _correctAnswerText);
+      if (mounted) setState(() => _hint = hint);
+    } catch (e) {
+      if (mounted) setState(() => _aiHelpError = e is AiServiceException ? e.message : 'Tipp fehlgeschlagen: $e');
+    } finally {
+      if (mounted) setState(() => _hintLoading = false);
+    }
+  }
+
+  Future<void> _loadExplanation({bool simpler = false}) async {
+    final ai = _aiOrNull();
+    if (ai == null) return;
+    setState(() {
+      _explanationLoading = true;
+      _aiHelpError = null;
+    });
+    try {
+      final text = await ai.explainAnswer(
+        question: widget.card.front,
+        correctAnswer: _correctAnswerText,
+        userAnswer: _userAnswerText,
+        wasCorrect: _result?.isCorrect,
+        previousExplanation: simpler ? _explanation : null,
+      );
+      if (!mounted) return;
+      setState(() {
+        _explanation = text;
+        if (simpler) _explainedSimpler = true;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _aiHelpError = e is AiServiceException ? e.message : 'Erklärung fehlgeschlagen: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _explanationLoading = false);
+    }
+  }
+
+  static Widget _smallSpinner() =>
+      const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2));
+
+  /// "Tipp" vor dem Antworten – ein Denkanstoß ohne Lösung. Eine danach
+  /// richtige Antwort zählt nur als "Schwer" (siehe [QuestionAnswerView.onComplete]).
+  Widget _buildHintArea(AppColors c) {
+    if (!_aiHelpAvailable) return const SizedBox.shrink();
+    final hint = _hint;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hint == null)
+            TextButton.icon(
+              onPressed: _hintLoading ? null : _loadHint,
+              icon: _hintLoading ? _smallSpinner() : const Icon(Icons.lightbulb_outline, size: 18),
+              label: const Text('Tipp'),
+            )
+          else
+            _AiHelpBox(icon: Icons.lightbulb_outline, text: hint, color: c.warn, background: c.warnSoft),
+          if (_aiHelpError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(_aiHelpError!, style: TextStyle(fontSize: 12, color: c.danger)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// "Erklär mir das" nach dem Antworten, danach optional "Einfacher erklären".
+  Widget _buildExplainArea(AppColors c) {
+    if (!_aiHelpAvailable) return const SizedBox.shrink();
+    final explanation = _explanation;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (explanation == null)
+            OutlinedButton.icon(
+              onPressed: _explanationLoading ? null : () => _loadExplanation(),
+              icon: _explanationLoading ? _smallSpinner() : const Icon(Icons.psychology_alt_outlined, size: 18),
+              label: Text(_result?.isCorrect == true ? 'Warum ist das richtig?' : 'Erklär mir das'),
+            )
+          else ...[
+            _AiHelpBox(
+              icon: Icons.psychology_alt_outlined,
+              text: explanation,
+              color: c.accentOnSoft,
+              background: c.accentSoft,
+            ),
+            if (!_explainedSimpler)
+              TextButton.icon(
+                onPressed: _explanationLoading ? null : () => _loadExplanation(simpler: true),
+                icon: _explanationLoading ? _smallSpinner() : const Icon(Icons.child_care_outlined, size: 18),
+                label: const Text('Einfacher erklären'),
+              ),
+          ],
+          if (_aiHelpError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(_aiHelpError!, style: TextStyle(fontSize: 12, color: c.danger)),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -332,46 +501,51 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       children: [
         Expanded(
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: GestureDetector(
-                onTap: _showBack ? null : () => setState(() => _showBack = true),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 34),
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    border: Border.all(color: c.border),
-                    borderRadius: BorderRadius.circular(26),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _newBadge(c),
-                      _buildCardImage(c),
-                      Text(
-                        widget.card.front,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, height: 1.45),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: _showBack ? null : () => setState(() => _showBack = true),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 34),
+                      decoration: BoxDecoration(
+                        color: c.surface,
+                        border: Border.all(color: c.border),
+                        borderRadius: BorderRadius.circular(26),
                       ),
-                      if (_showBack) ...[
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Divider(height: 1, color: c.border),
-                        ),
-                        Text(
-                          widget.card.back,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 15, height: 1.6, color: c.inkMuted),
-                        ),
-                      ] else ...[
-                        const SizedBox(height: 16),
-                        Text('Zum Umdrehen tippen', style: TextStyle(fontSize: 12, color: c.inkMuted)),
-                      ],
-                    ],
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _newBadge(c),
+                          _buildCardImage(c),
+                          Text(
+                            widget.card.front,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, height: 1.45),
+                          ),
+                          if (_showBack) ...[
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 24),
+                              child: Divider(height: 1, color: c.border),
+                            ),
+                            Text(
+                              widget.card.back,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 15, height: 1.6, color: c.inkMuted),
+                            ),
+                          ] else ...[
+                            const SizedBox(height: 16),
+                            Text('Zum Umdrehen tippen', style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  if (_showBack) _buildExplainArea(c) else _buildHintArea(c),
+                ],
               ),
             ),
           ),
@@ -485,14 +659,21 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             ],
           ),
         ),
+        if (!_checked) _buildHintArea(c),
         if (_checked) ...[
           const SizedBox(height: 16),
           _buildFeedback(c),
+          _buildExplainArea(c),
         ],
         const SizedBox(height: 20),
         if (_checked)
           FilledButton(
-            onPressed: () => _submit(isCorrect: _result!.isCorrect),
+            onPressed: () => _submit(
+              isCorrect: _result!.isCorrect,
+              // Mit Tipp richtig: zählt, aber nur als "Schwer" – die Ampel
+              // steigt dadurch nicht.
+              selfGrade: _hint != null && _result!.isCorrect ? Grade.hard : null,
+            ),
             child: const Text('Weiter'),
           )
         else
@@ -760,6 +941,33 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AiHelpBox extends StatelessWidget {
+  const _AiHelpBox({required this.icon, required this.text, required this.color, required this.background});
+
+  final IconData icon;
+  final String text;
+  final Color color;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(14)),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(child: SelectableText(text, style: TextStyle(fontSize: 13.5, height: 1.45, color: c.ink))),
         ],
       ),
     );

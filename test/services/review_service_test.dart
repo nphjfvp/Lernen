@@ -70,6 +70,25 @@ void main() {
     });
   });
 
+  group('ReviewService.evaluate – richtig mit Tipp', () {
+    test('zählt als "Schwer": nicht falsch, Ampel steigt nicht, keine Beförderung', () {
+      final card = _card(
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
+        masteryBox: Flashcard.masteryBoxCap,
+        reps: 3,
+        lastReview: DateTime(2026, 3, 5),
+      );
+      final outcome = service.evaluate(card, isCorrect: true, selfGrade: Grade.hard, now: now);
+      expect(outcome.wasWrong, isFalse);
+      expect(outcome.levelChange, LevelChange.none);
+      expect(outcome.card.variantLevel, 0);
+      expect(outcome.card.masteryBox, Flashcard.masteryBoxCap);
+
+      final fresh = service.evaluate(_card(), isCorrect: true, selfGrade: Grade.hard, now: now);
+      expect(fresh.card.masteryBox, 0);
+    });
+  });
+
   group('ReviewService.evaluate – Stufenwechsel', () {
     test('Beförderung ohne vorbereiteten Inhalt meldet promotionPending', () {
       final card = _card(

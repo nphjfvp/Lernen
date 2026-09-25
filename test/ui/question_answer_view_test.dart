@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lernen/models/app_settings.dart';
 import 'package:lernen/models/flashcard.dart';
+import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/services/fsrs_service.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/daily/question_answer_view.dart';
+import 'package:provider/provider.dart';
+
+class _SettingsWithKey extends SettingsRepository {
+  @override
+  AppSettings get settings => const AppSettings(openRouterApiKey: 'sk-test');
+}
 
 Flashcard _card({
   QuestionType type = QuestionType.flashcard,
@@ -220,6 +228,37 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(reportedCorrect, isTrue);
+    });
+  });
+
+  group('QuestionAnswerView – KI-Hilfe', () {
+    final choiceCard = _card(
+      type: QuestionType.singleChoice,
+      options: const [QuizOption(text: 'A', isCorrect: true), QuizOption(text: 'B', isCorrect: false)],
+    );
+
+    testWidgets('ohne API-Key gibt es weder Tipp noch Erklärung', (tester) async {
+      await tester.pumpWidget(_harness(choiceCard, ({selfGrade, isCorrect}) {}));
+      expect(find.text('Tipp'), findsNothing);
+      await tester.tap(find.text('B'));
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Erklär mir das'), findsNothing);
+    });
+
+    testWidgets('mit API-Key: Tipp vor dem Prüfen, Erklärung danach', (tester) async {
+      await tester.pumpWidget(ChangeNotifierProvider<SettingsRepository>(
+        create: (_) => _SettingsWithKey(),
+        child: _harness(choiceCard, ({selfGrade, isCorrect}) {}),
+      ));
+      expect(find.text('Tipp'), findsOneWidget);
+      await tester.tap(find.text('B'));
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Tipp'), findsNothing);
+      expect(find.text('Erklär mir das'), findsOneWidget);
     });
   });
 }

@@ -962,6 +962,79 @@ Markdown-Codefences, ohne zusätzlichen Text:
     return parsed['correct'] == true;
   }
 
+  static const _explainSystemPrompt = '''
+Du bist ein geduldiger Tutor für Studierende. Du bekommst eine Lernfrage,
+die richtige Lösung und (falls vorhanden) die Antwort des Lernenden.
+Erkläre in 3 bis 6 kurzen Sätzen, WARUM die Lösung richtig ist – das
+zugrunde liegende Prinzip, nicht nur die Lösung wiederholen. Wenn der
+Lernende falsch lag: benenne freundlich den konkreten Denkfehler bzw. was
+seine Antwort von der Lösung unterscheidet. Schließe mit einer kurzen
+Merkhilfe (Eselsbrücke, Beispiel oder Faustregel), wenn sich eine anbietet.
+Stütze dich auf die gegebene Lösung und widersprich ihr nicht.
+Antworte in normalem Fließtext (kein JSON, keine Codefences), in der
+Sprache der Frage. Formeln in LaTeX zwischen \$…\$.
+''';
+
+  static const _explainSimplerSystemPrompt = '''
+Du bist ein geduldiger Tutor. Der Lernende hat die vorherige Erklärung zu
+einer Lernfrage nicht verstanden. Erkläre dieselbe Sache noch einmal VIEL
+einfacher: Alltagssprache, keine Fachbegriffe ohne Erklärung, ein
+anschauliches Beispiel oder eine Analogie, höchstens 5 kurze Sätze.
+Antworte in normalem Fließtext (kein JSON, keine Codefences), in der
+Sprache der Frage. Formeln in LaTeX zwischen \$…\$.
+''';
+
+  /// Erklärt nach dem Beantworten, warum die Lösung stimmt (und bei einer
+  /// falschen Antwort, wo der Denkfehler lag). Mit [previousExplanation]
+  /// entsteht stattdessen eine deutlich einfachere Neufassung ("Einfacher
+  /// erklären").
+  Future<String> explainAnswer({
+    required String question,
+    required String correctAnswer,
+    String? userAnswer,
+    bool? wasCorrect,
+    String? previousExplanation,
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Frage: $question')
+      ..writeln('Richtige Lösung: $correctAnswer');
+    if (userAnswer != null && userAnswer.trim().isNotEmpty) {
+      buffer.writeln('Antwort des Lernenden: $userAnswer');
+    }
+    if (wasCorrect != null) {
+      buffer.writeln(wasCorrect ? 'Die Antwort war richtig.' : 'Die Antwort war falsch.');
+    }
+    if (previousExplanation != null) {
+      buffer
+        ..writeln()
+        ..writeln('Bisherige Erklärung (zu schwer verständlich):')
+        ..writeln(previousExplanation);
+    }
+    final raw = await _complete(
+      previousExplanation == null ? _explainSystemPrompt : _explainSimplerSystemPrompt,
+      buffer.toString(),
+    );
+    return raw.trim();
+  }
+
+  static const _hintSystemPrompt = '''
+Du gibst einem Lernenden einen TIPP zu einer Lernfrage, ohne die Lösung zu
+verraten. Ein Satz, höchstens zwei: ein Denkanstoß (worauf achten, welches
+Prinzip, welche Eselsbrücke), aber NIE die Lösung selbst, kein Teil davon
+wörtlich und bei Auswahlfragen keine Option ausschließen oder nennen.
+Antworte in normalem Fließtext (kein JSON, keine Codefences), in der
+Sprache der Frage.
+''';
+
+  /// Denkanstoß VOR dem Antworten, ohne die Lösung zu verraten.
+  Future<String> generateHint({required String question, required String correctAnswer}) async {
+    final raw = await _complete(
+      _hintSystemPrompt,
+      'Frage: $question\nLösung (NICHT verraten, nur als Hintergrund für den Tipp): $correctAnswer',
+    );
+    return raw.trim();
+  }
+
   static const _chatSystemPrompt = '''
 Du bist ein Lernassistent für Studierende. Wird dir Material bereitgestellt
 (hochgeladenes Vorlesungs-/Übungsmaterial eines Fachs, chronologisch

@@ -85,6 +85,13 @@ engerem Fokus statt Feature-Fülle.
   übt das gesamte Kartenset unabhängig von Fälligkeit/Klausur-Pacing/
   Einheiten-Status, optional gefiltert nach Ampel-Stufe (siehe unten) – jede
   Antwort aktualisiert trotzdem den echten FSRS-Zustand.
+- **KI-Hilfe beim Lernen** (`QuestionAnswerView`, `AiService.generateHint`/
+  `explainAnswer`, nur mit API-Key): vor dem Antworten ein **Tipp** (Denkanstoß
+  ohne Lösung – eine danach richtige Antwort zählt nur als "Schwer", die
+  Ampel steigt dadurch nicht und die Stufe bleibt), nach dem Antworten
+  **"Erklär mir das"** (warum die Lösung stimmt, wo der Denkfehler lag, mit
+  Merkhilfe) und bei Bedarf **"Einfacher erklären"**. Gilt in Daily Quiz,
+  Üben, Sprint und Zwischen-Check.
 - **Karteikarten-Liste: Mehrfachauswahl + Löschen** (`lib/ui/flashcards/
   flashcard_list_screen.dart`) – lang auf eine Karte drücken startet den
   Auswahlmodus (Checkbox pro Karte, "Alle auswählen", gemeinsames Löschen in

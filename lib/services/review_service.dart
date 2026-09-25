@@ -68,16 +68,20 @@ class ReviewService {
 
   final FsrsService _fsrs;
 
-  /// Genau eines von [selfGrade] (offene Karteikarte, selbst bewertet) oder
-  /// [isCorrect] (automatisch geprüfter Fragetyp) ist gesetzt.
+  /// [selfGrade] für eine offene Karteikarte (selbst bewertet), [isCorrect]
+  /// für einen automatisch geprüften Fragetyp. Beides zusammen heißt: richtig,
+  /// aber nur mit Tipp (siehe QuestionAnswerView) – die Bewertung folgt dann
+  /// [selfGrade], und die Eskalationskette bleibt unberührt (mit Hilfe
+  /// gelöst ist weder ein Grund zum Aufsteigen noch zum Absteigen).
   ReviewOutcome evaluate(Flashcard card, {Grade? selfGrade, bool? isCorrect, DateTime? now}) {
     assert(selfGrade != null || isCorrect != null, 'selfGrade oder isCorrect muss gesetzt sein');
     final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
     final wasWrong = isCorrect == false || selfGrade == Grade.again;
     var updated = _fsrs.review(card, grade, now: now);
 
-    // Die Eskalationskette gibt es nur bei automatisch geprüften Typen.
-    if (isCorrect == null || updated.variantChain == null) {
+    // Die Eskalationskette gibt es nur bei automatisch geprüften Typen, und
+    // nur für Antworten ohne Hilfe.
+    if (isCorrect == null || selfGrade != null || updated.variantChain == null) {
       return ReviewOutcome(card: updated, wasWrong: wasWrong);
     }
 
