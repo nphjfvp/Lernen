@@ -74,6 +74,19 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// Selbstbewertung (front/back sind bei diesem Typ genau dafür gedacht).
   bool _webViewAvailable = true;
 
+  /// Die Aufrufer speichern asynchron (DB-Write), bevor sie zur nächsten
+  /// Karte wechseln – ohne diese Sperre würde ein zweites Tippen auf
+  /// "Weiter"/eine Bewertung in dieser Zeit (oder eine doppelt gesendete
+  /// Nachricht einer html-Seite) dieselbe Karte zweimal bewerten und die
+  /// folgende Karte überspringen.
+  bool _submitted = false;
+
+  void _submit({Grade? selfGrade, bool? isCorrect}) {
+    if (_submitted) return;
+    _submitted = true;
+    widget.onComplete(selfGrade: selfGrade, isCorrect: isCorrect);
+  }
+
   bool get _isCategoryDrag => widget.card.type == QuestionType.dragCategory;
 
   @override
@@ -122,7 +135,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     try {
       final data = jsonDecode(message.message);
       if (data is Map && data['correct'] is bool) {
-        widget.onComplete(isCorrect: data['correct'] as bool);
+        _submit(isCorrect: data['correct'] as bool);
       }
     } catch (_) {
       // Siehe Doc-Kommentar oben.
@@ -159,6 +172,13 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       if (_isCategoryDrag) {
         _assignments[source] = zone;
       } else {
+        // Belegtes Ziel: der bisherige Begriff muss zurück in den Pool,
+        // sonst verschwände er aus der Oberfläche und wäre nicht mehr
+        // zuordenbar.
+        final displaced = _assignments[zone];
+        if (displaced != null && displaced != source && !_pool.contains(displaced)) {
+          _pool.add(displaced);
+        }
         _assignments[zone] = source;
       }
     });
@@ -366,28 +386,28 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                         label: 'Nochmal',
                         fg: c.danger,
                         bg: c.dangerSoft,
-                        onTap: () => widget.onComplete(selfGrade: Grade.again))),
+                        onTap: () => _submit(selfGrade: Grade.again))),
                 const SizedBox(width: 9),
                 Expanded(
                     child: _ActionButton(
                         label: 'Schwer',
                         fg: c.warn,
                         bg: c.warnSoft,
-                        onTap: () => widget.onComplete(selfGrade: Grade.hard))),
+                        onTap: () => _submit(selfGrade: Grade.hard))),
                 const SizedBox(width: 9),
                 Expanded(
                     child: _ActionButton(
                         label: 'Gut',
                         fg: c.good,
                         bg: c.goodSoft,
-                        onTap: () => widget.onComplete(selfGrade: Grade.good))),
+                        onTap: () => _submit(selfGrade: Grade.good))),
                 const SizedBox(width: 9),
                 Expanded(
                     child: _ActionButton(
                         label: 'Leicht',
                         fg: c.accentOnSoft,
                         bg: c.accentSoft,
-                        onTap: () => widget.onComplete(selfGrade: Grade.easy))),
+                        onTap: () => _submit(selfGrade: Grade.easy))),
               ],
             ),
           )
@@ -472,7 +492,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         const SizedBox(height: 20),
         if (_checked)
           FilledButton(
-            onPressed: () => widget.onComplete(isCorrect: _result!.isCorrect),
+            onPressed: () => _submit(isCorrect: _result!.isCorrect),
             child: const Text('Weiter'),
           )
         else
@@ -649,27 +669,40 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   }
 
   Widget _dropZone(AppColors c, String zone) {
-    final assignedSource = _isCategoryDrag
-        ? _assignments.entries.firstWhere((e) => e.value == zone, orElse: () => const MapEntry('', '')).key
-        : _assignments[zone];
-    final hasAssignment = assignedSource != null && assignedSource.isNotEmpty;
+    final pairs = widget.card.dragPairs ?? const [];
+    // Zuordnen: genau ein Begriff pro Ziel. Kategorien: beliebig viele – ALLE
+    // anzeigen (einzeln zurücklegbar, nach dem Prüfen einzeln eingefärbt),
+    // sonst verschwänden weitere zugeordnete Begriffe unsichtbar.
+    final assignedSources = _isCategoryDrag
+        ? [for (final e in _assignments.entries) if (e.value == zone) e.key]
+        : [if (_assignments[zone] != null) _assignments[zone]!];
 
     Color? tileColor;
-    if (_checked) {
-      final pairs = widget.card.dragPairs ?? const [];
-      final correctSource = _isCategoryDrag
-          ? null
-          : pairs.firstWhere((p) => p.target == zone, orElse: () => const DragPair(source: '', target: '')).source;
-      final isRight = _isCategoryDrag
-          ? pairs.any((p) => p.source == assignedSource && p.target == zone)
-          : assignedSource == correctSource;
-      tileColor = isRight ? c.goodSoft : c.dangerSoft;
+    if (_checked && !_isCategoryDrag) {
+      final correctSource =
+          pairs.firstWhere((p) => p.target == zone, orElse: () => const DragPair(source: '', target: '')).source;
+      tileColor = assignedSources.isNotEmpty && assignedSources.first == correctSource ? c.goodSoft : c.dangerSoft;
+    }
+
+    Widget assignedChip(String source) {
+      final chipColor = _checked && _isCategoryDrag
+          ? (pairs.any((p) => p.source == source && p.target == zone) ? c.goodSoft : c.dangerSoft)
+          : c.surface;
+      return GestureDetector(
+        onTap: _checked ? null : () => _returnToPool(source),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(color: chipColor, borderRadius: BorderRadius.circular(20)),
+          child: Text(source, style: TextStyle(fontSize: 12.5, color: c.ink)),
+        ),
+      );
     }
 
     return DragTarget<String>(
       onWillAcceptWithDetails: (_) => !_checked,
       onAcceptWithDetails: (details) => _placeInZone(details.data, zone),
       builder: (context, candidateData, rejectedData) {
+        final label = Text(zone, style: const TextStyle(fontWeight: FontWeight.w600));
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -678,22 +711,23 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             border: Border.all(color: c.border),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(zone, style: const TextStyle(fontWeight: FontWeight.w600)),
-              ),
-              if (hasAssignment)
-                GestureDetector(
-                  onTap: _checked ? null : () => _returnToPool(assignedSource),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(20)),
-                    child: Text(assignedSource, style: TextStyle(fontSize: 12.5, color: c.ink)),
-                  ),
+          child: _isCategoryDrag
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    label,
+                    if (assignedSources.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 6, runSpacing: 6, children: assignedSources.map(assignedChip).toList()),
+                    ],
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: label),
+                    if (assignedSources.isNotEmpty) assignedChip(assignedSources.first),
+                  ],
                 ),
-            ],
-          ),
         );
       },
     );

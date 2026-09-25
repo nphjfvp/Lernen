@@ -381,9 +381,12 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           ...materials.where((m) => m.unitId == unit.id).map(_materialRow),
                           const SizedBox(height: 6),
                         ],
-                      if (materials.any((m) => m.unitId == null)) ...[
+                      // Auch Materialien, deren Einheit nicht (mehr) existiert
+                      // (z.B. vor dem Lösch-Kaskaden-Fix gelöscht), hier statt
+                      // unsichtbar.
+                      if (materials.any((m) => !units.any((u) => u.id == m.unitId))) ...[
                         if (units.isNotEmpty) const _MaterialGroupLabel('Ohne Einheit'),
-                        ...materials.where((m) => m.unitId == null).map(_materialRow),
+                        ...materials.where((m) => !units.any((u) => u.id == m.unitId)).map(_materialRow),
                       ],
                     ],
                   ],
@@ -498,7 +501,15 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           'verfügbar).',
     );
     if (ok && mounted) {
+      final materialRepo = context.read<MaterialRepository>();
+      final conceptRepo = context.read<ConceptRepository>();
+      final flashcardRepo = context.read<FlashcardRepository>();
+      final summaryRepo = context.read<SummaryRepository>();
       await context.read<LectureUnitRepository>().delete(unit.id, unit.moduleId);
+      await materialRepo.loadForModule(unit.moduleId);
+      await conceptRepo.loadForModule(unit.moduleId);
+      await flashcardRepo.loadForModule(unit.moduleId);
+      await summaryRepo.loadForModule(unit.moduleId);
     }
   }
 
@@ -717,6 +728,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
         sourceMaterialIds: concept.sourceMaterialIds,
         createdAt: concept.createdAt,
         unitId: concept.unitId,
+        linkedMaterialId: concept.linkedMaterialId,
+        linkedPageNumber: concept.linkedPageNumber,
       ),
     ]);
   }

@@ -44,6 +44,18 @@ void main() {
       expect(AnswerChecker.checkSingleChoice(q, 0).isCorrect, isFalse);
       expect(AnswerChecker.checkSingleChoice(q, null).isCorrect, isFalse);
     });
+
+    test('mehrere als richtig markierte Optionen: jede davon zählt (UI zeigt alle grün)', () {
+      final q = _question(options: const [
+        QuizOption(text: 'A', isCorrect: true),
+        QuizOption(text: 'B', isCorrect: false),
+        QuizOption(text: 'C', isCorrect: true),
+      ]);
+      expect(AnswerChecker.checkSingleChoice(q, 0).isCorrect, isTrue);
+      expect(AnswerChecker.checkSingleChoice(q, 2).isCorrect, isTrue);
+      expect(AnswerChecker.checkSingleChoice(q, 1).isCorrect, isFalse);
+      expect(AnswerChecker.checkSingleChoice(q, 1).correctAnswerLabel, 'A, C');
+    });
   });
 
   group('AnswerChecker.checkMultipleChoice', () {

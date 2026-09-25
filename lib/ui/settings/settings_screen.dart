@@ -129,6 +129,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() => _syncMessage = successMessage);
     } on SyncException catch (e) {
       if (mounted) setState(() => _syncMessage = e.message);
+    } catch (e) {
+      // Firestore-/Netzwerkfehler (z.B. Dokument über dem 1-MiB-Limit,
+      // fehlende Berechtigung, offline) sind keine SyncException – ohne
+      // diesen Zweig verschwände der Fehler kommentarlos.
+      if (mounted) setState(() => _syncMessage = 'Sync fehlgeschlagen: $e');
     } finally {
       if (mounted) setState(() => _syncBusy = false);
     }
@@ -185,6 +190,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       successMessage: 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.',
       afterSuccess: () async {
         final repo = context.read<SettingsRepository>();
+        // Der Pull hat die KI-Einstellungen bereits direkt in die DB
+        // geschrieben – erst neu laden, sonst überschreibt das Update unten
+        // sie wieder mit dem veralteten Stand aus dem Speicher.
+        await repo.load();
         await repo.update(repo.settings.copyWith(syncCode: code, lastSyncAt: DateTime.now()));
       },
     );
@@ -213,6 +222,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       successMessage: 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.',
       afterSuccess: () async {
         final repo = context.read<SettingsRepository>();
+        // Der Pull hat die KI-Einstellungen bereits direkt in die DB
+        // geschrieben – erst neu laden, sonst überschreibt das Update unten
+        // sie wieder mit dem veralteten Stand aus dem Speicher.
+        await repo.load();
         await repo.update(repo.settings.copyWith(lastSyncAt: DateTime.now()));
       },
     );

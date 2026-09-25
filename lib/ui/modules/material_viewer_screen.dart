@@ -14,7 +14,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
-import '../../services/fsrs_service.dart' show Grade;
+import '../../services/fsrs_service.dart' show FsrsService, Grade;
 import '../../services/highlight_matcher.dart';
 import '../../services/material_file_store.dart';
 import '../../services/question_parsing.dart';
@@ -372,7 +372,13 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
         MaterialPageRoute(builder: (_) => _CheckpointQuizScreen(cards: cards)),
       );
       if (missed != null && missed.isNotEmpty && mounted) {
-        await context.read<FlashcardRepository>().saveAll(missed);
+        // Die Fehlantwort tatsächlich als solche verbuchen (Ampel rot, morgen
+        // fällig) statt die Karte als unbeantwortet "Neu" abzulegen, wo sie
+        // hinter dem Neu-Karten-Budget auf unbestimmte Zeit warten würde.
+        final fsrs = FsrsService();
+        await context
+            .read<FlashcardRepository>()
+            .saveAll(missed.map((c) => fsrs.review(c, Grade.again)).toList());
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('${missed.length} Frage${missed.length == 1 ? '' : 'n'} fürs Daily Quiz vorgemerkt.'),
@@ -411,6 +417,10 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
         due: now,
         type: type,
         unitId: widget.material.unitId,
+        // Nur falsch beantwortete Karten werden überhaupt gespeichert – eine
+        // gerade beim Lesen aufgedeckte Lücke soll nicht am Einheiten-
+        // "behandelt"-Gate hängen bleiben (siehe Flashcard.priorityIntroduction).
+        priorityIntroduction: true,
         options: QuestionParsing.parseOptions(fixed['options']),
         correctText: fixed['correctText'] as String?,
         blanks: QuestionParsing.parseBlanks(fixed['blanks']),

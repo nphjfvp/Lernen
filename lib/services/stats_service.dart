@@ -55,14 +55,18 @@ class StatsService {
   final FsrsService _fsrs;
   final MasteryService _mastery;
 
+  /// [studyDays]: protokollierte Lerntage (siehe StudyLogRepository) – ohne
+  /// sie kennt der Streak nur den jeweils LETZTEN Wiederholungstag je Karte,
+  /// frühere Lerntage verschwänden, sobald ihre Karten erneut drankommen.
   OverallStats compute({
     required List<Module> modules,
     required List<Flashcard> allCards,
+    Set<DateTime> studyDays = const {},
     DateTime? now,
   }) {
     final today = now ?? DateTime.now();
 
-    final streak = _computeStreak(allCards, today);
+    final streak = _computeStreak(allCards, studyDays, today);
     final totalReviews = allCards.fold<int>(0, (sum, c) => sum + c.reps);
     final overallAverage = _averageRetrievability(allCards, today);
 
@@ -100,8 +104,10 @@ class StatsService {
   /// heute noch nicht gelernt wurde) mit mindestens einer Karteikarten-
   /// Wiederholung. Ein noch nicht begonnener heutiger Tag zählt nicht als
   /// gerissener Streak - der bleibt bestehen, bis der Tag vorbei ist.
-  int _computeStreak(List<Flashcard> allCards, DateTime today) {
-    final reviewDays = <DateTime>{};
+  int _computeStreak(List<Flashcard> allCards, Set<DateTime> studyDays, DateTime today) {
+    final reviewDays = <DateTime>{
+      for (final d in studyDays) DateTime(d.year, d.month, d.day),
+    };
     for (final card in allCards) {
       final lr = card.lastReview;
       if (lr != null) reviewDays.add(DateTime(lr.year, lr.month, lr.day));

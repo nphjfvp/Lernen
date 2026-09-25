@@ -67,6 +67,22 @@ void main() {
       expect(stats.streakDays, 0);
     });
 
+    test('protokollierte Lerntage zählen mit, auch wenn deren Karten inzwischen erneut wiederholt wurden', () {
+      // Alle Karten wurden heute zuletzt wiederholt – ihr lastReview kennt
+      // die Vortage nicht mehr, das Lerntage-Protokoll schon.
+      final cards = [_card(moduleId: 'm1', reps: 3, lastReview: today)];
+      final stats = StatsService().compute(
+        modules: [],
+        allCards: cards,
+        studyDays: {
+          today.subtract(const Duration(days: 1)),
+          DateTime(today.year, today.month, today.day - 2, 18, 30),
+        },
+        now: today,
+      );
+      expect(stats.streakDays, 3);
+    });
+
     test('mehrere Karten am selben Tag zählen nur als ein Streak-Tag', () {
       final cards = [
         _card(moduleId: 'm1', reps: 1, lastReview: today),

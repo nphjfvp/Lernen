@@ -99,7 +99,9 @@ engerem Fokus statt Feature-Fülle.
   falsch) ohnehin nahe 100% liegt (die Vergessenskurve bei Elapsed-Zeit 0 ist
   per Definition ~1) und eine frisch falsch beantwortete Karte sonst
   fälschlich nicht als "Rot" zeigen würde. "Grün" braucht zusätzlich
-  `masteryBox >= Flashcard.masteryBoxCap` (4 erfolgreiche Wiederholungen)
+  `masteryBox >= Flashcard.masteryBoxCap` (4 erfolgreiche Wiederholungen an
+  verschiedenen Tagen – mehrfach am selben Tag richtig, z.B. im Üben-Modus,
+  zählt nur einmal)
   UND eine weiterhin ausreichende Behaltensrate – die Retrievability dient
   hier nur noch als Verfalls-Signal, das eine lange nicht wiederholte,
   eigentlich gemeisterte Karte wieder zurückstuft.
@@ -207,9 +209,11 @@ engerem Fokus statt Feature-Fülle.
   wird beim Speichern kein doppeltes MaterialItem angelegt.
 - **Fortschritt** – eigener Tab mit Streak (aufeinanderfolgende Lerntage),
   Gesamtzahl Wiederholungen und geschätzter Behaltensrate (aus dem
-  FSRS-Zustand der Karten), gesamt und pro Fach. Komplett aus vorhandenen
-  Daten berechnet, kein separates Tracking (siehe
-  `lib/services/stats_service.dart`).
+  FSRS-Zustand der Karten), gesamt und pro Fach (siehe
+  `lib/services/stats_service.dart`). Lerntage für den Streak werden
+  zusätzlich geräte-lokal protokolliert (`StudyLogRepository`) –
+  `Flashcard.lastReview` allein kennt nur die jeweils letzte Wiederholung
+  je Karte, frühere Lerntage gingen sonst verloren.
 - **Kalender** – eigener Tab mit Monatsansicht: zeigt wöchentlich
   wiederkehrende Vorlesungstermine (pro Fach im Bearbeiten-Formular als
   Wochentag + Uhrzeit hinterlegt, `Module.lectureSlots`) zusammen mit den
@@ -281,7 +285,7 @@ engerem Fokus statt Feature-Fülle.
   demselben Konto anmelden und synchronisieren. **Ohne Account**:
   Sync-Code-basiert wie beim Vorgänger (`sync_codes/{code}`, funktioniert
   wie ein Passwort) – bleibt als Fallback erhalten. Beide Wege übertragen
-  Fächer, Materialien, Konzepte, Karteikarten und die Modellwahl. Der
+  Fächer, Einheiten, Materialien, Konzepte, Karteikarten und die Modellwahl. Der
   eigentliche API-Key wird bewusst NUR über den Konto-Weg übertragen (dort
   regel-geschützt auf den Besitzer) – ein frei getippter Sync-Code hat keine
   Mindestkomplexität/Ratenbegrenzung und darf kein potenziell

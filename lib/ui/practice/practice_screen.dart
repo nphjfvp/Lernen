@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../repositories/study_log_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
@@ -90,6 +91,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
   Future<void> _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
     final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
     var updated = _fsrs.review(card, grade);
+    unawaited(StudyLogRepository().recordDay(DateTime.now()));
 
     if (isCorrect != null && updated.variantChain != null) {
       final beforeType = updated.type;

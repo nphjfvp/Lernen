@@ -8,21 +8,43 @@ import 'html_question_contract.dart';
 class QuestionParsing {
   QuestionParsing._();
 
+  // Die parse*-Funktionen verarbeiten ungeprüfte KI-Ausgabe: ein einzelnes
+  // abweichend geformtes Element (Option als reiner String, "isCorrect":
+  // "true", fehlendes Feld) darf nicht per TypeError die gesamte
+  // Generierung abbrechen – unbrauchbare Elemente werden übersprungen,
+  // [normalizeGeneratedFlashcard] entscheidet danach über Rettung/Verwerfen.
+
   static List<QuizOption>? parseOptions(dynamic raw) {
-    final list = raw as List?;
-    if (list == null) return null;
-    return list.map((o) => QuizOption.fromMap(Map<String, dynamic>.from(o as Map))).toList();
+    if (raw is! List) return null;
+    final options = <QuizOption>[];
+    for (final o in raw) {
+      if (o is Map) {
+        final text = o['text'];
+        if (text == null) continue;
+        final isCorrect = o['isCorrect'];
+        options.add(QuizOption(
+          text: text.toString(),
+          isCorrect: isCorrect == true || isCorrect.toString().toLowerCase() == 'true',
+        ));
+      } else if (o != null) {
+        options.add(QuizOption(text: o.toString(), isCorrect: false));
+      }
+    }
+    return options;
   }
 
   static List<String>? parseBlanks(dynamic raw) {
-    final list = raw as List?;
-    return list?.map((b) => b.toString()).toList();
+    if (raw is! List) return null;
+    return raw.where((b) => b != null).map((b) => b.toString()).toList();
   }
 
   static List<DragPair>? parseDragPairs(dynamic raw) {
-    final list = raw as List?;
-    if (list == null) return null;
-    return list.map((p) => DragPair.fromMap(Map<String, dynamic>.from(p as Map))).toList();
+    if (raw is! List) return null;
+    return [
+      for (final p in raw)
+        if (p is Map && p['source'] != null && p['target'] != null)
+          DragPair(source: p['source'].toString(), target: p['target'].toString()),
+    ];
   }
 
   /// Kette für die Schwierigkeits-Eskalation "einfach -> mittel -> schwer"
@@ -71,8 +93,8 @@ class QuestionParsing {
     final front = (raw['front'] ?? '').toString().trim();
     if (front.isEmpty) return null;
 
-    final type = parseType(raw['type'] as String?);
-    if (_isComplete(raw, type)) return raw;
+    final type = parseType(raw['type']?.toString());
+    if (_isComplete(raw, type)) return _withStringFields(raw);
 
     final fallbackAnswer = _bestAvailableAnswer(raw);
     if (fallbackAnswer == null) return null;
@@ -83,6 +105,14 @@ class QuestionParsing {
       if (raw['conceptTitle'] != null) 'conceptTitle': raw['conceptTitle'],
     };
   }
+
+  /// Aufrufer lesen diese Felder per `as String?` – eine Zahl oder ein Bool
+  /// von der KI (z.B. `"correctText": 42`) würde dort sonst crashen.
+  static Map<String, dynamic> _withStringFields(Map<String, dynamic> raw) => {
+        ...raw,
+        for (final key in const ['type', 'front', 'back', 'correctText', 'htmlContent', 'conceptTitle'])
+          if (raw[key] != null && raw[key] is! String) key: raw[key].toString(),
+      };
 
   static bool _isComplete(Map<String, dynamic> raw, QuestionType type) {
     switch (type) {

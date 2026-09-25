@@ -115,9 +115,18 @@ class FsrsService {
     // Generischer Mastery-Box-Zähler für die Ampel (siehe Flashcard.masteryBox
     // Doc-Kommentar): "gewusst" (good/easy) steigt ihn, alles andere
     // (again/hard, also auch ein bloß mühsam Erratenes) senkt ihn wieder.
+    // Steigen nur einmal pro Kalendertag: wird dieselbe Karte am selben Tag
+    // mehrfach richtig beantwortet (Üben-Modus, Wiederholungsrunde im Daily
+    // Quiz), ist das Kurzzeitgedächtnis, kein über mehrere Sessions
+    // nachgewiesenes Wissen – sonst wäre "Grün" in wenigen Minuten erreichbar.
     final knewIt = grade == Grade.good || grade == Grade.easy;
+    final lastReview = card.lastReview;
+    final alreadyReviewedToday = lastReview != null &&
+        lastReview.year == reviewedAt.year &&
+        lastReview.month == reviewedAt.month &&
+        lastReview.day == reviewedAt.day;
     final masteryBox = knewIt
-        ? (card.masteryBox + 1).clamp(0, Flashcard.masteryBoxCap)
+        ? (alreadyReviewedToday ? card.masteryBox : (card.masteryBox + 1).clamp(0, Flashcard.masteryBoxCap))
         : (card.masteryBox - 1).clamp(0, Flashcard.masteryBoxCap);
 
     return card.copyWithReview(
@@ -147,10 +156,12 @@ class FsrsService {
   /// Freitext, Lückentext, Zuordnen – siehe AnswerChecker) eine FSRS-
   /// Bewertung aus der reinen Korrektheit ab, statt den Nutzer selbst
   /// einschätzen zu lassen (das bleibt dem offenen `flashcard`-Typ
-  /// vorbehalten). Ein falscher Versuch zählt als "Schwer" statt "Nochmal":
-  /// ein Formulierungs-/Flüchtigkeitsfehler bedeutet nicht zwingend, dass
-  /// der Stoff komplett neu gelernt werden muss (Grade.again würde die
-  /// Stabilität stark zurücksetzen). Entspricht dem Verhalten der
-  /// Vorgänger-App (ratingFromResult).
-  Grade gradeFromResult(bool isCorrect) => isCorrect ? Grade.easy : Grade.hard;
+  /// vorbehalten). Binär wie von FSRS für Zwei-Tasten-Bewertung empfohlen:
+  ///  - falsch -> Again: in FSRS ist "Hard" ein ERFOLGREICHER Abruf
+  ///    (Stabilität wächst, Intervall wird länger) – eine falsch beantwortete
+  ///    Frage käme damit später statt früher wieder.
+  ///  - richtig -> Good: "Easy" hieße mühelos gewusst, was eine automatische
+  ///    Prüfung nicht erkennen kann – bei einer neuen Karte wären das sofort
+  ///    ~15 Tage Pause, auch nach einer bloß geratenen Single-Choice-Antwort.
+  Grade gradeFromResult(bool isCorrect) => isCorrect ? Grade.good : Grade.again;
 }

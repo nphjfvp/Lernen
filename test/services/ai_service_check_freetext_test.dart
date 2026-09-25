@@ -57,4 +57,14 @@ void main() {
       );
     });
   });
+
+  test('ein Netzwerkfehler kommt als AiServiceException an, nicht als roher ClientException', () async {
+    final client = MockClient((request) async => throw http.ClientException('offline'));
+    final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+    expect(
+      () => ai.checkFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'B'),
+      throwsA(isA<AiServiceException>()),
+    );
+  });
 }

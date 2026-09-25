@@ -23,13 +23,19 @@ class AnswerCheckResult {
 class AnswerChecker {
   AnswerChecker._();
 
+  /// Jede als richtig markierte Option zählt – die UI hebt nach dem Prüfen
+  /// ebenfalls ALLE `isCorrect`-Optionen grün hervor; markiert die KI bei
+  /// einer Single-Choice-Frage versehentlich zwei Optionen als richtig, darf
+  /// die grün angezeigte Wahl nicht als falsch gewertet werden.
   static AnswerCheckResult checkSingleChoice(Flashcard q, int? selectedIndex) {
     final options = q.options ?? const [];
-    final correctIndex = options.indexWhere((o) => o.isCorrect);
-    final ok = selectedIndex != null && selectedIndex == correctIndex;
+    final ok = selectedIndex != null &&
+        selectedIndex >= 0 &&
+        selectedIndex < options.length &&
+        options[selectedIndex].isCorrect;
     return AnswerCheckResult(
       isCorrect: ok,
-      correctAnswerLabel: correctIndex >= 0 ? options[correctIndex].text : '',
+      correctAnswerLabel: options.where((o) => o.isCorrect).map((o) => o.text).join(', '),
     );
   }
 

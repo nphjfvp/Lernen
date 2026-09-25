@@ -51,13 +51,16 @@ class _RootShellState extends State<RootShell> {
     );
   }
 
-  static const _screens = [
-    HomeScreen(),
-    DailyQuizScreen(),
-    CalendarScreen(),
-    StatsScreen(),
-    SettingsScreen(),
-  ];
+  /// Der IndexedStack hält alle Tabs dauerhaft am Leben – [isActive] sagt
+  /// Daily Quiz/Fortschritt, wann sie sichtbar werden, damit sie dann
+  /// seither neu angelegte Karten/Bewertungen nachladen.
+  List<Widget> get _screens => [
+        const HomeScreen(),
+        DailyQuizScreen(isActive: _index == 1),
+        const CalendarScreen(),
+        StatsScreen(isActive: _index == 3),
+        const SettingsScreen(),
+      ];
 
   static const _navItems = [
     NavItem(icon: Icons.folder_rounded, label: 'Fächer'),

@@ -19,6 +19,34 @@ void main() {
     test('gibt null zurück, wenn kein Feld vorhanden ist', () {
       expect(QuestionParsing.parseOptions(null), isNull);
     });
+
+    test('toleriert typische KI-Abweichungen statt zu crashen', () {
+      final options = QuestionParsing.parseOptions([
+        {'text': 'Paris', 'isCorrect': 'true'},
+        'Lyon',
+        {'isCorrect': true},
+        {'text': 42, 'isCorrect': false},
+      ]);
+      expect(options!.map((o) => o.text), ['Paris', 'Lyon', '42']);
+      expect(options.map((o) => o.isCorrect), [true, false, false]);
+      expect(QuestionParsing.parseOptions('kein Array'), isNull);
+    });
+  });
+
+  test('parseDragPairs überspringt unvollständige Paare statt zu crashen', () {
+    final pairs = QuestionParsing.parseDragPairs([
+      {'source': 'Hund', 'target': 'Tier'},
+      {'source': 'Rose'},
+      'Unsinn',
+    ]);
+    expect(pairs!.single.source, 'Hund');
+  });
+
+  test('normalizeGeneratedFlashcard wandelt Nicht-String-Felder in Strings um', () {
+    final fixed = QuestionParsing.normalizeGeneratedFlashcard(
+        {'type': 'free_text', 'front': 'Wie viel ist 6*7?', 'correctText': 42});
+    expect(fixed!['correctText'], '42');
+    expect(fixed['correctText'] as String?, '42');
   });
 
   group('QuestionParsing.parseBlanks', () {

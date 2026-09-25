@@ -5,6 +5,7 @@ import 'package:sembast/sembast.dart' hide FieldValue;
 import '../models/app_settings.dart';
 import '../models/concept.dart';
 import '../models/flashcard.dart';
+import '../models/lecture_unit.dart';
 import '../models/material_item.dart';
 import '../models/module.dart';
 import '../models/summary.dart';
@@ -41,8 +42,8 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
 ///  - Sync-Code (Fallback ohne Konto, wie beim Vorgänger): Daten liegen
 ///    unter `sync_codes/{code}`, der Code wirkt wie ein Passwort.
 ///
-/// Beide Wege übertragen Fächer, Materialien, Zusammenfassungen, Konzepte
-/// und Karteikarten. Beim BYOK-Teil der Einstellungen (API-Key + Modellwahl)
+/// Beide Wege übertragen Fächer, Einheiten, Materialien, Zusammenfassungen,
+/// Konzepte und Karteikarten. Beim BYOK-Teil der Einstellungen (API-Key + Modellwahl)
 /// unterscheiden sie sich bewusst: der Konto-Weg überträgt auch den API-Key
 /// (nur der authentifizierte Besitzer hat Zugriff); der Code-Weg überträgt
 /// NUR die Modellwahl, NIE den Key selbst – ein frei getippter Sync-Code hat
@@ -104,6 +105,7 @@ class SyncService {
     final summaries = (await DatabaseService.summaries.find(db)).map((r) => r.value).toList();
     final concepts = (await DatabaseService.concepts.find(db)).map((r) => r.value).toList();
     final flashcards = (await DatabaseService.flashcards.find(db)).map((r) => r.value).toList();
+    final lectureUnits = (await DatabaseService.lectureUnits.find(db)).map((r) => r.value).toList();
 
     await doc.set({
       'updatedAt': FieldValue.serverTimestamp(),
@@ -112,6 +114,7 @@ class SyncService {
       'summaries': summaries,
       'concepts': concepts,
       'flashcards': flashcards,
+      'lectureUnits': lectureUnits,
       'aiSettings': await _readAiSettings(db, includeApiKey: includeApiKey),
     });
   }
@@ -139,6 +142,10 @@ class SyncService {
       await DatabaseService.summaries.delete(txn);
       await DatabaseService.concepts.delete(txn);
       await DatabaseService.flashcards.delete(txn);
+      // Ältere Cloud-Stände (vor Einheiten-Sync) enthalten den Schlüssel
+      // nicht – dann die lokalen Einheiten behalten statt sie ersatzlos zu
+      // löschen.
+      if (data.containsKey('lectureUnits')) await DatabaseService.lectureUnits.delete(txn);
 
       for (final m in (data['modules'] as List? ?? [])) {
         final module = Module.fromMap(Map<String, dynamic>.from(m as Map));
@@ -159,6 +166,13 @@ class SyncService {
       for (final m in (data['flashcards'] as List? ?? [])) {
         final card = Flashcard.fromMap(Map<String, dynamic>.from(m as Map));
         await DatabaseService.flashcards.record(card.id).put(txn, card.toMap());
+      }
+      // Ohne Einheiten würden Materialien/Karten auf dem Zielgerät auf nicht
+      // existierende unitIds zeigen: Materialien unsichtbar im Modul-Detail,
+      // Karten noch nicht behandelter Einheiten sofort im Daily Quiz.
+      for (final u in (data['lectureUnits'] as List? ?? [])) {
+        final unit = LectureUnit.fromMap(Map<String, dynamic>.from(u as Map));
+        await DatabaseService.lectureUnits.record(unit.id).put(txn, unit.toMap());
       }
 
       await _writeAiSettings(txn, data['aiSettings'] as Map<String, dynamic>?);

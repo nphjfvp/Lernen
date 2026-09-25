@@ -53,9 +53,26 @@ class LectureUnitRepository extends ChangeNotifier {
     await loadForModule(moduleId);
   }
 
+  /// Aufrufer, die Materialien/Konzepte/Karteikarten/Zusammenfassungen des
+  /// Fachs im Speicher halten, müssen deren Repositories danach neu laden –
+  /// deren `unitId` wurde hier direkt in der DB entfernt.
   Future<void> delete(String id, String moduleId) async {
     final db = await DatabaseService.instance.database;
-    await DatabaseService.lectureUnits.record(id).delete(db);
+    await db.transaction((txn) => deleteCascade(txn, id));
     await loadForModule(moduleId);
+  }
+
+  /// Löscht die Einheit UND entfernt ihre Zuordnung aus allen Datensätzen,
+  /// die auf sie zeigen – sonst hinge an Materialien eine unitId ohne
+  /// existierende Einheit, und das Modul-Detail zeigte sie weder unter einer
+  /// Einheit noch unter "Ohne Einheit" an.
+  static Future<void> deleteCascade(DatabaseClient client, String unitId) async {
+    final byUnit = Finder(filter: Filter.equals('unitId', unitId));
+    final clearUnit = <String, Object?>{'unitId': FieldValue.delete};
+    await DatabaseService.lectureUnits.record(unitId).delete(client);
+    await DatabaseService.materials.update(client, clearUnit, finder: byUnit);
+    await DatabaseService.concepts.update(client, clearUnit, finder: byUnit);
+    await DatabaseService.summaries.update(client, clearUnit, finder: byUnit);
+    await DatabaseService.flashcards.update(client, clearUnit, finder: byUnit);
   }
 }

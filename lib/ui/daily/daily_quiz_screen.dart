@@ -8,6 +8,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../repositories/study_log_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/daily_scheduler_service.dart';
 import '../../services/fsrs_service.dart';
@@ -27,7 +28,10 @@ enum _QuizStage { main, revisit, bonus }
 /// hinweg. Fällige Wiederholungen + eine je nach Wissensstand und
 /// Klausurnähe dosierte Menge neuer Karten.
 class DailyQuizScreen extends StatefulWidget {
-  const DailyQuizScreen({super.key});
+  const DailyQuizScreen({super.key, this.isActive = true});
+
+  /// Ob der Daily-Quiz-Tab gerade sichtbar ist (siehe RootShell).
+  final bool isActive;
 
   @override
   State<DailyQuizScreen> createState() => _DailyQuizScreenState();
@@ -86,6 +90,16 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant DailyQuizScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Ohne Neuladen beim Tab-Wechsel zeigte dieser Screen nur den Stand vom
+    // App-Start – seither (Nachbereiten, "Frage erstellen", Zwischen-Check)
+    // angelegte Karten tauchten nicht auf, "nichts fällig" blieb stehen.
+    // Eine bereits begonnene Session wird dabei nicht zurückgesetzt.
+    if (widget.isActive && !oldWidget.isActive && _reviewedCount == 0) _loadPlan();
   }
 
   @override
@@ -154,6 +168,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
   Future<void> _handleComplete(Flashcard card, {required _QuizStage stage, Grade? selfGrade, bool? isCorrect}) async {
     final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
     var updated = _fsrs.review(card, grade);
+    unawaited(StudyLogRepository().recordDay(DateTime.now()));
 
     if (isCorrect != null && updated.variantChain != null) {
       final beforeType = updated.type;
@@ -215,8 +230,13 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
   Future<void> _refreshHomeWidget() async {
     if (!mounted) return;
     final modules = context.read<ModuleRepository>().modules;
+    final lectureUnitRepo = context.read<LectureUnitRepository>();
     final allCards = await context.read<FlashcardRepository>().loadAll();
-    await HomeWidgetService().refresh(modules: modules, allCards: allCards);
+    final unitCoveredById = await lectureUnitRepo.loadAllCoveredById();
+    // Mit derselben Einheiten-Freigabe wie der Tagesplan selbst, sonst zählte
+    // das Widget auch Karten noch nicht behandelter Einheiten als fällig.
+    await HomeWidgetService()
+        .refresh(modules: modules, allCards: allCards, unitCoveredById: unitCoveredById);
   }
 
   /// Kurzes, nicht-blockierendes Feedback bei Auf-/Abstufung innerhalb der
@@ -287,7 +307,10 @@ class _DailyQuizScreenState extends State<DailyQuizScreen> with WidgetsBindingOb
       // beantwortete Karten von vorhin (siehe _handleComplete).
       final card = _wrongQueue.first;
       body = _SessionView(
-        key: ValueKey('revisit-${card.id}'),
+        // Versuchszähler im Key: kommt dieselbe Karte direkt erneut dran
+        // (einzige Karte in der Queue), braucht sie einen frischen
+        // Antwort-State statt der schon geprüften Eingabe von eben.
+        key: ValueKey('revisit-${card.id}-${_wrongAttempts[card.id] ?? 0}'),
         card: card,
         moduleName: context.read<ModuleRepository>().byId(card.moduleId)?.name ?? '',
         progress: 1,

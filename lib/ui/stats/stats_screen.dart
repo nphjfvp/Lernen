@@ -5,6 +5,7 @@ import '../../models/mastery_snapshot.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/mastery_snapshot_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../repositories/study_log_repository.dart';
 import '../../services/mastery_service.dart';
 import '../../services/mastery_trend_service.dart';
 import '../../services/stats_service.dart';
@@ -18,7 +19,10 @@ import '../widgets/mastery_dot.dart';
 /// separates Tracking nötig, jede Daily-Quiz-Bewertung schreibt bereits
 /// `Flashcard.lastReview`/`.stability`.
 class StatsScreen extends StatefulWidget {
-  const StatsScreen({super.key});
+  const StatsScreen({super.key, this.isActive = true});
+
+  /// Ob der Fortschritt-Tab gerade sichtbar ist (siehe RootShell).
+  final bool isActive;
 
   @override
   State<StatsScreen> createState() => _StatsScreenState();
@@ -35,11 +39,20 @@ class _StatsScreenState extends State<StatsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void didUpdateWidget(covariant StatsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sonst zeigte der Tab bis zum manuellen Pull-to-Refresh den Stand vom
+    // App-Start, auch nachdem im Daily Quiz längst weitergelernt wurde.
+    if (widget.isActive && !oldWidget.isActive) _load();
+  }
+
   Future<void> _load() async {
     final modules = context.read<ModuleRepository>().modules;
     final allCards = await context.read<FlashcardRepository>().loadAll();
+    final studyDays = await StudyLogRepository().loadDays();
     if (!mounted) return;
-    final stats = StatsService().compute(modules: modules, allCards: allCards);
+    final stats = StatsService().compute(modules: modules, allCards: allCards, studyDays: studyDays);
 
     // Ampel-Trend ("mehr Grün als letzte Woche"): einmal täglich einen
     // Schnappschuss der aktuellen Ampel-Aufschlüsselung + Behaltensrate

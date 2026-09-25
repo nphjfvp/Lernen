@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -36,6 +37,10 @@ class AiService {
   final http.Client _client;
 
   static const _endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+
+  /// Großzügig, da einzelne Generierungsaufrufe (große Chunks, Vision-
+  /// Modelle) legitimerweise mehrere Minuten dauern können.
+  static const _requestTimeout = Duration(minutes: 3);
 
   /// Zeichenobergrenze für Aufrufe, die bewusst NICHT gechunkt werden
   /// (Crosscheck-Quellmaterial dient nur als Kontext, keine vollständige
@@ -151,23 +156,35 @@ Hier ist der Dokumenttext:
           'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
     }
 
-    final response = await _client.post(
-      Uri.parse(_endpoint),
-      headers: {
-        'Authorization': 'Bearer $apiKey',
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/nphjfvp/lernen',
-        'X-Title': 'Lernen',
-      },
-      body: jsonEncode({
-        'model': model,
-        'temperature': 0.3,
-        'messages': [
-          {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': userContent},
-        ],
-      }),
-    );
+    final http.Response response;
+    try {
+      response = await _client
+          .post(
+            Uri.parse(_endpoint),
+            headers: {
+              'Authorization': 'Bearer $apiKey',
+              'Content-Type': 'application/json',
+              'HTTP-Referer': 'https://github.com/nphjfvp/lernen',
+              'X-Title': 'Lernen',
+            },
+            body: jsonEncode({
+              'model': model,
+              'temperature': 0.3,
+              'messages': [
+                {'role': 'system', 'content': systemPrompt},
+                {'role': 'user', 'content': userContent},
+              ],
+            }),
+          )
+          // Ohne Obergrenze bliebe bei einer hängenden Verbindung (z.B.
+          // Netzwechsel unterwegs) der Lade-Spinner für immer stehen.
+          .timeout(_requestTimeout);
+    } on TimeoutException {
+      throw AiServiceException(
+          'Keine Antwort von OpenRouter nach ${_requestTimeout.inMinutes} Minuten – bitte erneut versuchen.');
+    } on http.ClientException catch (e) {
+      throw AiServiceException('Keine Verbindung zu OpenRouter: ${e.message}');
+    }
 
     if (response.statusCode != 200) {
       throw AiServiceException(
