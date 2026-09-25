@@ -209,12 +209,21 @@ Einheiten und mit überschriebenen KI-Settings, Widget-Zählung ohne
 Einheiten-Gate, KI-Parsing-Abstürze, fehlender KI-Timeout, veraltete Daily-
 Quiz-/Fortschritt-Tabs, falsch berechneter Streak.
 
-Offen / bekannte Grenzen:
-- Firestore-Dokumentlimit 1 MiB: Sync scheitert bei größerem Datenbestand
-  (PDF-Base64, extrahierte Texte, Screenshots liegen alle in einem Dokument).
-- Beförderung in der Eskalationskette hängt an 3 richtigen Antworten in Folge
-  (auch am selben Tag möglich), nicht am Ampel-Grün.
-- `DailyQuizScreen` und `PracticeScreen` duplizieren die Bewertungslogik
-  bewusst; ein gemeinsamer Service wäre sauberer.
-- „Aktualisieren“ nach einer fertigen Session vergibt ein neues volles
-  Neu-Karten-Budget (Tagesbudget zählt bereits eingeführte Karten nicht mit).
+Freigegebener Backlog (vom Nutzer bestätigt, noch umzusetzen):
+1. **Sync-Größe:** Firestore-Dokumentlimit 1 MiB – aktuell liegt alles
+   (inkl. PDF-Base64, extrahierter Texte, Screenshots) in EINEM Dokument, der
+   Sync scheitert bei größerem Datenbestand. Lösungsidee (nach Vorbild der
+   Vorgänger-App `nphjfvp/quiz-app`): Daten auf mehrere Dokumente je
+   Kategorie aufteilen (Fächer/Einheiten, Karten, Konzepte/Zusammenfassungen,
+   Einstellungen, Meta mit `updatedAt`), jedes vor dem Upload auf < 900 KB
+   prüfen; PDF-Dateien selbst nicht über Firestore syncen (oder getrennt,
+   in Stücke geteilt). Optional Auto-Sync mit Verzögerung + Offline-Warteschlange.
+2. **Beförderung an Ampel-Grün koppeln:** In der Eskalationskette erst dann
+   zur nächsten Stufe, wenn die aktuelle Stufe grün ist (statt 3× richtig in
+   Folge, was an einem Tag möglich ist); masteryBox je Stufe zurücksetzen.
+3. **Sprint-Antworten zählen** für FSRS/Ampel.
+4. **„Schwer“-Selbstbewertung** senkt die Ampel nicht mehr.
+5. **Gemeinsamer Bewertungs-Service** statt duplizierter Logik in
+   `DailyQuizScreen` und `PracticeScreen`.
+6. **„Aktualisieren“** nach fertiger Session vergibt kein neues volles
+   Neu-Karten-Budget (bereits heute eingeführte Karten zählen mit).
