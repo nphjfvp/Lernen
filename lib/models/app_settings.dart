@@ -50,6 +50,20 @@ class AppSettings {
   /// der Nutzer kann den Check jederzeit wegtippen und weiterlesen.
   final int checkpointQuizPageInterval;
 
+  /// Lädt Änderungen automatisch (kurz verzögert) in die Cloud hoch, siehe
+  /// AutoSyncService. Ziel: das angemeldete Konto, sonst [syncCode].
+  final bool autoSyncEnabled;
+
+  /// Zufällige, einmalig erzeugte Kennung dieses Geräts – erkennt beim
+  /// Auto-Sync, ob der Cloud-Stand von einem ANDEREN Gerät stammt.
+  final String? deviceId;
+
+  /// `pushId` des Cloud-Stands, mit dem dieses Gerät zuletzt abgeglichen
+  /// war (eigener Upload oder Download). Weicht der Cloud-Stand davon ab und
+  /// stammt von einem anderen Gerät, lädt der Auto-Sync NICHT hoch, sondern
+  /// bittet erst um einen Download.
+  final String? lastSyncedPushId;
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
@@ -69,6 +83,9 @@ class AppSettings {
     this.dailyReminderMinuteOfDay = defaultReminderMinuteOfDay,
     this.bestSprintScore = 0,
     this.checkpointQuizPageInterval = defaultCheckpointQuizPageInterval,
+    this.autoSyncEnabled = false,
+    this.deviceId,
+    this.lastSyncedPushId,
   });
 
   bool get hasApiKey =>
@@ -90,6 +107,9 @@ class AppSettings {
     int? dailyReminderMinuteOfDay,
     int? bestSprintScore,
     int? checkpointQuizPageInterval,
+    bool? autoSyncEnabled,
+    String? deviceId,
+    String? lastSyncedPushId,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -104,6 +124,9 @@ class AppSettings {
       dailyReminderMinuteOfDay: dailyReminderMinuteOfDay ?? this.dailyReminderMinuteOfDay,
       bestSprintScore: bestSprintScore ?? this.bestSprintScore,
       checkpointQuizPageInterval: checkpointQuizPageInterval ?? this.checkpointQuizPageInterval,
+      autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
+      deviceId: deviceId ?? this.deviceId,
+      lastSyncedPushId: lastSyncedPushId ?? this.lastSyncedPushId,
     );
   }
 
@@ -120,6 +143,9 @@ class AppSettings {
         'dailyReminderMinuteOfDay': dailyReminderMinuteOfDay,
         'bestSprintScore': bestSprintScore,
         'checkpointQuizPageInterval': checkpointQuizPageInterval,
+        'autoSyncEnabled': autoSyncEnabled,
+        'deviceId': deviceId,
+        'lastSyncedPushId': lastSyncedPushId,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -141,5 +167,8 @@ class AppSettings {
         bestSprintScore: map['bestSprintScore'] as int? ?? 0,
         checkpointQuizPageInterval:
             map['checkpointQuizPageInterval'] as int? ?? defaultCheckpointQuizPageInterval,
+        autoSyncEnabled: map['autoSyncEnabled'] as bool? ?? false,
+        deviceId: map['deviceId'] as String?,
+        lastSyncedPushId: map['lastSyncedPushId'] as String?,
       );
 }

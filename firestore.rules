@@ -16,11 +16,23 @@ service cloud.firestore {
     match /users/{uid} {
       allow get, write: if request.auth != null && request.auth.uid == uid;
       allow list: if false;
+
+      // Große Datenbestände werden in Teilen hochgeladen (siehe
+      // SyncCodec/SyncService) – gleiche Regel wie das Hauptdokument.
+      match /sync_parts/{part} {
+        allow get, write: if request.auth != null && request.auth.uid == uid;
+        allow list: if false;
+      }
     }
 
     match /sync_codes/{code} {
       allow get, write: if code is string && code.size() >= 6;
       allow list: if false;
+
+      match /sync_parts/{part} {
+        allow get, write: if code is string && code.size() >= 6;
+        allow list: if false;
+      }
     }
 
     match /{document=**} {

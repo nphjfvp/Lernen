@@ -15,6 +15,7 @@ import 'repositories/model_catalog_repository.dart';
 import 'repositories/module_repository.dart';
 import 'repositories/settings_repository.dart';
 import 'repositories/summary_repository.dart';
+import 'services/auto_sync_service.dart';
 import 'services/reminder_service.dart';
 import 'theme/app_theme.dart';
 import 'ui/root_shell.dart';
@@ -77,6 +78,10 @@ class LernenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LectureUnitRepository()),
         ChangeNotifierProvider.value(value: settingsRepository),
         ChangeNotifierProvider(create: (_) => ModelCatalogRepository()..loadCached()),
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (ctx) => AutoSyncService(settings: settingsRepository, auth: ctx.read<AuthRepository>())..start(),
+        ),
       ],
       child: MaterialApp(
         title: 'Lernen',

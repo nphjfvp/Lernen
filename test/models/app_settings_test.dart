@@ -28,6 +28,27 @@ void main() {
     });
   });
 
+  group('AppSettings – Auto-Sync', () {
+    test('ist standardmäßig aus und übersteht den Round-Trip', () {
+      expect(const AppSettings().autoSyncEnabled, isFalse);
+      const settings = AppSettings(autoSyncEnabled: true, deviceId: 'dev-1', lastSyncedPushId: 'push-9');
+      final restored = AppSettings.fromMap(settings.toMap());
+      expect(restored.autoSyncEnabled, isTrue);
+      expect(restored.deviceId, 'dev-1');
+      expect(restored.lastSyncedPushId, 'push-9');
+    });
+
+    test('ältere Datensätze ohne Auto-Sync-Felder bleiben lesbar', () {
+      final map = const AppSettings().toMap()
+        ..remove('autoSyncEnabled')
+        ..remove('deviceId')
+        ..remove('lastSyncedPushId');
+      final restored = AppSettings.fromMap(map);
+      expect(restored.autoSyncEnabled, isFalse);
+      expect(restored.deviceId, isNull);
+    });
+  });
+
   group('AppSettings – toMap/fromMap', () {
     test('Round-Trip erhält die Erinnerungs-Einstellungen', () {
       const settings = AppSettings(dailyReminderEnabled: true, dailyReminderMinuteOfDay: 20 * 60 + 15);

@@ -11,6 +11,7 @@ import '../../repositories/auth_repository.dart';
 import '../../repositories/model_catalog_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/reminder_service.dart';
+import '../../services/auto_sync_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/update_checker_service.dart';
 import '../../theme/app_colors.dart';
@@ -167,68 +168,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _pushCode() async {
-    final code = _syncCodeController.text.trim();
-    if (code.isEmpty) return;
+  Future<void> _push(SyncTarget target, {String? codeToRemember}) async {
+    final repo = context.read<SettingsRepository>();
+    final autoSync = context.read<AutoSyncService>();
     await _runSync(
-      () => _syncService.pushToCode(code),
-      successMessage: 'Hochgeladen.',
-      afterSuccess: () async {
-        final repo = context.read<SettingsRepository>();
-        await repo.update(repo.settings.copyWith(syncCode: code, lastSyncAt: DateTime.now()));
+      () async {
+        final deviceId = await AutoSyncService.ensureDeviceId(repo);
+        final pushId = await _syncService.push(target, deviceId: deviceId);
+        await repo.update(repo.settings.copyWith(
+          syncCode: codeToRemember,
+          lastSyncAt: DateTime.now(),
+          lastSyncedPushId: pushId,
+        ));
+        autoSync.markInSync();
       },
+      successMessage: 'Hochgeladen.',
     );
+  }
+
+  Future<void> _pull(SyncTarget target, {String? codeToRemember}) async {
+    final confirmed = await _confirmOverwrite();
+    if (confirmed != true || !mounted) return;
+    final repo = context.read<SettingsRepository>();
+    final autoSync = context.read<AutoSyncService>();
+    await _runSync(
+      () async {
+        // Der Download schreibt alle Daten neu – das soll keinen sofortigen
+        // Auto-Upload desselben Stands auslösen.
+        final pushId = await autoSync.runWithoutTrigger(() => _syncService.pull(target));
+        // Der Pull hat die KI-Einstellungen bereits direkt in die DB
+        // geschrieben – erst neu laden, sonst überschreibt das Update unten
+        // sie wieder mit dem veralteten Stand aus dem Speicher.
+        await repo.load();
+        await repo.update(repo.settings.copyWith(
+          syncCode: codeToRemember,
+          lastSyncAt: DateTime.now(),
+          lastSyncedPushId: pushId,
+        ));
+        autoSync.markInSync();
+      },
+      successMessage: 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.',
+    );
+  }
+
+  SyncTarget? _codeTarget() {
+    final code = _syncCodeController.text.trim();
+    return code.isEmpty ? null : SyncTarget.code(code);
+  }
+
+  SyncTarget? _accountTarget() {
+    final uid = context.read<AuthRepository>().currentUser?.uid;
+    return uid == null ? null : SyncTarget.account(uid);
+  }
+
+  Future<void> _pushCode() async {
+    final target = _codeTarget();
+    if (target != null) await _push(target, codeToRemember: target.id);
   }
 
   Future<void> _pullCode() async {
-    final code = _syncCodeController.text.trim();
-    if (code.isEmpty) return;
-    final confirmed = await _confirmOverwrite();
-    if (confirmed != true) return;
-    await _runSync(
-      () => _syncService.pullFromCode(code),
-      successMessage: 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.',
-      afterSuccess: () async {
-        final repo = context.read<SettingsRepository>();
-        // Der Pull hat die KI-Einstellungen bereits direkt in die DB
-        // geschrieben – erst neu laden, sonst überschreibt das Update unten
-        // sie wieder mit dem veralteten Stand aus dem Speicher.
-        await repo.load();
-        await repo.update(repo.settings.copyWith(syncCode: code, lastSyncAt: DateTime.now()));
-      },
-    );
+    final target = _codeTarget();
+    if (target != null) await _pull(target, codeToRemember: target.id);
   }
 
   Future<void> _pushAccount() async {
-    final uid = context.read<AuthRepository>().currentUser?.uid;
-    if (uid == null) return;
-    await _runSync(
-      () => _syncService.pushToAccount(uid),
-      successMessage: 'Hochgeladen.',
-      afterSuccess: () async {
-        final repo = context.read<SettingsRepository>();
-        await repo.update(repo.settings.copyWith(lastSyncAt: DateTime.now()));
-      },
-    );
+    final target = _accountTarget();
+    if (target != null) await _push(target);
   }
 
   Future<void> _pullAccount() async {
-    final uid = context.read<AuthRepository>().currentUser?.uid;
-    if (uid == null) return;
-    final confirmed = await _confirmOverwrite();
-    if (confirmed != true) return;
-    await _runSync(
-      () => _syncService.pullFromAccount(uid),
-      successMessage: 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.',
-      afterSuccess: () async {
-        final repo = context.read<SettingsRepository>();
-        // Der Pull hat die KI-Einstellungen bereits direkt in die DB
-        // geschrieben – erst neu laden, sonst überschreibt das Update unten
-        // sie wieder mit dem veralteten Stand aus dem Speicher.
-        await repo.load();
-        await repo.update(repo.settings.copyWith(lastSyncAt: DateTime.now()));
-      },
-    );
+    final target = _accountTarget();
+    if (target != null) await _pull(target);
+  }
+
+  Future<void> _setAutoSync(bool enabled) async {
+    final repo = context.read<SettingsRepository>();
+    final autoSync = context.read<AutoSyncService>();
+    final code = _syncCodeController.text.trim();
+    await repo.update(repo.settings.copyWith(
+      autoSyncEnabled: enabled,
+      syncCode: code.isEmpty ? null : code,
+    ));
+    if (enabled) autoSync.requestSync();
   }
 
   Future<void> _setReminderEnabled(bool enabled) async {
@@ -555,6 +576,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
+                    _AutoSyncTile(enabled: settings.autoSyncEnabled, onChanged: _setAutoSync),
                   ] else ...[
                     Text(
                       'Ohne Konto: gib auf jedem Gerät denselben Sync-Code ein, um '
@@ -589,6 +611,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
+                    _AutoSyncTile(enabled: settings.autoSyncEnabled, onChanged: _setAutoSync),
                   ],
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 26),
@@ -866,6 +889,59 @@ class _ModelSelectorTile extends StatelessWidget {
             Icon(Icons.chevron_right_rounded, color: c.inkMuted, size: 18),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Schalter für den automatischen Upload (siehe AutoSyncService) plus
+/// dessen aktueller Zustand.
+class _AutoSyncTile extends StatelessWidget {
+  const _AutoSyncTile({required this.enabled, required this.onChanged});
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final autoSync = context.watch<AutoSyncService>();
+    final status = switch (autoSync.status) {
+      AutoSyncStatus.idle => enabled ? 'Alles hochgeladen.' : null,
+      AutoSyncStatus.pending => 'Änderungen werden gleich hochgeladen …',
+      AutoSyncStatus.syncing => 'Lädt hoch …',
+      AutoSyncStatus.retrying =>
+        'Upload fehlgeschlagen (${autoSync.lastError ?? 'offline?'}) – wird automatisch wiederholt.',
+      AutoSyncStatus.conflict =>
+        'Ein anderes Gerät hat inzwischen hochgeladen. Damit dessen Fortschritt nicht '
+            'überschrieben wird, lädt dieses Gerät nicht automatisch hoch – erst "Herunterladen" '
+            '(oder bewusst "Hochladen", um den Cloud-Stand zu ersetzen).',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: enabled,
+            onChanged: onChanged,
+            title: const Text('Automatisch hochladen'),
+            subtitle: Text(
+              'Lädt Änderungen kurz nach dem Lernen selbst hoch; offline wird es später nachgeholt.',
+              style: TextStyle(fontSize: 12, color: c.inkMuted),
+            ),
+          ),
+          if (status != null)
+            Text(
+              status,
+              style: TextStyle(
+                fontSize: 12,
+                color: autoSync.status == AutoSyncStatus.conflict ? c.warn : c.inkMuted,
+                height: 1.4,
+              ),
+            ),
+        ],
       ),
     );
   }

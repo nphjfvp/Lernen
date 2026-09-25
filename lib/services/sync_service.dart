@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:sembast/sembast.dart' hide FieldValue;
+import 'package:uuid/uuid.dart';
 
 import '../models/app_settings.dart';
 import '../models/concept.dart';
@@ -10,6 +13,7 @@ import '../models/material_item.dart';
 import '../models/module.dart';
 import '../models/summary.dart';
 import '../services/database_service.dart';
+import 'sync_codec.dart';
 
 class SyncException implements Exception {
   final String message;
@@ -34,6 +38,35 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
   );
 }
 
+/// Wohin synchronisiert wird: an ein Firebase-Konto gebunden oder über
+/// einen frei gewählten Sync-Code.
+class SyncTarget {
+  const SyncTarget.account(this.id) : isAccount = true;
+  const SyncTarget.code(this.id) : isAccount = false;
+
+  /// Firebase-UID bzw. Sync-Code.
+  final String id;
+  final bool isAccount;
+
+  @override
+  bool operator ==(Object other) => other is SyncTarget && other.id == id && other.isAccount == isAccount;
+
+  @override
+  int get hashCode => Object.hash(id, isAccount);
+}
+
+/// Kopfdaten des Cloud-Stands – wer ihn wann zuletzt hochgeladen hat.
+/// Grundlage für den Schutz beim Auto-Sync (siehe AutoSyncService): hat
+/// seit dem letzten eigenen Sync ein ANDERES Gerät hochgeladen, darf ein
+/// automatischer Upload dessen Fortschritt nicht still überschreiben.
+class CloudSyncMeta {
+  const CloudSyncMeta({this.pushId, this.deviceId, this.updatedAt});
+
+  final String? pushId;
+  final String? deviceId;
+  final DateTime? updatedAt;
+}
+
 /// Cloud-Sync über Firestore, auf zwei Wegen erreichbar:
 ///  - Konto-gebunden (empfohlen): Daten liegen unter `users/{uid}`, per
 ///    Firestore-Regel exakt auf `request.auth.uid == uid` beschränkt. Kein
@@ -42,15 +75,22 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
 ///  - Sync-Code (Fallback ohne Konto, wie beim Vorgänger): Daten liegen
 ///    unter `sync_codes/{code}`, der Code wirkt wie ein Passwort.
 ///
-/// Beide Wege übertragen Fächer, Einheiten, Materialien, Zusammenfassungen,
-/// Konzepte und Karteikarten. Beim BYOK-Teil der Einstellungen (API-Key + Modellwahl)
-/// unterscheiden sie sich bewusst: der Konto-Weg überträgt auch den API-Key
-/// (nur der authentifizierte Besitzer hat Zugriff); der Code-Weg überträgt
-/// NUR die Modellwahl, NIE den Key selbst – ein frei getippter Sync-Code hat
-/// keine Mindestkomplexität/Ratenbegrenzung und darf deshalb kein
-/// potenziell kostenpflichtiges API-Zugangsmittel offenlegen können (siehe
-/// [_push]/[pushToCode]). Geräte-lokale Dinge wie die Lernerinnerungs-Uhrzeit
-/// werden bewusst NICHT übertragen.
+/// Beide Wege übertragen Fächer, Einheiten, Materialien (ohne die PDF-Datei
+/// selbst, siehe SyncCodec), Zusammenfassungen, Konzepte und Karteikarten.
+/// Beim BYOK-Teil der Einstellungen (API-Key + Modellwahl) unterscheiden sie
+/// sich bewusst: der Konto-Weg überträgt auch den API-Key (nur der
+/// authentifizierte Besitzer hat Zugriff); der Code-Weg überträgt NUR die
+/// Modellwahl, NIE den Key selbst – ein frei getippter Sync-Code hat keine
+/// Mindestkomplexität/Ratenbegrenzung und darf deshalb kein potenziell
+/// kostenpflichtiges API-Zugangsmittel offenlegen können. Geräte-lokale
+/// Dinge wie die Lernerinnerungs-Uhrzeit werden bewusst NICHT übertragen.
+///
+/// Speicherformat (Version [syncFormat]): der Datenbestand wird komprimiert
+/// (siehe SyncCodec). Passt er in ein Dokument, liegt er direkt im
+/// Hauptdokument (`data`); sonst in Teilen unter `…/sync_parts/0..n-1` (braucht die aktuellen Firestore-Regeln, siehe firestore.rules).
+/// Jeder Upload trägt eine eigene `pushId`, damit ein Download nie Teile
+/// zweier verschiedener Uploads zusammensetzt. Ältere Cloud-Stände (alles
+/// als Klartext in EINEM Dokument) werden weiterhin gelesen.
 ///
 /// Setzt voraus, dass Firebase in main.dart erfolgreich initialisiert wurde.
 /// Ist Firebase nicht konfiguriert, bleibt die App voll offline nutzbar –
@@ -59,24 +99,35 @@ class SyncService {
   bool get isAvailable => Firebase.apps.isNotEmpty;
 
   static const _settingsKey = 'app_settings';
+  static const _partsCollection = 'sync_parts';
+  static const syncFormat = 2;
 
-  DocumentReference<Map<String, dynamic>> _codeDoc(String code) =>
-      FirebaseFirestore.instance.collection('sync_codes').doc(code);
+  DocumentReference<Map<String, dynamic>> _doc(SyncTarget target) => FirebaseFirestore.instance
+      .collection(target.isAccount ? 'users' : 'sync_codes')
+      .doc(target.id);
 
-  DocumentReference<Map<String, dynamic>> _accountDoc(String uid) =>
-      FirebaseFirestore.instance.collection('users').doc(uid);
+  /// [SyncTarget.isAccount] entscheidet, ob der API-Key mitreist (siehe
+  /// Klassenkommentar). Liefert die `pushId` des neuen Cloud-Stands.
+  Future<String> push(SyncTarget target, {required String deviceId}) =>
+      _push(_doc(target), includeApiKey: target.isAccount, deviceId: deviceId);
 
-  /// [includeApiKey] ist bei Konto-Sync true (der Weg ist per Firestore-Regel
-  /// exakt auf den authentifizierten Besitzer beschränkt), beim Sync-Code
-  /// bewusst false: der Code selbst hat keine Mindestkomplexität und keine
-  /// Ratenbegrenzung außer Firebases Default – ein erratener/schwacher Code
-  /// darf kein potenziell kostenpflichtiges API-Zugangsmittel offenlegen.
-  /// Modellwahl (nicht geheim) wird trotzdem weiter übertragen.
-  Future<void> pushToCode(String syncCode) => _push(_codeDoc(syncCode), includeApiKey: false);
-  Future<void> pushToAccount(String uid) => _push(_accountDoc(uid), includeApiKey: true);
+  /// Ersetzt die lokalen Daten durch den Cloud-Stand. Liefert dessen
+  /// `pushId` (null bei einem Cloud-Stand im alten Format).
+  Future<String?> pull(SyncTarget target) => _pull(_doc(target));
 
-  Future<void> pullFromCode(String syncCode) => _pull(_codeDoc(syncCode));
-  Future<void> pullFromAccount(String uid) => _pull(_accountDoc(uid));
+  /// Kopfdaten des Cloud-Stands, oder null, wenn dort noch nichts liegt.
+  Future<CloudSyncMeta?> readMeta(SyncTarget target) async {
+    _ensureAvailable();
+    final snapshot = await _doc(target).get();
+    final data = snapshot.data();
+    if (!snapshot.exists || data == null) return null;
+    final updatedAt = data['updatedAt'];
+    return CloudSyncMeta(
+      pushId: data['pushId'] as String?,
+      deviceId: data['deviceId'] as String?,
+      updatedAt: updatedAt is Timestamp ? updatedAt.toDate() : null,
+    );
+  }
 
   /// Anzahl lokal vorhandener Datensätze je Kategorie – Grundlage für die
   /// Bestätigung vor einem Pull (siehe SettingsScreen._confirmOverwrite):
@@ -94,29 +145,105 @@ class SyncService {
     );
   }
 
-  Future<void> _push(DocumentReference<Map<String, dynamic>> doc, {required bool includeApiKey}) async {
+  void _ensureAvailable() {
     if (!isAvailable) {
       throw SyncException('Cloud-Sync ist nicht konfiguriert (kein Firebase-Projekt verbunden).');
     }
+  }
+
+  Future<String> _push(
+    DocumentReference<Map<String, dynamic>> doc, {
+    required bool includeApiKey,
+    required String deviceId,
+  }) async {
+    _ensureAvailable();
     final db = await DatabaseService.instance.database;
 
-    final modules = (await DatabaseService.modules.find(db)).map((r) => r.value).toList();
-    final materials = (await DatabaseService.materials.find(db)).map((r) => r.value).toList();
-    final summaries = (await DatabaseService.summaries.find(db)).map((r) => r.value).toList();
-    final concepts = (await DatabaseService.concepts.find(db)).map((r) => r.value).toList();
-    final flashcards = (await DatabaseService.flashcards.find(db)).map((r) => r.value).toList();
-    final lectureUnits = (await DatabaseService.lectureUnits.find(db)).map((r) => r.value).toList();
+    final payload = {
+      'modules': (await DatabaseService.modules.find(db)).map((r) => r.value).toList(),
+      'materials': (await DatabaseService.materials.find(db))
+          .map((r) => SyncCodec.stripDeviceLocalMaterialFields(r.value))
+          .toList(),
+      'summaries': (await DatabaseService.summaries.find(db)).map((r) => r.value).toList(),
+      'concepts': (await DatabaseService.concepts.find(db)).map((r) => r.value).toList(),
+      'flashcards': (await DatabaseService.flashcards.find(db)).map((r) => r.value).toList(),
+      'lectureUnits': (await DatabaseService.lectureUnits.find(db)).map((r) => r.value).toList(),
+    };
+    final parts = SyncCodec.encode(payload);
+    final pushId = const Uuid().v4();
 
-    await doc.set({
+    final previous = await doc.get();
+    final previousPartCount = (previous.data()?['partCount'] as num?)?.toInt() ?? 0;
+
+    final meta = <String, dynamic>{
+      'format': syncFormat,
       'updatedAt': FieldValue.serverTimestamp(),
-      'modules': modules,
-      'materials': materials,
-      'summaries': summaries,
-      'concepts': concepts,
-      'flashcards': flashcards,
-      'lectureUnits': lectureUnits,
+      'pushId': pushId,
+      'deviceId': deviceId,
+      'counts': {for (final e in payload.entries) e.key: e.value.length},
       'aiSettings': await _readAiSettings(db, includeApiKey: includeApiKey),
-    });
+    };
+
+    if (parts.length == 1) {
+      await doc.set({...meta, 'partCount': 0, 'data': Blob(parts.single)});
+    } else {
+      try {
+        for (var i = 0; i < parts.length; i++) {
+          await doc.collection(_partsCollection).doc('$i').set({'pushId': pushId, 'data': Blob(parts[i])});
+        }
+      } on FirebaseException catch (e) {
+        if (e.code == 'permission-denied') {
+          throw SyncException(
+            'Deine Daten sind zu groß für ein einzelnes Cloud-Dokument und werden '
+            'jetzt in Teilen hochgeladen – dafür müssen die Firestore-Regeln einmal '
+            'aktualisiert werden: Inhalt von firestore.rules in der Firebase-Konsole '
+            '(Firestore → Regeln) einfügen und veröffentlichen.',
+          );
+        }
+        rethrow;
+      }
+      // Erst NACH allen Teilen: ein gleichzeitiger Download sieht so entweder
+      // den alten oder den vollständigen neuen Stand (siehe pushId-Prüfung).
+      await doc.set({...meta, 'partCount': parts.length});
+    }
+
+    // Überzählige Teile eines früheren, größeren Stands entfernen.
+    final firstStale = parts.length == 1 ? 0 : parts.length;
+    for (var i = firstStale; i < previousPartCount; i++) {
+      try {
+        await doc.collection(_partsCollection).doc('$i').delete();
+      } catch (_) {
+        // Aufräumen ist optional – ein übrig gebliebener Teil wird nie
+        // gelesen (partCount/pushId passen nicht).
+      }
+    }
+    return pushId;
+  }
+
+  Future<Map<String, dynamic>> _readPayload(
+    DocumentReference<Map<String, dynamic>> doc,
+    Map<String, dynamic> root,
+  ) async {
+    if (root['format'] != syncFormat) return root; // alter Stand: alles im Hauptdokument
+    final partCount = (root['partCount'] as num?)?.toInt() ?? 0;
+    if (partCount == 0) {
+      final blob = root['data'];
+      if (blob is! Blob) throw SyncException('Der Cloud-Stand ist unvollständig.');
+      return SyncCodec.decode([blob.bytes]);
+    }
+    final snapshots =
+        await Future.wait([for (var i = 0; i < partCount; i++) doc.collection(_partsCollection).doc('$i').get()]);
+    final parts = <Uint8List>[];
+    for (final snap in snapshots) {
+      final data = snap.data();
+      final blob = data?['data'];
+      if (data == null || data['pushId'] != root['pushId'] || blob is! Blob) {
+        throw SyncException(
+            'Der Cloud-Stand wird gerade von einem anderen Gerät aktualisiert – bitte gleich nochmal versuchen.');
+      }
+      parts.add(blob.bytes);
+    }
+    return SyncCodec.decode(parts);
   }
 
   /// Lädt die Cloud-Daten herunter und ERSETZT die lokalen Fächer/
@@ -124,19 +251,22 @@ class SyncService {
   /// Bestätigung einholen (siehe SettingsScreen). Der BYOK-Teil der
   /// Einstellungen wird nur übernommen, wenn er in der Cloud gesetzt ist –
   /// ein leerer/fehlender Cloud-API-Key löscht nie einen lokal
-  /// vorhandenen Key (siehe [_writeAiSettings]).
-  Future<void> _pull(DocumentReference<Map<String, dynamic>> doc) async {
-    if (!isAvailable) {
-      throw SyncException('Cloud-Sync ist nicht konfiguriert (kein Firebase-Projekt verbunden).');
-    }
+  /// vorhandenen Key (siehe [_writeAiSettings]). Lokal vorhandene PDFs
+  /// bleiben erhalten (siehe SyncCodec.withLocalMaterialFields).
+  Future<String?> _pull(DocumentReference<Map<String, dynamic>> doc) async {
+    _ensureAvailable();
     final snapshot = await doc.get();
     if (!snapshot.exists) {
       throw SyncException('Für dieses Ziel liegen noch keine Cloud-Daten vor.');
     }
-    final data = snapshot.data()!;
+    final root = snapshot.data()!;
+    final data = await _readPayload(doc, root);
     final db = await DatabaseService.instance.database;
 
     await db.transaction((txn) async {
+      final localMaterials = {
+        for (final r in await DatabaseService.materials.find(txn)) r.key: r.value,
+      };
       await DatabaseService.modules.delete(txn);
       await DatabaseService.materials.delete(txn);
       await DatabaseService.summaries.delete(txn);
@@ -152,7 +282,9 @@ class SyncService {
         await DatabaseService.modules.record(module.id).put(txn, module.toMap());
       }
       for (final m in (data['materials'] as List? ?? [])) {
-        final item = MaterialItem.fromMap(Map<String, dynamic>.from(m as Map));
+        final remote = Map<String, dynamic>.from(m as Map);
+        final item = MaterialItem.fromMap(
+            SyncCodec.withLocalMaterialFields(remote, localMaterials[remote['id']?.toString()]));
         await DatabaseService.materials.record(item.id).put(txn, item.toMap());
       }
       for (final m in (data['summaries'] as List? ?? [])) {
@@ -175,8 +307,10 @@ class SyncService {
         await DatabaseService.lectureUnits.record(unit.id).put(txn, unit.toMap());
       }
 
-      await _writeAiSettings(txn, data['aiSettings'] as Map<String, dynamic>?);
+      final aiSettings = root['aiSettings'] ?? data['aiSettings'];
+      await _writeAiSettings(txn, aiSettings == null ? null : Map<String, dynamic>.from(aiSettings as Map));
     });
+    return root['pushId'] as String?;
   }
 
   Future<Map<String, dynamic>> _readAiSettings(DatabaseClient db, {required bool includeApiKey}) async {

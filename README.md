@@ -301,7 +301,19 @@ engerem Fokus statt Feature-Fülle.
   Mindestkomplexität/Ratenbegrenzung und darf kein potenziell
   kostenpflichtiges API-Zugangsmittel offenlegen können. Geräte-lokales wie
   die Lernerinnerungs-Uhrzeit bleibt bewusst lokal. Ohne Konfiguration läuft
-  die App komplett offline.
+  die App komplett offline. **Größenlimit gelöst** (`lib/services/sync_codec.dart`):
+  Firestore erlaubt nur 1 MiB pro Dokument – der Datenbestand wird jetzt
+  gzip-komprimiert (Text schrumpft auf ~10–25 %) und bei Bedarf auf mehrere
+  Dokumente (`…/sync_parts/0..n`) verteilt; die PDF-Dateien selbst reisen
+  nicht mit (lokal vorhandene bleiben beim Herunterladen erhalten, der
+  extrahierte Text wird übertragen). Jeder Upload trägt eine `pushId`, damit
+  nie Teile zweier Uploads gemischt werden; alte Cloud-Stände (ein
+  Klartext-Dokument) bleiben lesbar. **Auto-Sync** (Schalter in den
+  Einstellungen, `lib/services/auto_sync_service.dart`): lädt Änderungen
+  20 s nach der letzten Änderung hoch, offline mit wachsenden Abständen
+  erneut und beim Zurückkehren in die App sofort. Hat seit dem letzten
+  Abgleich ein anderes Gerät hochgeladen, überschreibt der Auto-Sync das NICHT,
+  sondern bittet erst um "Herunterladen".
 - **Account (optional)** – E-Mail/Passwort oder Google-Anmeldung über
   Firebase Auth, aus den Einstellungen heraus. Nie erzwungen: die App bleibt
   auch ohne Account voll nutzbar. Der Hauptzweck ist der automatische
@@ -352,7 +364,9 @@ lib/
     daily_scheduler_service.dart    Exam-Scheduler (fällige + neue Karten)
     stats_service.dart              Streak/Wiederholungen/Behaltensrate aus
                                      vorhandenen Modul-/Karteikarten-Daten
-    sync_service.dart               Firestore Sync-Code Push/Pull (optional)
+    sync_service.dart               Firestore Push/Pull (optional)
+    sync_codec.dart                 Komprimieren + Aufteilen für Firestore
+    auto_sync_service.dart          Automatischer Upload + Konfliktschutz
     question_parsing.dart           Parst/validiert von der KI (oder extern) gelieferte
                                      Fragen-JSON-Objekte, rettet unvollständige Einträge
     html_question_contract.dart     CSP-Sandbox-Rahmen + JS-Rückkanal-Vertrag für den
@@ -418,7 +432,11 @@ sie nicht automatisch aus dem Repo): **Firebase Console → Firestore Database
 → Rules-Tab → Inhalt von `firestore.rules` einfügen → Veröffentlichen.**
 Sie beschränken den Zugriff auf `users/{uid}` (nur der authentifizierte
 Besitzer) und `sync_codes/{code}` (kein Auflisten/Erraten existierender
-Codes möglich) und sperren alles andere per Default.
+Codes möglich) samt deren Unterdokumenten `sync_parts/*` und sperren alles
+andere per Default. **Nach dem Update auf den aufgeteilten Sync einmal neu
+veröffentlichen** – ohne die `sync_parts`-Regel klappt der Upload nur,
+solange der komprimierte Bestand in ein Dokument passt (die App meldet es
+dann verständlich).
 
 Für ein komplett eigenes Firebase-Projekt (z.B. eigener Fork): Projekt unter
 <https://console.firebase.google.com> anlegen, eine Web-App registrieren,
