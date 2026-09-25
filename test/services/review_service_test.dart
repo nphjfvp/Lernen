@@ -74,7 +74,6 @@ void main() {
     test('Beförderung ohne vorbereiteten Inhalt meldet promotionPending', () {
       final card = _card(
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
-        variantBox: Flashcard.promotionThreshold - 1,
         masteryBox: Flashcard.masteryBoxCap,
         reps: 3,
         lastReview: DateTime(2026, 3, 5),
@@ -89,7 +88,6 @@ void main() {
     test('Beförderung mit vorbereitetem Inhalt passiert sofort', () {
       final card = _card(
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
-        variantBox: Flashcard.promotionThreshold - 1,
         masteryBox: Flashcard.masteryBoxCap,
         reps: 3,
         lastReview: DateTime(2026, 3, 5),
@@ -102,6 +100,19 @@ void main() {
       expect(outcome.needsGeneration, isFalse);
       expect(outcome.card.type, QuestionType.fillBlank);
       expect(outcome.levelChangeMessage, contains('jetzt'));
+      // Neue Stufe startet neu: morgen fällig, Ampel gelb statt grün.
+      expect(outcome.card.due, DateTime(2026, 3, 11));
+      expect(outcome.card.masteryBox, 1);
+    });
+
+    test('grün werden auf einer Stufe braucht verschiedene Tage, nicht 3 richtige in Folge', () {
+      var card = _card(variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank]);
+      for (var i = 0; i < 6; i++) {
+        final outcome = service.evaluate(card, isCorrect: true, now: now.add(Duration(minutes: i)));
+        expect(outcome.levelChange, LevelChange.none);
+        card = outcome.card;
+      }
+      expect(card.masteryBox, 1);
     });
 
     test('Rückstufung nach wiederholten Fehlern wird gemeldet', () {

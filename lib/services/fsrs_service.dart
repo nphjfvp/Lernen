@@ -76,6 +76,32 @@ class FsrsService {
         exp((1 - r) * _w[14]);
   }
 
+  /// Höchstabstand in Tagen auf einer leichten/mittleren Stufe einer
+  /// Eskalationskette (siehe [review]).
+  static const int transitStageMaxIntervalDays = 7;
+
+  /// Startet eine gerade beförderte Karte auf ihrer neuen, schwereren Stufe
+  /// neu: morgen fällig, Anfangs-Stabilität wie nach einem ersten "Gut",
+  /// Ampel bei Gelb (masteryBox 1 – "angefangen, noch nicht gefestigt").
+  /// Ohne das würde die neue Stufe den langen Abstand der alten erben und
+  /// erst Wochen später zum ersten Mal drankommen, und sie stünde sofort
+  /// auf Grün, obwohl sie noch nie beantwortet wurde.
+  Flashcard restartForNewStage(Flashcard card, {DateTime? now}) {
+    final at = now ?? DateTime.now();
+    return card.copyWithReview(
+      due: DateTime(at.year, at.month, at.day).add(const Duration(days: 1)),
+      stability: _initialStability(Grade.good),
+      difficulty: card.difficulty,
+      elapsedDays: card.elapsedDays,
+      scheduledDays: 1,
+      reps: card.reps,
+      lapses: card.lapses,
+      state: 'review',
+      lastReview: card.lastReview ?? at,
+      masteryBox: 1,
+    );
+  }
+
   /// Intervall in Tagen, nach dem die Karte bei [stability] auf
   /// [requestRetention] abgesunken ist. Wird auf mindestens 1 Tag begrenzt.
   int intervalDays(double stability) {
@@ -108,26 +134,38 @@ class FsrsService {
           : _nextStabilityOnRecall(card.difficulty, card.stability, r, grade);
     }
 
-    final scheduled = intervalDays(stability);
+    // Leichte und mittlere Stufen einer Eskalationskette sind Durchgangs-
+    // stufen: sie sollen regelmäßig drankommen, bis sie grün sind und die
+    // nächste Stufe freischalten – erst die schwerste Stufe bekommt die
+    // vollen, weit auseinanderliegenden Spaced-Repetition-Abstände. Ohne
+    // Deckel läge zwischen den vier nötigen Lerntagen einer Stufe schnell
+    // ein Monat, die schwere Stufe käme dann erst nach dem Semester dran.
+    final chain = card.variantChain;
+    final isTransitStage = chain != null && card.variantLevel < chain.length - 1;
+    final rawInterval = intervalDays(stability);
+    final scheduled = isTransitStage ? min(rawInterval, transitStageMaxIntervalDays) : rawInterval;
     final due = DateTime(reviewedAt.year, reviewedAt.month, reviewedAt.day)
         .add(Duration(days: scheduled));
 
     // Generischer Mastery-Box-Zähler für die Ampel (siehe Flashcard.masteryBox
-    // Doc-Kommentar): "gewusst" (good/easy) steigt ihn, alles andere
-    // (again/hard, also auch ein bloß mühsam Erratenes) senkt ihn wieder.
+    // Doc-Kommentar): "gewusst" (good/easy) steigt ihn, "Nochmal" senkt ihn.
+    // "Schwer" lässt ihn stehen: die Antwort war richtig, nur mühsam – das
+    // ist kein Rückschritt, aber auch noch kein sicheres Wissen.
     // Steigen nur einmal pro Kalendertag: wird dieselbe Karte am selben Tag
     // mehrfach richtig beantwortet (Üben-Modus, Wiederholungsrunde im Daily
     // Quiz), ist das Kurzzeitgedächtnis, kein über mehrere Sessions
     // nachgewiesenes Wissen – sonst wäre "Grün" in wenigen Minuten erreichbar.
-    final knewIt = grade == Grade.good || grade == Grade.easy;
     final lastReview = card.lastReview;
     final alreadyReviewedToday = lastReview != null &&
         lastReview.year == reviewedAt.year &&
         lastReview.month == reviewedAt.month &&
         lastReview.day == reviewedAt.day;
-    final masteryBox = knewIt
-        ? (alreadyReviewedToday ? card.masteryBox : (card.masteryBox + 1).clamp(0, Flashcard.masteryBoxCap))
-        : (card.masteryBox - 1).clamp(0, Flashcard.masteryBoxCap);
+    final masteryBox = switch (grade) {
+      Grade.good || Grade.easy =>
+        alreadyReviewedToday ? card.masteryBox : (card.masteryBox + 1).clamp(0, Flashcard.masteryBoxCap),
+      Grade.hard => card.masteryBox,
+      Grade.again => (card.masteryBox - 1).clamp(0, Flashcard.masteryBoxCap),
+    };
 
     return card.copyWithReview(
       due: due,

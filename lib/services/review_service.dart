@@ -90,6 +90,7 @@ class ReviewService {
     if (nextType != null) {
       change = boxResult.needsGeneration ? LevelChange.promotionPending : LevelChange.promoted;
       target = nextType;
+      if (change == LevelChange.promoted) updated = _fsrs.restartForNewStage(updated, now: now);
     } else if (updated.variantLevel < beforeLevel) {
       change = LevelChange.demoted;
       target = updated.type;
@@ -100,20 +101,22 @@ class ReviewService {
   }
 
   /// Erzeugt per KI den Inhalt der nächsten (schwereren) Stufe und liefert
-  /// die beförderte Karte zurück. Wirft bei KI-Fehlern – der Aufrufer
+  /// die beförderte, auf der neuen Stufe neu gestartete Karte zurück (siehe
+  /// FsrsService.restartForNewStage). Wirft bei KI-Fehlern – der Aufrufer
   /// entscheidet, ob er das still schluckt (die Karte bleibt dann auf ihrer
   /// Stufe, der nächste richtige Versuch probiert es erneut).
   static Future<Flashcard> generatePromotion(
     AiService ai,
     Flashcard card,
-    QuestionType nextType,
-  ) async {
+    QuestionType nextType, {
+    DateTime? now,
+  }) async {
     final result = await ai.generateHarderVariant(
       questionText: card.front,
       currentAnswer: card.answerSummary,
       targetType: nextType,
     );
-    return card.copyWithPromotedVariant(
+    final promoted = card.copyWithPromotedVariant(
       newType: nextType,
       front: (result['front'] ?? card.front).toString(),
       back: (result['back'] ?? '').toString(),
@@ -122,5 +125,6 @@ class ReviewService {
       blanks: QuestionParsing.parseBlanks(result['blanks']),
       dragPairs: QuestionParsing.parseDragPairs(result['dragPairs']),
     );
+    return FsrsService().restartForNewStage(promoted, now: now);
   }
 }

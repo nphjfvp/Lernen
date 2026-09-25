@@ -286,11 +286,30 @@ void main() {
       expect(incorrect.card.variantBox, 0);
     });
 
-    test('befördert erst, wenn die Schwelle erreicht UND eine nächste Stufe vorhanden ist', () {
+    test('noch nicht grün: keine Beförderung, auch nach vielen richtigen Antworten in Folge', () {
+      final card = _base(
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
+        variantBox: 10,
+        masteryBox: Flashcard.masteryBoxCap - 1,
+      );
+      final result = card.copyWithBoxUpdate(isCorrect: true);
+      expect(result.nextType, isNull);
+      expect(result.card.variantLevel, 0);
+    });
+
+    test('grüne Stufe + falsche Antwort: keine Beförderung', () {
+      final card = _base(
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
+        masteryBox: Flashcard.masteryBoxCap,
+      );
+      expect(card.copyWithBoxUpdate(isCorrect: false).nextType, isNull);
+    });
+
+    test('befördert, sobald die Stufe grün ist UND eine nächste Stufe vorhanden ist', () {
       final card = _base(
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
         variantLevel: 0,
-        variantBox: Flashcard.promotionThreshold - 1,
+        masteryBox: Flashcard.masteryBoxCap,
       );
       final result = card.copyWithBoxUpdate(isCorrect: true);
       expect(result.nextType, QuestionType.fillBlank);
@@ -303,7 +322,7 @@ void main() {
         type: QuestionType.singleChoice,
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
         variantLevel: 0,
-        variantBox: Flashcard.promotionThreshold - 1,
+        masteryBox: Flashcard.masteryBoxCap,
       );
       final result = card.copyWithBoxUpdate(isCorrect: true);
       expect(result.needsGeneration, isTrue);
@@ -322,7 +341,7 @@ void main() {
         type: QuestionType.singleChoice,
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
         variantLevel: 0,
-        variantBox: Flashcard.promotionThreshold - 1,
+        masteryBox: Flashcard.masteryBoxCap,
         pendingVariants: const [
           VariantSnapshot(type: QuestionType.fillBlank, front: 'Frage mittel ___', back: '', blanks: ['Lösung']),
           VariantSnapshot(type: QuestionType.freeText, front: 'Frage schwer', back: '', correctText: 'Lösung'),
@@ -345,11 +364,11 @@ void main() {
       final card = _base(
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
         variantLevel: 1, // bereits auf der letzten Stufe
-        variantBox: Flashcard.promotionThreshold - 1,
+        masteryBox: Flashcard.masteryBoxCap,
       );
       final result = card.copyWithBoxUpdate(isCorrect: true);
       expect(result.nextType, isNull);
-      expect(result.card.variantBox, Flashcard.promotionThreshold);
+      expect(result.card.variantBox, 1);
     });
 
     test('Box sinkt nicht unter 0', () {
@@ -399,7 +418,7 @@ void main() {
         type: QuestionType.singleChoice,
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
         variantLevel: 0,
-        variantBox: Flashcard.promotionThreshold - 1,
+        masteryBox: Flashcard.masteryBoxCap,
       ).copyWithPromotedVariant(
         newType: QuestionType.fillBlank,
         front: 'Frage mit ___ Lücke',
@@ -430,7 +449,6 @@ void main() {
         type: QuestionType.singleChoice,
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
         variantLevel: 0,
-        variantBox: Flashcard.promotionThreshold - 1,
         masteryBox: Flashcard.masteryBoxCap,
       ).copyWithPromotedVariant(
         newType: QuestionType.fillBlank,
@@ -467,7 +485,7 @@ void main() {
       final promoted = _base(
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
         variantLevel: 0,
-        variantBox: Flashcard.promotionThreshold - 1,
+        masteryBox: Flashcard.masteryBoxCap,
       ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Neu', blanks: const ['x']);
       final result = promoted.copyWithBoxUpdate(isCorrect: false);
       expect(result.card.variantLevel, 1);
@@ -485,7 +503,7 @@ void main() {
         type: QuestionType.singleChoice,
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
         variantLevel: 0,
-        variantBox: Flashcard.promotionThreshold - 1,
+        masteryBox: Flashcard.masteryBoxCap,
       ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Frage mittel', blanks: const ['x']);
       final demoted = promoted.copyWithDemotedVariant();
       expect(demoted.type, QuestionType.singleChoice);
@@ -499,7 +517,6 @@ void main() {
         type: QuestionType.singleChoice,
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
         variantLevel: 0,
-        variantBox: Flashcard.promotionThreshold - 1,
         masteryBox: 0,
       ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Frage mittel', blanks: const ['x']);
       final demoted = promoted.copyWithDemotedVariant(masteryBoxOverride: Flashcard.masteryBoxCap - 1);

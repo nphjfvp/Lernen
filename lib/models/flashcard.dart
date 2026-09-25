@@ -129,11 +129,10 @@ class VariantSnapshot {
 /// [dragPairs] (automatisch ausgewertet, siehe AnswerChecker).
 ///
 /// [variantChain] macht eine Frage Teil einer Schwierigkeits-Eskalation
-/// (z.B. Single-Choice -> Lückentext -> Freitext): steigt [variantBox] beim
-/// wiederholten richtigen Beantworten hoch genug, wird die Frage lazy (nur
-/// bei Bedarf, ein KI-Aufruf) in den nächsten Typ der Kette umgewandelt und
-/// [variantLevel] erhöht. Sinkt die Box dagegen auf einer Stufe > 0 wieder
-/// auf 0 UND es kommt noch ein Fehlversuch dazu, wird automatisch eine
+/// (z.B. Single-Choice -> Lückentext -> Freitext): ist die aktuelle Stufe in
+/// der Ampel grün, wird die Frage in den nächsten Typ der Kette umgewandelt
+/// (Inhalt aus [pendingVariants] oder lazy per KI) und [variantLevel]
+/// erhöht. Nach mehreren Fehlversuchen in Folge wird automatisch eine
 /// Stufe zurückgestuft (siehe [copyWithBoxUpdate]/[copyWithDemotedVariant])
 /// – Adaptivität in BEIDE Richtungen statt nur aufwärts. `null` bei
 /// [variantChain] bedeutet: kein Eskalations-Typ, die Frage bleibt
@@ -174,6 +173,10 @@ class Flashcard {
 
   final List<QuestionType>? variantChain;
   final int variantLevel;
+
+  /// Richtige Antworten in Folge auf der aktuellen Stufe (falsch: −1). Nur
+  /// noch informativ – über die Beförderung entscheidet die Ampel
+  /// ([masteryBox], siehe [copyWithBoxUpdate]).
   final int variantBox;
 
   /// Inhalt jeder bereits verlassenen, leichteren Eskalationsstufe, in der
@@ -409,10 +412,9 @@ class Flashcard {
   /// mehrfaches Vergessen in Folge.
   static const int demotionMissStreakThresholdOnLastStage = 5;
 
-  /// Nach einer Antwort: Leitner-Box fortschreiben (rein für die
-  /// Varianten-Eskalation, unabhängig vom FSRS-Zustand) – in BEIDE
-  /// Richtungen. Erreicht die Box die "grüne" Schwelle und ist eine nächste
-  /// Stufe in [variantChain] vorhanden, wird befördert: liegt ihr Inhalt
+  /// Nach einer Antwort: Eskalationsstufe fortschreiben – in BEIDE
+  /// Richtungen. Ist die aktuelle Stufe grün ([masteryBox] am Cap) und eine
+  /// nächste Stufe in [variantChain] vorhanden, wird befördert: liegt ihr Inhalt
   /// bereits fertig in [pendingVariants] vor (siehe dort), passiert das
   /// SOFORT, ohne KI-Aufruf ([needsGeneration] = false). Andernfalls wird nur
   /// die Box zurückgesetzt und die Ziel-Stufe über [nextType] signalisiert
@@ -426,8 +428,14 @@ class Flashcard {
   /// alte Wortlaut liegt bereits in [variantHistory].
   ({Flashcard card, QuestionType? nextType, bool needsGeneration}) copyWithBoxUpdate({required bool isCorrect}) {
     final chain = variantChain;
+    // Befördert wird, sobald die aktuelle Stufe grün ist: masteryBox am Cap
+    // heißt an [masteryBoxCap] verschiedenen Tagen richtig beantwortet
+    // (siehe FsrsService.review) – "3 richtig in Folge" war dagegen in einer
+    // einzigen Übungsrunde erreichbar. Aufrufer wenden FsrsService.review
+    // VOR dieser Methode an, masteryBox enthält die aktuelle Antwort also
+    // schon.
     final canPromote =
-        chain != null && variantLevel < chain.length - 1 && variantBox + 1 >= Flashcard.promotionThreshold && isCorrect;
+        chain != null && variantLevel < chain.length - 1 && masteryBox >= Flashcard.masteryBoxCap && isCorrect;
     if (canPromote) {
       final pending = pendingVariants;
       if (pending != null && pending.isNotEmpty) {
@@ -674,10 +682,6 @@ class Flashcard {
       priorityIntroduction: priorityIntroduction,
     );
   }
-
-  /// Anzahl richtiger Antworten in Folge, ab der eine Frage mit
-  /// [variantChain] in die nächste Stufe befördert wird.
-  static const int promotionThreshold = 3;
 
   /// Obergrenze für [masteryBox] – ab hier zählt eine Karte für die Ampel
   /// als nachgewiesen gut gelernt (siehe MasteryService), weiteres Wachstum

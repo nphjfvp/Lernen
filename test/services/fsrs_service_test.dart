@@ -86,7 +86,7 @@ void main() {
   });
 
   group('FsrsService.review – masteryBox (Grundlage der Ampel)', () {
-    test('steigt bei "Gut"/"Leicht", sinkt bei "Nochmal"/"Schwer"', () {
+    test('steigt bei "Gut"/"Leicht", bleibt bei "Schwer", sinkt bei "Nochmal"', () {
       var card = _newCard();
       var now = DateTime(2026, 1, 1);
 
@@ -99,11 +99,11 @@ void main() {
       now = card.due;
 
       card = fsrs.review(card, Grade.hard, now: now);
-      expect(card.masteryBox, 1);
+      expect(card.masteryBox, 2);
       now = card.due;
 
       card = fsrs.review(card, Grade.again, now: now);
-      expect(card.masteryBox, 0);
+      expect(card.masteryBox, 1);
     });
 
     test('sinkt nicht unter 0 und steigt nicht über Flashcard.masteryBoxCap', () {
@@ -167,6 +167,54 @@ void main() {
     test('eine einzelne richtige Antwort auf eine neue Karte führt nicht zu wochenlanger Pause', () {
       final card = fsrs.review(_newCard(), fsrs.gradeFromResult(true), now: DateTime(2026, 1, 1));
       expect(card.scheduledDays, lessThanOrEqualTo(4));
+    });
+  });
+
+  group('FsrsService – Eskalationsstufen', () {
+    Flashcard chainCard({required int level}) => Flashcard(
+          id: 'c1',
+          moduleId: 'm1',
+          front: 'F',
+          back: 'B',
+          createdAt: DateTime(2026, 1, 1),
+          due: DateTime(2026, 1, 1),
+          type: QuestionType.singleChoice,
+          variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
+          variantLevel: level,
+        );
+
+    test('leichte/mittlere Stufe: Abstand höchstens transitStageMaxIntervalDays', () {
+      var card = chainCard(level: 0);
+      var now = DateTime(2026, 1, 1);
+      for (var i = 0; i < 6; i++) {
+        card = fsrs.review(card, Grade.good, now: now);
+        expect(card.scheduledDays, lessThanOrEqualTo(FsrsService.transitStageMaxIntervalDays));
+        now = card.due;
+      }
+    });
+
+    test('schwerste Stufe: volle Spaced-Repetition-Abstände', () {
+      var card = chainCard(level: 2);
+      var now = DateTime(2026, 1, 1);
+      for (var i = 0; i < 4; i++) {
+        card = fsrs.review(card, Grade.good, now: now);
+        now = card.due;
+      }
+      expect(card.scheduledDays, greaterThan(FsrsService.transitStageMaxIntervalDays));
+    });
+
+    test('restartForNewStage: morgen fällig, Ampel gelb, Wiederholungszahl bleibt', () {
+      var card = chainCard(level: 1);
+      var now = DateTime(2026, 1, 1);
+      for (var i = 0; i < 4; i++) {
+        card = fsrs.review(card, Grade.good, now: now);
+        now = card.due;
+      }
+      final restarted = fsrs.restartForNewStage(card, now: DateTime(2026, 2, 1, 15));
+      expect(restarted.due, DateTime(2026, 2, 2));
+      expect(restarted.masteryBox, 1);
+      expect(restarted.reps, card.reps);
+      expect(restarted.stability, lessThan(card.stability));
     });
   });
 }

@@ -101,7 +101,8 @@ engerem Fokus statt Feature-Fülle.
   fälschlich nicht als "Rot" zeigen würde. "Grün" braucht zusätzlich
   `masteryBox >= Flashcard.masteryBoxCap` (4 erfolgreiche Wiederholungen an
   verschiedenen Tagen – mehrfach am selben Tag richtig, z.B. im Üben-Modus,
-  zählt nur einmal)
+  zählt nur einmal; eine Selbstbewertung "Schwer" lässt den Zähler stehen,
+  nur "Nochmal" bzw. eine falsche Antwort senkt ihn)
   UND eine weiterhin ausreichende Behaltensrate – die Retrievability dient
   hier nur noch als Verfalls-Signal, das eine lange nicht wiederholte,
   eigentlich gemeisterte Karte wieder zurückstuft.
@@ -118,10 +119,14 @@ engerem Fokus statt Feature-Fülle.
   fast unmöglich zu erfüllen) – ohne API-Key oder bei einem Fehler bleibt es
   beim strengeren lokalen Ergebnis. Ausgewählte Single-Choice-
   Fragen tragen zusätzlich eine Eskalationskette (Single-Choice → Lückentext
-  → Freitext): wird eine Frage im Daily Quiz wiederholt richtig beantwortet
-  (Leitner-Box, Schwelle 3), erzeugt die KI im Hintergrund lazy die nächst
-  schwierigere Variante zur selben Karte – ohne alle Stufen vorab zu
-  generieren. Adaptiv in BEIDE Richtungen: zwei Fehlversuche IN FOLGE auf
+  → Freitext): steht die aktuelle Stufe in der Ampel auf Grün (richtig an 4
+  verschiedenen Tagen), wird die Frage befördert – liegt der Inhalt der
+  nächsten Stufe nicht schon vor, erzeugt die KI ihn im Hintergrund lazy,
+  ohne alle Stufen vorab zu generieren. Die neue Stufe startet neu (morgen
+  fällig, Ampel gelb, `FsrsService.restartForNewStage`); leichte und
+  mittlere Stufen kommen höchstens alle 7 Tage dran
+  (`FsrsService.transitStageMaxIntervalDays`), erst die schwerste Stufe
+  bekommt die vollen Spaced-Repetition-Abstände. Adaptiv in BEIDE Richtungen: zwei Fehlversuche IN FOLGE auf
   einer beförderten Stufe stufen automatisch zur vorherigen (leichteren)
   Stufe zurück – ohne erneuten KI-Aufruf, der alte Wortlaut liegt bereits in
   `Flashcard.variantHistory` (siehe `Flashcard.copyWithBoxUpdate`). Auf der
@@ -188,8 +193,8 @@ engerem Fokus statt Feature-Fülle.
   abgegrenztes Mini-Spiel im Fortschritts-Tab: 60 Sekunden Zeitdruck gegen
   die fachübergreifend schwächsten (Ampel-rot, notfalls +gelb) Karten,
   wiederverwendet dieselben Fragetypen/dieselbe Auswertung wie Daily Quiz.
-  Bewusst OHNE FSRS-Effekt (ändert nie, wann eine Karte fällig wird) und
-  OHNE Münzen/Shop/Fremdvergleich – nur eine geräte-lokale persönliche
+  Jede Antwort zählt wie im Daily Quiz für FSRS, Ampel und Stufen (gemeinsamer
+  `ReviewService`/`CardReviewMixin`), aber OHNE Münzen/Shop/Fremdvergleich – nur eine geräte-lokale persönliche
   Bestleistung (`AppSettings.bestSprintScore`). Gamification erhöht
   nachweislich Engagement/Wiederkehrrate, aber nicht zuverlässig den
   Lerngewinn pro Sitzung – deshalb bewusst als Auflockerung positioniert,

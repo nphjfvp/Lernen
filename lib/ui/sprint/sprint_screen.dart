@@ -9,16 +9,16 @@ import '../../repositories/settings_repository.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
 import '../../theme/app_colors.dart';
+import '../daily/card_review_mixin.dart';
 import '../daily/question_answer_view.dart';
 
 enum _Phase { loading, intro, playing, done }
 
 /// Sprint-Pausenmodus: eine kurze, zeitdruckbasierte Runde über die aktuell
-/// schwächsten (Ampel-rot) Karten, fachübergreifend. Bewusst klar getrennt
-/// vom eigentlichen Lernkreislauf (Daily Quiz/Üben/Nachbereiten):
-///  - KEIN FSRS-Effekt – eine Antwort hier verändert nicht, wann die Karte
-///    als nächstes fällig ist. Das ist Auflockerung, keine Wiederholung
-///    (siehe Klassenkommentar zu SpeedrunScreen für dieselbe Überlegung).
+/// schwächsten (Ampel-rot) Karten, fachübergreifend.
+///  - Jede Antwort zählt wie im Daily Quiz/Üben (FSRS, Ampel, Stufen – siehe
+///    CardReviewMixin): gerade die schwachen Karten profitieren davon, und
+///    eine richtige Antwort unter Zeitdruck ist ein echter Abruf.
 ///  - KEINE Münzen/Shop/Fremdvergleich – nur eine rein geräte-lokale
 ///    persönliche Bestleistung (siehe AppSettings.bestSprintScore), im
 ///    Sinne der Selbstbestimmungstheorie (Kompetenz-Feedback gegen den
@@ -30,7 +30,7 @@ class SprintScreen extends StatefulWidget {
   State<SprintScreen> createState() => _SprintScreenState();
 }
 
-class _SprintScreenState extends State<SprintScreen> {
+class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<SprintScreen> {
   static const _durationSeconds = 60;
   static const _minPoolSize = 3;
   static const _maxQueueLength = 30;
@@ -93,8 +93,9 @@ class _SprintScreenState extends State<SprintScreen> {
     });
   }
 
-  void _handleComplete({Grade? selfGrade, bool? isCorrect}) {
+  void _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) {
     final wasCorrect = isCorrect ?? (selfGrade == Grade.good || selfGrade == Grade.easy);
+    unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect));
     setState(() {
       if (wasCorrect) _correct += 1;
       _index += 1;
@@ -149,7 +150,8 @@ class _SprintScreenState extends State<SprintScreen> {
                         key: ValueKey(_queue[_index].id),
                         card: _queue[_index],
                         isNew: false,
-                        onComplete: _handleComplete,
+                        onComplete: ({selfGrade, isCorrect}) =>
+                            _handleComplete(_queue[_index], selfGrade: selfGrade, isCorrect: isCorrect),
                       ),
                     ),
                   ],
@@ -197,7 +199,7 @@ class _IntroView extends StatelessWidget {
                       'bisschen mehr üben, dann gibt es hier was zu tun.'
                   : '60 Sekunden, $count Karte${count == 1 ? '' : 'n'} '
                       '(${usedYellowFallback ? 'schwach & mittel' : 'deine schwächsten'}). '
-                      'Reine Auflockerung – zählt NICHT für die Spaced-Repetition-Planung.',
+                      'Jede Antwort zählt für Ampel und Wiederholungsplan.',
               textAlign: TextAlign.center,
               style: TextStyle(color: c.inkMuted, height: 1.4),
             ),
