@@ -25,6 +25,7 @@ import '../../services/mastery_service.dart';
 import '../../services/module_export_service.dart';
 import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
+import '../exam/mock_exam_screen.dart';
 import '../flashcards/flashcard_list_screen.dart';
 import '../practice/practice_screen.dart';
 import '../prepare/prepare_screen.dart';
@@ -197,6 +198,17 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     ),
                     const SizedBox(height: 12),
                     _SoftRow(
+                      icon: Icons.assignment_outlined,
+                      title: 'Probeklausur',
+                      subtitle: 'Wie in der Klausur: ohne Hilfen, mit Zeitlimit und Note am Ende',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => MockExamScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _SoftRow(
                       icon: Icons.bolt_outlined,
                       title: 'Speedrun (Nachbereiten)',
                       subtitle: 'Schneller Durchlauf durch alle Konzepte – Fehler werden danach vertieft',
@@ -242,10 +254,14 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     else
                       ...concepts.map((concept) => Padding(
                             padding: const EdgeInsets.only(bottom: 10),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: c.surface,
-                                border: Border.all(color: c.border),
+                            // Material statt DecoratedBox: ExpansionTile malt
+                            // Hintergrund/Tipp-Effekt auf das nächste Material
+                            // (sonst Debug-Assertion und unsichtbares Feedback).
+                            child: Material(
+                              color: c.surface,
+                              clipBehavior: Clip.antiAlias,
+                              shape: RoundedRectangleBorder(
+                                side: BorderSide(color: c.border),
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Theme(

@@ -18,7 +18,14 @@ import '../../services/review_service.dart';
 mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
   final ReviewService _reviewService = ReviewService();
 
-  Future<ReviewOutcome> recordReview(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
+  /// [showLevelFeedback] false unterdrückt die Stufenwechsel-SnackBar (z.B.
+  /// in der Probeklausur, die kein Feedback während der Bearbeitung zeigt).
+  Future<ReviewOutcome> recordReview(
+    Flashcard card, {
+    Grade? selfGrade,
+    bool? isCorrect,
+    bool showLevelFeedback = true,
+  }) async {
     final outcome = _reviewService.evaluate(card, selfGrade: selfGrade, isCorrect: isCorrect);
     // Vor dem ersten await auslesen: die Hintergrund-Beförderung soll auch
     // dann noch gespeichert werden, wenn der Screen inzwischen geschlossen
@@ -34,7 +41,7 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
       unawaited(_promoteInBackground(repo, ai, outcome.card, target));
     }
     final message = outcome.levelChangeMessage;
-    if (message != null && mounted) {
+    if (message != null && showLevelFeedback && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
       );

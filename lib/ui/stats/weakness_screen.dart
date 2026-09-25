@@ -202,10 +202,13 @@ class _WeakCardTile extends StatelessWidget {
     final answer = card.answerSummary.isNotEmpty ? card.answerSummary : card.back;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: c.surface,
-          border: Border.all(color: c.border),
+      // Material statt DecoratedBox: ExpansionTile malt Hintergrund und
+      // Tipp-Effekt auf das nächste Material darunter.
+      child: Material(
+        color: c.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: c.border),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Theme(

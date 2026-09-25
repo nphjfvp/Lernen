@@ -201,6 +201,15 @@ engerem Fokus statt Feature-Fülle.
   Logik). Bewusst ein Vergleich mit dem EIGENEN früheren Stand statt mit
   anderen Nutzern – Kompetenz-Feedback motiviert nachhaltiger als sozialer
   Vergleich/Leaderboards (Selbstbestimmungstheorie, Deci & Ryan).
+- **Probeklausur mit Note** (`lib/ui/exam/mock_exam_screen.dart`, im
+  Fach unter "Probeklausur"): 10/20/30 zufällige Fragen aus dem bereits
+  behandelten Stoff, optional mit Zeitlimit (15/30/60 min), OHNE Feedback,
+  Tipps oder Erklärungen während der Bearbeitung (`QuestionAnswerView.examMode`),
+  Überspringen/vorzeitiges Abgeben möglich. Danach: Note nach der üblichen
+  Hochschulskala (`MockExamService.germanGrade`: ab 50 % 4,0, ab 95 % 1,0),
+  Trefferquote je Einheit (schwächste zuerst), Durchsicht aller Fragen mit
+  Lösung und KI-Erklärung, "falsche üben" und ein lokaler Verlauf der
+  bisherigen Noten. Beantwortete Fragen zählen normal für FSRS/Ampel.
 - **Schwachstellen (Fehlertagebuch)** (`lib/ui/stats/weakness_screen.dart`,
   Einstieg im Fortschritt-Tab): sammelt die Karten, mit denen man sich
   schwertut, direkt aus dem Lernzustand (`WeaknessService`: wie oft eine

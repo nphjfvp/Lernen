@@ -261,4 +261,41 @@ void main() {
       expect(find.text('Erklär mir das'), findsOneWidget);
     });
   });
+
+  group('QuestionAnswerView – Probeklausur-Modus', () {
+    testWidgets('gibt ohne Feedback direkt weiter und zeigt keine Hilfe', (tester) async {
+      bool? reported;
+      final card = _card(
+        type: QuestionType.singleChoice,
+        options: const [QuizOption(text: 'A', isCorrect: true), QuizOption(text: 'B', isCorrect: false)],
+      );
+      await tester.pumpWidget(ChangeNotifierProvider<SettingsRepository>(
+        create: (_) => _SettingsWithKey(),
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: Column(
+              children: [
+                Expanded(
+                  child: QuestionAnswerView(
+                    card: card,
+                    isNew: false,
+                    examMode: true,
+                    onComplete: ({selfGrade, isCorrect}) => reported = isCorrect,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ));
+      expect(find.text('Tipp'), findsNothing);
+      await tester.tap(find.text('B'));
+      await tester.pump();
+      await tester.tap(find.text('Antwort abgeben'));
+      await tester.pumpAndSettle();
+      expect(reported, isFalse);
+      expect(find.text('Nicht ganz.'), findsNothing);
+    });
+  });
 }

@@ -32,10 +32,15 @@ class QuestionAnswerView extends StatefulWidget {
     required this.card,
     required this.isNew,
     required this.onComplete,
+    this.examMode = false,
   });
 
   final Flashcard card;
   final bool isNew;
+
+  /// Probeklausur (siehe MockExamScreen): kein Feedback, keine KI-Hilfe –
+  /// "Antwort abgeben" wertet aus und meldet das Ergebnis sofort weiter.
+  final bool examMode;
 
   /// [selfGrade] für den offenen `flashcard`-Typ, [isCorrect] für alle
   /// automatisch geprüften Typen. Ausnahme: richtig beantwortet, aber mit
@@ -224,32 +229,40 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   }
 
   Future<void> _check() async {
-    final card = widget.card;
-    if (card.type == QuestionType.freeText) {
-      await _checkFreeTextAnswer();
-      return;
-    }
-    final AnswerCheckResult result;
-    switch (card.type) {
-      case QuestionType.singleChoice:
-        result = AnswerChecker.checkSingleChoice(card, _selectedIndex);
-      case QuestionType.multipleChoice:
-        result = AnswerChecker.checkMultipleChoice(card, _selectedIndices);
-      case QuestionType.fillBlank:
-        result = AnswerChecker.checkFillBlank(card, _blankControllers.map((c) => c.text).toList());
-      case QuestionType.dragDrop:
-        result = AnswerChecker.checkDragDrop(card, Map.of(_assignments));
-      case QuestionType.dragCategory:
-        result = AnswerChecker.checkDragCategory(card, Map.of(_assignments));
-      case QuestionType.freeText:
-      case QuestionType.flashcard:
-      case QuestionType.html:
-        return; // freeText: siehe oben; flashcard/html: eigene build()-Zweige.
-    }
+    final result = await _computeResult();
+    if (result == null || !mounted) return;
     setState(() {
       _checked = true;
       _result = result;
     });
+  }
+
+  /// Probeklausur: auswerten und direkt weitermelden, ohne Feedback.
+  Future<void> _submitExamAnswer() async {
+    final result = await _computeResult();
+    if (result == null || !mounted) return;
+    _submit(isCorrect: result.isCorrect);
+  }
+
+  Future<AnswerCheckResult?> _computeResult() async {
+    final card = widget.card;
+    switch (card.type) {
+      case QuestionType.singleChoice:
+        return AnswerChecker.checkSingleChoice(card, _selectedIndex);
+      case QuestionType.multipleChoice:
+        return AnswerChecker.checkMultipleChoice(card, _selectedIndices);
+      case QuestionType.fillBlank:
+        return AnswerChecker.checkFillBlank(card, _blankControllers.map((c) => c.text).toList());
+      case QuestionType.dragDrop:
+        return AnswerChecker.checkDragDrop(card, Map.of(_assignments));
+      case QuestionType.dragCategory:
+        return AnswerChecker.checkDragCategory(card, Map.of(_assignments));
+      case QuestionType.freeText:
+        return _checkFreeTextAnswer();
+      case QuestionType.flashcard:
+      case QuestionType.html:
+        return null; // eigene build()-Zweige.
+    }
   }
 
   /// Zweistufige Freitext-Prüfung: zuerst der schnelle, rein lokale
@@ -262,52 +275,29 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// Umformulierungen versteht. Ohne hinterlegten API-Key oder bei einem
   /// Fehler bleibt es beim (strengeren) lokalen Ergebnis statt die Frage
   /// unbeantwortet zu lassen.
-  Future<void> _checkFreeTextAnswer() async {
+  Future<AnswerCheckResult> _checkFreeTextAnswer() async {
     final card = widget.card;
     final localResult = AnswerChecker.checkFreeText(card, _freeTextController.text);
-    if (localResult.isCorrect) {
-      setState(() {
-        _checked = true;
-        _result = localResult;
-      });
-      return;
-    }
+    if (localResult.isCorrect) return localResult;
 
-    final settings = context.read<SettingsRepository>().settings;
-    if (!settings.hasApiKey) {
-      setState(() {
-        _checked = true;
-        _result = localResult;
-      });
-      return;
-    }
+    final ai = _aiOrNull();
+    if (ai == null) return localResult;
 
     setState(() => _freeTextAiChecking = true);
     try {
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
       final aiCorrect = await ai.checkFreeTextAnswer(
         question: card.front,
         correctAnswer: card.correctText ?? '',
         userAnswer: _freeTextController.text,
       );
-      if (!mounted) return;
-      setState(() {
-        _checked = true;
-        _freeTextAiChecking = false;
-        _result = AnswerCheckResult(isCorrect: aiCorrect, correctAnswerLabel: localResult.correctAnswerLabel);
-      });
+      return AnswerCheckResult(isCorrect: aiCorrect, correctAnswerLabel: localResult.correctAnswerLabel);
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _checked = true;
-        _freeTextAiChecking = false;
-        _result = localResult;
-      });
+      return localResult;
+    } finally {
+      if (mounted) setState(() => _freeTextAiChecking = false);
     }
   }
 
-  /// Nullable gelesen: in eingebetteten Vorschauen/Tests ohne
-  /// SettingsRepository gibt es einfach keine KI-Hilfe.
   AiService? _aiOrNull() {
     final settings = context.read<SettingsRepository?>()?.settings;
     if (settings == null || !settings.hasApiKey) return null;
@@ -401,7 +391,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// "Tipp" vor dem Antworten – ein Denkanstoß ohne Lösung. Eine danach
   /// richtige Antwort zählt nur als "Schwer" (siehe [QuestionAnswerView.onComplete]).
   Widget _buildHintArea(AppColors c) {
-    if (!_aiHelpAvailable) return const SizedBox.shrink();
+    if (widget.examMode || !_aiHelpAvailable) return const SizedBox.shrink();
     final hint = _hint;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
@@ -428,7 +418,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
   /// "Erklär mir das" nach dem Antworten, danach optional "Einfacher erklären".
   Widget _buildExplainArea(AppColors c) {
-    if (!_aiHelpAvailable) return const SizedBox.shrink();
+    if (widget.examMode || !_aiHelpAvailable) return const SizedBox.shrink();
     final explanation = _explanation;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
@@ -678,14 +668,14 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
           )
         else
           FilledButton(
-            onPressed: _canCheck ? _check : null,
+            onPressed: _canCheck ? (widget.examMode ? _submitExamAnswer : _check) : null,
             child: _freeTextAiChecking
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
-                : const Text('Prüfen'),
+                : Text(widget.examMode ? 'Antwort abgeben' : 'Prüfen'),
           ),
       ],
     );
