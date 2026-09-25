@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/app_settings.dart';
 import '../models/flashcard.dart' show QuestionType;
+import 'math_markup.dart';
 import 'text_chunker.dart';
 
 /// Wird geworfen, wenn die KI-Antwort kein (reparierbares) JSON enthält.
@@ -131,6 +132,9 @@ enthalten (siehe Beispiele oben) – ein Eintrag mit nur "front" und sonst
 nichts ist ungültig und wird von der App verworfen. Enthält das Dokument zu
 einer Frage KEINE erkennbare Musterlösung, überspringe diese Frage.
 
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 WICHTIG – Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format,
 ohne Markdown-Codefences (kein ```), ohne jeden Text davor oder danach, sonst
 kann ich deine Antwort nicht in die App einfügen:
@@ -224,7 +228,11 @@ Hier ist der Dokumenttext:
 Du bist ein Lernassistent für Studierende. Du bekommst den Text von
 Vorlesungsfolien (möglicherweise nur einen Abschnitt eines längeren
 Foliensatzes) und erstellst daraus eine strukturierte Zusammenfassung für
-einen schnellen Überblick. Antworte AUSSCHLIESSLICH mit validem JSON in genau
+einen schnellen Überblick.
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
+Antworte AUSSCHLIESSLICH mit validem JSON in genau
 diesem Format, ohne Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {
   "title": "Kurzer Titel der Sitzung/des Themas",
@@ -376,6 +384,9 @@ technisch funktioniert). Nicht jede Karte muss einem Konzept zugeordnet
 werden – reines Einzelfaktenwissen ohne Konzeptbezug lässt das Feld einfach
 weg.
 
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {
@@ -485,6 +496,9 @@ im "front" als "___" markiert, "blanks" mit den Lösungen), "free_text"
 ("correctText" mit der Lösung) oder "flashcard" (offenes front/back, back
 ist Pflicht) – wie im Hauptformat des Nachbereiten-Modus.
 
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {"flashcards": [
@@ -586,6 +600,9 @@ anderen Typ passt – bevor du "free_text" wählst, prüfe der Reihe nach:
 Enthält das Dokument KEINE erkennbare Musterlösung zu einer Frage, überspringe
 diese Frage (keine Karte ohne bekannte Antwort erzeugen).
 
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {"flashcards": [
@@ -641,6 +658,9 @@ Anweisung, überarbeite GENAU dieses Konzept gemäß der Anweisung (z.B.
 umformulieren, kürzen, mehr Fokus auf einen Aspekt) statt ein neues zu
 erfinden.
 
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {"title": "Kurzer, prägnanter Konzepttitel", "explanation": "Ausführliche, klar strukturierte Erklärung"}
@@ -725,6 +745,9 @@ Worten wiedergeben lässt. Bei rein textbasierten Fakten (die man auch ohne
 das Bild klar verstehen und beantworten kann) setze "needsImage": false –
 das ist der Regelfall, hänge also nicht bei jeder Karte ein Bild an.
 
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {"flashcards": [{"type": "...", "front": "...", "needsImage": false, "...": "je nach Typ weitere Felder, siehe oben"}]}
@@ -815,6 +838,9 @@ Typen im Original: front/back, front/options, front/correctText,
 front/blanks, front/dragPairs). Ändere dabei NUR, was fachlich falsch ist –
 lass alles andere unverändert.
 
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {
@@ -913,6 +939,9 @@ Du wandelst eine Lernfrage mit BEKANNTER Lösung in einen anspruchsvolleren
 Fragetyp um. Der geprüfte Fakt/die Lösung darf sich NICHT ändern – nur das
 Format der Frage.
 ${_variantTypeRule(targetType)}
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format (siehe
 oben), ohne Markdown-Codefences, ohne zusätzlichen Text davor/danach.
 Antworte in der Sprache der Vorlage.
@@ -1078,6 +1107,8 @@ deines allgemeinen Wissens – sag in dem Fall kurz, dass sich die Antwort
 nicht auf die hochgeladenen Materialien stützt.
 Beantworte NUR die gestellte Frage – erkläre oder ergänze nichts, wonach
 nicht gefragt wurde. Antworte klar und prägnant in normalem Fließtext
+Mathematische Formeln schreibst du in LaTeX zwischen \$…\$ (im Satz) bzw.
+\$\$…\$\$ (abgesetzt).
 (kein JSON, keine Codefences), in der Sprache der Frage.
 ''';
 
@@ -1123,6 +1154,8 @@ Dinge, die reiner Text nicht wiedergibt), beziehe den Text-Kontext ein,
 wo er die Seite erklärt oder ergänzt. Beantworte AUSSCHLIESSLICH die
 gestellte Frage zu dieser Seite – erkläre oder ergänze nichts, wonach
 nicht gefragt wurde. Antworte klar und prägnant in normalem Fließtext
+Mathematische Formeln schreibst du in LaTeX zwischen \$…\$ (im Satz) bzw.
+\$\$…\$\$ (abgesetzt).
 (kein JSON, keine Codefences), in der Sprache der Frage.
 ''';
 
@@ -1286,7 +1319,9 @@ Antworte in der Sprache der Vorlage.
   }
 
   Map<String, dynamic> _parseJsonObject(String raw) {
-    final candidate = _extractJsonBlock(raw);
+    // Einfache Backslashes in LaTeX-Formeln ("$\frac…$") wären in JSON
+    // Steuerzeichen oder ungültig – vor dem Dekodieren reparieren.
+    final candidate = MathMarkup.escapeLatexInJson(_extractJsonBlock(raw));
     try {
       final decoded = jsonDecode(candidate);
       if (decoded is Map<String, dynamic>) return decoded;

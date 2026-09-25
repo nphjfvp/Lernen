@@ -5,6 +5,7 @@ import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../services/mastery_service.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/math_text.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
 import '../widgets/mastery_dot.dart';
@@ -148,18 +149,24 @@ class _FlashcardTile extends StatelessWidget {
       card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
       if (card.variantChain != null) 'Stufe ${card.variantLevel + 1}/${card.variantChain!.length}',
     ];
-    final decoration = BoxDecoration(
-      color: selected ? c.accentSoft : c.surface,
-      border: Border.all(color: selected ? c.accent : c.border),
-      borderRadius: BorderRadius.circular(16),
-    );
+    // Material statt DecoratedBox: ListTile/ExpansionTile malen Hintergrund
+    // und Tipp-Effekt auf das nächste Material (sonst Debug-Assertion und
+    // unsichtbares Feedback).
+    Widget framed(Widget child) => Material(
+          color: selected ? c.accentSoft : c.surface,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            side: BorderSide(color: selected ? c.accent : c.border),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: child,
+        );
 
     if (selecting) {
       // Kein ExpansionTile im Auswahlmodus: ein Tippen soll ausschließlich
       // (De-)Selektieren, nicht Auf-/Zuklappen auslösen.
-      return DecoratedBox(
-        decoration: decoration,
-        child: ListTile(
+      return framed(
+        ListTile(
           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
           leading: Checkbox(value: selected, onChanged: (_) => onToggleSelected()),
           title: Text(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
@@ -169,9 +176,8 @@ class _FlashcardTile extends StatelessWidget {
       );
     }
 
-    return DecoratedBox(
-      decoration: decoration,
-      child: Theme(
+    return framed(
+      Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: GestureDetector(
           onLongPress: onToggleSelected,
@@ -238,7 +244,7 @@ class _AnswerDetail extends StatelessWidget {
     final c = context.colors;
     switch (card.type) {
       case QuestionType.flashcard:
-        return Text(card.back, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5));
+        return MathText(card.back, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5));
 
       case QuestionType.singleChoice:
       case QuestionType.multipleChoice:
@@ -280,7 +286,7 @@ class _AnswerDetail extends StatelessWidget {
         );
 
       case QuestionType.freeText:
-        return Text(card.correctText ?? '', style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5));
+        return MathText(card.correctText ?? '', style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5));
 
       case QuestionType.fillBlank:
         final blanks = card.blanks ?? const [];

@@ -10,6 +10,7 @@ import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
 import '../practice/practice_screen.dart';
 import '../widgets/mastery_dot.dart';
+import '../widgets/math_text.dart';
 
 /// Fehlertagebuch: die Karten, mit denen man sich gerade am schwersten tut
 /// (siehe WeaknessService), fachübergreifend oder je Fach – mit Grund,
@@ -175,8 +176,9 @@ class _WeaknessScreenState extends State<WeaknessScreen> {
                             padding: const EdgeInsets.all(14),
                             decoration:
                                 BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(14)),
-                            child: SelectableText(_analysis!,
-                                style: TextStyle(fontSize: 13.5, height: 1.45, color: c.ink)),
+                            child: SelectionArea(
+                              child: MathText(_analysis!, style: TextStyle(fontSize: 13.5, height: 1.45, color: c.ink)),
+                            ),
                           ),
                         const SizedBox(height: 20),
                         for (final w in visible)
@@ -225,7 +227,7 @@ class _WeakCardTile extends StatelessWidget {
             children: [
               Text('Lösung', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.inkMuted)),
               const SizedBox(height: 4),
-              SelectableText(answer, style: const TextStyle(fontSize: 13.5, height: 1.4)),
+              SelectionArea(child: MathText(answer, style: const TextStyle(fontSize: 13.5, height: 1.4))),
             ],
           ),
         ),

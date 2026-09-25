@@ -23,6 +23,7 @@ import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
+import '../../services/math_markup.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
@@ -270,7 +271,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           // lokal geparst – exakt derselbe Rettungs-/Validierungspfad
           // (QuestionParsing.normalizeGeneratedFlashcard) wie bei den beiden
           // anderen Modi greift unten identisch.
-          final decoded = jsonDecode(_pastedJson);
+          final decoded = jsonDecode(MathMarkup.escapeLatexInJson(_pastedJson));
           final rawFlashcards = decoded is Map
               ? (decoded['flashcards'] as List? ?? const [])
               : (decoded is List ? decoded : const []);

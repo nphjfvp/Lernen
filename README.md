@@ -201,6 +201,17 @@ engerem Fokus statt Feature-Fülle.
   Logik). Bewusst ein Vergleich mit dem EIGENEN früheren Stand statt mit
   anderen Nutzern – Kompetenz-Feedback motiviert nachhaltiger als sozialer
   Vergleich/Leaderboards (Selbstbestimmungstheorie, Deci & Ryan).
+- **Mathe/Formeln (LaTeX)** (`lib/ui/widgets/math_text.dart`,
+  `lib/services/math_markup.dart`, Paket `flutter_math_fork`): Formeln in
+  `$…$`/`\(…\)` (im Satz) bzw. `$$…$$`/`\[…\]` (abgesetzt) werden in Fragen,
+  Antwortoptionen, Rückseiten, Lösungen, KI-Erklärungen, Chat, Karteikarten-
+  Liste, Probeklausur-Durchsicht und Schwachstellen sauber gesetzt; eine
+  fehlerhafte Formel erscheint als Rohtext statt abzustürzen, Geldbeträge wie
+  "5 $" bleiben Text. Alle Erzeugungs-Prompts verlangen Formeln in LaTeX.
+  Da Modelle in JSON gern einfache Backslashes schreiben (`\frac` wäre in JSON
+  ein Seitenvorschub + "rac", `\theta` ein Tab …), repariert
+  `MathMarkup.escapeLatexInJson` solche Formeln vor dem Dekodieren (KI-Antworten
+  und "JSON einfügen").
 - **Probeklausur mit Note** (`lib/ui/exam/mock_exam_screen.dart`, im
   Fach unter "Probeklausur"): 10/20/30 zufällige Fragen aus dem bereits
   behandelten Stoff, optional mit Zeitlimit (15/30/60 min), OHNE Feedback,

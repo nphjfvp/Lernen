@@ -11,6 +11,7 @@ import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/chat_context_builder.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/math_text.dart';
 
 /// Frage-Chat zu den hochgeladenen Materialien eines Fachs. Reagiert
 /// ausschließlich auf explizite Fragen – nichts wird von selbst erklärt.
@@ -330,7 +331,7 @@ class _ChatBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(message.content, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink)),
+            MathText(message.content, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink)),
             if (!isUser && sources != null) ...[
               const SizedBox(height: 6),
               Row(

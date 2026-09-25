@@ -15,6 +15,7 @@ import '../../theme/app_colors.dart';
 import '../daily/card_review_mixin.dart';
 import '../daily/question_answer_view.dart';
 import '../practice/practice_screen.dart';
+import '../widgets/math_text.dart';
 
 enum _Phase { setup, running, result }
 
@@ -504,7 +505,7 @@ class _ReviewTileState extends State<_ReviewTile> {
             children: [
               Text('Lösung', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.inkMuted)),
               const SizedBox(height: 4),
-              SelectableText(_answer, style: const TextStyle(fontSize: 13.5, height: 1.4)),
+              SelectionArea(child: MathText(_answer, style: const TextStyle(fontSize: 13.5, height: 1.4))),
               if (hasApiKey) ...[
                 const SizedBox(height: 10),
                 if (_explanation == null)
@@ -520,7 +521,9 @@ class _ReviewTileState extends State<_ReviewTile> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(12)),
-                    child: SelectableText(_explanation!, style: TextStyle(fontSize: 13, height: 1.45, color: c.ink)),
+                    child: SelectionArea(
+                      child: MathText(_explanation!, style: TextStyle(fontSize: 13, height: 1.45, color: c.ink)),
+                    ),
                   ),
                 if (_error != null)
                   Padding(

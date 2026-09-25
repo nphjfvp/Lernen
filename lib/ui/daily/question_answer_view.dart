@@ -12,6 +12,7 @@ import '../../services/answer_checker.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/html_question_contract.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/math_text.dart';
 
 /// Rendert und beantwortet EINE Frage, passend zu ihrem [Flashcard.type].
 ///
@@ -511,7 +512,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                         children: [
                           _newBadge(c),
                           _buildCardImage(c),
-                          Text(
+                          MathText(
                             widget.card.front,
                             textAlign: TextAlign.center,
                             style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, height: 1.45),
@@ -521,7 +522,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                               padding: const EdgeInsets.symmetric(vertical: 24),
                               child: Divider(height: 1, color: c.border),
                             ),
-                            Text(
+                            MathText(
                               widget.card.back,
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 15, height: 1.6, color: c.inkMuted),
@@ -643,7 +644,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               const SizedBox(height: 12),
               _buildCardImage(c),
               if (card.type != QuestionType.fillBlank)
-                Text(card.front, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4)),
+                MathText(card.front, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4)),
               const SizedBox(height: 16),
               _buildAnswerInput(c),
             ],
@@ -764,7 +765,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                     color: c.inkMuted,
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(option.text)),
+                  Expanded(child: MathText(option.text)),
                   if (trailingIcon != null) Icon(trailingIcon, size: 18, color: trailingColor),
                 ],
               ),
@@ -779,7 +780,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.card.front, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4)),
+        MathText(widget.card.front, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4)),
         const SizedBox(height: 16),
         ...List.generate(_blankControllers.length, (i) {
           return Padding(
@@ -926,7 +927,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                     style: TextStyle(fontWeight: FontWeight.w700, color: result.isCorrect ? c.good : c.danger)),
                 if (!result.isCorrect && result.correctAnswerLabel.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text('Richtige Antwort: ${result.correctAnswerLabel}', style: TextStyle(fontSize: 13, color: c.ink)),
+                  MathText('Richtige Antwort: ${result.correctAnswerLabel}', style: TextStyle(fontSize: 13, color: c.ink)),
                 ],
               ],
             ),
@@ -957,7 +958,9 @@ class _AiHelpBox extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: color),
           const SizedBox(width: 10),
-          Expanded(child: SelectableText(text, style: TextStyle(fontSize: 13.5, height: 1.45, color: c.ink))),
+          Expanded(
+            child: SelectionArea(child: MathText(text, style: TextStyle(fontSize: 13.5, height: 1.45, color: c.ink))),
+          ),
         ],
       ),
     );
