@@ -41,8 +41,10 @@ gewünschtes Verhalten.
 - **Persistenz**: `sembast` (Datei auf IO, IndexedDB via `sembast_web` im Web),
   Singleton `DatabaseService` mit Stores: `modules, materials, summaries,
   concepts, lecture_units, flashcards, settings, mastery_snapshots,
-  model_catalog, chat_messages`. Record-Key `settings/app_settings` =
-  AppSettings, `settings/study_days` = Lerntage-Protokoll.
+  model_catalog, chat_messages`. Record-Keys im Store `settings`:
+  `app_settings` = AppSettings, `study_days` = Lerntage-Protokoll,
+  `daily_session` = heutiger Daily-Quiz-Stand, `mock_exam_results` =
+  Probeklausur-Verlauf (alle außer `app_settings` geräte-lokal, nie gesynct).
 - **KI**: OpenRouter Chat-Completions über `http` (`lib/services/ai_service.dart`),
   drei Modellrollen (Fragen/Text, Vision, Crosscheck). Timeout 3 min, Transport-
   fehler → `AiServiceException`.
@@ -51,7 +53,8 @@ gewünschtes Verhalten.
 - **Optional**: Firebase (`firebase_core`, `cloud_firestore`, `firebase_auth`,
   `google_sign_in`) für Cloud-Sync/Account; `webview_flutter` für den
   interaktiven `html`-Fragetyp (nur Android/iOS, sonst Fallback);
-  `flutter_local_notifications` (Lernerinnerung), `home_widget` (Android-Widget).
+  `flutter_local_notifications` (Lernerinnerung), `home_widget` (Android-Widget),
+  `flutter_math_fork` (LaTeX-Formeln, siehe `MathText`).
 - **Tests**: `flutter_test`, reine Logik + Modelle; Repository-Logik über
   statische `…Cascade`/`…In(DatabaseClient)`-Funktionen mit
   `databaseFactoryMemory` (sembast) testbar.
@@ -109,12 +112,23 @@ Alle Fragetypen werden über `QuestionAnswerView` beantwortet. Sie ruft
 oder `isCorrect` (automatisch geprüft). Wiederholt dieselbe Karte angezeigt
 werden soll, braucht die View einen neuen Key.
 
+EINE Stelle verbucht Antworten: `ReviewService.evaluate` (rein) +
+`CardReviewMixin.recordReview` (speichern, Lerntag, Stufenwechsel-SnackBar,
+KI-Erzeugung der nächsten Stufe im Hintergrund – wird auch nach Verlassen des
+Screens gespeichert). Neue Lernmodi MÜSSEN darüber laufen.
+
+Sonderfall **Tipp**: wurde vor dem Antworten ein KI-Tipp geholt und die
+Antwort ist richtig, meldet `QuestionAnswerView` BEIDES (`isCorrect: true`,
+`selfGrade: Grade.hard`): Bewertung „Schwer“ (Ampel steigt nicht), die
+Eskalationskette bleibt unberührt, `wasWrong` ist false.
+
 | Ort | FSRS/Ampel-Wirkung |
 | --- | --- |
 | Daily Quiz (`daily_quiz_screen.dart`) | ja |
-| Üben (`practice_screen.dart`) | ja |
+| Üben (`practice_screen.dart`, auch `PracticeScreen.cards` aus Schwachstellen/Probeklausur) | ja |
+| Sprint (Mini-Spiel) | ja (seit Backlog-Punkt 3) |
+| Probeklausur (`mock_exam_screen.dart`, `examMode`) | ja, ohne SnackBar; übersprungene/unbeantwortete zählen nur für die Note |
 | Zwischen-Check im Lernmodus | nur falsch Beantwortetes wird gespeichert – als `Grade.again` verbucht (rot, morgen fällig) + `priorityIntroduction` |
-| Sprint (Mini-Spiel) | nein (bewusst, im UI angekündigt) |
 | Speedrun (Konzepte) | nein (Konzepte haben keinen SR-Zustand) |
 | Vorschau in „Frage erstellen“ | nein (kosmetisch) |
 
@@ -133,12 +147,15 @@ werden soll, braucht die View einen neuen Key.
 ### 5.3 FSRS (`lib/services/fsrs_service.dart`)
 FSRS-4.5 mit Default-Gewichten, Ziel-Retention 0,9, **Mindestintervall 1 Tag**
 (keine Same-Day-Learning-Steps). `due` = Tagesbeginn + Intervall. `again`
-erhöht `lapses`, setzt `state='relearning'`.
+erhöht `lapses`, setzt `state='relearning'`. Karten auf einer leichten/
+mittleren Stufe einer Eskalationskette (nicht der letzten) bekommen höchstens
+`transitStageMaxIntervalDays` = 7 Tage Abstand.
 
 ### 5.4 masteryBox (in `FsrsService.review`)
 - `good`/`easy` → +1, gedeckelt bei 4 – **aber nur einmal pro Kalendertag**
   (war `lastReview` heute, bleibt der Wert).
-- `again`/`hard` → −1, Boden 0 (auch mehrfach am selben Tag).
+- `hard` → unverändert (richtig, aber mühsam bzw. mit Tipp).
+- `again` → −1, Boden 0 (auch mehrfach am selben Tag).
 
 ### 5.5 Ampel (`MasteryService.levelFor`)
 1. `reps == 0` → **neu**
@@ -151,12 +168,18 @@ erhöht `lapses`, setzt `state='relearning'`.
 Folge: Grün braucht mindestens 4 richtige Antworten an 4 verschiedenen Tagen.
 
 ### 5.6 Schwierigkeits-Eskalation (`Flashcard.copyWithBoxUpdate`)
-Nur für Karten mit `variantChain` und nur bei `isCorrect != null`.
-- richtig: `variantBox+1`; erreicht es `promotionThreshold` (3) und gibt es eine
-  nächste Stufe → Beförderung. Liegt die nächste Stufe in `pendingVariants`
-  (z.B. aus „Frage erstellen“ mit Leicht/Mittel/Schwer), sofort und ohne KI
-  (`needsGeneration=false`); sonst erzeugt der Aufrufer die Stufe per
-  `AiService.generateHarderVariant` im Hintergrund (`needsGeneration=true`).
+Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
+`FsrsService.review` läuft VORHER (masteryBox enthält die aktuelle Antwort).
+- richtig UND Stufe grün (`masteryBox >= 4`, d.h. an 4 verschiedenen Tagen
+  richtig) UND es gibt eine nächste Stufe → Beförderung. `variantBox` (richtig
+  in Folge) ist nur noch informativ. Liegt die nächste Stufe in
+  `pendingVariants` (z.B. aus „Frage erstellen“ mit Leicht/Mittel/Schwer),
+  sofort und ohne KI (`needsGeneration=false`); sonst erzeugt
+  `ReviewService.generatePromotion` sie per `AiService.generateHarderVariant`
+  im Hintergrund (`needsGeneration=true`; schlägt das fehl, bleibt die Karte
+  grün auf ihrer Stufe und der nächste richtige Versuch probiert es erneut).
+- Die neue Stufe startet neu (`FsrsService.restartForNewStage`): morgen fällig,
+  Anfangs-Stabilität wie nach erstem „Gut“, `masteryBox = 1` (gelb).
 - falsch: `variantMissStreak+1`; ab 2 in Folge (auf der schwersten Stufe ab 5)
   Rückstufung auf die letzte Stufe aus `variantHistory`; die verlassene Stufe
   wandert zurück in `pendingVariants`. Rückstufung von der schwersten Stufe
@@ -172,12 +195,21 @@ Nur für Karten mit `variantChain` und nur bei `isCorrect != null`.
 - **Neu** (`reps==0`) pro Fach budgetiert: Pacing über Tage bis zur Klausur
   (abzüglich 3 Tage Wiederholungspuffer, ohne Klausur 14 Tage Horizont),
   gebremst durch schwachen Wissensstand (50–100 %), Mindestboden 10, Maximum
-  15; in den letzten 3 Tagen vor der Klausur 0. Sortierung:
-  `priorityIntroduction` zuerst, dann älteste `createdAt`.
+  15; in den letzten 3 Tagen vor der Klausur 0. Davon abgezogen: heute im
+  Daily Quiz schon eingeführte neue Karten (`introducedTodayByModule` aus
+  `DailySessionState`) – kein zweites Budget durch „Aktualisieren“/Neustart.
+  `priorityIntroduction`-Karten kommen immer (auch über das Budget hinaus),
+  danach die übrigen nach ältester `createdAt`.
 - Sessiongröße max. 60 (Fällige haben Vorrang); Fächer werden interleaved.
 - Falsch beantwortete Karten kommen am Sessionende erneut (Wiederholungsrunde,
   max. 3 Versuche je Karte); danach „Freiwillig weiterlernen“
   (`buildExtraBatch`, ignoriert das Budget).
+- **Tagesstand** (`DailySessionState`/`DailySessionRepository`, Record
+  `settings/daily_session`, gilt nur für den Kalendertag): Anzahl
+  beantworteter Karten, Wiederholungsrunde (IDs + Versuche), heute eingeführte
+  neue Karten. Wird nach jeder Antwort gespeichert und beim Laden des Plans
+  wiederhergestellt; ein Tab-Wechsel plant neu, sobald keine Karte mitten in
+  der Runde steht.
 
 ## 6. Weitere Invarianten / Stolperfallen
 
@@ -185,9 +217,23 @@ Nur für Karten mit `variantChain` und nur bei `isCorrect != null`.
   (`normalizeGeneratedFlashcard`, tolerante `parse*`), nie hart casten.
 - **Löschen kaskadiert**: Fach → Materialien, Zusammenfassungen, Konzepte,
   Karten, Einheiten, Chat + PDF-Dateien; Einheit → entfernt `unitId` überall.
-- **Sync** (Firestore, ein Dokument pro Nutzer/Code) überträgt Fächer,
-  Einheiten, Materialien, Zusammenfassungen, Konzepte, Karten + KI-Settings;
-  Pull ERSETZT lokal komplett. API-Key nur über den Konto-Weg.
+- **Sync** (Firestore, `users/{uid}` bzw. `sync_codes/{code}`, Format 2):
+  Fächer, Einheiten, Materialien (OHNE `filePath`/`fileBytesBase64`),
+  Zusammenfassungen, Konzepte, Karten als gzip-JSON (`SyncCodec`); passt es in
+  900 KB, direkt im Hauptdokument (`data`), sonst in `…/sync_parts/0..n-1`
+  (braucht die aktuellen `firestore.rules`). `pushId` im Hauptdokument und in
+  jedem Teil – Download prüft, dass alles zusammenpasst. Alte Ein-Dokument-
+  Stände bleiben lesbar. Pull ERSETZT lokal komplett, behält aber lokale PDFs.
+  API-Key nur über den Konto-Weg. **Auto-Sync** (`AutoSyncService`, Schalter
+  `autoSyncEnabled`): lauscht auf Änderungen der Daten-Stores, lädt 20 s nach
+  der letzten Änderung hoch, Retry mit Backoff (1/3/10/30 min), sofort bei
+  App-Resume; blockiert (`conflict`), wenn der Cloud-Stand seit dem letzten
+  Abgleich (`lastSyncedPushId`) von einem anderen Gerät (`deviceId`) stammt.
+  Downloads laufen über `runWithoutTrigger`, damit sie keinen Upload auslösen.
+- **LaTeX**: Formeln in `$…$`/`$$…$$`/`\(…\)`/`\[…\]`, dargestellt über
+  `MathText` (fällt bei Fehlern auf Rohtext zurück). KI-JSON läuft vor
+  `jsonDecode` durch `MathMarkup.escapeLatexInJson` (einfache Backslashes in
+  Formeln wären sonst Steuerzeichen wie `\f`/`\t`/`\n` oder ungültig).
 - Screens im IndexedStack lesen Daten nicht automatisch reaktiv – neue Screens
   mit „lade einmal im initState“-Muster brauchen einen Refresh-Pfad.
 - Code-Kommentare/Doc-Kommentare und UI-Texte sind Deutsch.
@@ -196,47 +242,31 @@ Nur für Karten mit `variantChain` und nur bei `isCorrect != null`.
 
 ## 7. Aktueller Stand (September 2026)
 
-Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. Alle oben genannten
-Features sind umgesetzt; `flutter analyze` sauber, 327 Tests grün.
+Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
+sauber, 386 Tests grün, `flutter build web` erfolgreich.
 
-Zuletzt behoben (Audit): FSRS-Grade-Zuordnung (falsch → again, richtig → good),
-masteryBox max. +1 pro Tag, doppeltes Absenden von Antworten, Wiederholungs-
-runde mit wiederverwendetem Antwort-State, Zwischen-Check-Fehler landeten als
-„Neu“ statt rot, Single-Choice-Widerspruch UI/Prüfung, Kategorie-Drag&Drop
-zeigte nur einen Begriff je Kategorie, Einheit/Fach-Löschen hinterließ
-verwaiste Daten, Konzept-Bearbeiten verlor den Seiten-Link, Sync ohne
-Einheiten und mit überschriebenen KI-Settings, Widget-Zählung ohne
-Einheiten-Gate, KI-Parsing-Abstürze, fehlender KI-Timeout, veraltete Daily-
-Quiz-/Fortschritt-Tabs, falsch berechneter Streak.
+Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
+1. Gemeinsamer `ReviewService`/`CardReviewMixin` für Daily Quiz, Üben, Sprint,
+   Probeklausur.
+2. Beförderung erst bei Ampel-Grün, Neustart der neuen Stufe, 7-Tage-Deckel
+   für Durchgangsstufen; „Schwer“ senkt die Ampel nicht; Sprint zählt.
+3. Daily-Quiz-Tagesstand übersteht Neustart; „Aktualisieren“ ohne zweites
+   Neu-Karten-Budget.
+4. Sync komprimiert + aufgeteilt (1-MiB-Limit gelöst), PDFs reisen nicht mit,
+   Auto-Sync mit Offline-Retry und Schutz vor Überschreiben.
+5. KI-Tipp vor, KI-Erklärung („Erklär mir das“, „Einfacher erklären“) nach
+   der Antwort.
+6. Schwachstellen/Fehlertagebuch (`WeaknessService`, `WeaknessScreen`) inkl.
+   „die 20 schwächsten üben“ und KI-Musteranalyse.
+7. Probeklausur mit Zeitlimit, Note (Hochschulskala), Auswertung je Einheit,
+   Durchsicht mit KI-Erklärung, Verlauf.
+8. LaTeX-Darstellung + JSON-Reparatur für Formeln.
 
-Freigegebener Backlog (vom Nutzer bestätigt, noch umzusetzen):
-1. **Sync-Größe:** Firestore-Dokumentlimit 1 MiB – aktuell liegt alles
-   (inkl. PDF-Base64, extrahierter Texte, Screenshots) in EINEM Dokument, der
-   Sync scheitert bei größerem Datenbestand. Lösungsidee (nach Vorbild der
-   Vorgänger-App `nphjfvp/quiz-app`): Daten auf mehrere Dokumente je
-   Kategorie aufteilen (Fächer/Einheiten, Karten, Konzepte/Zusammenfassungen,
-   Einstellungen, Meta mit `updatedAt`), jedes vor dem Upload auf < 900 KB
-   prüfen; PDF-Dateien selbst nicht über Firestore syncen (oder getrennt,
-   in Stücke geteilt). Optional Auto-Sync mit Verzögerung + Offline-Warteschlange.
-2. **Beförderung an Ampel-Grün koppeln:** In der Eskalationskette erst dann
-   zur nächsten Stufe, wenn die aktuelle Stufe grün ist (statt 3× richtig in
-   Folge, was an einem Tag möglich ist); masteryBox je Stufe zurücksetzen.
-3. **Sprint-Antworten zählen** für FSRS/Ampel.
-4. **„Schwer“-Selbstbewertung** senkt die Ampel nicht mehr.
-5. **Gemeinsamer Bewertungs-Service** statt duplizierter Logik in
-   `DailyQuizScreen` und `PracticeScreen`.
-6. **„Aktualisieren“** nach fertiger Session vergibt kein neues volles
-   Neu-Karten-Budget (bereits heute eingeführte Karten zählen mit).
-
-Zusätzlich freigegeben (aus dem Vergleich mit der Vorgänger-App):
-7. KI-Erklärung („Erklär mir das“, „einfacher erklären“) + Tipp nach/vor
-   einer Antwort im Daily Quiz und beim Üben.
-8. Schwachstellen üben (Fehlertagebuch): Karten mit Fehlern sammeln und
-   gezielt üben.
-9. Probeklausur mit Note.
-10. Mathe/LaTeX-Darstellung in Fragen und Antworten.
-
-Umsetzungsreihenfolge (Chunks, je ein Commit): 1) gemeinsamer
-Bewertungs-Service (Punkt 5) → 2) Punkte 2/3/4 → 3) Daily-Stand speichern +
-Punkt 6 → 4) Sync (Punkt 1) → 5) KI-Erklärung → 6) Schwachstellen →
-7) Probeklausur → 8) LaTeX.
+Offen / zu beachten:
+- `firestore.rules` muss nach dem Sync-Umbau einmal neu in der Firebase-
+  Konsole veröffentlicht werden (Regel für `sync_parts`); ohne das klappt der
+  Upload nur, solange der komprimierte Bestand unter 900 KB bleibt (die App
+  meldet es verständlich).
+- Auto-Sync ist standardmäßig aus (Schalter in den Einstellungen).
+- Auto-Sync-Konfliktlösung ist bewusst einfach (ganzer Stand gewinnt, kein
+  Zusammenführen einzelner Karten).

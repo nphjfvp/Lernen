@@ -163,8 +163,9 @@ engerem Fokus statt Feature-Fülle.
   Generierungs-Prompt verlangt außerdem pro erkanntem Konzept nach
   Möglichkeit mindestens eine Frage mit voller Eskalationskette, damit das
   Feature spürbar öfter zum Einsatz kommt statt nur bei zufällig passenden
-  Einzelfragen. Bewusst NICHT enthalten: der Mathe-Formel-Fragetyp der
-  Vorgänger-App.
+  Einzelfragen. Einen eigenen Mathe-Formel-Fragetyp mit Formel-Editor wie in
+  der Vorgänger-App gibt es nicht – Formeln werden aber in allen Fragetypen
+  als LaTeX dargestellt (siehe "Mathe/Formeln").
 - **Fragetyp "Interaktiv" (html) + externer KI-Prompt** – für Vorlagen, die in
   keinen der obigen Typen passen (z.B. eine Zuordnungs-Matrix/Tabelle mit
   mehreren Kriterien-Zeilen, oder eine offene Diskussionsfrage, bei der ein
@@ -361,9 +362,10 @@ Der Vorgänger hatte 9 Fragetypen (inkl. Mathe-Formel-Fragen mit Formel-Editor
 und Diagramm-Beschriftung/Bild-Markierung), 6 Mini-Games, eine
 Coin-Economy/Shop, Mock-Klausuren, Formelsammlungen, Sokrates-Modus u.v.m.
 Diese App übernimmt 6 der 9 Fragetypen inkl. der adaptiven
-Schwierigkeits-Eskalation (siehe oben), lässt aber bewusst den
-Mathe-Formel-Fragetyp sowie diagramm-/bildbasierte Fragetypen (Diagramm
-beschriften, Bild markieren) weg und konzentriert sich ansonsten auf den
+Schwierigkeits-Eskalation (siehe oben) sowie inzwischen Probeklausur,
+Fehlertagebuch, KI-Tipp/-Erklärung und LaTeX-Darstellung, lässt aber bewusst
+den Mathe-Formel-Fragetyp mit Formel-Editor sowie diagramm-/bildbasierte
+Fragetypen (Diagramm beschriften, Bild markieren) weg und konzentriert sich ansonsten auf den
 Kernkreislauf **Vorbereiten → Nachbereiten → Daily Quiz** ohne Mini-Games,
 Economy o.ä. Die Vision-Modell-Rolle wird inzwischen für die
 Seiten-Fragefunktion genutzt (siehe 5b); eine konkrete OCR-Fallback-Pipeline
