@@ -15,11 +15,14 @@ class LectureUnitRepository extends ChangeNotifier {
   /// DailyScheduler-Filter (siehe DailyQuizScreen), der die Karteikarten
   /// aller Fächer gemeinsam einplant und deshalb nicht modulweise über den
   /// lokalen Cache abfragen kann.
-  Future<Map<String, bool>> loadAllCoveredById() async {
+  ///
+  /// "Behandelt" heißt hier: abgehakt ODER Termin erreicht (siehe
+  /// [LectureUnit.isCoveredOn]).
+  Future<Map<String, bool>> loadAllCoveredById({DateTime? now}) async {
     final db = await DatabaseService.instance.database;
     final records = await DatabaseService.lectureUnits.find(db);
-    final units = records.map((r) => LectureUnit.fromMap(r.value));
-    return {for (final u in units) u.id: u.covered};
+    final at = now ?? DateTime.now();
+    return {for (final r in records) r.key: LectureUnit.fromMap(r.value).isCoveredOn(at)};
   }
 
   Future<void> loadForModule(String moduleId) async {
@@ -41,10 +44,34 @@ class LectureUnitRepository extends ChangeNotifier {
     await loadForModule(unit.moduleId);
   }
 
+  /// Häkchen entfernen bei einer Einheit, deren Termin schon erreicht ist,
+  /// entfernt auch den Termin – sonst bliebe sie über den Termin trotzdem
+  /// "behandelt" und das Häkchen ließe sich nicht wirksam abwählen.
   Future<void> setCovered(String id, String moduleId, bool covered) async {
     final db = await DatabaseService.instance.database;
-    await DatabaseService.lectureUnits.record(id).update(db, {'covered': covered});
+    await DatabaseService.lectureUnits
+        .record(id)
+        .update(db, {'covered': covered, if (!covered) 'scheduledDate': null});
     await loadForModule(moduleId);
+  }
+
+  Future<void> setScheduledDate(String id, String moduleId, DateTime? date) async {
+    final db = await DatabaseService.instance.database;
+    await DatabaseService.lectureUnits.record(id).update(db, {'scheduledDate': date?.toIso8601String()});
+    await loadForModule(moduleId);
+  }
+
+  /// Speichert mehrere Einheiten auf einmal (z.B. KI-Vorschläge oder Termine
+  /// aus dem Vorlesungsplan).
+  Future<void> saveAll(List<LectureUnit> units) async {
+    if (units.isEmpty) return;
+    final db = await DatabaseService.instance.database;
+    await db.transaction((txn) async {
+      for (final u in units) {
+        await DatabaseService.lectureUnits.record(u.id).put(txn, u.toMap());
+      }
+    });
+    await loadForModule(units.first.moduleId);
   }
 
   Future<void> setNotes(String id, String moduleId, List<String> notes) async {

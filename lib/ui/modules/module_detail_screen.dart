@@ -18,11 +18,14 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../repositories/settings_repository.dart';
 import '../../repositories/summary_repository.dart';
+import '../../services/ai_service.dart';
+import '../../services/mastery_service.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
-import '../../services/mastery_service.dart';
 import '../../services/module_export_service.dart';
+import '../../services/unit_schedule_service.dart';
 import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
 import '../exam/mock_exam_screen.dart';
@@ -354,7 +357,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     Text(
                       'Fasst Material zu einer Vorlesungssitzung zusammen. Du kannst ruhig den '
                       'ganzen Semesterstoff im Voraus hochladen – das Daily Quiz fragt trotzdem nur '
-                      'Karten aus Einheiten ab, die du hier als "behandelt" markiert hast.',
+                      'Karten aus Einheiten ab, die "behandelt" sind: von Hand abgehakt oder '
+                      'automatisch ab ihrem Termin.',
                       style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
                     ),
                     const SizedBox(height: 10),
@@ -367,15 +371,37 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                               onToggleCovered: (value) => context
                                   .read<LectureUnitRepository>()
                                   .setCovered(u.id, u.moduleId, value),
+                              onPickDate: () => _pickUnitDate(u),
                               onDelete: () => _deleteUnit(u),
                               onNotesChanged: (notes) =>
                                   context.read<LectureUnitRepository>().setNotes(u.id, u.moduleId, notes),
                             ),
                           )),
-                    OutlinedButton.icon(
-                      onPressed: _createUnit,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Einheit anlegen'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _createUnit,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Einheit anlegen'),
+                        ),
+                        if (context.watch<SettingsRepository>().settings.hasApiKey &&
+                            materials.any((m) => m.unitId == null || !units.any((u) => u.id == m.unitId)))
+                          OutlinedButton.icon(
+                            onPressed: _suggestingUnits ? null : () => _suggestUnits(materials, units),
+                            icon: _suggestingUnits
+                                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.auto_awesome_outlined),
+                            label: const Text('Einheiten vorschlagen'),
+                          ),
+                        if (units.isNotEmpty && (module.lectureSlots?.isNotEmpty ?? false))
+                          OutlinedButton.icon(
+                            onPressed: () => _assignDatesFromSchedule(module, units),
+                            icon: const Icon(Icons.event_available_outlined),
+                            label: const Text('Termine aus Stundenplan'),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 20),
                     _SectionHeader(title: 'Materialien', count: materials.length),
@@ -506,6 +532,121 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           title: title,
           createdAt: DateTime.now(),
         ));
+  }
+
+  bool _suggestingUnits = false;
+
+  Future<void> _pickUnitDate(LectureUnit unit) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: unit.scheduledDate ?? now,
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year + 2),
+      helpText: 'Vorlesungstermin – ab dann gilt die Einheit als behandelt',
+      cancelText: unit.scheduledDate == null ? 'Abbrechen' : 'Termin entfernen',
+    );
+    if (!mounted) return;
+    final repo = context.read<LectureUnitRepository>();
+    if (picked != null) {
+      await repo.setScheduledDate(unit.id, unit.moduleId, picked);
+    } else if (unit.scheduledDate != null) {
+      await repo.setScheduledDate(unit.id, unit.moduleId, null);
+    }
+  }
+
+  Future<void> _assignDatesFromSchedule(Module module, List<LectureUnit> units) async {
+    final updated = UnitScheduleService().assignLectureDates(units: units, module: module, from: DateTime.now());
+    if (updated.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Keine offenen Einheiten oder keine kommenden Vorlesungstermine im Stundenplan.'),
+      ));
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Termine übernehmen?'),
+        content: Text(
+          'Die ${updated.length} noch offenen Einheiten bekommen der Reihe nach die nächsten '
+          'Vorlesungstermine:\n\n'
+          '${updated.map((u) => '• ${u.title}: ${_formatDay(u.scheduledDate!)}').join('\n')}\n\n'
+          'Ab ihrem Termin gelten sie automatisch als behandelt.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Übernehmen')),
+        ],
+      ),
+    );
+    if (ok == true && mounted) await context.read<LectureUnitRepository>().saveAll(updated);
+  }
+
+  static String _formatDay(DateTime d) => '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.';
+
+  /// KI ordnet die bisher keiner Einheit zugeordneten Materialien zu
+  /// Einheiten; der Vorschlag wird vor dem Übernehmen gezeigt.
+  Future<void> _suggestUnits(List<MaterialItem> materials, List<LectureUnit> units) async {
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) return;
+    final unitIds = {for (final u in units) u.id};
+    final unassigned = materials.where((m) => m.unitId == null || !unitIds.contains(m.unitId)).toList();
+    if (unassigned.isEmpty) return;
+    setState(() => _suggestingUnits = true);
+    List<({String title, List<String> materialIds})> suggestions;
+    try {
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      suggestions = await ai.suggestLectureUnits([
+        for (final m in unassigned)
+          (
+            id: m.id,
+            fileName: m.fileName,
+            kind: m.kind.name,
+            excerpt: (m.topicIndex?.trim().isNotEmpty ?? false) ? m.topicIndex! : m.extractedText,
+          ),
+      ]);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _suggestingUnits = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e is AiServiceException ? e.message : 'Vorschlag fehlgeschlagen: $e')),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _suggestingUnits = false);
+    if (suggestions.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Die KI hat keine sinnvollen Einheiten gefunden.')));
+      return;
+    }
+    final chosen = await showDialog<List<({String title, List<String> materialIds})>>(
+      context: context,
+      builder: (_) => _UnitSuggestionDialog(
+        suggestions: suggestions,
+        fileNameById: {for (final m in unassigned) m.id: m.fileName},
+      ),
+    );
+    if (chosen == null || chosen.isEmpty || !mounted) return;
+    final unitRepo = context.read<LectureUnitRepository>();
+    final materialRepo = context.read<MaterialRepository>();
+    final base = DateTime.now();
+    final newUnits = <LectureUnit>[];
+    for (var i = 0; i < chosen.length; i++) {
+      newUnits.add(LectureUnit(
+        id: const Uuid().v4(),
+        moduleId: widget.moduleId,
+        title: chosen[i].title,
+        // Aufsteigend, damit die Reihenfolge der Vorschläge erhalten bleibt
+        // (Einheiten werden nach createdAt sortiert).
+        createdAt: base.add(Duration(milliseconds: i)),
+      ));
+    }
+    await unitRepo.saveAll(newUnits);
+    for (var i = 0; i < chosen.length; i++) {
+      await materialRepo.assignUnit(chosen[i].materialIds, widget.moduleId, newUnits[i].id);
+    }
   }
 
   Future<void> _deleteUnit(LectureUnit unit) async {
@@ -1032,12 +1173,14 @@ class _UnitRow extends StatefulWidget {
     required this.unit,
     required this.materialCount,
     required this.onToggleCovered,
+    required this.onPickDate,
     required this.onDelete,
     required this.onNotesChanged,
   });
   final LectureUnit unit;
   final int materialCount;
   final ValueChanged<bool> onToggleCovered;
+  final VoidCallback onPickDate;
   final VoidCallback onDelete;
   final ValueChanged<List<String>> onNotesChanged;
 
@@ -1096,7 +1239,10 @@ class _UnitRowState extends State<_UnitRow> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final unit = widget.unit;
+    final date = unit.scheduledDate;
+    final coveredNow = unit.isCoveredOn(DateTime.now());
     final subtitleParts = [
+      if (date != null) 'Termin ${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.',
       '${widget.materialCount} Material${widget.materialCount == 1 ? '' : 'ien'}',
       if (unit.notes.isNotEmpty) '${unit.notes.length} Textfeld${unit.notes.length == 1 ? '' : 'er'}',
     ];
@@ -1137,9 +1283,16 @@ class _UnitRowState extends State<_UnitRow> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    IconButton(
+                      tooltip: 'Vorlesungstermin',
+                      icon: Icon(date == null ? Icons.event_outlined : Icons.event_available_outlined, size: 18),
+                      color: date == null ? c.inkMuted : c.accent,
+                      onPressed: widget.onPickDate,
+                    ),
                     Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
                     Checkbox(
-                      value: unit.covered,
+                      // Effektiver Stand: auch automatisch ab Termin.
+                      value: coveredNow,
                       onChanged: (v) => widget.onToggleCovered(v ?? false),
                     ),
                     IconButton(
@@ -1184,6 +1337,82 @@ class _UnitRowState extends State<_UnitRow> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Vorschau der KI-Einheitenvorschläge: Titel editierbar, einzelne
+/// Vorschläge abwählbar.
+class _UnitSuggestionDialog extends StatefulWidget {
+  const _UnitSuggestionDialog({required this.suggestions, required this.fileNameById});
+
+  final List<({String title, List<String> materialIds})> suggestions;
+  final Map<String, String> fileNameById;
+
+  @override
+  State<_UnitSuggestionDialog> createState() => _UnitSuggestionDialogState();
+}
+
+class _UnitSuggestionDialogState extends State<_UnitSuggestionDialog> {
+  late final List<TextEditingController> _titles =
+      widget.suggestions.map((s) => TextEditingController(text: s.title)).toList();
+  late final List<bool> _selected = List.filled(widget.suggestions.length, true);
+
+  @override
+  void dispose() {
+    for (final c in _titles) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return AlertDialog(
+      title: const Text('Einheiten-Vorschlag'),
+      content: SizedBox(
+        width: 480,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (var i = 0; i < widget.suggestions.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Checkbox(value: _selected[i], onChanged: (v) => setState(() => _selected[i] = v ?? false)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(controller: _titles[i], decoration: const InputDecoration(isDense: true)),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.suggestions[i].materialIds.map((id) => widget.fileNameById[id] ?? id).join(', '),
+                            style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Abbrechen')),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop([
+            for (var i = 0; i < widget.suggestions.length; i++)
+              if (_selected[i] && _titles[i].text.trim().isNotEmpty)
+                (title: _titles[i].text.trim(), materialIds: widget.suggestions[i].materialIds),
+          ]),
+          child: const Text('Übernehmen'),
+        ),
+      ],
     );
   }
 }

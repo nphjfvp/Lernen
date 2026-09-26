@@ -1094,6 +1094,53 @@ Aufzählungszeichen, kein JSON, keine Codefences, in der Sprache der Fragen.
     return raw.trim();
   }
 
+  static const _suggestUnitsSystemPrompt = '''
+Du ordnest die hochgeladenen Materialien eines Studienfachs zu
+Vorlesungseinheiten (je eine Sitzung bzw. ein zusammenhängendes Thema). Du
+bekommst pro Material eine ID, den Dateinamen, die Art und einen kurzen
+Inhaltsauszug. Bilde Einheiten in der Reihenfolge des Semesters (Nummern in
+Dateinamen wie "VL03", "Kapitel 2", Datumsangaben und der inhaltliche
+Aufbau helfen dabei). Übungsblätter und Musterlösungen gehören zur Einheit
+mit dem passenden Stoff. Jede Material-ID höchstens einmal; lass Materialien
+weg, die keiner Einheit sinnvoll zuzuordnen sind. Kurze, sprechende Titel
+(z.B. "VL 3: Differentialgleichungen").
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text davor/danach:
+{"units": [{"title": "...", "materialIds": ["..."]}]}
+''';
+
+  /// Schlägt Vorlesungseinheiten für bisher nicht zugeordnete Materialien
+  /// vor (Titel + Material-IDs, in Semester-Reihenfolge). Unbekannte IDs
+  /// und Doppelungen werden verworfen.
+  Future<List<({String title, List<String> materialIds})>> suggestLectureUnits(
+    List<({String id, String fileName, String kind, String excerpt})> materials,
+  ) async {
+    final buffer = StringBuffer();
+    for (final m in materials) {
+      buffer
+        ..writeln('ID: ${m.id}')
+        ..writeln('Datei: ${m.fileName} (${m.kind})')
+        ..writeln('Auszug: ${_cap(m.excerpt, 700)}')
+        ..writeln();
+    }
+    final raw = await _complete(_suggestUnitsSystemPrompt, buffer.toString());
+    final parsed = _parseJsonObject(raw);
+    final known = {for (final m in materials) m.id};
+    final used = <String>{};
+    final result = <({String title, List<String> materialIds})>[];
+    for (final u in (parsed['units'] as List? ?? const [])) {
+      if (u is! Map) continue;
+      final title = (u['title'] ?? '').toString().trim();
+      final ids = [
+        for (final id in (u['materialIds'] as List? ?? const []))
+          if (known.contains(id.toString()) && used.add(id.toString())) id.toString(),
+      ];
+      if (title.isEmpty || ids.isEmpty) continue;
+      result.add((title: title, materialIds: ids));
+    }
+    return result;
+  }
+
   static const _chatSystemPrompt = '''
 Du bist ein Lernassistent für Studierende. Wird dir Material bereitgestellt
 (hochgeladenes Vorlesungs-/Übungsmaterial eines Fachs, chronologisch

@@ -69,4 +69,26 @@ void main() {
       expect(systemPrompt(), contains('ohne die Lösung zu'));
     });
   });
+
+  group('AiService.suggestLectureUnits', () {
+    test('verwirft unbekannte und doppelte Material-IDs sowie leere Einheiten', () async {
+      final ai = aiReplying(jsonEncode({
+        'units': [
+          {'title': 'VL 1', 'materialIds': ['m1', 'fremd']},
+          {'title': 'VL 2', 'materialIds': ['m1', 'm2']},
+          {'title': '', 'materialIds': ['m3']},
+          {'title': 'Leer', 'materialIds': []},
+        ],
+      }));
+      final result = await ai.suggestLectureUnits([
+        (id: 'm1', fileName: 'VL01.pdf', kind: 'slide', excerpt: 'Einführung'),
+        (id: 'm2', fileName: 'VL02.pdf', kind: 'slide', excerpt: 'Ableitungen'),
+        (id: 'm3', fileName: 'Blatt1.pdf', kind: 'exercise', excerpt: 'Aufgaben'),
+      ]);
+      expect(result.map((u) => u.title).toList(), ['VL 1', 'VL 2']);
+      expect(result[0].materialIds, ['m1']);
+      expect(result[1].materialIds, ['m2']);
+      expect(userPrompt(), contains('VL02.pdf'));
+    });
+  });
 }

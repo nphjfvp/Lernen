@@ -149,6 +149,7 @@ class ModuleExportService {
         covered: u.covered,
         createdAt: u.createdAt,
         notes: u.notes,
+        scheduledDate: u.scheduledDate,
       );
     }).toList();
 

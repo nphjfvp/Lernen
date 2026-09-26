@@ -38,6 +38,18 @@ class MaterialRepository extends ChangeNotifier {
     await loadForModule(moduleId);
   }
 
+  /// Ordnet mehrere Materialien einer Einheit zu (z.B. aus den KI-Vorschlägen).
+  Future<void> assignUnit(List<String> ids, String moduleId, String unitId) async {
+    if (ids.isEmpty) return;
+    final db = await DatabaseService.instance.database;
+    await db.transaction((txn) async {
+      for (final id in ids) {
+        await DatabaseService.materials.record(id).update(txn, {'unitId': unitId});
+      }
+    });
+    await loadForModule(moduleId);
+  }
+
   /// Speichert den KI-generierten Kurz-Index eines Materials (siehe
   /// [MaterialItem.topicIndex]). Wird einmalig beim ersten Frage-Chat pro
   /// Material nachgeholt und danach dauerhaft gecacht.

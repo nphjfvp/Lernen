@@ -24,6 +24,13 @@ class LectureUnit {
   /// Einführung dieses Felds, oder einfach noch keine Notiz angelegt.
   final List<String> notes;
 
+  /// Vorlesungstermin dieser Einheit (nur das Datum zählt). Ist er erreicht,
+  /// gilt die Einheit automatisch als behandelt ([isCoveredOn]) – sonst
+  /// hängt das Daily Quiz daran, dass man nach jeder Vorlesung an das
+  /// Häkchen denkt, und vergessene Häkchen hielten deren Karten komplett
+  /// zurück.
+  final DateTime? scheduledDate;
+
   const LectureUnit({
     required this.id,
     required this.moduleId,
@@ -31,15 +38,33 @@ class LectureUnit {
     required this.createdAt,
     this.covered = false,
     this.notes = const [],
+    this.scheduledDate,
   });
 
-  LectureUnit copyWith({List<String>? notes}) => LectureUnit(
+  /// Behandelt = von Hand abgehakt ODER der Termin ist (spätestens heute)
+  /// erreicht.
+  bool isCoveredOn(DateTime now) {
+    if (covered) return true;
+    final date = scheduledDate;
+    if (date == null) return false;
+    return !DateTime(date.year, date.month, date.day).isAfter(DateTime(now.year, now.month, now.day));
+  }
+
+  LectureUnit copyWith({
+    String? title,
+    bool? covered,
+    List<String>? notes,
+    DateTime? scheduledDate,
+    bool clearScheduledDate = false,
+  }) =>
+      LectureUnit(
         id: id,
         moduleId: moduleId,
-        title: title,
+        title: title ?? this.title,
         createdAt: createdAt,
-        covered: covered,
+        covered: covered ?? this.covered,
         notes: notes ?? this.notes,
+        scheduledDate: clearScheduledDate ? null : (scheduledDate ?? this.scheduledDate),
       );
 
   Map<String, dynamic> toMap() => {
@@ -49,6 +74,7 @@ class LectureUnit {
         'covered': covered,
         'createdAt': createdAt.toIso8601String(),
         'notes': notes,
+        'scheduledDate': scheduledDate?.toIso8601String(),
       };
 
   factory LectureUnit.fromMap(Map<String, dynamic> map) => LectureUnit(
@@ -58,5 +84,6 @@ class LectureUnit {
         covered: map['covered'] as bool? ?? false,
         createdAt: DateTime.parse(map['createdAt'] as String),
         notes: (map['notes'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+        scheduledDate: DateTime.tryParse(map['scheduledDate']?.toString() ?? ''),
       );
 }
