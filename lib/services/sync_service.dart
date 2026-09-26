@@ -22,6 +22,12 @@ class SyncException implements Exception {
   String toString() => message;
 }
 
+/// Upload abgebrochen, weil der Cloud-Stand nicht überschrieben werden soll
+/// (siehe `abortIf` in [SyncService.push]).
+class SyncConflictException extends SyncException {
+  SyncConflictException(super.message);
+}
+
 /// Merged den BYOK-Teil (API-Key + Modellwahl) aus einem Sync-Dokument in
 /// [current] ein. Pure Logik (kein DB-/Firestore-Zugriff), damit die Regel
 /// "ein leerer/fehlender Cloud-Wert löscht nie einen lokal vorhandenen
@@ -108,17 +114,21 @@ class SyncService {
 
   /// [SyncTarget.isAccount] entscheidet, ob der API-Key mitreist (siehe
   /// Klassenkommentar). Liefert die `pushId` des neuen Cloud-Stands.
-  Future<String> push(SyncTarget target, {required String deviceId}) =>
-      _push(_doc(target), includeApiKey: target.isAccount, deviceId: deviceId);
+  /// [abortIf] prüft die Kopfdaten des bisherigen Cloud-Stands (ohne extra
+  /// Lesezugriff) und bricht bei true mit [SyncConflictException] ab, bevor
+  /// etwas geschrieben wird – für den Auto-Sync.
+  Future<String> push(
+    SyncTarget target, {
+    required String deviceId,
+    bool Function(CloudSyncMeta? cloud)? abortIf,
+  }) =>
+      _push(_doc(target), includeApiKey: target.isAccount, deviceId: deviceId, abortIf: abortIf);
 
   /// Ersetzt die lokalen Daten durch den Cloud-Stand. Liefert dessen
   /// `pushId` (null bei einem Cloud-Stand im alten Format).
   Future<String?> pull(SyncTarget target) => _pull(_doc(target));
 
-  /// Kopfdaten des Cloud-Stands, oder null, wenn dort noch nichts liegt.
-  Future<CloudSyncMeta?> readMeta(SyncTarget target) async {
-    _ensureAvailable();
-    final snapshot = await _doc(target).get();
+  static CloudSyncMeta? _metaOf(DocumentSnapshot<Map<String, dynamic>> snapshot) {
     final data = snapshot.data();
     if (!snapshot.exists || data == null) return null;
     final updatedAt = data['updatedAt'];
@@ -155,8 +165,13 @@ class SyncService {
     DocumentReference<Map<String, dynamic>> doc, {
     required bool includeApiKey,
     required String deviceId,
+    bool Function(CloudSyncMeta? cloud)? abortIf,
   }) async {
     _ensureAvailable();
+    final previous = await doc.get();
+    if (abortIf != null && abortIf(_metaOf(previous))) {
+      throw SyncConflictException('Der Cloud-Stand stammt von einem anderen Gerät.');
+    }
     final db = await DatabaseService.instance.database;
 
     final payload = {
@@ -171,8 +186,6 @@ class SyncService {
     };
     final parts = SyncCodec.encode(payload);
     final pushId = const Uuid().v4();
-
-    final previous = await doc.get();
     final previousPartCount = (previous.data()?['partCount'] as num?)?.toInt() ?? 0;
 
     final meta = <String, dynamic>{

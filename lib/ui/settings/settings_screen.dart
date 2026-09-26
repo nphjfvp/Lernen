@@ -290,6 +290,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = context.watch<SettingsRepository>().settings;
     final auth = context.watch<AuthRepository>();
     final c = context.colors;
+    // Kein manueller Up-/Download, während der Auto-Sync gerade hochlädt –
+    // sonst könnte dessen (älterer) Stand einen frischen Download in der
+    // Cloud wieder überschreiben.
+    final syncLocked = _syncBusy || context.watch<AutoSyncService>().status == AutoSyncStatus.syncing;
 
     return Material(
       color: c.bg,
@@ -562,7 +566,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: _SoftButton(
                             icon: Icons.cloud_upload_outlined,
                             label: 'Hochladen',
-                            onTap: _syncBusy ? null : _pushAccount,
+                            onTap: syncLocked ? null : _pushAccount,
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -570,7 +574,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: _SoftButton(
                             icon: Icons.cloud_download_outlined,
                             label: 'Herunterladen',
-                            onTap: _syncBusy ? null : _pullAccount,
+                            onTap: syncLocked ? null : _pullAccount,
                           ),
                         ),
                       ],
@@ -597,7 +601,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: _SoftButton(
                             icon: Icons.cloud_upload_outlined,
                             label: 'Hochladen',
-                            onTap: _syncBusy ? null : _pushCode,
+                            onTap: syncLocked ? null : _pushCode,
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -605,7 +609,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: _SoftButton(
                             icon: Icons.cloud_download_outlined,
                             label: 'Herunterladen',
-                            onTap: _syncBusy ? null : _pullCode,
+                            onTap: syncLocked ? null : _pullCode,
                           ),
                         ),
                       ],
@@ -906,17 +910,20 @@ class _AutoSyncTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final autoSync = context.watch<AutoSyncService>();
-    final status = switch (autoSync.status) {
-      AutoSyncStatus.idle => enabled ? 'Alles hochgeladen.' : null,
-      AutoSyncStatus.pending => 'Änderungen werden gleich hochgeladen …',
-      AutoSyncStatus.syncing => 'Lädt hoch …',
-      AutoSyncStatus.retrying =>
-        'Upload fehlgeschlagen (${autoSync.lastError ?? 'offline?'}) – wird automatisch wiederholt.',
-      AutoSyncStatus.conflict =>
-        'Ein anderes Gerät hat inzwischen hochgeladen. Damit dessen Fortschritt nicht '
-            'überschrieben wird, lädt dieses Gerät nicht automatisch hoch – erst "Herunterladen" '
-            '(oder bewusst "Hochladen", um den Cloud-Stand zu ersetzen).',
-    };
+    final noTarget = enabled && autoSync.target == null;
+    final status = noTarget
+        ? 'Noch kein Ziel: mit einem Konto anmelden oder oben einen Sync-Code eintragen und einmal hochladen.'
+        : switch (autoSync.status) {
+            AutoSyncStatus.idle => enabled ? 'Alles hochgeladen.' : null,
+            AutoSyncStatus.pending => 'Änderungen werden gleich hochgeladen …',
+            AutoSyncStatus.syncing => 'Lädt hoch …',
+            AutoSyncStatus.retrying =>
+              'Upload fehlgeschlagen (${autoSync.lastError ?? 'offline?'}) – wird automatisch wiederholt.',
+            AutoSyncStatus.conflict =>
+              'Ein anderes Gerät hat inzwischen hochgeladen. Damit dessen Fortschritt nicht '
+                  'überschrieben wird, lädt dieses Gerät nicht automatisch hoch – erst "Herunterladen" '
+                  '(oder bewusst "Hochladen", um den Cloud-Stand zu ersetzen).',
+          };
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
@@ -937,7 +944,7 @@ class _AutoSyncTile extends StatelessWidget {
               status,
               style: TextStyle(
                 fontSize: 12,
-                color: autoSync.status == AutoSyncStatus.conflict ? c.warn : c.inkMuted,
+                color: noTarget || autoSync.status == AutoSyncStatus.conflict ? c.warn : c.inkMuted,
                 height: 1.4,
               ),
             ),

@@ -347,8 +347,8 @@ engerem Fokus statt Feature-Fülle.
   nie Teile zweier Uploads gemischt werden; alte Cloud-Stände (ein
   Klartext-Dokument) bleiben lesbar. **Auto-Sync** (Schalter in den
   Einstellungen, `lib/services/auto_sync_service.dart`): lädt Änderungen
-  20 s nach der letzten Änderung hoch, offline mit wachsenden Abständen
-  erneut und beim Zurückkehren in die App sofort. Hat seit dem letzten
+  30 s nach der letzten Änderung hoch, beim Verlassen der App sofort, offline
+  mit wachsenden Abständen erneut und beim Zurückkehren in die App sofort. Hat seit dem letzten
   Abgleich ein anderes Gerät hochgeladen, überschreibt der Auto-Sync das NICHT,
   sondern bittet erst um "Herunterladen".
 - **Account (optional)** – E-Mail/Passwort oder Google-Anmeldung über

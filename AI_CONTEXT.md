@@ -225,9 +225,9 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   jedem Teil – Download prüft, dass alles zusammenpasst. Alte Ein-Dokument-
   Stände bleiben lesbar. Pull ERSETZT lokal komplett, behält aber lokale PDFs.
   API-Key nur über den Konto-Weg. **Auto-Sync** (`AutoSyncService`, Schalter
-  `autoSyncEnabled`): lauscht auf Änderungen der Daten-Stores, lädt 20 s nach
-  der letzten Änderung hoch, Retry mit Backoff (1/3/10/30 min), sofort bei
-  App-Resume; blockiert (`conflict`), wenn der Cloud-Stand seit dem letzten
+  `autoSyncEnabled`): lauscht auf Änderungen der Daten-Stores, lädt 30 s nach
+  der letzten Änderung hoch, sofort beim Verlassen der App und bei
+  App-Resume, Retry mit Backoff (1/3/10/30 min); blockiert (`conflict`), wenn der Cloud-Stand seit dem letzten
   Abgleich (`lastSyncedPushId`) von einem anderen Gerät (`deviceId`) stammt.
   Downloads laufen über `runWithoutTrigger`, damit sie keinen Upload auslösen.
 - **LaTeX**: Formeln in `$…$`/`$$…$$`/`\(…\)`/`\[…\]`, dargestellt über
@@ -243,7 +243,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 386 Tests grün, `flutter build web` erfolgreich.
+sauber, 387 Tests grün, `flutter build web` erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
 1. Gemeinsamer `ReviewService`/`CardReviewMixin` für Daily Quiz, Üben, Sprint,

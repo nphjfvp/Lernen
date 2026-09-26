@@ -67,5 +67,12 @@ void main() {
       final decoded = jsonDecode(MathMarkup.escapeLatexInJson(raw)) as Map;
       expect(decoded['front'], r'Berechne \(\frac{x}{2}\)');
     });
+
+    test(r'ein einzelnes $ im Text macht echte Zeilenumbrüche nicht kaputt', () {
+      const raw = r'{"front": "Was gibt echo $HOME aus?\n 1. Zeile\n2", "u": "$\u00e4 \underline{x}$"}';
+      final decoded = jsonDecode(MathMarkup.escapeLatexInJson(raw)) as Map;
+      expect(decoded['front'], 'Was gibt echo \$HOME aus?\n 1. Zeile\n2');
+      expect(decoded['u'], r'$ä \underline{x}$');
+    });
   });
 }

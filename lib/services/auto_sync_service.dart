@@ -48,7 +48,9 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   final AuthRepository _auth;
   final SyncService _sync;
 
-  static const debounce = Duration(seconds: 20);
+  /// Wartezeit nach der letzten Änderung – viele Antworten hintereinander
+  /// ergeben so EINEN Upload. Beim Verlassen der App wird sofort hochgeladen.
+  static const debounce = Duration(seconds: 30);
   static const retryDelays = [
     Duration(minutes: 1),
     Duration(minutes: 3),
@@ -140,7 +142,12 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _dirty && _status != AutoSyncStatus.conflict) {
+    if (!_dirty || _status == AutoSyncStatus.conflict) return;
+    // Beim Verlassen (sonst liefe der Debounce-Timer im Hintergrund evtl. nie
+    // ab) und beim Zurückkehren (Nachholen nach Offline-Zeit) sofort.
+    if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       unawaited(syncNow());
     }
   }
@@ -155,14 +162,13 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     _setStatus(AutoSyncStatus.syncing);
     try {
       final deviceId = await ensureDeviceId(_settings);
-      final meta = await _sync.readMeta(target);
-      if (isBlockedByOtherDevice(meta: meta, lastSyncedPushId: _settings.settings.lastSyncedPushId, deviceId: deviceId)) {
-        _lastError = null;
-        _setStatus(AutoSyncStatus.conflict);
-        return;
-      }
+      final lastSynced = _settings.settings.lastSyncedPushId;
       _dirty = false;
-      final pushId = await _sync.push(target, deviceId: deviceId);
+      final pushId = await _sync.push(
+        target,
+        deviceId: deviceId,
+        abortIf: (cloud) => isBlockedByOtherDevice(meta: cloud, lastSyncedPushId: lastSynced, deviceId: deviceId),
+      );
       await _settings.update(_settings.settings.copyWith(lastSyncAt: DateTime.now(), lastSyncedPushId: pushId));
       _retryIndex = 0;
       _lastError = null;
@@ -173,6 +179,10 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
       } else {
         _setStatus(AutoSyncStatus.idle);
       }
+    } on SyncConflictException {
+      _dirty = true;
+      _lastError = null;
+      _setStatus(AutoSyncStatus.conflict);
     } catch (e) {
       _dirty = true;
       _lastError = e is SyncException ? e.message : e.toString();

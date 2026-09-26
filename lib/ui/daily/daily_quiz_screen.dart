@@ -173,6 +173,12 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
   }
 
   void _persistSession({required Flashcard answered}) {
+    if (!_session.isFor(DateTime.now())) {
+      // Über Mitternacht offen geblieben: der Stand gehört zu gestern –
+      // für den neuen Tag frisch planen statt ihn fortzuschreiben.
+      unawaited(_loadPlan());
+      return;
+    }
     final wasNew = answered.reps == 0;
     _session = _session.copyWith(
       reviewedCount: _reviewedCount,

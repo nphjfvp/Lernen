@@ -129,7 +129,10 @@ class MathMarkup {
   /// Datenmüll, `\{` oder `\,` machen das JSON sogar ungültig. Innerhalb von
   /// Formeln (`$…$`, `\(…\)`, `\[…\]`) in JSON-Strings wird deshalb jeder
   /// einzelne Backslash verdoppelt; bereits korrekt verdoppelte bleiben, wie
-  /// sie sind. Außerhalb von Formeln werden nur ungültige JSON-Escapes
+  /// sie sind. Innerhalb von Formeln zählt `\n`/`\t`/… nur dann als
+  /// LaTeX-Befehl, wenn direkt ein Buchstabe folgt – ein einzelnes `$` in
+  /// normalem Text (z.B. `$HOME`) macht so aus "\n " keinen sichtbaren
+  /// Backslash. Außerhalb von Formeln werden nur ungültige JSON-Escapes
   /// verdoppelt (gültige wie `\n` bleiben Zeilenumbrüche).
   static String escapeLatexInJson(String json) {
     const validJsonEscapes = {'"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u'};
@@ -169,11 +172,21 @@ class MathMarkup {
           inMath = false;
         }
         final isMathDelimiter = next == '(' || next == '[' || next == ')' || next == ']';
-        if (inMath || isMathDelimiter || !validJsonEscapes.contains(next)) {
-          out.write(r'\\');
+        final afterNext = i + 2 < json.length ? json[i + 2] : '';
+        final bool double;
+        if (isMathDelimiter || !validJsonEscapes.contains(next)) {
+          double = true; // sonst ungültiges JSON
+        } else if (!inMath || next == '/') {
+          double = false;
+        } else if (next == 'u') {
+          // \u00e4 ist ein echtes Unicode-Escape, \underline ein LaTeX-Befehl.
+          double = !_isUnicodeEscape(json, i + 2);
         } else {
-          out.write(ch);
+          // \frac, \theta, \nabla, \rho, \beta: Befehl = Buchstabe folgt;
+          // "\n " oder "\n2" bleibt ein echter Zeilenumbruch usw.
+          double = _isLetter(afterNext);
         }
+        out.write(double ? r'\\' : ch);
         i += 1;
         continue;
       }
@@ -183,4 +196,9 @@ class MathMarkup {
     }
     return out.toString();
   }
+
+  static bool _isLetter(String c) => c.isNotEmpty && RegExp(r'[A-Za-z]').hasMatch(c);
+
+  static bool _isUnicodeEscape(String s, int start) =>
+      start + 4 <= s.length && RegExp(r'^[0-9A-Fa-f]{4}$').hasMatch(s.substring(start, start + 4));
 }
