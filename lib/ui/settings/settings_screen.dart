@@ -7,15 +7,18 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/ai_model_info.dart';
 import '../../models/app_settings.dart';
+import '../../models/pdf_storage_config.dart';
 import '../../repositories/auth_repository.dart';
 import '../../repositories/model_catalog_repository.dart';
 import '../../repositories/settings_repository.dart';
-import '../../services/reminder_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/auto_sync_service.dart';
+import '../../services/pdf_cloud_store.dart';
+import '../../services/pdf_cloud_sync_service.dart';
+import '../../services/reminder_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/update_checker_service.dart';
 import '../../theme/app_colors.dart';
-import '../../services/auth_service.dart';
 import '../auth/login_screen.dart';
 import '../widgets/add_password_dialog.dart';
 import 'model_picker_sheet.dart';
@@ -174,6 +177,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _runSync(
       () async {
         final deviceId = await AutoSyncService.ensureDeviceId(repo);
+        // Erst die PDFs in den eigenen Speicher (falls eingerichtet), damit
+        // der Upload der Lerndaten schon die Verweise enthält. Ein Fehler dort
+        // hält den Sync der Lerndaten nicht auf.
+        final store = PdfCloudStore.fromConfig(repo.settings.pdfStorage);
+        if (store != null) {
+          try {
+            await autoSync.runWithoutTrigger(() => PdfCloudSyncService(store).uploadPending());
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('PDF-Speicher: $e')));
+            }
+          }
+        }
         final pushId = await _syncService.push(target, deviceId: deviceId);
         await repo.update(repo.settings.copyWith(
           syncCode: codeToRemember,
@@ -621,6 +637,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 26),
                     child: Divider(height: 1, color: c.border),
                   ),
+                  _SectionLabel('PDF-Speicher (eigene Cloud)'),
+                  const SizedBox(height: 4),
+                  _PdfStorageSection(fieldDecoration: _fieldDecoration),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 26),
+                    child: Divider(height: 1, color: c.border),
+                  ),
                   _SectionLabel('App-Version'),
                   const SizedBox(height: 4),
                   const _UpdateSection(),
@@ -894,6 +917,216 @@ class _ModelSelectorTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Zugangsdaten zum eigenen PDF-Speicher (S3-kompatibel oder WebDAV) –
+/// ohne Eintrag bleibt der PDF-Sync aus, alles andere funktioniert trotzdem.
+class _PdfStorageSection extends StatefulWidget {
+  const _PdfStorageSection({required this.fieldDecoration});
+
+  final InputDecoration Function(BuildContext context, {required String label}) fieldDecoration;
+
+  @override
+  State<_PdfStorageSection> createState() => _PdfStorageSectionState();
+}
+
+class _PdfStorageSectionState extends State<_PdfStorageSection> {
+  late PdfStorageType _type;
+  late final TextEditingController _endpoint;
+  late final TextEditingController _bucket;
+  late final TextEditingController _region;
+  late final TextEditingController _accessKey;
+  late final TextEditingController _secret;
+  late bool _pathStyle;
+  bool _busy = false;
+  String? _message;
+  int? _pending;
+
+  @override
+  void initState() {
+    super.initState();
+    final config = context.read<SettingsRepository>().settings.pdfStorage;
+    _type = config.type;
+    _endpoint = TextEditingController(text: config.endpoint);
+    _bucket = TextEditingController(text: config.bucket);
+    _region = TextEditingController(text: config.region);
+    _accessKey = TextEditingController(text: config.accessKey);
+    _secret = TextEditingController(text: config.secret);
+    _pathStyle = config.pathStyle;
+    _refreshPending();
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_endpoint, _bucket, _region, _accessKey, _secret]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _refreshPending() async {
+    final count = await PdfCloudSyncService.countPending();
+    if (mounted) setState(() => _pending = count);
+  }
+
+  PdfStorageConfig get _config => PdfStorageConfig(
+        type: _type,
+        endpoint: _endpoint.text.trim(),
+        bucket: _bucket.text.trim(),
+        region: _region.text.trim().isEmpty ? 'auto' : _region.text.trim(),
+        accessKey: _accessKey.text.trim(),
+        secret: _secret.text,
+        pathStyle: _pathStyle,
+      );
+
+  Future<void> _saveAndTest() async {
+    final repo = context.read<SettingsRepository>();
+    final config = _config;
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    await repo.update(repo.settings.copyWith(pdfStorage: config));
+    final store = PdfCloudStore.fromConfig(config);
+    if (store == null) {
+      setState(() {
+        _busy = false;
+        _message = config.type == PdfStorageType.none ? 'PDF-Speicher ausgeschaltet.' : 'Bitte alle Felder ausfüllen.';
+      });
+      return;
+    }
+    try {
+      await store.testConnection();
+      if (mounted) setState(() => _message = 'Verbindung klappt. Gespeichert.');
+    } catch (e) {
+      if (mounted) setState(() => _message = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _uploadNow() async {
+    final store = PdfCloudStore.fromConfig(context.read<SettingsRepository>().settings.pdfStorage);
+    final autoSync = context.read<AutoSyncService>();
+    if (store == null) return;
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      // Mit Auslösen des (Auto-)Syncs: die neuen Verweise sollen in die Cloud.
+      final count = await PdfCloudSyncService(store).uploadPending(
+        onProgress: (done, total) {
+          if (mounted) setState(() => _message = 'Lade PDFs hoch … $done/$total');
+        },
+      );
+      autoSync.requestSync();
+      if (mounted) {
+        setState(() => _message = count == 0
+            ? 'Alle PDFs sind schon im Speicher.'
+            : '$count PDF${count == 1 ? '' : 's'} hochgeladen. Andere Geräte holen sie beim Öffnen ab '
+                '(nach dem nächsten Sync der Lerndaten).');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _message = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+      await _refreshPending();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final saved = context.watch<SettingsRepository>().settings.pdfStorage;
+    final pdfError = context.watch<AutoSyncService>().lastPdfError;
+    final field = widget.fieldDecoration;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Damit die Original-PDFs auch auf deinen anderen Geräten da sind, trägst du hier deinen '
+          'eigenen Speicher ein – z.B. Cloudflare R2 oder Backblaze B2 (S3-kompatibel, 10 GB '
+          'kostenlos) oder eine Nextcloud/Uni-Cloud (WebDAV). Ohne Eintrag bleibt der PDF-Sync aus; '
+          'Text, Karten und Lernstand synchronisieren trotzdem. Im Web muss der Speicher CORS erlauben.',
+          style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+        ),
+        const SizedBox(height: 12),
+        SegmentedButton<PdfStorageType>(
+          segments: [
+            for (final t in PdfStorageType.values) ButtonSegment(value: t, label: Text(t.label)),
+          ],
+          selected: {_type},
+          onSelectionChanged: (s) => setState(() => _type = s.first),
+        ),
+        if (_type == PdfStorageType.s3) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _endpoint,
+            decoration: field(context, label: 'Endpunkt (z.B. https://<konto>.r2.cloudflarestorage.com)'),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: TextField(controller: _bucket, decoration: field(context, label: 'Bucket'))),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 120,
+                child: TextField(controller: _region, decoration: field(context, label: 'Region')),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(controller: _accessKey, decoration: field(context, label: 'Access Key ID')),
+          const SizedBox(height: 10),
+          TextField(controller: _secret, obscureText: true, decoration: field(context, label: 'Secret Access Key')),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _pathStyle,
+            onChanged: (v) => setState(() => _pathStyle = v),
+            title: const Text('Pfad-Adressierung'),
+            subtitle: Text('An für R2, B2, MinIO; aus für neue AWS-Buckets.',
+                style: TextStyle(fontSize: 12, color: c.inkMuted)),
+          ),
+        ],
+        if (_type == PdfStorageType.webdav) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _endpoint,
+            decoration: field(context, label: 'Ordner-URL (z.B. …/remote.php/dav/files/NAME/Lernen)'),
+          ),
+          const SizedBox(height: 10),
+          TextField(controller: _accessKey, decoration: field(context, label: 'Benutzername')),
+          const SizedBox(height: 10),
+          TextField(controller: _secret, obscureText: true, decoration: field(context, label: 'App-Passwort')),
+        ],
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            FilledButton(onPressed: _busy ? null : _saveAndTest, child: const Text('Speichern & testen')),
+            if (saved.isConfigured)
+              OutlinedButton(
+                onPressed: _busy || (_pending ?? 0) == 0 ? null : _uploadNow,
+                child: Text('PDFs hochladen${_pending == null ? '' : ' ($_pending offen)'}'),
+              ),
+          ],
+        ),
+        if (_busy) const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
+        if (_message != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(_message!, style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+          ),
+        if (pdfError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text('Letzter automatischer PDF-Upload: $pdfError', style: TextStyle(fontSize: 12, color: c.warn)),
+          ),
+      ],
     );
   }
 }

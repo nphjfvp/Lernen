@@ -7,6 +7,8 @@ import 'package:uuid/uuid.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/settings_repository.dart';
 import 'database_service.dart';
+import 'pdf_cloud_store.dart';
+import 'pdf_cloud_sync_service.dart';
 import 'sync_service.dart';
 
 enum AutoSyncStatus {
@@ -63,6 +65,11 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
 
   String? _lastError;
   String? get lastError => _lastError;
+
+  /// Letzter Fehler beim Hochladen der PDFs in den eigenen Speicher – hält
+  /// den Sync der Lerndaten bewusst NICHT auf.
+  String? _lastPdfError;
+  String? get lastPdfError => _lastPdfError;
 
   Timer? _timer;
   bool _dirty = false;
@@ -166,6 +173,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
       final deviceId = await ensureDeviceId(_settings);
       final lastSynced = _settings.settings.lastSyncedPushId;
       _dirty = false;
+      await _uploadPendingPdfs();
       final pushId = await _sync.push(
         target,
         deviceId: deviceId,
@@ -193,6 +201,19 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
       _setStatus(AutoSyncStatus.retrying);
     } finally {
       _running = false;
+    }
+  }
+
+  /// PDFs zuerst in den eigenen Speicher, damit der anschließende Upload der
+  /// Lerndaten schon die Verweise darauf enthält. Ohne Speicher: nichts.
+  Future<void> _uploadPendingPdfs() async {
+    final store = PdfCloudStore.fromConfig(_settings.settings.pdfStorage);
+    if (store == null) return;
+    try {
+      await runWithoutTrigger(() => PdfCloudSyncService(store).uploadPending());
+      _lastPdfError = null;
+    } catch (e) {
+      _lastPdfError = e is PdfCloudStoreException ? e.message : e.toString();
     }
   }
 

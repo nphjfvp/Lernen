@@ -1,3 +1,5 @@
+import 'pdf_storage_config.dart';
+
 /// Wie stark ein großer Text vor der KI-Generierung in Abschnitte zerlegt
 /// wird. "auto" wählt die Granularität selbst anhand der Textlänge (siehe
 /// AiService.chunkText); die anderen Stufen erzwingen eine feste Chunkgröße.
@@ -64,6 +66,10 @@ class AppSettings {
   /// bittet erst um einen Download.
   final String? lastSyncedPushId;
 
+  /// Eigener Speicher für die Original-PDFs (siehe PdfStorageConfig) – ohne
+  /// Zugangsdaten bleibt der PDF-Sync aus.
+  final PdfStorageConfig pdfStorage;
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
@@ -86,6 +92,7 @@ class AppSettings {
     this.autoSyncEnabled = false,
     this.deviceId,
     this.lastSyncedPushId,
+    this.pdfStorage = const PdfStorageConfig(),
   });
 
   bool get hasApiKey =>
@@ -110,6 +117,7 @@ class AppSettings {
     bool? autoSyncEnabled,
     String? deviceId,
     String? lastSyncedPushId,
+    PdfStorageConfig? pdfStorage,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -127,6 +135,7 @@ class AppSettings {
       autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
       deviceId: deviceId ?? this.deviceId,
       lastSyncedPushId: lastSyncedPushId ?? this.lastSyncedPushId,
+      pdfStorage: pdfStorage ?? this.pdfStorage,
     );
   }
 
@@ -146,6 +155,7 @@ class AppSettings {
         'autoSyncEnabled': autoSyncEnabled,
         'deviceId': deviceId,
         'lastSyncedPushId': lastSyncedPushId,
+        'pdfStorage': pdfStorage.toMap(),
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -170,5 +180,8 @@ class AppSettings {
         autoSyncEnabled: map['autoSyncEnabled'] as bool? ?? false,
         deviceId: map['deviceId'] as String?,
         lastSyncedPushId: map['lastSyncedPushId'] as String?,
+        pdfStorage: map['pdfStorage'] is Map
+            ? PdfStorageConfig.fromMap(Map<String, dynamic>.from(map['pdfStorage'] as Map))
+            : const PdfStorageConfig(),
       );
 }

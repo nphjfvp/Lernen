@@ -11,6 +11,7 @@ import '../models/flashcard.dart';
 import '../models/lecture_unit.dart';
 import '../models/material_item.dart';
 import '../models/module.dart';
+import '../models/pdf_storage_config.dart';
 import '../models/summary.dart';
 import '../repositories/mock_exam_repository.dart';
 import '../services/database_service.dart';
@@ -37,11 +38,16 @@ class SyncConflictException extends SyncException {
 /// wegräumen.
 AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
   if (synced == null) return current;
+  final storage = synced['pdfStorage'] is Map
+      ? PdfStorageConfig.fromMap(Map<String, dynamic>.from(synced['pdfStorage'] as Map))
+      : null;
   return current.copyWith(
     openRouterApiKey: synced['openRouterApiKey'] as String?,
     questionModelId: synced['questionModelId'] as String?,
     visionModelId: synced['visionModelId'] as String?,
     crosscheckModelId: synced['crosscheckModelId'] as String?,
+    // Wie beim API-Key: ein leerer Cloud-Stand löscht nie lokale Zugangsdaten.
+    pdfStorage: (storage?.isConfigured ?? false) ? storage : null,
   );
 }
 
@@ -49,7 +55,7 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
 /// übernommenen KI-Einstellungen (siehe SyncService.pull) – rein, testbar.
 Map<String, dynamic> syncedAiSettingsForPull(Map<String, dynamic> synced, {required bool acceptApiKey}) {
   if (acceptApiKey) return synced;
-  return {...synced, 'openRouterApiKey': null};
+  return {...synced, 'openRouterApiKey': null, 'pdfStorage': null};
 }
 
 /// Wohin synchronisiert wird: an ein Firebase-Konto gebunden oder über
@@ -363,6 +369,8 @@ class SyncService {
       'questionModelId': settings.questionModelId,
       'visionModelId': settings.visionModelId,
       'crosscheckModelId': settings.crosscheckModelId,
+      // Zugangsdaten zum eigenen PDF-Speicher sind geheim wie der API-Key.
+      'pdfStorage': includeApiKey ? settings.pdfStorage.toMap() : null,
     };
   }
 

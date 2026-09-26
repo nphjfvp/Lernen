@@ -218,4 +218,20 @@ void main() {
       expect(MaterialItem.practiceExamTextFrom(materials), isNull);
     });
   });
+
+  test('remotePdfKey übersteht toMap/fromMap und hasRemotePdf zeigt es an', () {
+    final item = MaterialItem(
+      id: 'm1',
+      moduleId: 'mod',
+      fileName: 'a.pdf',
+      kind: MaterialKind.slide,
+      extractedText: 'Text',
+      createdAt: DateTime(2026, 1, 1),
+      remotePdfKey: 'lernen-pdfs/m1.pdf',
+    );
+    final restored = MaterialItem.fromMap(item.toMap());
+    expect(restored.remotePdfKey, 'lernen-pdfs/m1.pdf');
+    expect(restored.hasRemotePdf, isTrue);
+    expect(restored.hasViewablePdf, isFalse);
+  });
 }

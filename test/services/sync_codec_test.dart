@@ -48,14 +48,15 @@ void main() {
       expect(SyncCodec.decode(parts), payload);
     });
 
-    test('PDF-Pfad und PDF-Bytes werden nicht übertragen', () {
+    test('PDF-Pfad und PDF-Bytes werden nicht übertragen, der Verweis in den eigenen Speicher schon', () {
       final stripped = SyncCodec.stripDeviceLocalMaterialFields({
         'id': 'm',
         'extractedText': 'Text',
         'filePath': '/data/folien.pdf',
         'fileBytesBase64': 'JVBERi0x',
+        'remotePdfKey': 'lernen-pdfs/m.pdf',
       });
-      expect(stripped, {'id': 'm', 'extractedText': 'Text'});
+      expect(stripped, {'id': 'm', 'extractedText': 'Text', 'remotePdfKey': 'lernen-pdfs/m.pdf'});
     });
 
     test('beim Download bleibt eine lokal vorhandene PDF erhalten', () {

@@ -86,6 +86,9 @@ class MaterialRepository extends ChangeNotifier {
     };
     if (filePath != null) update['filePath'] = filePath;
     if (fileBytesBase64 != null) update['fileBytesBase64'] = fileBytesBase64;
+    // Geänderte PDF: die Kopie im eigenen Cloud-Speicher ist veraltet und
+    // wird beim nächsten Sync neu hochgeladen (siehe PdfCloudSyncService).
+    if (filePath != null || fileBytesBase64 != null) update['remotePdfKey'] = null;
     await DatabaseService.materials.record(id).update(db, update);
     await loadForModule(moduleId);
   }

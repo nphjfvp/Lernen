@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/app_settings.dart';
+import 'package:lernen/models/pdf_storage_config.dart';
 
 void main() {
   group('AppSettings – Lernerinnerung Defaults', () {
@@ -25,6 +26,25 @@ void main() {
       final updated = settings.copyWith(dailyReminderEnabled: true, dailyReminderMinuteOfDay: 7 * 60);
       expect(updated.dailyReminderEnabled, isTrue);
       expect(updated.dailyReminderHour, 7);
+    });
+  });
+
+  group('AppSettings – PDF-Speicher', () {
+    test('standardmäßig aus, Zugangsdaten überstehen den Round-Trip', () {
+      expect(const AppSettings().pdfStorage.isConfigured, isFalse);
+      const settings = AppSettings(
+        pdfStorage: PdfStorageConfig(
+          type: PdfStorageType.webdav,
+          endpoint: 'https://cloud.example.de/dav',
+          accessKey: 'nutzer',
+          secret: 'pw',
+        ),
+      );
+      final restored = AppSettings.fromMap(settings.toMap());
+      expect(restored.pdfStorage.type, PdfStorageType.webdav);
+      expect(restored.pdfStorage.isConfigured, isTrue);
+      final old = settings.toMap()..remove('pdfStorage');
+      expect(AppSettings.fromMap(old).pdfStorage.type, PdfStorageType.none);
     });
   });
 

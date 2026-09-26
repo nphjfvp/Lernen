@@ -21,10 +21,13 @@ import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/summary_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/auto_sync_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/module_export_service.dart';
+import '../../services/pdf_cloud_store.dart';
+import '../../services/pdf_cloud_sync_service.dart';
 import '../../services/pdf_ocr_service.dart';
 import '../../services/pdf_service.dart';
 import '../../services/unit_schedule_service.dart';
@@ -496,7 +499,10 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           onToggleCovered: (value) =>
               context.read<MaterialRepository>().setCovered(m.id, m.moduleId, value),
           onDelete: () => _deleteMaterial(m),
-          onOpen: m.hasViewablePdf ? () => _openMaterial(m) : null,
+          onOpen: m.hasViewablePdf ||
+                  (m.hasRemotePdf && context.watch<SettingsRepository>().settings.pdfStorage.isConfigured)
+              ? () => _openMaterial(m)
+              : null,
           onRecognizeText: m.hasViewablePdf && context.watch<SettingsRepository>().settings.hasApiKey
               ? () => _recognizeScannedPages(m)
               : null,
@@ -878,16 +884,60 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     }
   }
 
-  void _openMaterial(MaterialItem material) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => MaterialViewerScreen(material: material)),
+  Future<void> _openMaterial(MaterialItem material) async {
+    var toOpen = material;
+    if (!material.hasViewablePdf && material.hasRemotePdf) {
+      // PDF liegt nur im eigenen Cloud-Speicher (von einem anderen Gerät
+      // hochgeladen) – einmalig herunterladen und lokal ablegen.
+      final downloaded = await _downloadPdf(material);
+      if (downloaded == null || !mounted) return;
+      toOpen = downloaded;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => MaterialViewerScreen(material: toOpen)),
     );
+  }
+
+  Future<MaterialItem?> _downloadPdf(MaterialItem material) async {
+    final store = PdfCloudStore.fromConfig(context.read<SettingsRepository>().settings.pdfStorage);
+    final autoSync = context.read<AutoSyncService>();
+    final repo = context.read<MaterialRepository>();
+    final messenger = ScaffoldMessenger.of(context);
+    if (store == null) return null;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('PDF wird aus deinem Speicher geladen …')),
+          ],
+        ),
+      ),
+    );
+    MaterialItem? result;
+    try {
+      // Nur geräte-lokale Felder ändern sich – kein neuer Upload nötig.
+      result = await autoSync.runWithoutTrigger(() => PdfCloudSyncService(store).download(material));
+      if (result == null) {
+        messenger.showSnackBar(const SnackBar(content: Text('Die PDF liegt nicht (mehr) im Speicher.')));
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('PDF konnte nicht geladen werden: $e')));
+    } finally {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+    await repo.loadForModule(material.moduleId);
+    return result;
   }
 
   /// Folgt dem Quasi-Link eines im Lernmodus erstellten Konzepts (siehe
   /// Concept.linkedMaterialId/linkedPageNumber) zurück zu genau der Seite,
   /// auf der es entstanden ist.
-  void _openConceptSourcePage(Concept concept, List<MaterialItem> materials) {
+  Future<void> _openConceptSourcePage(Concept concept, List<MaterialItem> materials) async {
     MaterialItem? material;
     for (final m in materials) {
       if (m.id == concept.linkedMaterialId) {
@@ -895,14 +945,20 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
         break;
       }
     }
-    if (material == null || !material.hasViewablePdf) {
+    final storageReady = context.read<SettingsRepository>().settings.pdfStorage.isConfigured;
+    if (material == null || !(material.hasViewablePdf || (material.hasRemotePdf && storageReady))) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Quell-Material nicht mehr verfügbar.')));
       return;
     }
-    Navigator.of(context).push(
+    if (!material.hasViewablePdf) {
+      material = await _downloadPdf(material);
+      if (material == null || !mounted) return;
+    }
+    final toOpen = material;
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MaterialViewerScreen(material: material!, initialPage: concept.linkedPageNumber),
+        builder: (_) => MaterialViewerScreen(material: toOpen, initialPage: concept.linkedPageNumber),
       ),
     );
   }
@@ -914,9 +970,12 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
       message: '"${material.fileName}" wird endgültig gelöscht.',
     );
     if (ok && mounted) {
+      final store = PdfCloudStore.fromConfig(context.read<SettingsRepository>().settings.pdfStorage);
       await MaterialFileStore.delete(filePath: material.filePath);
       if (!mounted) return;
       await context.read<MaterialRepository>().delete(material.id, material.moduleId);
+      final remoteKey = material.remotePdfKey;
+      if (store != null && remoteKey != null) await PdfCloudSyncService(store).deleteRemote([remoteKey]);
     }
   }
 
@@ -1007,7 +1066,13 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
       ),
     );
     if (confirmed == true && context.mounted) {
+      final store = PdfCloudStore.fromConfig(context.read<SettingsRepository>().settings.pdfStorage);
+      final remoteKeys = [
+        for (final m in context.read<MaterialRepository>().forModule(id))
+          if (m.remotePdfKey != null) m.remotePdfKey!,
+      ];
       await context.read<ModuleRepository>().delete(id);
+      if (store != null && remoteKeys.isNotEmpty) await PdfCloudSyncService(store).deleteRemote(remoteKeys);
       if (context.mounted) Navigator.of(context).pop();
     }
   }

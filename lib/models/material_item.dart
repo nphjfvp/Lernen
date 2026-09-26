@@ -127,6 +127,12 @@ class MaterialItem {
   /// Einheiten-"behandelt"-Status.
   final String? unitId;
 
+  /// Name der Original-PDF im eigenen Cloud-Speicher (siehe
+  /// PdfCloudSyncService), sobald sie dort hochgeladen wurde. Reist – anders
+  /// als [filePath]/[fileBytesBase64] – im Cloud-Sync mit, damit ein anderes
+  /// Gerät die PDF beim Öffnen von dort holen kann.
+  final String? remotePdfKey;
+
   const MaterialItem({
     required this.id,
     required this.moduleId,
@@ -141,11 +147,15 @@ class MaterialItem {
     this.highlights = const [],
     this.notes = '',
     this.unitId,
+    this.remotePdfKey,
   });
 
   /// Ob dieses Material eine visuelle PDF-Ansicht mit Markier-Funktion
   /// unterstützt (Original-Bytes wurden beim Upload gespeichert).
   bool get hasViewablePdf => filePath != null || fileBytesBase64 != null;
+
+  /// Die PDF liegt im eigenen Cloud-Speicher und kann bei Bedarf geholt werden.
+  bool get hasRemotePdf => remotePdfKey != null;
 
   /// Text der zuerst hochgeladenen Übungsklausur eines Fachs (siehe
   /// [MaterialKind.practiceExam]), falls vorhanden – Stil-Referenz für die
@@ -177,6 +187,7 @@ class MaterialItem {
         highlights: highlights ?? this.highlights,
         notes: notes ?? this.notes,
         unitId: unitId,
+        remotePdfKey: remotePdfKey,
       );
 
   Map<String, dynamic> toMap() => {
@@ -193,6 +204,7 @@ class MaterialItem {
         'highlights': highlights.map((h) => h.toMap()).toList(),
         'notes': notes,
         'unitId': unitId,
+        'remotePdfKey': remotePdfKey,
       };
 
   factory MaterialItem.fromMap(Map<String, dynamic> map) => MaterialItem(
@@ -212,5 +224,6 @@ class MaterialItem {
             const [],
         notes: map['notes'] as String? ?? '',
         unitId: map['unitId'] as String?,
+        remotePdfKey: map['remotePdfKey'] as String?,
       );
 }
