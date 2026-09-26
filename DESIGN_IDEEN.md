@@ -4,6 +4,19 @@ Design-Entwürfe und Feature-Ideen vom 2026-09-26. Enthält **Umsetzungs-Konzept
 ("wie umgesetzt"), **keinen Code**. Bei Widerspruch zu `AI_CONTEXT.md` gilt der Code.
 Bewertungen: SINNVOLL / VIELLEICHT / BEWUSST NICHT.
 
+## Status (Entscheidungen und Umsetzung)
+
+| Idee | Entscheidung | Umsetzung |
+|---|---|---|
+| 1. PDF-Sync | umgesetzt, aber **anders als Design A**: eigener Speicher (S3-kompatibel wie Cloudflare R2/Backblaze B2, oder WebDAV wie Nextcloud) statt Firebase Storage – Firebase Storage braucht den Blaze-Tarif. Ohne Zugangsdaten bleibt der PDF-Sync einfach aus. | `516983d` |
+| 2.1 OCR-Fallback | umgesetzt – leere Seiten gehen als PDF an das Vision-Modell; automatisch nur, wenn ≥ 50 % der Seiten leer sind, sonst per Knopf | `91c37c0` |
+| 2.2 TTS | nicht umgesetzt (Entscheidung Nutzer) | – |
+| 2.3 Auto-Einheiten | umgesetzt – KI-Vorschläge zum Gruppieren, dazu Termine je Einheit (automatisch behandelt ab dem Termin) und „Termine aus Stundenplan" | `b0d4365` |
+| 2.4 KI-Wochenplan | nicht umgesetzt – Daily Quiz plant bereits klausurbewusst | – |
+| 2.5 Import/Export | CSV-Export + CSV/Anki-Text-Import (Vorder-/Rückseite) umgesetzt; kein `.apkg` | `1951338` |
+| 2.6 Markdown-Notizen | nicht umgesetzt – Einheiten-Notizen decken das ab | – |
+| 2.7 Bewusst nicht | eingehalten | – |
+
 ---
 
 ## 1. PDF-Sync ohne Free-Tier-Überschreitung (Design A — freigegeben)
@@ -11,6 +24,10 @@ Bewertungen: SINNVOLL / VIELLEICHT / BEWUSST NICHT.
 ### Ziel
 Echte PDFs geräteübergreifend synchronisieren, kostenlos bleiben (Firebase Spark).
 Volumen-Annahme: mittel (1–5 GB).
+
+> **Ersetzt:** umgesetzt wurde stattdessen ein eigener Speicher des Nutzers
+> (`PdfStorageConfig`, `PdfCloudStore`, `PdfCloudSyncService`) – siehe Status oben.
+> Der Rest dieses Abschnitts ist der ursprüngliche Entwurf.
 
 ### Ansatz
 Firebase Cloud Storage + dünne Firestore-Index-Schicht. PDFs als Dateien, nur Metadaten

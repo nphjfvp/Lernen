@@ -91,11 +91,15 @@ Befehle (Flutter liegt in dieser Umgebung unter `/home/user/flutter-sdk/flutter/
 - Zuordnung: `moduleId`, `conceptId`, `unitId`, `priorityIntroduction`.
 
 Weitere: `Module` (Fach, `examDate`, `lectureSlots`), `LectureUnit`
-(Vorlesungseinheit, `covered` = "behandelt", Notizen), `MaterialItem`
-(extrahierter Text, PDF-Datei/Base64, Markierungen, Notiz, `topicIndex`,
-`kind`: slide/exercise/practiceExam), `Concept` (inkl. Seiten-Quasi-Link
-`linkedMaterialId`/`linkedPageNumber`), `Summary`, `ChatMessage`,
-`AppSettings`, `MasterySnapshot` (tägliche Ampel-Verteilung für den Trend).
+(Vorlesungseinheit, `covered` = von Hand abgehakt, `scheduledDate` =
+Vorlesungstermin, Notizen; „behandelt“ = `isCoveredOn(heute)`: abgehakt ODER
+Termin erreicht), `MaterialItem` (extrahierter Text, PDF-Datei/Base64 –
+geräte-lokal –, `remotePdfKey` = Ort im eigenen PDF-Speicher, Markierungen,
+Notiz, `topicIndex`, `kind`: slide/exercise/practiceExam), `Concept` (inkl.
+Seiten-Quasi-Link `linkedMaterialId`/`linkedPageNumber`), `Summary`,
+`ChatMessage`, `AppSettings` (inkl. `pdfStorage` = `PdfStorageConfig`,
+Auto-Sync-Felder), `MasterySnapshot` (tägliche Ampel-Verteilung für den Trend),
+`DailySessionState`, `MockExamResult`.
 
 **Pflicht-Regel „jedes Feld durchreichen“**: Flashcard hat viele manuelle
 Rekonstruktionen (`copyWith*`, Export/Import, Sync, `_mergeIntoChain`,
@@ -191,6 +195,9 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 - **Einheiten-Gate**: Karten mit `unitId` einer NICHT behandelten Einheit
   werden ausgelassen – außer `priorityIntroduction` (bewusst beim Lesen
   erstellte Fragen/Zwischen-Check-Fehler). Unbekannte `unitId` → erlaubt.
+  „Behandelt“ liefert `LectureUnitRepository.loadAllCoveredById` bereits
+  effektiv (abgehakt ODER `scheduledDate` erreicht). Häkchen entfernen bei
+  erreichtem Termin entfernt auch den Termin.
 - **Fällig**: `reps>0 && due < morgen`, sortiert nach `due`, unbegrenzt.
 - **Neu** (`reps==0`) pro Fach budgetiert: Pacing über Tage bis zur Klausur
   (abzüglich 3 Tage Wiederholungspuffer, ohne Klausur 14 Tage Horizont),
@@ -234,8 +241,29 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   `MathText` (fällt bei Fehlern auf Rohtext zurück). KI-JSON läuft vor
   `jsonDecode` durch `MathMarkup.escapeLatexInJson` (einfache Backslashes in
   Formeln wären sonst Steuerzeichen wie `\f`/`\t`/`\n` oder ungültig).
+- **Sync-Code vs. Konto**: Geheimnisse (OpenRouter-Key, PDF-Speicher-
+  Zugangsdaten) reisen nur über den Konto-Weg; beim Download über einen
+  Sync-Code werden sie verworfen (`syncedAiSettingsForPull`). Leere
+  Cloud-Werte löschen nie lokale (`mergeAiSettings`).
+- **Eigener PDF-Speicher** (`PdfCloudStore`: S3-kompatibel mit Signatur V4
+  oder WebDAV; `PdfCloudSyncService`): vor jedem Daten-Upload werden lokale
+  PDFs ohne `remotePdfKey` hochgeladen (Fehler dort blockieren den Daten-Sync
+  nicht, siehe `AutoSyncService.lastPdfError`); andere Geräte laden beim
+  Öffnen herunter. Geänderte PDF (eingebettete Markierungen) setzt
+  `remotePdfKey` zurück → Neu-Upload. Löschen entfernt die Cloud-Kopie.
+  Ohne Zugangsdaten: aus. Web braucht CORS am Speicher.
+- **Texterkennung** (`PdfOcrService`): Seiten mit < 25 Zeichen gelten als
+  gescannt; automatisch beim Upload nur, wenn ≥ 50 % der Seiten leer sind
+  (sonst Kosten bei normalen Foliensätzen), manuell pro Material für jede
+  leere Seite. Nur diese Seiten gehen (max. 8 je Anfrage, als eigene PDF) an
+  das Vision-Modell (OpenRouter-PDF-Input, Marker `<<<SEITE n>>>`).
+- Screens mit langen KI-Aufrufen nutzen `SafeSetState` (kein `setState` nach
+  Verlassen). Context-Zugriffe (Repos, ScaffoldMessenger) VOR dem ersten
+  `await` auslesen.
 - Screens im IndexedStack lesen Daten nicht automatisch reaktiv – neue Screens
   mit „lade einmal im initState“-Muster brauchen einen Refresh-Pfad.
+- CI (`android-apk.yml`, `windows-app.yml`) baut nur nach grünem
+  `flutter analyze` + `flutter test`.
 - Code-Kommentare/Doc-Kommentare und UI-Texte sind Deutsch.
 - README.md dokumentiert Features ausführlich und wird bei Änderungen
   mitgepflegt.
@@ -243,7 +271,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 387 Tests grün, `flutter build web` erfolgreich.
+sauber, 420 Tests grün, `flutter build web` erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
 1. Gemeinsamer `ReviewService`/`CardReviewMixin` für Daily Quiz, Üben, Sprint,
@@ -262,6 +290,16 @@ Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
    Durchsicht mit KI-Erklärung, Verlauf.
 8. LaTeX-Darstellung + JSON-Reparatur für Formeln.
 
+Zweite Runde (nach `AUDIT.md`/`DESIGN_IDEEN.md`, Stand 26.09.2026):
+9. Audit-Fixes B1–B3, H1, H3, H4, H6–H8, H11 + Kleinkram (siehe AUDIT.md).
+10. Einheiten mit Termin (automatisch behandelt), „Termine aus Stundenplan“,
+    KI-Einheitenvorschläge.
+11. Texterkennung für gescannte PDFs (automatisch + manuell).
+12. PDF-Sync über den eigenen Speicher (S3/WebDAV), ohne Zugangsdaten aus.
+13. CSV-Export/-Import von Karten (Backup, Anki).
+Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
+„BEWUSST NICHT“ in DESIGN_IDEEN.md.
+
 Offen / zu beachten:
 - `firestore.rules` muss nach dem Sync-Umbau einmal neu in der Firebase-
   Konsole veröffentlicht werden (Regel für `sync_parts`); ohne das klappt der
@@ -270,3 +308,8 @@ Offen / zu beachten:
 - Auto-Sync ist standardmäßig aus (Schalter in den Einstellungen).
 - Auto-Sync-Konfliktlösung ist bewusst einfach (ganzer Stand gewinnt, kein
   Zusammenführen einzelner Karten).
+- Offen aus dem Audit (bewusst niedrig priorisiert): H9 (gleichzeitiger Push
+  zweier Geräte ohne Transaktion), H10 (selbst gewählte Sync-Codes; Konto-Weg
+  empfohlen), H5 ist Absicht (fällige Karten werden nicht gedeckelt).
+- Texterkennung und PDF-Speicher sind nur mit Mocks getestet; echter
+  OpenRouter-PDF-Input und echte R2/B2/WebDAV-Speicher einmal von Hand prüfen.

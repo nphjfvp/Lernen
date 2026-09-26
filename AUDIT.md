@@ -11,6 +11,35 @@ sind **richtungweisend**, nicht final – vor der Umsetzung eines Punkts gemeins
 korrekt umgesetzt. Hauptprobleme: garantierte Crashes in Async-Flows, LaTeX-Korruption in
 Display-Formeln, CI ohne Test-Gate, Sync-Code-Key-Injektion im Pull-Pfad.
 
+## Status (Stand nach Commit `971dc7c`)
+
+| Befund | Status |
+|---|---|
+| B1 setState nach dispose | behoben – `SafeSetState`-Mixin in allen Screens/Sheets mit langen KI-Aufrufen |
+| B2 LaTeX in `$$…$$` | behoben – `$$` ist ein Begrenzer; Steuerzeichen-Escapes nur vor Buchstaben verdoppelt, echte `\uXXXX` bleiben |
+| B3 CI ohne Tests | behoben – `flutter analyze` + `flutter test` vor APK- und Windows-Build |
+| H1 Sync-Code-Key-Injektion | behoben – Pull über Sync-Code übernimmt nie API-Key oder PDF-Speicher-Zugangsdaten (`syncedAiSettingsForPull`) |
+| H2 Probeklausur-Race | kein echter Fehler (`QuestionAnswerView` prüft `mounted`); trotzdem Phasen-Guard in `_answer` ergänzt |
+| H3 Modul-Löschen verwaist Probeklausuren | behoben – `MockExamRepository.removeModuleIn` im Lösch-Cascade |
+| H4 Pull verwaist Chat/Probeklausuren | behoben – `_pull` räumt Chat-Nachrichten und Ergebnisse fremder Fächer auf |
+| H5 Daily > 60 Karten | beabsichtigt – Prioritätskarten (selbst gestellte Fragen) kommen immer dazu |
+| H6 Hintergrund-Beförderung | behoben – KI-Inhalt wird auf den frisch geladenen Kartenstand angewendet, nur wenn Stufe/Typ unverändert |
+| H7 Stats nach Sprint | behoben – Fortschritt lädt nach dem Sprint neu |
+| H8 Checkpoint-Fehler | behoben – werden auch nach Schließen des Viewers gespeichert |
+| H9 Push ohne Transaktion | **offen** – selten (zwei Geräte im selben Moment); Auto-Sync-Konfliktschutz über `lastSyncedPushId` fängt den Normalfall ab |
+| H10 schwache Sync-Codes | **offen** – entschärft, da über Sync-Codes keine Schlüssel mehr reisen; Konto-Sync ist der empfohlene Weg |
+| H11 `Flashcard.fromMap` | behoben – Defaults + `num`→`int` + `tryParse` für Datumswerte |
+| `isCorrect: 1` | behoben |
+| Sprint zählt „Schwer" als falsch | behoben |
+| `runWithoutTrigger`-Reentrancy | behoben – Zähler statt Flag |
+| API-Key-Speichern in `dispose()` | kein Handlungsbedarf – wird schon beim Fokusverlust gespeichert; der Schreibvorgang im Repository läuft nach dem Schließen des Screens zu Ende |
+| Web-CI, Tests für `auto_sync_service`/`auth_service`/`model_catalog_service`/`reminder_service`, systematisches `fromMap`-Audit | offen |
+
+Design-Frage 2 (PDF-Sync) ist entschieden und umgesetzt: eigener Speicher des
+Nutzers (S3-kompatibel oder WebDAV) statt Firebase Storage – Firebase Storage verlangt
+für neue Projekte inzwischen den Blaze-Tarif (Kreditkarte), das widerspricht „kostenlos
+ohne eigenes Backend". Details in `DESIGN_IDEEN.md` und README (Setup 3b).
+
 ---
 
 ## Blocker (vor Release fixen)

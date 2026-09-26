@@ -57,7 +57,17 @@ engerem Fokus statt Feature-Fülle.
   als die rein informative Behandelt-Markierung einzelner Materialien).
   Jede Einheit trägt zusätzlich frei erweiterbare Textfelder (eigene
   Zusammenfassung, Merksätze, offene Fragen) – direkt im Modul-Detail
-  anlegbar/editierbar.
+  anlegbar/editierbar. Damit man das Abhaken nicht vergisst, kann jede
+  Einheit einen **Termin** bekommen (`LectureUnit.scheduledDate`): ab diesem
+  Tag gilt sie automatisch als behandelt (`LectureUnit.isCoveredOn`), ohne
+  dass jemand etwas anklicken muss. "Termine aus Stundenplan" verteilt die
+  nächsten Vorlesungstermine des Fachs (`Module.lectureSlots`) der Reihe nach
+  auf alle noch offenen Einheiten (`UnitScheduleService`), einzelne Termine
+  lassen sich per Tipp ändern; ein manuelles "nicht behandelt" löscht den
+  Termin wieder. "Einheiten vorschlagen" (mit API-Key) lässt die KI die noch
+  keiner Einheit zugeordneten Materialien zu sinnvollen Einheiten gruppieren
+  (`AiService.suggestLectureUnits`) – als Vorschlag zum Abhaken, nichts wird
+  ungefragt angelegt.
 - **Daily Quiz (Exam-Scheduler) + freier Lernmodus** – tägliche Lernsession
   über alle Fächer hinweg. FSRS-Spaced-Repetition für fällige
   Wiederholungen; die Menge neuer Karten wird pro Fach dynamisch an
@@ -98,7 +108,15 @@ engerem Fokus statt Feature-Fülle.
   einer Transaktion über `FlashcardRepository.deleteMany`), zum Aufräumen
   nach einer größeren Generierung ohne jede Karte einzeln aufklappen zu
   müssen. Einzelne Karten lassen sich weiterhin wie bisher aufklappen und
-  per Button bearbeiten/löschen.
+  per Button bearbeiten/löschen. Über das Menü oben rechts: **"Als CSV
+  exportieren"** (Vorderseite, Rückseite, Typ, Ampel, Fällig, Wiederholungen;
+  Semikolon + BOM, öffnet sich direkt richtig in Excel/LibreOffice, Anki
+  liest es ebenfalls) und **"CSV importieren"** – z.B. ein Anki-Export
+  ("Notizen als Text") oder eine eigene Tabelle mit Vorder-/Rückseite.
+  Trennzeichen (Tab, Semikolon, Komma), Anki-Kopfzeilen und einfaches HTML
+  werden erkannt, vor dem Import zeigt eine Vorschau die Anzahl
+  (`lib/services/card_csv_service.dart`). Importierte Karten starten als
+  neue Karteikarten.
 - **Wissensstand-Ampel** – jede Karte bekommt eine Rot/Gelb/Grün-Einstufung
   (siehe `lib/services/mastery_service.dart`), sichtbar in der
   Karteikarten-Liste, im Modul-Detail (Aufschlüsselung) und in der
@@ -254,6 +272,17 @@ engerem Fokus statt Feature-Fülle.
   `lib/ui/widgets/existing_material_picker.dart`) – kein erneutes Hochladen
   derselben Datei nötig, kein erneuter Extraktions-Aufwand; für diese Dateien
   wird beim Speichern kein doppeltes MaterialItem angelegt.
+- **Texterkennung für gescannte PDFs** (`lib/services/pdf_ocr_service.dart`,
+  nur mit API-Key): enthält beim Hochladen mindestens die Hälfte der Seiten
+  keinen Text (Scan, abfotografiertes Skript), schickt die App genau diese
+  Seiten – in Blöcken von höchstens 8 – als PDF an das eingestellte
+  **Vision-Modell** (`AiService.transcribePdfPages`) und übernimmt die
+  Abschrift seitengenau in den extrahierten Text (Formeln als LaTeX). Seiten
+  mit echtem Text werden nie verschickt. Einzelne leere Seiten in einem
+  sonst normalen Foliensatz (Titelbild, Grafik) lösen das bewusst NICHT
+  automatisch aus, um keine Kosten zu verursachen; dafür gibt es an jedem
+  PDF in der Materialliste den Knopf "Texterkennung für gescannte Seiten". Ohne
+  API-Key bleibt es bei der bisherigen Meldung.
 - **Fortschritt** – eigener Tab mit Streak (aufeinanderfolgende Lerntage),
   Gesamtzahl Wiederholungen und geschätzter Behaltensrate (aus dem
   FSRS-Zustand der Karten), gesamt und pro Fach (siehe
@@ -343,7 +372,10 @@ engerem Fokus statt Feature-Fülle.
   gzip-komprimiert (Text schrumpft auf ~10–25 %) und bei Bedarf auf mehrere
   Dokumente (`…/sync_parts/0..n`) verteilt; die PDF-Dateien selbst reisen
   nicht mit (lokal vorhandene bleiben beim Herunterladen erhalten, der
-  extrahierte Text wird übertragen). Jeder Upload trägt eine `pushId`, damit
+  extrahierte Text wird übertragen). Wer die Original-PDFs auch auf den
+  anderen Geräten sehen will, trägt einen **eigenen PDF-Speicher** ein
+  (S3-kompatibel oder WebDAV, siehe Setup 3b) – analog zum eigenen API-Key:
+  ohne Eintrag bleibt nur der PDF-Sync aus. Jeder Upload trägt eine `pushId`, damit
   nie Teile zweier Uploads gemischt werden; alte Cloud-Stände (ein
   Klartext-Dokument) bleiben lesbar. **Auto-Sync** (Schalter in den
   Einstellungen, `lib/services/auto_sync_service.dart`): lädt Änderungen
@@ -367,12 +399,13 @@ Fehlertagebuch, KI-Tipp/-Erklärung und LaTeX-Darstellung, lässt aber bewusst
 den Mathe-Formel-Fragetyp mit Formel-Editor sowie diagramm-/bildbasierte
 Fragetypen (Diagramm beschriften, Bild markieren) weg und konzentriert sich ansonsten auf den
 Kernkreislauf **Vorbereiten → Nachbereiten → Daily Quiz** ohne Mini-Games,
-Economy o.ä. Die Vision-Modell-Rolle wird inzwischen für die
-Seiten-Fragefunktion genutzt (siehe 5b); eine konkrete OCR-Fallback-Pipeline
-für gescannte/bildbasierte PDFs (Rasterung + Versand an ein Vision-Modell
-schon bei der Textextraktion selbst) ist aber weiterhin nicht umgesetzt –
-aktuell scheitert die Textextraktion bei rein-bildbasierten PDFs mit einer
-klaren Fehlermeldung.
+Economy o.ä. Die Vision-Modell-Rolle wird für die Seiten-Fragefunktion
+(siehe 5b) und die Texterkennung gescannter PDFs genutzt.
+
+Aus der Ideen-Liste (`DESIGN_IDEEN.md`) bewusst nicht übernommen: Vorlesen
+(TTS), ein automatischer Wochenplan, eigene Markdown-Notizen neben den
+Einheiten-Notizen sowie alles unter "Bewusst nicht" (Mini-Games, Coins,
+Leaderboards, Social-Features, eigenes Backend).
 
 ## Architektur
 
@@ -409,6 +442,11 @@ lib/
                                      Fragen-JSON-Objekte, rettet unvollständige Einträge
     html_question_contract.dart     CSP-Sandbox-Rahmen + JS-Rückkanal-Vertrag für den
                                      Fragetyp "Interaktiv" (siehe oben), reine Strings
+    pdf_ocr_service.dart            Texterkennung leerer PDF-Seiten über das Vision-Modell
+    pdf_cloud_store.dart            Eigener PDF-Speicher: S3 (SigV4) / WebDAV, reines HTTP
+    pdf_cloud_sync_service.dart     PDFs hochladen/bei Bedarf herunterladen
+    unit_schedule_service.dart      Einheiten-Termine aus dem Stundenplan
+    card_csv_service.dart           CSV-Export/-Import von Karteikarten
   repositories/    ChangeNotifier-Wrapper um die DB, für Provider/Consumer
   theme/           Design-Tokens ("Ruhig & Fokussiert") + Light-/Dark-Theme
   ui/              home, modules, prepare, review, daily, stats, chat,
@@ -503,6 +541,48 @@ Löschen (`ModuleExportService`).
   mitübersetzt (`ModuleExportService.parse`) – dieselbe Datei lässt sich
   daher beliebig oft importieren, auch mehrfach auf demselben Gerät, ohne
   mit vorhandenen Daten zu kollidieren.
+
+### 3b. Eigener PDF-Speicher (optional)
+
+Der Firestore-Sync überträgt nur Text und Lernstand – Firebase Storage für die
+Dateien bräuchte den kostenpflichtigen Blaze-Tarif. Stattdessen bringt man
+(wie beim API-Key) seinen eigenen Speicher mit: **Einstellungen →
+PDF-Speicher**. Ohne Eintrag passiert nichts.
+
+- **Cloudflare R2** (10 GB kostenlos, kein Traffic-Entgelt): Bucket anlegen,
+  unter "R2 → API-Token verwalten" ein Token mit "Objekt lesen & schreiben"
+  für diesen Bucket erstellen. In der App: S3-kompatibel, Endpunkt
+  `https://<konto-id>.r2.cloudflarestorage.com`, Bucket-Name, Region `auto`,
+  Access Key ID + Secret Access Key, Pfad-Adressierung an.
+- **Backblaze B2** (10 GB kostenlos): Bucket (privat) + Application Key
+  anlegen. Endpunkt `https://s3.<region>.backblazeb2.com`, Region z.B.
+  `eu-central-003`, keyID als Access Key, applicationKey als Secret.
+- **AWS S3 / MinIO**: wie oben; neue AWS-Buckets brauchen Pfad-Adressierung
+  aus.
+- **WebDAV** (Nextcloud, Uni-Cloud, ownCloud): Ordner-URL wie
+  `https://cloud.example.de/remote.php/dav/files/NAME/Lernen`, Benutzername,
+  **App-Passwort** (in Nextcloud unter Einstellungen → Sicherheit erzeugen).
+
+"Speichern & testen" prüft Adresse und Zugangsdaten. Danach lädt jeder Sync
+(automatisch oder "Hochladen") noch nicht hochgeladene PDFs vorab hoch
+(`lernen-pdfs/<material-id>.pdf`); öffnet man auf einem anderen Gerät ein
+Material ohne lokale Datei, wird sie dort bei Bedarf geholt. Gelöschte
+Materialien werden auch im Speicher entfernt. Die Zugangsdaten reisen wie der
+API-Key nur über den Konto-Sync, nie über einen Sync-Code.
+
+**Web-Version:** der Browser lässt die Anfragen nur zu, wenn der Speicher
+CORS für die Adresse der App erlaubt. Bei R2/B2 in den Bucket-Einstellungen
+eine CORS-Regel anlegen, z.B.:
+
+```json
+[{"AllowedOrigins": ["https://<deine-app-adresse>"],
+  "AllowedMethods": ["GET", "PUT", "DELETE", "HEAD"],
+  "AllowedHeaders": ["*"], "MaxAgeSeconds": 3600}]
+```
+
+(B2 nutzt im Web-UI ein eigenes Format mit denselben Angaben.) Nextcloud
+erlaubt fremde Web-Origins meist nicht – dort funktioniert der PDF-Speicher
+in den nativen Apps (Android/Windows/iOS), die kein CORS brauchen.
 
 ### 4. Account (E-Mail/Passwort + Google)
 
@@ -691,7 +771,9 @@ verfügbar ist.
 ### Android-APK ohne eigenen Rechner (GitHub Actions)
 
 Bei jedem Push baut `.github/workflows/android-apk.yml` automatisch eine
-installierbare APK – auch komplett vom Handy aus nutzbar, ohne PC:
+installierbare APK – auch komplett vom Handy aus nutzbar, ohne PC. Vor dem
+Build laufen `flutter analyze` und `flutter test`; schlägt eins davon fehl,
+wird keine neue APK veröffentlicht (gilt ebenso für die Windows-App):
 
 - **Direkter Download (empfohlen):** GitHub-Repo → Tab **Releases** → den
   Release **"Android APK (aktueller Stand)"** (Tag `android-latest`) öffnen
@@ -739,8 +821,11 @@ flutter test       # FSRS-Algorithmus, Exam-Scheduler, KI-JSON-Parsing, App-Smok
 ```
 
 Die Kernlogik (FSRS-Scheduling, Exam-Scheduler-Dosierung, robuste
-JSON-Extraktion aus KI-Antworten) ist mit `flutter test` ohne Gerät
-abgedeckt. Zusätzlich wurde der komplette Kernablauf – Fach anlegen,
+JSON-Extraktion aus KI-Antworten, Sync-Codec, LaTeX-Reparatur, CSV, S3-
+Signatur gegen die offiziellen AWS-Beispielwerte) ist mit `flutter test` ohne
+Gerät abgedeckt; dieselben Tests laufen in CI vor jedem Build. Texterkennung
+und PDF-Speicher sind nur gegen nachgebaute HTTP-Antworten getestet – echte
+OpenRouter-/R2-/Nextcloud-Aufrufe einmal von Hand ausprobieren. Zusätzlich wurde der komplette Kernablauf – Fach anlegen,
 Navigation zwischen Fächer/Daily-Quiz/Einstellungen, Settings-UI – als
 Web-Build (`flutter build web`) in einem echten (headless) Chromium
 durchgeklickt und per Screenshot verifiziert. Native Windows/iOS/Android-
