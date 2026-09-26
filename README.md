@@ -159,11 +159,17 @@ engerem Fokus statt Feature-Fülle.
   beim strengeren lokalen Ergebnis. **Lückentexte** genauso, je Lücke: lokal
   zählen die hinterlegte Lösung, jede per ";" hinterlegte Variante
   ("Mitochondrium; Mitochondrien") und kleine Tippfehler; lehnt das eine
-  Lücke ab, bewertet `AiService.checkFillBlankAnswers` jede Lücke nach
-  (andere richtige Begriffe, Synonyme, gröbere Rechtschreibfehler). Die KI
-  kann eine Lücke nur nachträglich als richtig werten, nie eine lokal
-  richtige verwerfen; nach dem Prüfen zeigt jede Lücke ✓/✗ und – wenn sie
-  falsch war oder nur dank Toleranz galt – die hinterlegte Schreibweise.
+  Lücke ab, bewertet `AiService.checkFillBlankAnswers` den ganzen Satz nach
+  – geprüft wird Wissen, nicht Rechtschreibung: gröbere Tippfehler
+  ("debinrten" für "definierten"), vertauschte gleichrangige Lücken ("bei
+  Produktion und Entwicklung" statt umgekehrt), gleichwertige Begriffe und
+  fachlich ebenso richtige Antworten zählen; im Zweifel zugunsten des
+  Lernenden. Die KI kann eine Lücke nur nachträglich als richtig werten, nie
+  eine lokal richtige verwerfen; nach dem Prüfen zeigt jede Lücke ✓/✗, die
+  hinterlegte Schreibweise und die kurze Begründung der KI, darunter steht,
+  ob die KI nachgeprüft hat oder (z.B. offline) nicht. Liegt die Prüfung
+  trotzdem daneben, wertet **"Als richtig werten"** eine abgelehnte
+  Freitext-/Lückentext-Antwort als richtig (nicht in der Probeklausur).
   **Zuordnen/Kategorien** arbeitet mit Positionen statt Texten: gleich
   lautende Begriffe oder Ziele (z.B. zweimal "Metall") belegen nie mehrere
   Felder; kommt ein Ziel mehrfach vor, wird die Frage als Kategorien-Frage

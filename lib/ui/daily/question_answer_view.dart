@@ -109,6 +109,14 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// richtig war.
   List<bool>? _blankHits;
 
+  /// Lückentext: kurze Begründung der KI je Lücke (null, wenn die Lücke
+  /// schon lokal passte oder die KI nicht gefragt wurde).
+  List<String?>? _blankNotes;
+
+  /// Wie die Antwort geprüft wurde – unter dem Ergebnis angezeigt, damit
+  /// sichtbar ist, ob die KI nachgeprüft hat oder (z.B. offline) nicht.
+  String? _checkInfo;
+
   // -- html-Typ: interaktive Seite in einer sandboxed WebView -------------
   WebViewController? _webViewController;
   bool _webViewLoading = true;
@@ -348,21 +356,30 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         correctAnswer: card.correctText ?? '',
         userAnswer: _freeTextController.text,
       );
+      _checkInfo = aiCorrect ? 'Von der KI als richtig erkannt.' : 'Von der KI nachgeprüft.';
       return AnswerCheckResult(isCorrect: aiCorrect, correctAnswerLabel: localResult.correctAnswerLabel);
-    } catch (_) {
+    } catch (e) {
+      _checkInfo = _aiFailedInfo(e);
       return localResult;
     } finally {
       if (mounted) setState(() => _aiChecking = false);
     }
   }
 
+  static String _aiFailedInfo(Object error) {
+    var reason = error is AiServiceException ? error.message : '$error';
+    if (reason.length > 120) reason = '${reason.substring(0, 120)}…';
+    return 'KI-Prüfung fehlgeschlagen, gewertet wurde nur der Textvergleich ($reason).';
+  }
+
   /// Lückentext, zweistufig wie Freitext: zuerst lokal je Lücke (exakt,
   /// kleiner Tippfehler oder eine der per ";" hinterlegten Varianten). Lehnt
-  /// das eine Lücke ab, bewertet die KI jede Lücke nach
-  /// (AiService.checkFillBlankAnswers) – andere richtige Begriffe, Synonyme,
-  /// gröbere Rechtschreibfehler. Die KI kann eine Lücke nur nachträglich als
-  /// richtig werten, nie eine lokal richtige verwerfen. Ohne API-Key oder bei
-  /// einem Fehler zählt das lokale Ergebnis.
+  /// das eine Lücke ab, bewertet die KI den ganzen Satz nach
+  /// (AiService.checkFillBlankAnswers) – gröbere Rechtschreibfehler,
+  /// vertauschte gleichrangige Lücken, Synonyme, andere richtige Begriffe.
+  /// Die KI kann eine Lücke nur nachträglich als richtig werten, nie eine
+  /// lokal richtige verwerfen. Ohne API-Key oder bei einem Fehler zählt das
+  /// lokale Ergebnis – und der Fehler wird angezeigt.
   Future<AnswerCheckResult> _checkFillBlankAnswer() async {
     final card = widget.card;
     final answers = _blankControllers.map((c) => c.text).toList();
@@ -372,9 +389,13 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       setState(() => _aiChecking = true);
       try {
         final verdicts = await ai.checkFillBlankAnswers(text: card.front, solutions: _blanks, answers: answers);
-        hits = [for (var i = 0; i < hits.length; i++) hits[i] || (i < verdicts.length && verdicts[i])];
-      } catch (_) {
-        // Lokales Ergebnis bleibt, siehe oben.
+        _blankNotes = [
+          for (var i = 0; i < hits.length; i++) hits[i] ? null : verdicts.elementAtOrNull(i)?.note,
+        ];
+        hits = [for (var i = 0; i < hits.length; i++) hits[i] || (verdicts.elementAtOrNull(i)?.correct ?? false)];
+        _checkInfo = 'Von der KI nachgeprüft.';
+      } catch (e) {
+        _checkInfo = _aiFailedInfo(e);
       } finally {
         if (mounted) setState(() => _aiChecking = false);
       }
@@ -382,6 +403,26 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     _blankHits = hits;
     return AnswerChecker.fillBlankResult(card, hits);
   }
+
+  /// Sicherheitsnetz für Freitext/Lückentext: hält der Nutzer eine als falsch
+  /// gewertete Antwort für richtig (Formulierung, Rechtschreibung, andere
+  /// Reihenfolge – auch die KI kann danebenliegen), zählt sie als richtig.
+  void _acceptAsCorrect() {
+    final result = _result;
+    if (result == null || result.isCorrect) return;
+    setState(() {
+      _result = AnswerCheckResult(isCorrect: true, correctAnswerLabel: result.correctAnswerLabel);
+      if (_blankHits != null) _blankHits = List.filled(_blankHits!.length, true);
+      _checkInfo = 'Von dir als richtig gewertet.';
+    });
+  }
+
+  bool get _canAcceptAsCorrect =>
+      _checked &&
+      !widget.examMode &&
+      _result != null &&
+      !_result!.isCorrect &&
+      (widget.card.type == QuestionType.freeText || widget.card.type == QuestionType.fillBlank);
 
   AiService? _aiOrNull() {
     final settings = context.read<SettingsRepository?>()?.settings;
@@ -911,6 +952,11 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
           final hit = _checked ? _blankHits?.elementAtOrNull(i) : null;
           final showSolution = hit != null &&
               !(hit && AnswerChecker.answerExactlyMatches(_blankControllers[i].text, _blanks[i]));
+          final note = _checked ? _blankNotes?.elementAtOrNull(i) : null;
+          final helper = [
+            if (showSolution) 'Lösung: ${AnswerChecker.solutionLabel(_blanks[i])}',
+            if (note != null) 'KI: $note',
+          ].join(' · ');
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: TextField(
@@ -924,7 +970,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                 suffixIcon: hit == null
                     ? null
                     : Icon(hit ? Icons.check_circle : Icons.cancel, color: hit ? c.good : c.danger, size: 20),
-                helperText: showSolution ? 'Lösung: ${AnswerChecker.solutionLabel(_blanks[i])}' : null,
+                helperText: helper.isEmpty ? null : helper,
                 helperMaxLines: 3,
               ),
               onChanged: (_) => setState(() {}),
@@ -1134,6 +1180,22 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                 if (!result.isCorrect && result.correctAnswerLabel.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   MathText('Richtige Antwort: ${result.correctAnswerLabel}', style: TextStyle(fontSize: 13, color: c.ink)),
+                ],
+                if (_checkInfo != null) ...[
+                  const SizedBox(height: 6),
+                  Text(_checkInfo!, style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                ],
+                if (_canAcceptAsCorrect) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _acceptAsCorrect,
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('Als richtig werten'),
+                    ),
+                  ),
                 ],
               ],
             ),

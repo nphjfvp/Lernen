@@ -35,6 +35,10 @@ class AiServiceException implements Exception {
 /// wird – für die drei Rollen (Fragenerstellen/Vision/Crosscheck) werden
 /// separate [AiService]-Instanzen mit dem jeweils passenden Modell aus den
 /// Einstellungen erzeugt.
+/// Urteil der KI über eine Lücke eines Lückentexts (siehe
+/// [AiService.checkFillBlankAnswers]); [note] ist eine kurze Begründung.
+typedef BlankVerdict = ({bool correct, String? note});
+
 class AiService {
   AiService({required this.apiKey, required this.model, http.Client? client})
       : _client = client ?? http.Client();
@@ -163,7 +167,8 @@ Hier ist der Dokumenttext:
   /// Anfragen an ein Vision-Modell (siehe [answerPageQuestion]) – beides ist
   /// als `content`-Wert einer Chat-Nachricht gültig, daher hier bewusst
   /// `Object` statt `String`.
-  Future<String> _complete(String systemPrompt, Object userContent) async {
+  /// [temperature] 0 für Bewertungen (gleiche Antwort → gleiches Urteil).
+  Future<String> _complete(String systemPrompt, Object userContent, {double temperature = 0.3}) async {
     if (apiKey.trim().isEmpty) {
       throw AiServiceException(
           'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
@@ -182,7 +187,7 @@ Hier ist der Dokumenttext:
             },
             body: jsonEncode({
               'model': model,
-              'temperature': 0.3,
+              'temperature': temperature,
               'messages': [
                 {'role': 'system', 'content': systemPrompt},
                 {'role': 'user', 'content': userContent},
@@ -1074,6 +1079,8 @@ Fälle, in denen dieser Vergleich fehlgeschlagen ist, obwohl die Antwort
 inhaltlich richtig sein könnte).
 Enthält die Musterlösung mehrere durch ";" getrennte akzeptierte
 Formulierungen, reicht Übereinstimmung mit EINER davon.
+Rechtschreib- und Tippfehler spielen keine Rolle, solange erkennbar ist, was
+gemeint ist – geprüft wird Wissen, nicht Rechtschreibung.
 Sei fair, aber nicht beliebig großzügig: fehlt der für die Musterlösung
 zentrale fachliche Punkt komplett, ist die Antwort erkennbar nur geraten
 oder widerspricht sie der Musterlösung inhaltlich, ist sie falsch.
@@ -1098,43 +1105,56 @@ Markdown-Codefences, ohne zusätzlichen Text:
   }) async {
     final userPrompt =
         'Frage: $question\nMusterlösung: $correctAnswer\nAntwort des Lernenden: $userAnswer';
-    final raw = await _complete(_checkFreeTextSystemPrompt, userPrompt);
+    final raw = await _complete(_checkFreeTextSystemPrompt, userPrompt, temperature: 0);
     final parsed = _parseJsonObject(raw);
     return parsed['correct'] == true;
   }
 
   static const _checkFillBlankSystemPrompt = '''
-Du bewertest die Eingaben eines Lernenden in einem Lückentext, JEDE LÜCKE
-EINZELN. Du bekommst den Text (Lücken als "___"), je Lücke die hinterlegte
-Lösung (mehrere akzeptierte Varianten durch ";" getrennt) und die Eingabe.
-Ein direkter Textvergleich mit kleiner Tippfehler-Toleranz ist bereits
-vorgeschaltet und hat mindestens eine Lücke abgelehnt – du bist die
-Zweitmeinung.
-Eine Lücke ist RICHTIG, wenn die Eingabe
-- dasselbe meint wie die Lösung: Synonym, gleichwertiger Fachbegriff,
-  Abkürzung bzw. ausgeschriebene Form, andere Schreibweise, Singular/Plural
-  oder andere Beugung, solange sie an dieser Stelle in den Satz passt,
-- nur Rechtschreib- oder Tippfehler enthält und das gemeinte Wort eindeutig
-  erkennbar ist (nicht, wenn dadurch ein anderes Fachwort entsteht),
-- eine andere, fachlich ebenso richtige Antwort ist, die an dieser Stelle
-  zutrifft (manche Lücken lassen mehrere richtige Lösungen zu).
-Eine Lücke ist FALSCH, wenn die Eingabe einen anderen Begriff oder Wert
-meint, fachlich falsch ist, nur geraten wirkt, zu allgemein ist oder leer
-ist. Zahlen, Formeln und Einheiten müssen im Wert stimmen (3,5 = 3.5 = 7/2,
-aber 35 ist nicht 3,5).
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text – genau ein Wahrheitswert je
-Lücke, in derselben Reihenfolge:
-{"correct": [true, false]}
+Du bist ein fairer Tutor und bewertest die Eingaben eines Lernenden in einem
+Lückentext. Ein exakter Textvergleich (mit kleiner Tippfehler-Toleranz) hat
+mindestens eine Lücke abgelehnt – du entscheidest jetzt, ob der Lernende das
+Richtige WUSSTE. Geprüft wird Wissen, nicht Rechtschreibung und nicht der
+genaue Wortlaut der Musterlösung.
+Du bekommst den Text (Lücken als "___"), je Lücke die Musterlösung (mehrere
+akzeptierte Varianten durch ";" getrennt) und die Eingabe. Betrachte immer
+den ganzen Satz mit allen Lücken zusammen.
+
+Eine Lücke ist RICHTIG, wenn eines davon zutrifft:
+1. Rechtschreib- oder Tippfehler: das gemeinte Wort ist erkennbar, auch bei
+   mehreren vertauschten, fehlenden oder falschen Buchstaben (z.B. "debinrten"
+   für "definierten", "Prodktion" für "Produktion").
+2. Andere Reihenfolge: gleichrangige, austauschbare Lücken (Aufzählungen,
+   "___ und ___", "sowohl ___ als auch ___") wurden vertauscht ausgefüllt –
+   jede Lösung der Gruppe kommt aber vor (z.B. "Produktion" und "Entwicklung"
+   statt "Entwicklung" und "Produktion"): dann sind ALLE Lücken der Gruppe
+   richtig.
+3. Gleiche Bedeutung: Synonym, gleichwertiger Fachbegriff, andere Wortform,
+   Singular/Plural, Kurz- oder Langform oder ein Wort, das im Satz dasselbe
+   aussagt (z.B. "Werkstätten" für "Werkstattfertigung").
+4. Fachlich ebenso richtig: der Satz stimmt mit der Eingabe fachlich, auch
+   wenn die Musterlösung ein anderes Wort nennt (z.B. "viele unterschiedliche
+   Produkte" statt "viele unterschiedliche Varianten").
+
+Eine Lücke ist FALSCH, wenn die Eingabe etwas anderes meint, den Satz
+fachlich falsch macht, leer ist oder erkennbar geraten ist. Zahlen, Formeln
+und Einheiten müssen im Wert stimmen (3,5 = 3.5 = 7/2, aber 35 ist nicht 3,5).
+Im Zweifel, ob der Lernende das Richtige meint: zu seinen Gunsten.
+
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences und ohne
+Text davor oder danach – genau ein Eintrag je Lücke, in derselben
+Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
+{"results": [{"correct": true, "note": "Tippfehler"}, {"correct": false, "note": "anderer Begriff"}]}
 ''';
 
   /// Zweitmeinung für Lückentexte, analog zu [checkFreeTextAnswer]: der
   /// lokale Vergleich (AnswerChecker.fillBlankHits) kennt nur die
-  /// hinterlegten Varianten und kleine Tippfehler – ein anderer richtiger
-  /// Begriff, ein Synonym oder ein gröberer Rechtschreibfehler fällt durch.
-  /// Wird nur aufgerufen, wenn der lokale Vergleich eine Lücke abgelehnt hat.
-  /// Liefert je Lücke, ob die Eingabe gilt.
-  Future<List<bool>> checkFillBlankAnswers({
+  /// hinterlegten Varianten, kleine Tippfehler und die feste Reihenfolge –
+  /// ein anderer richtiger Begriff, ein Synonym, gröbere Rechtschreibfehler
+  /// oder vertauschte gleichrangige Lücken fallen durch. Wird nur
+  /// aufgerufen, wenn der lokale Vergleich eine Lücke abgelehnt hat. Liefert
+  /// je Lücke das Urteil samt kurzer Begründung.
+  Future<List<BlankVerdict>> checkFillBlankAnswers({
     required String text,
     required List<String> solutions,
     required List<String> answers,
@@ -1142,20 +1162,40 @@ Lücke, in derselben Reihenfolge:
     final buffer = StringBuffer()..writeln('Lückentext: $text');
     for (var i = 0; i < solutions.length; i++) {
       final answer = i < answers.length ? answers[i].trim() : '';
-      buffer.writeln('Lücke ${i + 1}: Lösung "${solutions[i].trim()}" – Eingabe "$answer"');
+      buffer.writeln('Lücke ${i + 1}: Musterlösung "${solutions[i].trim()}" – Eingabe "$answer"');
     }
-    final raw = await _complete(_checkFillBlankSystemPrompt, buffer.toString());
+    final raw = await _complete(_checkFillBlankSystemPrompt, buffer.toString(), temperature: 0);
     return parseBlankVerdicts(_parseJsonObject(raw), solutions.length);
   }
 
-  /// Liest `{"correct": [true, false, …]}` für [count] Lücken. Fehlende oder
-  /// unklare Einträge zählen als falsch; ein einzelnes `true`/`false` gilt
-  /// für alle Lücken.
-  static List<bool> parseBlankVerdicts(Map<String, dynamic> parsed, int count) {
+  /// Liest `{"results": [{"correct": true, "note": "…"}, …]}` – oder das
+  /// ältere `{"correct": [true, false, …]}` – für [count] Lücken. Fehlende
+  /// oder unklare Einträge zählen als falsch; ein einzelnes `true`/`false`
+  /// gilt für alle Lücken.
+  static List<BlankVerdict> parseBlankVerdicts(Map<String, dynamic> parsed, int count) {
     bool isTrue(Object? v) => v == true || (v is String && v.trim().toLowerCase() == 'true');
+    String? noteOf(Object? v) {
+      final note = v?.toString().trim() ?? '';
+      return note.isEmpty ? null : note;
+    }
+
+    final results = parsed['results'];
+    if (results is List) {
+      return [
+        for (var i = 0; i < count; i++)
+          if (i < results.length && results[i] is Map)
+            (correct: isTrue((results[i] as Map)['correct']), note: noteOf((results[i] as Map)['note']))
+          else if (i < results.length)
+            (correct: isTrue(results[i]), note: null)
+          else
+            (correct: false, note: null),
+      ];
+    }
     final verdicts = parsed['correct'];
-    if (verdicts is! List) return List.filled(count, isTrue(verdicts));
-    return [for (var i = 0; i < count; i++) i < verdicts.length && isTrue(verdicts[i])];
+    if (verdicts is! List) return List.filled(count, (correct: isTrue(verdicts), note: null));
+    return [
+      for (var i = 0; i < count; i++) (correct: i < verdicts.length && isTrue(verdicts[i]), note: null),
+    ];
   }
 
   static const _explainSystemPrompt = '''

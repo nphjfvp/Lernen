@@ -199,6 +199,19 @@ void main() {
 
       expect(reportedCorrect, isTrue);
     });
+
+    testWidgets('abgelehnte Freitext-Antwort lässt sich als richtig werten, eine richtige nicht', (tester) async {
+      final card = _card(type: QuestionType.freeText, correctText: 'Photosynthese');
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+      await tester.enterText(find.byType(TextField), 'Lichtreaktion');
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Als richtig werten'));
+      await tester.pumpAndSettle();
+      expect(find.text('Richtig!'), findsOneWidget);
+      expect(find.text('Als richtig werten'), findsNothing);
+    });
   });
 
   group('QuestionAnswerView – fill_blank', () {
@@ -325,6 +338,69 @@ void main() {
       }, () => client);
       expect(find.text('Nicht ganz.'), findsOneWidget);
       expect(find.text('Lösung: ATP'), findsOneWidget);
+      // Sichtbar, dass die KI nicht prüfen konnte – plus Ausweg per Hand.
+      expect(find.textContaining('KI-Prüfung fehlgeschlagen'), findsOneWidget);
+      expect(find.text('Als richtig werten'), findsOneWidget);
+    });
+
+    testWidgets('vertauschte Lücken + Tippfehler: KI wertet alles richtig und begründet je Lücke', (tester) async {
+      final card = _card(
+        type: QuestionType.fillBlank,
+        front: 'Der Kunde bestimmt bei ___ und ___ mit; Werkstoffe haben ___ Eigenschaften.',
+        blanks: const ['Entwicklung', 'Produktion', 'definierten'],
+      );
+      bool? reported;
+      final client = MockClient((request) async => _chatResponse({
+            'results': [
+              {'correct': true, 'note': 'Reihenfolge vertauscht'},
+              {'correct': true, 'note': 'Reihenfolge vertauscht'},
+              {'correct': true, 'note': 'Tippfehler'},
+            ],
+          }));
+      await http.runWithClient(() async {
+        await tester.pumpWidget(ChangeNotifierProvider<SettingsRepository>(
+          create: (_) => _SettingsWithKey(),
+          child: _harness(card, ({selfGrade, isCorrect}) => reported = isCorrect),
+        ));
+        final fields = find.byType(TextField);
+        await tester.enterText(fields.at(0), 'Produktion');
+        await tester.enterText(fields.at(1), 'Entwicklung');
+        await tester.enterText(fields.at(2), 'debinrten');
+        await tester.pump();
+        await tester.tap(find.text('Prüfen'));
+        await tester.pumpAndSettle();
+      }, () => client);
+
+      expect(find.text('Richtig!'), findsOneWidget);
+      expect(find.text('Von der KI nachgeprüft.'), findsOneWidget);
+      expect(find.text('Lösung: definierten · KI: Tippfehler'), findsOneWidget);
+      expect(find.text('Lösung: Entwicklung · KI: Reihenfolge vertauscht'), findsOneWidget);
+      expect(find.text('Als richtig werten'), findsNothing);
+      await tester.scrollUntilVisible(find.text('Weiter'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.tap(find.text('Weiter'));
+      await tester.pumpAndSettle();
+      expect(reported, isTrue);
+    });
+
+    testWidgets('"Als richtig werten" macht eine abgelehnte Antwort richtig', (tester) async {
+      bool? reported;
+      await tester.pumpWidget(_harness(cellCard, ({selfGrade, isCorrect}) => reported = isCorrect));
+      final fields = find.byType(TextField);
+      await tester.enterText(fields.at(0), 'Mitochondrium');
+      await tester.enterText(fields.at(1), 'Adenosintriphosphat');
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Nicht ganz.'), findsOneWidget);
+
+      await tester.tap(find.text('Als richtig werten'));
+      await tester.pumpAndSettle();
+      expect(find.text('Richtig!'), findsOneWidget);
+      expect(find.text('Von dir als richtig gewertet.'), findsOneWidget);
+      expect(find.byIcon(Icons.cancel), findsNothing);
+      await tester.tap(find.text('Weiter'));
+      await tester.pumpAndSettle();
+      expect(reported, isTrue);
     });
   });
 

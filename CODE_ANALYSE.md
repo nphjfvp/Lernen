@@ -7,7 +7,7 @@ finden: Daten, die die KI oder ein anderes Gerät liefert und die die App
 nicht erwartet, Zustände, die sich gegenseitig überschreiben, und Rechnungen,
 die nur „meistens“ stimmen.
 
-**Ergebnis:** 50 Befunde. Behoben sind 1 Blocker, 10 schwere, 26 mittlere
+**Ergebnis:** 51 Befunde (Nr. 51 als Nachtrag nach dem ersten Test auf dem Handy). Behoben sind 1 Blocker, 11 schwere, 26 mittlere
 und 8 leichte Befunde sowie 3 Wünsche. Zwei Befunde sind nur Hinweise und
 bewusst nicht umgesetzt (Nr. 20 und 27); sie stehen mit weiteren
 Empfehlungen unten. Die Logik-Fehler haben Regressionstests. Einige reine
@@ -100,6 +100,7 @@ Schwere: **B** Blocker · **H** hoch · **M** mittel · **N** niedrig ·
 | 12 | H | Auswahl-Optionen wurden nie gemischt, die KI setzt die richtige meist zuerst. Man lernte so die Position statt der Antwort. | Anzeige gemischt; „Alle/Keine der genannten“ bleiben am Ende. |
 | 13 | M | Interaktive Fragen gingen nach „Prüfen“ in der Seite sofort weiter, ihr Feedback war nie zu sehen. | Die App zeigt das Ergebnis, eine Erklärung und „Weiter“ unter der Seite. In der Probeklausur geht es weiterhin sofort weiter. |
 | 35 | W | **Lückentext per KI prüfen** (mehrere Lösungen je Lücke, Rechtschreibung). | Lokal zählen die Lösung, jede per „;“ hinterlegte Variante und Tippfehler. Lehnt das eine Lücke ab, bewertet die KI jede Lücke nach; sie kann nur hochwerten. Danach zeigt jede Lücke ✓/✗ und die richtige Schreibweise. Gilt in allen Lernmodi. |
+| 51 | H | **Nachtrag nach dem Test auf dem Handy:** Die KI-Prüfung für Lückentexte war zu streng. Sie bewertete jede Lücke einzeln gegen ihre Musterlösung, damit waren vertauschte Lücken („Produktion und Entwicklung“) immer falsch. „Anderer Begriff/zu allgemein“ ließ „Werkstätten“ und „Produkte“ durchfallen, „debinrten“ galt nicht als eindeutiger Tippfehler. Ein Fehlschlag der KI-Anfrage war zudem unsichtbar. | Neuer Prompt: ganzer Satz, Wissen statt Rechtschreibung, Reihenfolge egal bei gleichrangigen Lücken, im Zweifel für den Lernenden, Temperatur 0, kurze Begründung je Lücke. Ob die KI geprüft hat oder scheiterte, steht unter dem Ergebnis. „Als richtig werten“ als Ausweg bei Freitext und Lückentext. Freitext-Prompt: Rechtschreibung zählt nicht. |
 
 ### Lernabläufe und Lernstand
 

@@ -69,34 +69,81 @@ void main() {
   });
 
   group('AiService.checkFillBlankAnswers', () {
-    test('liefert je Lücke das Urteil der KI und schickt Lösung und Eingabe je Lücke', () async {
+    test('liefert je Lücke Urteil + Begründung, schickt den ganzen Satz, bewertet deterministisch', () async {
       String? sent;
       final client = MockClient((request) async {
         sent = request.body;
         return _chatResponse(jsonEncode({
-          'correct': [true, false],
+          'results': [
+            {'correct': true, 'note': 'Tippfehler'},
+            {'correct': false, 'note': 'anderer Begriff'},
+          ],
         }));
       });
       final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
 
       final result = await ai.checkFillBlankAnswers(
-        text: 'Die ___ liefert ___.',
-        solutions: const ['Mitochondrium', 'ATP'],
-        answers: const ['Kraftwerk der Zelle', 'Zucker'],
+        text: 'Werkstoffe sind Materialien mit ___ Eigenschaften und ___ Kosten.',
+        solutions: const ['definierten', 'geringen'],
+        answers: const ['debinrten', 'hohen'],
       );
 
-      expect(result, [true, false]);
-      final user = (jsonDecode(sent!)['messages'] as List)[1]['content'] as String;
-      expect(user, contains('Lücke 1: Lösung "Mitochondrium" – Eingabe "Kraftwerk der Zelle"'));
-      expect(user, contains('Lücke 2: Lösung "ATP" – Eingabe "Zucker"'));
+      expect(result.map((v) => v.correct), [true, false]);
+      expect(result.map((v) => v.note), ['Tippfehler', 'anderer Begriff']);
+      final body = jsonDecode(sent!) as Map<String, dynamic>;
+      expect(body['temperature'], 0);
+      final messages = body['messages'] as List;
+      final user = messages[1]['content'] as String;
+      expect(user, contains('Werkstoffe sind Materialien mit ___ Eigenschaften'));
+      expect(user, contains('Lücke 1: Musterlösung "definierten" – Eingabe "debinrten"'));
+      expect(user, contains('Lücke 2: Musterlösung "geringen" – Eingabe "hohen"'));
     });
 
-    test('parseBlankVerdicts ist tolerant: zu kurze Liste, Strings, Einzelwert', () {
-      expect(AiService.parseBlankVerdicts({'correct': [true]}, 2), [true, false]);
-      expect(AiService.parseBlankVerdicts({'correct': ['true', 'nein']}, 2), [true, false]);
-      expect(AiService.parseBlankVerdicts({'correct': true}, 3), [true, true, true]);
-      expect(AiService.parseBlankVerdicts({'correct': 'vielleicht'}, 2), [false, false]);
-      expect(AiService.parseBlankVerdicts(const {}, 2), [false, false]);
+    test('der Prompt erlaubt Tippfehler, vertauschte gleichrangige Lücken und gleichwertige Begriffe', () async {
+      String? system;
+      final client = MockClient((request) async {
+        system = ((jsonDecode(request.body) as Map)['messages'] as List)[0]['content'] as String;
+        return _chatResponse(jsonEncode({
+          'results': [
+            {'correct': true},
+          ],
+        }));
+      });
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+      await ai.checkFillBlankAnswers(text: 'x ___', solutions: const ['a'], answers: const ['b']);
+
+      expect(system, contains('Geprüft wird Wissen, nicht Rechtschreibung'));
+      expect(system, contains('"debinrten"'));
+      expect(system, contains('Andere Reihenfolge'));
+      expect(system, contains('"Werkstätten" für "Werkstattfertigung"'));
+      expect(system, contains('zu seinen Gunsten'));
+      expect(system, isNot(contains('JEDE LÜCKE\nEINZELN')));
     });
+
+    test('parseBlankVerdicts: neues und altes Format, tolerant', () {
+      List<bool> correct(Map<String, dynamic> m, int n) =>
+          AiService.parseBlankVerdicts(m, n).map((v) => v.correct).toList();
+      expect(correct({'results': [{'correct': true, 'note': ' '}]}, 2), [true, false]);
+      expect(AiService.parseBlankVerdicts({'results': [{'correct': true, 'note': ' '}]}, 1).single.note, isNull);
+      expect(correct({'results': [true, 'false']}, 2), [true, false]);
+      expect(correct({'correct': [true]}, 2), [true, false]);
+      expect(correct({'correct': ['true', 'nein']}, 2), [true, false]);
+      expect(correct({'correct': true}, 3), [true, true, true]);
+      expect(correct({'correct': 'vielleicht'}, 2), [false, false]);
+      expect(correct(const {}, 2), [false, false]);
+    });
+  });
+
+  test('Freitext-Prüfung: Rechtschreibung zählt nicht, Bewertung deterministisch', () async {
+    Map<String, dynamic>? body;
+    final client = MockClient((request) async {
+      body = jsonDecode(request.body) as Map<String, dynamic>;
+      return _chatResponse(jsonEncode({'correct': true}));
+    });
+    final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+    await ai.checkFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'B');
+
+    expect(body!['temperature'], 0);
+    expect(((body!['messages'] as List)[0]['content'] as String), contains('Rechtschreib- und Tippfehler spielen keine Rolle'));
   });
 }

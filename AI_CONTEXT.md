@@ -147,8 +147,12 @@ Eskalationskette bleibt unberührt, `wasWrong` ist false.
   exakte Menge, "Prüfen" erst nach Auswahl; Freitext/Lückentext –
   normalisiert + Levenshtein-Toleranz (1 ab 5 Zeichen, 2 ab 9) + Varianten
   per ";". Bei lokaler Ablehnung KI-Zweitmeinung: Freitext
-  `checkFreeTextAnswer`, Lückentext je Lücke `checkFillBlankAnswers` (die KI
-  kann nur hochwerten, nie eine lokal richtige Lücke verwerfen).
+  `checkFreeTextAnswer`, Lückentext `checkFillBlankAnswers` (ganzer Satz,
+  Antwort `{"results":[{"correct","note"}]}`, Temperatur 0; Tippfehler,
+  vertauschte gleichrangige Lücken, gleichwertige Begriffe zählen; die KI
+  kann nur hochwerten, nie eine lokal richtige Lücke verwerfen). Ergebnis
+  und Fehler der KI-Prüfung werden angezeigt (`_checkInfo`); „Als richtig
+  werten“ (Freitext/Lückentext, nicht Probeklausur) meldet `isCorrect: true`.
   Zuordnen/Kategorien – INDEX-basiert (`zoneToSource`/`sourceToCategory`),
   nie per Text; ein mehrfach genanntes Ziel macht aus `drag_drop` eine
   Kategorien-Frage (`isCategoryDrag`), Kategorien per Multiset geprüft.
