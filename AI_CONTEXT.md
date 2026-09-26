@@ -308,8 +308,9 @@ Offen / zu beachten:
 - Auto-Sync ist standardmäßig aus (Schalter in den Einstellungen).
 - Auto-Sync-Konfliktlösung ist bewusst einfach (ganzer Stand gewinnt, kein
   Zusammenführen einzelner Karten).
-- Offen aus dem Audit (bewusst niedrig priorisiert): H9 (gleichzeitiger Push
-  zweier Geräte ohne Transaktion), H10 (selbst gewählte Sync-Codes; Konto-Weg
-  empfohlen), H5 ist Absicht (fällige Karten werden nicht gedeckelt).
+- Zurückgestellt aus dem Audit (Nutzer: gemerkt, vorerst nicht umsetzen):
+  H9 (gleichzeitiger Push zweier Geräte ohne Transaktion), H10 (selbst
+  gewählte Sync-Codes; Konto-Weg empfohlen).
+- H5 ist Absicht (fällige Karten werden nicht gedeckelt).
 - Texterkennung und PDF-Speicher sind nur mit Mocks getestet; echter
   OpenRouter-PDF-Input und echte R2/B2/WebDAV-Speicher einmal von Hand prüfen.
