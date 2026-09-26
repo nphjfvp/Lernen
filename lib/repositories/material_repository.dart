@@ -38,6 +38,15 @@ class MaterialRepository extends ChangeNotifier {
     await loadForModule(moduleId);
   }
 
+  /// Ersetzt den extrahierten Text (z.B. nach nachgeholter Texterkennung).
+  /// Der KI-Kurzindex fürs Chat-Routing passt dann nicht mehr und wird
+  /// verworfen (wird beim nächsten Chat neu erstellt).
+  Future<void> setExtractedText(String id, String moduleId, String text) async {
+    final db = await DatabaseService.instance.database;
+    await DatabaseService.materials.record(id).update(db, {'extractedText': text, 'topicIndex': null});
+    await loadForModule(moduleId);
+  }
+
   /// Ordnet mehrere Materialien einer Einheit zu (z.B. aus den KI-Vorschlägen).
   Future<void> assignUnit(List<String> ids, String moduleId, String unitId) async {
     if (ids.isEmpty) return;

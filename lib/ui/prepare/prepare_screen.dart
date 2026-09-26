@@ -19,9 +19,11 @@ import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
+import '../../services/pdf_ocr_service.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/existing_material_picker.dart';
+import '../widgets/ocr_notice.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
 import '../widgets/safe_set_state.dart';
@@ -114,6 +116,8 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
     // dem ersten await gelesen, um BuildContext-Nutzung über einen
     // Async-Gap hinweg zu vermeiden.
     final existing = context.read<MaterialRepository>().forModule(widget.moduleId);
+    final ocr = PdfOcrService.fromSettings(context.read<SettingsRepository>().settings);
+    final messenger = ScaffoldMessenger.maybeOf(context);
 
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -130,7 +134,8 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
     for (final file in picked) {
       try {
         final Uint8List bytes = await file.readAsBytes();
-        final text = MaterialTextExtractor().extractText(file.name, bytes);
+        final text = await MaterialTextExtractor()
+            .extractTextWithOcr(file.name, bytes, ocr: ocr, onProgress: ocrStartNotice(messenger, file.name));
         if (text.isNotEmpty) {
           MaterialItem? match;
           for (final m in existing) {

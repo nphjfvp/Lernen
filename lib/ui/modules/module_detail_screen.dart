@@ -25,6 +25,8 @@ import '../../services/mastery_service.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/module_export_service.dart';
+import '../../services/pdf_ocr_service.dart';
+import '../../services/pdf_service.dart';
 import '../../services/unit_schedule_service.dart';
 import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
@@ -38,6 +40,7 @@ import '../speedrun/speedrun_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
 import '../widgets/mastery_dot.dart';
+import '../widgets/ocr_notice.dart';
 import 'material_viewer_screen.dart';
 import 'module_form_screen.dart';
 
@@ -494,6 +497,9 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
               context.read<MaterialRepository>().setCovered(m.id, m.moduleId, value),
           onDelete: () => _deleteMaterial(m),
           onOpen: m.hasViewablePdf ? () => _openMaterial(m) : null,
+          onRecognizeText: m.hasViewablePdf && context.watch<SettingsRepository>().settings.hasApiKey
+              ? () => _recognizeScannedPages(m)
+              : null,
         ),
       );
 
@@ -780,13 +786,18 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     required List<({String name, Future<Uint8List> Function() readBytes})> files,
   }) async {
     final repo = context.read<MaterialRepository>();
+    final ocr = PdfOcrService.fromSettings(context.read<SettingsRepository>().settings);
+    final messenger = ScaffoldMessenger.maybeOf(context);
     final errors = <String>[];
     for (final file in files) {
       try {
         final Uint8List bytes = await file.readBytes();
-        final text = MaterialTextExtractor().extractText(file.name, bytes);
+        final text = await MaterialTextExtractor()
+            .extractTextWithOcr(file.name, bytes, ocr: ocr, onProgress: ocrStartNotice(messenger, file.name));
         if (text.isEmpty) {
-          errors.add('${file.name}: kein Text gefunden.');
+          errors.add(ocr == null
+              ? '${file.name}: kein Text gefunden (gescannt? Mit API-Key wird der Text automatisch erkannt).'
+              : '${file.name}: kein Text gefunden.');
           continue;
         }
         final id = const Uuid().v4();
@@ -820,6 +831,50 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     }
     if (errors.isNotEmpty && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errors.join('\n'))));
+    }
+  }
+
+  /// Texterkennung nachträglich für alle Seiten ohne Text-Ebene (z.B. einzelne
+  /// eingescannte Seiten in einem sonst normalen Skript).
+  Future<void> _recognizeScannedPages(MaterialItem material) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ocr = PdfOcrService.fromSettings(context.read<SettingsRepository>().settings);
+    final repo = context.read<MaterialRepository>();
+    if (ocr == null) return;
+    final bytes = await MaterialFileStore.load(filePath: material.filePath, fileBytesBase64: material.fileBytesBase64);
+    if (bytes == null) {
+      messenger.showSnackBar(const SnackBar(content: Text('Die PDF liegt auf diesem Gerät nicht vor.')));
+      return;
+    }
+    final pages = PdfService().extractPageTexts(bytes);
+    final groups = PdfOcrService.pagesNeedingOcr(pages);
+    if (groups.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Alle Seiten haben bereits Text – nichts zu erkennen.')));
+      return;
+    }
+    if (!mounted) return;
+    final emptyCount = groups.fold<int>(0, (sum, g) => sum + g.length);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Texterkennung starten?'),
+        content: Text('$emptyCount von ${pages.length} Seiten haben keinen Text (gescannt/Bild). '
+            'Sie werden per KI (Vision-Modell) abgeschrieben – dafür fallen beim Anbieter Kosten an.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Erkennen')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final text = await ocr.recognize(bytes, pages, onProgress: ocrStartNotice(messenger, material.fileName));
+      await repo.setExtractedText(material.id, material.moduleId, text);
+      messenger.showSnackBar(SnackBar(content: Text('Text für „${material.fileName}“ aktualisiert.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(e is AiServiceException ? e.message : 'Texterkennung fehlgeschlagen: $e'),
+      ));
     }
   }
 
@@ -1078,11 +1133,18 @@ class _SoftRow extends StatelessWidget {
 }
 
 class _MaterialRow extends StatelessWidget {
-  const _MaterialRow({required this.material, required this.onToggleCovered, required this.onDelete, this.onOpen});
+  const _MaterialRow({
+    required this.material,
+    required this.onToggleCovered,
+    required this.onDelete,
+    this.onOpen,
+    this.onRecognizeText,
+  });
   final MaterialItem material;
   final ValueChanged<bool> onToggleCovered;
   final VoidCallback onDelete;
   final VoidCallback? onOpen;
+  final VoidCallback? onRecognizeText;
 
   @override
   Widget build(BuildContext context) {
@@ -1148,6 +1210,13 @@ class _MaterialRow extends StatelessWidget {
                     value: material.covered,
                     onChanged: (v) => onToggleCovered(v ?? false),
                   ),
+                  if (onRecognizeText != null)
+                    IconButton(
+                      tooltip: 'Texterkennung für gescannte Seiten',
+                      icon: const Icon(Icons.document_scanner_outlined, size: 18),
+                      color: c.inkMuted,
+                      onPressed: onRecognizeText,
+                    ),
                   IconButton(
                     icon: const Icon(Icons.delete_outline, size: 18),
                     color: c.inkMuted,

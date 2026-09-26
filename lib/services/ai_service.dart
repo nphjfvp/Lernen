@@ -1141,6 +1141,60 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
     return result;
   }
 
+  static const _transcribeSystemPrompt = '''
+Du schreibst den Text von gescannten bzw. bildbasierten Dokumentseiten ab
+(Texterkennung). Gib den Inhalt jeder Seite vollständig und originalgetreu
+wieder – Überschriften, Aufzählungen, Tabellen als einfache Zeilen, Formeln
+in LaTeX zwischen \$…\$. Beschreibe Abbildungen nur in einem kurzen
+Satz in eckigen Klammern (z.B. [Abbildung: Zellaufbau mit Beschriftung]).
+Nichts zusammenfassen, nichts weglassen, nichts erfinden.
+Beginne JEDE Seite mit einer eigenen Zeile <<<SEITE n>>> (n = 1, 2, … in der
+Reihenfolge der Seiten in der Datei). Kein JSON, keine Codefences, keine
+Einleitung.
+''';
+
+  /// Texterkennung: schickt eine (kleine) PDF an das Modell dieses Service
+  /// – gedacht für das Vision-Modell – und liefert den Text je Seite.
+  /// OpenRouter reicht PDFs an Modelle mit eigener PDF-Unterstützung direkt
+  /// weiter, sonst über seinen OCR-Parser.
+  Future<List<String>> transcribePdfPages(Uint8List pdfBytes, {required int pageCount}) async {
+    final raw = await _complete(_transcribeSystemPrompt, [
+      {
+        'type': 'text',
+        'text': 'Die Datei enthält $pageCount Seite${pageCount == 1 ? '' : 'n'}. Schreibe sie ab.',
+      },
+      {
+        'type': 'file',
+        'file': {
+          'filename': 'seiten.pdf',
+          'file_data': 'data:application/pdf;base64,${base64Encode(pdfBytes)}',
+        },
+      },
+    ]);
+    return splitTranscribedPages(raw, pageCount: pageCount);
+  }
+
+  /// Zerlegt die Antwort von [transcribePdfPages] an den `<<<SEITE n>>>`-
+  /// Markern. Fehlen die Marker, gilt alles als Text der ersten Seite.
+  static List<String> splitTranscribedPages(String raw, {required int pageCount}) {
+    final pages = List<String>.filled(pageCount, '');
+    final marker = RegExp(r'<<<\s*SEITE\s+(\d+)\s*>>>', caseSensitive: false);
+    final matches = marker.allMatches(raw).toList();
+    if (matches.isEmpty) {
+      if (pageCount > 0) pages[0] = raw.trim();
+      return pages;
+    }
+    for (var i = 0; i < matches.length; i++) {
+      final number = int.tryParse(matches[i].group(1) ?? '') ?? 0;
+      final end = i + 1 < matches.length ? matches[i + 1].start : raw.length;
+      final text = raw.substring(matches[i].end, end).trim();
+      if (number >= 1 && number <= pageCount) {
+        pages[number - 1] = pages[number - 1].isEmpty ? text : '${pages[number - 1]}\n$text';
+      }
+    }
+    return pages;
+  }
+
   static const _chatSystemPrompt = '''
 Du bist ein Lernassistent für Studierende. Wird dir Material bereitgestellt
 (hochgeladenes Vorlesungs-/Übungsmaterial eines Fachs, chronologisch
