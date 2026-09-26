@@ -1,14 +1,19 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../services/card_csv_service.dart';
 import '../../services/mastery_service.dart';
 import '../../theme/app_colors.dart';
-import '../widgets/math_text.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
 import '../widgets/mastery_dot.dart';
+import '../widgets/math_text.dart';
 
 /// Listet alle Karteikarten eines Fachs auf – zum gezielten Bearbeiten oder
 /// Löschen einzelner Karten, unabhängig vom Daily-Quiz-Wiederholungsflow
@@ -50,6 +55,62 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     setState(() => _selected.clear());
   }
 
+  /// Backup bzw. Weitergabe an Tabellenkalkulation/Anki (siehe CardCsvService).
+  Future<void> _exportCsv(List<Flashcard> cards) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final bytes = Uint8List.fromList(utf8.encode(CardCsvService.export(cards)));
+    final safeName = widget.moduleName.replaceAll(RegExp(r'[^\w\säöüÄÖÜß-]'), '').trim();
+    try {
+      final uri = await FilePicker.saveFile(
+        fileName: '${safeName.isEmpty ? 'Karten' : safeName} – Karten.csv',
+        bytes: bytes,
+        mimeType: 'text/csv',
+      );
+      if (uri != null) messenger.showSnackBar(SnackBar(content: Text('${cards.length} Karten exportiert.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Export fehlgeschlagen: $e')));
+    }
+  }
+
+  /// Übernimmt Vorder-/Rückseiten aus einer CSV/TSV (z.B. Anki-Export
+  /// "Notizen als Text") als neue Karteikarten dieses Fachs.
+  Future<void> _importCsv() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final repo = context.read<FlashcardRepository>();
+    final picked = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: const ['csv', 'tsv', 'txt']);
+    if (picked.isEmpty) return;
+    final List<({String front, String back})> rows;
+    try {
+      rows = CardCsvService.parse(utf8.decode(await picked.first.readAsBytes(), allowMalformed: true));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Datei konnte nicht gelesen werden: $e')));
+      return;
+    }
+    if (rows.isEmpty) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Keine Karten gefunden – erwartet werden zwei Spalten: Vorderseite und Rückseite.'),
+      ));
+      return;
+    }
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${rows.length} Karten importieren?'),
+        content: Text('Beispiel:\n„${rows.first.front}“ → „${rows.first.back}“\n\n'
+            'Sie landen als neue Karteikarten in diesem Fach und werden wie andere neue Karten '
+            'nach und nach im Daily Quiz eingeführt.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Importieren')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await repo.saveAll(CardCsvService.toFlashcards(rows, widget.moduleId));
+    messenger.showSnackBar(SnackBar(content: Text('${rows.length} Karten importiert.')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -79,7 +140,17 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                   onPressed: () => _deleteSelected(cards),
                 ),
               ]
-            : null,
+            : [
+                PopupMenuButton<String>(
+                  tooltip: 'Export/Import',
+                  onSelected: (value) => value == 'export' ? _exportCsv(cards) : _importCsv(),
+                  itemBuilder: (_) => [
+                    if (cards.isNotEmpty)
+                      const PopupMenuItem(value: 'export', child: Text('Als CSV exportieren')),
+                    const PopupMenuItem(value: 'import', child: Text('CSV importieren (Vorder-/Rückseite)')),
+                  ],
+                ),
+              ],
       ),
       body: cards.isEmpty
           ? Center(child: Text('Noch keine Karteikarten.', style: TextStyle(color: c.inkMuted)))
