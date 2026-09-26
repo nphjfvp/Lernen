@@ -7,11 +7,17 @@ import 'package:http/http.dart' as http;
 import '../models/app_settings.dart';
 import '../models/flashcard.dart' show QuestionType;
 import 'math_markup.dart';
+import 'question_parsing.dart';
 import 'text_chunker.dart';
 
 /// Wird geworfen, wenn die KI-Antwort kein (reparierbares) JSON enthält.
 /// Trägt die Rohantwort mit, damit die UI sie bei Bedarf anzeigen kann
 /// (hilfreich zum Debuggen eines schlecht formatierenden Modells).
+/// Eine Schwierigkeitsstufe beim Erstellen von Fragen aus einer Seite (siehe
+/// [AiService.generateQuestionsFromPage]): [level] ist der Name der Stufe
+/// ("Leicht"/"Mittel"/"Schwer"), [type] null = die KI wählt das Format.
+typedef PageQuestionTier = ({String level, QuestionType? type});
+
 class AiServiceException implements Exception {
   final String message;
   final String? rawResponse;
@@ -716,81 +722,130 @@ Antworte in der Sprache der Vorlage.
   static const _pageQuestionGenerationSystemPrompt = '''
 Du bist ein Lernassistent für Studierende im Lernmodus: der Nutzer betrachtet
 gerade EINE konkrete Seite eines Foliensatzes (als Bild beigefügt, Text der
-Seite als zusätzlicher Kontext) und möchte daraus gezielt eine Prüfungsfrage
+Seite als zusätzlicher Kontext) und möchte daraus gezielt Prüfungsfragen
 erstellen. Stütze dich in erster Linie auf das Bild (Diagramme, Formeln,
 Layout, was reiner Text nicht wiedergibt), der Text hilft bei der Einordnung.
 
-Wurde dir ein konkretes Frage/Antwort-Paar mitgegeben (der Nutzer hat es auf
-der Seite selbst markiert), MUSS sich JEDE erzeugte Karte auf GENAU diesen
-Fakt beziehen – erfinde keinen anderen Inhalt. Andernfalls wähle selbst den
-wichtigsten, klar abfragbaren Fakt auf der Seite.
+FOKUS: Hat der Nutzer einen Bereich der Seite markiert (als zweites Bild
+beigefügt) und/oder einen Fokus als Text vorgegeben, MUSS sich JEDE Frage
+darauf beziehen – erfinde keinen anderen Inhalt; der Rest der Seite dient
+nur als Kontext. Ohne Vorgabe wählst du selbst die wichtigsten, klar
+abfragbaren Fakten der Seite.
 
-Du bekommst eine Liste gewünschter Fragetypen. Erzeuge für JEDEN dieser Typen
-in der gegebenen Reihenfolge GENAU EINE Karte zu DEMSELBEN Fakt – nur das
-Format/die Schwierigkeit unterscheidet sich zwischen den Karten, nicht der
-geprüfte Inhalt. Die Typ-spezifischen Formatvorgaben:
+ANZAHL: Erzeuge GENAU {{COUNT}} Frage(n). Mehrere Fragen prüfen
+UNTERSCHIEDLICHE Fakten bzw. Aspekte (innerhalb des Fokus, falls
+vorgegeben) – nie zweimal denselben Fakt.
+
+STUFEN: Jede Frage gibt es in den folgenden Schwierigkeitsstufen, in genau
+dieser Reihenfolge. Alle Stufen EINER Frage prüfen DENSELBEN Fakt – nur
+Format und Schwierigkeit unterscheiden sich:
+{{TIERS}}
+Ist für eine Stufe kein Typ vorgegeben, wählst du das Format, das zu Inhalt
+und Stufe am besten passt: leichte Stufen eher Wiedererkennen
+(single_choice, multiple_choice, drag_drop), mittlere eher gestütztes
+Erinnern (fill_blank, drag_category), schwere eher freies Erinnern
+(free_text, flashcard). Jede Stufe ist mindestens so anspruchsvoll wie die
+vorherige; eine frei gewählte Stufe hat möglichst einen anderen Typ als die
+übrigen Stufen derselben Frage.
+
+Formatvorgaben der Fragetypen:
 {{TYPE_RULES}}
 
-Bekommst du zusätzlich bereits erstellte Karten samt Überarbeitungs-
-Anweisung, überarbeite GENAU diese Karten gemäß der Anweisung (z.B. anderer
-Fokus, einfacher formuliert, mehr Kontext) statt neue zu erfinden – behalte
-dabei weiterhin Typ und Reihenfolge der gewünschten Fragetypen bei.
+Bekommst du zusätzlich bereits erstellte Fragen samt Überarbeitungs-
+Anweisung, überarbeite GENAU diese Fragen gemäß der Anweisung (z.B. anderer
+Fokus, einfacher formuliert, mehr Kontext) statt neue zu erfinden – Anzahl,
+Stufen und vorgegebene Typen bleiben dabei gleich.
 
-Entscheide zusätzlich pro Karte, ob der Seiten-Screenshot als Bild an die
-Karte angehängt werden soll ("needsImage": true/false). Setze "needsImage"
-NUR auf true, wenn die Frage OHNE das Bild nicht sinnvoll verständlich oder
-beantwortbar ist – z.B. weil sie sich auf ein Diagramm, eine Formel, eine
-Skizze, ein Foto oder ein Layout bezieht, das sich nicht vollständig in
-Worten wiedergeben lässt. Bei rein textbasierten Fakten (die man auch ohne
-das Bild klar verstehen und beantworten kann) setze "needsImage": false –
-das ist der Regelfall, hänge also nicht bei jeder Karte ein Bild an.
+Entscheide zusätzlich pro Karte, ob das Bild an die Karte angehängt werden
+soll ("needsImage": true/false) – angehängt wird der markierte Bereich,
+falls vorhanden, sonst die ganze Seite. Setze "needsImage" NUR auf true,
+wenn die Frage OHNE das Bild nicht sinnvoll verständlich oder beantwortbar
+ist – z.B. weil sie sich auf ein Diagramm, eine Formel, eine Skizze, ein
+Foto oder ein Layout bezieht, das sich nicht vollständig in Worten
+wiedergeben lässt. Bei rein textbasierten Fakten setze "needsImage": false –
+das ist der Regelfall.
 
 Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 \$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
 (z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{"flashcards": [{"type": "...", "front": "...", "needsImage": false, "...": "je nach Typ weitere Felder, siehe oben"}]}
-Die Reihenfolge im "flashcards"-Array entspricht der Reihenfolge der
-gewünschten Typen. Antworte in der Sprache der Vorlage.
+{"questions": [{"flashcards": [{"type": "...", "front": "...", "needsImage": false, "...": "je nach Typ weitere Felder, siehe oben"}]}]}
+"questions" hat genau {{COUNT}} Einträge; "flashcards" enthält je Frage genau
+eine Karte pro Stufe, in der Reihenfolge der Stufen. Antworte in der
+Sprache der Vorlage.
 ''';
 
   static const int _pageQuestionGenerationTextCap = 20000;
 
-  /// Erstellt (oder überarbeitet) 1-3 Karteikarten-Varianten (unterschiedliche
-  /// Typen/Schwierigkeitsgrade DESSELBEN Fakts, siehe [_variantTypeRule])
-  /// direkt aus einer betrachteten Seite (siehe MaterialViewerScreen-Button
-  /// "Frage erstellen" im Lernmodus). Bewusst immer multimodal (Screenshot +
-  /// [model] muss vision-fähig sein) statt optional – einfacher UND
-  /// robuster als ein Text/Vision-Umschalter, da Folienseiten oft Diagramme/
-  /// Formeln enthalten, die reiner Text nicht wiedergibt. Optional
-  /// [questionHighlight]/[answerHighlight]: vom Nutzer selbst markierter/
-  /// eingegebener Frage/Antwort-Fakt (siehe MaterialHighlight) als
-  /// VERBINDLICHE Grundlage statt freier KI-Wahl. Für eine Überarbeitung
-  /// bestehender Ergebnisse [previousFlashcards] + [instruction] mitgeben
-  /// (z.B. "einfacher formulieren", "anderer Fokus").
-  Future<List<Map<String, dynamic>>> generateQuestionsFromPage({
+  /// Fragetypen, die beim Erstellen aus einer Seite wählbar sind (html ist
+  /// kein Bestandteil der Schwierigkeitsstufen, siehe [_variantTypeRule]).
+  static const pageQuestionTypes = [
+    QuestionType.singleChoice,
+    QuestionType.multipleChoice,
+    QuestionType.fillBlank,
+    QuestionType.dragDrop,
+    QuestionType.dragCategory,
+    QuestionType.freeText,
+    QuestionType.flashcard,
+  ];
+
+  /// Erstellt (oder überarbeitet) [questionCount] Fragen direkt aus einer
+  /// betrachteten Seite (MaterialViewerScreen, "Frage erstellen"), jede in
+  /// allen [tiers] – Varianten DESSELBEN Fakts von leicht nach schwer, die
+  /// der Aufrufer zu einer Stufen-Kette zusammenführt. Liefert je Frage die
+  /// Rohkarten in Stufen-Reihenfolge.
+  ///
+  /// Bewusst immer multimodal (Screenshot, [model] muss vision-fähig sein),
+  /// da Folienseiten oft Diagramme/Formeln enthalten, die reiner Text nicht
+  /// wiedergibt. Fokus, alles optional und kombinierbar: [focusImageBytes]
+  /// (vom Nutzer markierter Ausschnitt der Seite), [focusText] (markierte
+  /// Textstelle oder eigene Anweisung) und [answerText] (erwartete Antwort).
+  /// Ohne Fokus wählt die KI selbst. Für eine Überarbeitung
+  /// [previousQuestions] + [instruction] mitgeben.
+  Future<List<List<Map<String, dynamic>>>> generateQuestionsFromPage({
     required Uint8List pageImageBytes,
     required String pageText,
-    required List<QuestionType> types,
-    String? questionHighlight,
-    String? answerHighlight,
+    required List<PageQuestionTier> tiers,
+    int questionCount = 1,
+    Uint8List? focusImageBytes,
+    String? focusText,
+    String? answerText,
     String? examContext,
-    List<Map<String, dynamic>>? previousFlashcards,
+    List<List<Map<String, dynamic>>>? previousQuestions,
     String? instruction,
   }) async {
-    final typeRules = types.map((t) => '- ${_variantTypeRule(t)}').join('\n');
-    final systemPrompt = _pageQuestionGenerationSystemPrompt.replaceFirst('{{TYPE_RULES}}', typeRules);
+    final count = questionCount < 1 ? 1 : questionCount;
+    final tierLines = [
+      for (var i = 0; i < tiers.length; i++)
+        '${i + 1}. Stufe "${tiers[i].level}": '
+            '${tiers[i].type == null ? 'Typ frei wählbar' : 'Typ ${QuestionParsing.aiTypeName(tiers[i].type!)}'}',
+    ].join('\n');
+    // Bei frei wählbaren Stufen braucht die KI die Formatvorgaben aller
+    // wählbaren Typen, sonst nur die der vorgegebenen.
+    final ruleTypes = tiers.any((t) => t.type == null)
+        ? pageQuestionTypes
+        : {for (final t in tiers) t.type!}.toList();
+    final typeRules = ruleTypes.map((t) => '- ${_variantTypeRule(t)}').join('\n');
+    final systemPrompt = _pageQuestionGenerationSystemPrompt
+        .replaceAll('{{COUNT}}', '$count')
+        .replaceFirst('{{TIERS}}', tierLines)
+        .replaceFirst('{{TYPE_RULES}}', typeRules);
 
     final buffer = StringBuffer()
       ..writeln('Text dieser Seite (Kontext, Grundlage ist primär das Bild):')
       ..writeln(_cap(pageText, _pageQuestionGenerationTextCap));
-    if (questionHighlight != null && questionHighlight.trim().isNotEmpty) {
+    final focus = focusText?.trim() ?? '';
+    final answer = answerText?.trim() ?? '';
+    if (focusImageBytes != null || focus.isNotEmpty || answer.isNotEmpty) {
       buffer
         ..writeln()
-        ..writeln('Vom Nutzer markierter/eingegebener Frage/Antwort-Fakt (VERBINDLICHE Grundlage):')
-        ..writeln('Frage-Stelle: $questionHighlight')
-        ..writeln('Antwort-Stelle: ${(answerHighlight ?? '').trim().isEmpty ? '(keine angegeben)' : answerHighlight}');
+        ..writeln('Vom Nutzer vorgegebener Fokus (VERBINDLICHE Grundlage):');
+      if (focusImageBytes != null) {
+        buffer.writeln('- Markierter Bereich der Seite: siehe zweites Bild.');
+      }
+      if (focus.isNotEmpty) buffer.writeln('- Worum es gehen soll: $focus');
+      if (answer.isNotEmpty) buffer.writeln('- Erwartete Antwort/Fakt: $answer');
     }
     if (examContext != null && examContext.trim().isNotEmpty) {
       buffer
@@ -799,11 +854,15 @@ gewünschten Typen. Antworte in der Sprache der Vorlage.
             'dich bei Schwierigkeit/Formulierung daran, sofern thematisch passend):')
         ..writeln(_cap(examContext, _examContextCap));
     }
-    if (previousFlashcards != null && instruction != null && instruction.trim().isNotEmpty) {
+    if (previousQuestions != null && instruction != null && instruction.trim().isNotEmpty) {
       buffer
         ..writeln()
-        ..writeln('Bereits erstellte Karten (überarbeiten statt neu erfinden):')
-        ..writeln(jsonEncode(previousFlashcards))
+        ..writeln('Bereits erstellte Fragen (überarbeiten statt neu erfinden):')
+        ..writeln(jsonEncode({
+          'questions': [
+            for (final q in previousQuestions) {'flashcards': q},
+          ],
+        }))
         ..writeln()
         ..writeln('Anweisung des Nutzers zur Überarbeitung: $instruction');
     }
@@ -814,12 +873,35 @@ gewünschten Typen. Antworte in der Sprache der Vorlage.
         'type': 'image_url',
         'image_url': {'url': 'data:image/png;base64,${base64Encode(pageImageBytes)}'},
       },
+      if (focusImageBytes != null) ...[
+        {'type': 'text', 'text': 'Vom Nutzer markierter Bereich (Ausschnitt der Seite oben):'},
+        {
+          'type': 'image_url',
+          'image_url': {'url': 'data:image/png;base64,${base64Encode(focusImageBytes)}'},
+        },
+      ],
     ];
     final raw = await _complete(systemPrompt, content);
-    final parsed = _parseJsonObject(raw);
-    return (parsed['flashcards'] as List? ?? const [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
+    return parsePageQuestionGroups(_parseJsonObject(raw));
+  }
+
+  /// Liest die Antwort von [generateQuestionsFromPage]: je Frage die Karten
+  /// in Stufen-Reihenfolge. Akzeptiert auch das ältere flache Format
+  /// (`{"flashcards": [...]}` = eine Frage); leere Fragen fallen weg.
+  static List<List<Map<String, dynamic>>> parsePageQuestionGroups(Map<String, dynamic> parsed) {
+    List<Map<String, dynamic>> cardsOf(Object? list) => [
+          for (final e in (list is List ? list : const []))
+            if (e is Map) Map<String, dynamic>.from(e),
+        ];
+    final questions = parsed['questions'];
+    if (questions is List) {
+      return [
+        for (final q in questions)
+          if (q is Map && cardsOf(q['flashcards']).isNotEmpty) cardsOf(q['flashcards']),
+      ];
+    }
+    final flat = cardsOf(parsed['flashcards']);
+    return flat.isEmpty ? const [] : [flat];
   }
 
   static const _crosscheckSystemPrompt = '''

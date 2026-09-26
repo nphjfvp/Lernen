@@ -708,31 +708,37 @@ Nachbereiten-Modus zu wechseln.
   im Modul-Detail öffnet den Viewer direkt auf genau dieser Seite
   (`MaterialViewerScreen.initialPage`).
 - **Frage erstellen** (`PageQuestionCreationSheet`) – erzeugt aus derselben
-  Seite bis zu 3 Karteikarten-Varianten DESSELBEN Fakts, je eine für
-  **Leicht/Mittel/Schwer** (jede Stufe einzeln an/abwählbar, Fragetyp pro
-  Stufe frei per Dropdown wählbar – Default Single-Choice/Lückentext/
-  Freitext, siehe `_variantTypeRule`/Schwierigkeits-Eskalation). Was genau
-  abgefragt werden soll, markiert man einfach direkt vorher im PDF per
-  normaler Textauswahl (kein extra Klick auf einen Markier-Button nötig –
-  die Auswahl wird automatisch als Vorbelegung übernommen); alternativ dient
-  eine bereits gespeicherte rote/grüne Markierung als Vorbelegung, und
-  Frage/Antwort-Text lassen sich im Sheet jederzeit frei eintippen/anpassen.
+  Seite **1 oder 2 Fragen** auf einmal (mehrere prüfen unterschiedliche
+  Aspekte), jede in bis zu drei Stufen **Leicht/Mittel/Schwer** desselben
+  Fakts. Jede Stufe ist einzeln an-/abwählbar, der Fragetyp pro Stufe per
+  Dropdown wählbar oder auf **"KI entscheidet"** (Standard) – dann wählt die
+  KI das Format passend zur Stufe (leicht eher Auswahl, schwer eher freies
+  Erinnern, siehe `_variantTypeRule`/Schwierigkeits-Eskalation).
+  **Fokus**, alles optional und kombinierbar: per **"Bereich markieren"**
+  einen Rahmen um einen Teil der Seite ziehen (`PageRegionPicker` – ideal für
+  Diagramme/Formeln, die sich nicht als Text auswählen lassen; der
+  Ausschnitt geht als zweites Bild an die KI, `cropImageRelative`), eine
+  Textstelle bzw. eigene Anweisung vorgeben (vorbelegt aus der Textauswahl
+  im PDF oder einer roten Markierung) und optional die erwartete Antwort.
+  Bleibt alles leer, wählt die KI selbst das Wichtigste der Seite.
   Bewusst IMMER multimodal (Seiten-Screenshot ans Vision-Modell) statt
   optional umschaltbar – einfacher UND robuster, da Folienseiten oft
   Diagramme/Formeln enthalten, die reiner Text nicht wiedergibt. Die
   generierten Karten lassen sich vor dem Speichern eins zu eins wie im
   echten Quiz durchklicken (`QuestionAnswerView`, dieselbe Ansicht wie
-  Daily Quiz/Üben statt einer reinen Textvorschau) und per freier Anweisung
-  ("einfacher formulieren", "anderer Fokus") überarbeiten. Beim Speichern
-  werden mehrere gewählte Stufen NICHT als unabhängige Karten abgelegt,
-  sondern zu einer Eskalationskette zusammengeführt (siehe oben): nur die
-  leichteste Stufe landet sofort fällig (`due: jetzt`) im Daily Quiz, die
-  übrigen liegen bereits fertig ausformuliert als `Flashcard.pendingVariants`
-  bereit und werden erst bei Beförderung sichtbar.
+  Daily Quiz/Üben statt einer reinen Textvorschau), per freier Anweisung
+  ("einfacher formulieren", "anderer Fokus") überarbeiten und bei zwei
+  Fragen einzeln abwählen. Beim Speichern werden die Stufen einer Frage NICHT
+  als unabhängige Karten abgelegt, sondern zu einer Eskalationskette
+  zusammengeführt (siehe oben): nur die leichteste Stufe landet sofort
+  fällig (`due: jetzt`) im Daily Quiz, die übrigen liegen bereits fertig
+  ausformuliert als `Flashcard.pendingVariants` bereit und werden erst bei
+  Beförderung sichtbar.
   Die KI entscheidet zusätzlich pro Karte, ob der Seiten-Screenshot für den
   Kontext der Frage nötig ist (`"needsImage"` im JSON-Ergebnis, z.B. bei
   einem Diagramm/einer Formel/einer Skizze, ohne die die Frage nicht
-  verständlich wäre) – nur dann wird der Screenshot als `Flashcard.imageBase64`
+  verständlich wäre) – nur dann wird der Screenshot (bzw. mit markiertem
+  Bereich genau dieser Ausschnitt) als `Flashcard.imageBase64`
   mitgespeichert und später beim Beantworten (Daily Quiz, Üben, überall wo
   `QuestionAnswerView` genutzt wird) oberhalb der Frage angezeigt. Rein
   textbasierte Fragen bekommen bewusst KEIN Bild angehängt, um die lokale

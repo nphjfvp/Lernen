@@ -257,6 +257,13 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   (sonst Kosten bei normalen Foliensätzen), manuell pro Material für jede
   leere Seite. Nur diese Seiten gehen (max. 8 je Anfrage, als eigene PDF) an
   das Vision-Modell (OpenRouter-PDF-Input, Marker `<<<SEITE n>>>`).
+- **„Frage erstellen“** (`PageQuestionCreationSheet`): 1–2 Fragen je Aufruf,
+  jede mit den gewählten Stufen (Typ je Stufe fest oder `null` = KI wählt);
+  Fokus optional per markiertem Bildausschnitt (`PageRegionPicker` +
+  `cropImageRelative`, geht als zweites Bild mit), Text und Antwort. Antwort
+  der KI: `{"questions":[{"flashcards":[…]}]}` (`parsePageQuestionGroups`
+  liest auch das alte flache Format); jede Frage wird per
+  `mergeTiersIntoChain` EINE Karte mit `pendingVariants`.
 - Screens mit langen KI-Aufrufen nutzen `SafeSetState` (kein `setState` nach
   Verlassen). Context-Zugriffe (Repos, ScaffoldMessenger) VOR dem ersten
   `await` auslesen.
@@ -271,7 +278,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 420 Tests grün, `flutter build web` erfolgreich.
+sauber, 432 Tests grün, `flutter build web` erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
 1. Gemeinsamer `ReviewService`/`CardReviewMixin` für Daily Quiz, Üben, Sprint,
@@ -297,6 +304,8 @@ Zweite Runde (nach `AUDIT.md`/`DESIGN_IDEEN.md`, Stand 26.09.2026):
 11. Texterkennung für gescannte PDFs (automatisch + manuell).
 12. PDF-Sync über den eigenen Speicher (S3/WebDAV), ohne Zugangsdaten aus.
 13. CSV-Export/-Import von Karten (Backup, Anki).
+14. „Frage erstellen“: Typ je Stufe oder „KI entscheidet“, 1–2 Fragen auf
+    einmal, Bereich auf der Seite markieren.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
