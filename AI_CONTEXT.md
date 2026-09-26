@@ -143,15 +143,27 @@ Eskalationskette bleibt unberührt, `wasWrong` ist false.
   Easy gäbe einer neuen Karte ~15 Tage Pause.
 - Selbstbewertung: die gewählte Grade direkt.
 - Prüfregeln (`AnswerChecker`): Single-Choice – jede als richtig markierte
-  Option zählt; Multiple-Choice – exakte Menge; Freitext/Lückentext –
-  normalisiert + Levenshtein-Toleranz (1 ab 5 Zeichen, 2 ab 9), Freitext bei
-  lokaler Ablehnung zusätzlich KI-Zweitmeinung (`checkFreeTextAnswer`);
-  Zuordnen/Kategorien – alle Paare korrekt.
+  Option zählt (Anzeige gemischt, `optionDisplayOrder`); Multiple-Choice –
+  exakte Menge, "Prüfen" erst nach Auswahl; Freitext/Lückentext –
+  normalisiert + Levenshtein-Toleranz (1 ab 5 Zeichen, 2 ab 9) + Varianten
+  per ";". Bei lokaler Ablehnung KI-Zweitmeinung: Freitext
+  `checkFreeTextAnswer`, Lückentext je Lücke `checkFillBlankAnswers` (die KI
+  kann nur hochwerten, nie eine lokal richtige Lücke verwerfen).
+  Zuordnen/Kategorien – INDEX-basiert (`zoneToSource`/`sourceToCategory`),
+  nie per Text; ein mehrfach genanntes Ziel macht aus `drag_drop` eine
+  Kategorien-Frage (`isCategoryDrag`), Kategorien per Multiset geprüft.
+  Unbrauchbare Karten (`!isAnswerable`) werden als Karteikarte gezeigt.
 
 ### 5.3 FSRS (`lib/services/fsrs_service.dart`)
 FSRS-4.5 mit Default-Gewichten, Ziel-Retention 0,9, **Mindestintervall 1 Tag**
-(keine Same-Day-Learning-Steps). `due` = Tagesbeginn + Intervall. `again`
-erhöht `lapses`, setzt `state='relearning'`. Karten auf einer leichten/
+(keine Same-Day-Learning-Steps). Vergangene Zeit in KALENDERTAGEN
+(`calendarDaysBetween`, UTC-Daten), `due` = Mitternacht per
+`DateTime(j, m, t + n)` (zeitumstellungssicher). `again` erhöht `lapses` nur
+bei einer schon gelernten Karte (neu → `state='learning'`, sonst
+`'relearning'`). **Erneuter Fehlversuch am selben Tag**
+(`FsrsService.isRepeatFailureToday`: heute schon beantwortet, Zustand
+learning/relearning) ändert nichts mehr außer `reps`/`lastReview`: kein
+Lapse, keine Stabilitäts-/Schwierigkeitsänderung, masteryBox bleibt. Karten auf einer leichten/
 mittleren Stufe einer Eskalationskette (nicht der letzten) bekommen höchstens
 `transitStageMaxIntervalDays` = 7 Tage Abstand.
 
@@ -159,7 +171,9 @@ mittleren Stufe einer Eskalationskette (nicht der letzten) bekommen höchstens
 - `good`/`easy` → +1, gedeckelt bei 4 – **aber nur einmal pro Kalendertag**
   (war `lastReview` heute, bleibt der Wert).
 - `hard` → unverändert (richtig, aber mühsam bzw. mit Tipp).
-- `again` → −1, Boden 0 (auch mehrfach am selben Tag).
+- `again` → −1, Boden 0 – ebenfalls nur einmal pro Tag (ein erneuter
+  Fehlversuch am selben Tag zählt nicht; falsch nach einem heute richtigen
+  Versuch schon).
 
 ### 5.5 Ampel (`MasteryService.levelFor`)
 1. `reps == 0` → **neu**
@@ -184,14 +198,17 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   grün auf ihrer Stufe und der nächste richtige Versuch probiert es erneut).
 - Die neue Stufe startet neu (`FsrsService.restartForNewStage`): morgen fällig,
   Anfangs-Stabilität wie nach erstem „Gut“, `masteryBox = 1` (gelb).
-- falsch: `variantMissStreak+1`; ab 2 in Folge (auf der schwersten Stufe ab 5)
-  Rückstufung auf die letzte Stufe aus `variantHistory`; die verlassene Stufe
+- falsch: `variantMissStreak+1` (ein erneuter Fehlversuch am selben Tag
+  zählt nicht, `ReviewService.evaluate` lässt die Kette dann in Ruhe); ab 2 in
+  Folge (auf der schwersten Stufe ab 5) Rückstufung auf die letzte Stufe aus `variantHistory`; die verlassene Stufe
   wandert zurück in `pendingVariants`. Rückstufung von der schwersten Stufe
   setzt `masteryBox = 3` (gelb statt rot).
 - Die Karte ist immer EIN Datensatz, der seinen Typ wechselt – nie mehrere
   Stufen gleichzeitig im Pool.
 
 ### 5.7 Daily Quiz / Scheduler (`DailySchedulerService.buildPlan`)
+- Nur Karten **bestehender Fächer** (`_eligible`; `FlashcardRepository.loadAll`
+  filtert verwaiste Karten ohnehin für alle Verbraucher).
 - **Einheiten-Gate**: Karten mit `unitId` einer NICHT behandelten Einheit
   werden ausgelassen – außer `priorityIntroduction` (bewusst beim Lesen
   erstellte Fragen/Zwischen-Check-Fehler). Unbekannte `unitId` → erlaubt.
@@ -207,9 +224,11 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   `DailySessionState`) – kein zweites Budget durch „Aktualisieren“/Neustart.
   `priorityIntroduction`-Karten kommen immer (auch über das Budget hinaus),
   danach die übrigen nach ältester `createdAt`.
-- Sessiongröße max. 60 (Fällige haben Vorrang); Fächer werden interleaved.
+- Sessiongröße max. 60 (Fällige haben Vorrang; gekürzt werden neue Karten
+  reihum je Fach, `priorityIntroduction` zuletzt); Fächer werden interleaved.
 - Falsch beantwortete Karten kommen am Sessionende erneut (Wiederholungsrunde,
-  max. 3 Versuche je Karte); danach „Freiwillig weiterlernen“
+  max. 3 Versuche je Karte; eine inzwischen gelöschte Karte nicht –
+  `ReviewOutcome.cardDeleted`); danach „Freiwillig weiterlernen“
   (`buildExtraBatch`, ignoriert das Budget).
 - **Tagesstand** (`DailySessionState`/`DailySessionRepository`, Record
   `settings/daily_session`, gilt nur für den Kalendertag): Anzahl
@@ -221,7 +240,23 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 6. Weitere Invarianten / Stolperfallen
 
 - **KI-Ausgabe ist ungeprüfte Eingabe**: alles über `QuestionParsing`
-  (`normalizeGeneratedFlashcard`, tolerante `parse*`), nie hart casten.
+  (`normalizeGeneratedFlashcard`, tolerante `parse*`), nie hart casten;
+  Listen über `_mapsIn` (ein kaputter Eintrag fällt einzeln weg). Auch
+  Beförderungen (`applyPromotion`) laufen durch die Normalisierung.
+- **Antworten auf den gespeicherten Stand**: `recordReview` lädt die Karte
+  neu (`loadById`) und wendet die Antwort darauf an; `FlashcardRepository.
+  update` schreibt nur bestehende Datensätze (keine „Zombies“ gelöschter
+  Karten).
+- **Datum**: nie `Duration(days: n)` auf Ortszeit oder `difference().inDays`
+  zwischen Mitternächten – `DateTime(j, m, t ± n)` bzw. `calendarDaysBetween`
+  (`lib/services/calendar_days.dart`). CI testet mit `TZ=Europe/Berlin`.
+- **Speichern-Knöpfe** mit längerem Speichern sperren sich (`_saving`), und
+  das Speichern läuft auch nach Verlassen des Screens vollständig durch
+  (Repos vor dem ersten `await` lesen). Screens mit ungespeichertem
+  KI-Ergebnis nutzen `DiscardGuard` (Rückfrage bei Zurück).
+- **PDF-Markierungen**: jede Annotation trägt die Markierungs-ID in
+  `subject` – nur so lässt sie sich nach „Speichern“ (Annotationen werden
+  eingebettet) wieder entfernen.
 - **Löschen kaskadiert**: Fach → Materialien, Zusammenfassungen, Konzepte,
   Karten, Einheiten, Chat + PDF-Dateien; Einheit → entfernt `unitId` überall.
 - **Sync** (Firestore, `users/{uid}` bzw. `sync_codes/{code}`, Format 2):
@@ -257,8 +292,9 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   (sonst Kosten bei normalen Foliensätzen), manuell pro Material für jede
   leere Seite. Nur diese Seiten gehen (max. 8 je Anfrage, als eigene PDF) an
   das Vision-Modell (OpenRouter-PDF-Input, Marker `<<<SEITE n>>>`).
-- **„Frage erstellen“** (`PageQuestionCreationSheet`): 1–2 Fragen je Aufruf,
-  jede mit den gewählten Stufen (Typ je Stufe fest oder `null` = KI wählt);
+- **„Frage erstellen“** (`PageQuestionCreationSheet`): 1–5 Fragen je Aufruf,
+  jede mit den gewählten Stufen (Typ je Stufe fest – auch html – oder
+  `null` = KI wählt, nie html);
   Fokus optional per markiertem Bildausschnitt (`PageRegionPicker` +
   `cropImageRelative`, geht als zweites Bild mit), Text und Antwort. Antwort
   der KI: `{"questions":[{"flashcards":[…]}]}` (`parsePageQuestionGroups`
@@ -278,7 +314,8 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 432 Tests grün, `flutter build web` erfolgreich.
+sauber, 495 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
 1. Gemeinsamer `ReviewService`/`CardReviewMixin` für Daily Quiz, Üben, Sprint,
@@ -304,8 +341,15 @@ Zweite Runde (nach `AUDIT.md`/`DESIGN_IDEEN.md`, Stand 26.09.2026):
 11. Texterkennung für gescannte PDFs (automatisch + manuell).
 12. PDF-Sync über den eigenen Speicher (S3/WebDAV), ohne Zugangsdaten aus.
 13. CSV-Export/-Import von Karten (Backup, Anki).
-14. „Frage erstellen“: Typ je Stufe oder „KI entscheidet“, 1–2 Fragen auf
-    einmal, Bereich auf der Seite markieren.
+14. „Frage erstellen“: Typ je Stufe oder „KI entscheidet“, 1–5 Fragen auf
+    einmal, Bereich auf der Seite markieren, „Interaktiv“ wählbar.
+
+Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
+15. Zuordnen-Blocker (doppelte Ziele) und ~50 weitere Befunde behoben –
+    u.a. Lückentext-KI-Prüfung, verlorene Updates/Zombie-Karten,
+    Kalendertage/Zeitumstellung, Sync-Download-Schutz, Export mit
+    Zusammenfassungen und Lernstand-Wahl, Doppelspeichern, Daily-Quiz-
+    Wiederholungsrunde (Fehler zählen einmal pro Tag).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

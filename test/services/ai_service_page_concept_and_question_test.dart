@@ -162,6 +162,30 @@ void main() {
       expect(system, isNot(contains('Zieltyp "html"')));
     });
 
+    test('Interaktiv als fester Typ bringt den html-Vertrag in den Prompt', () async {
+      Map<String, dynamic>? capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return _chatResponse(jsonEncode({'questions': []}));
+      });
+      final ai = AiService(apiKey: 'key', model: 'vision-model', client: client);
+
+      await ai.generateQuestionsFromPage(
+        pageImageBytes: Uint8List.fromList([1]),
+        pageText: 'Seitentext',
+        tiers: const [
+          (level: 'Leicht', type: null),
+          (level: 'Schwer', type: QuestionType.html),
+        ],
+      );
+
+      final system = systemOf(capturedBody!);
+      expect(system, contains('2. Stufe "Schwer": Typ html'));
+      expect(system, contains('Zieltyp "html"'));
+      expect(system, contains('window.FlutterAnswer.postMessage'));
+      expect(system, contains('Zieltyp "single_choice"'));
+    });
+
     test('zwei Fragen: Anzahl steht im Prompt, beide Gruppen kommen zurück', () async {
       Map<String, dynamic>? capturedBody;
       final client = MockClient((request) async {

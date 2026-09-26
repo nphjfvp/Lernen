@@ -80,6 +80,36 @@ class FsrsService {
   /// Eskalationskette (siehe [review]).
   static const int transitStageMaxIntervalDays = 7;
 
+  /// Vergangene KALENDERTAGE zwischen zwei Zeitpunkten. Die App plant in
+  /// ganzen Tagen ("morgen fällig") – abends lernen und am nächsten Morgen
+  /// wiederholen ist ein Tag Abstand, auch wenn keine 24 Stunden vergangen
+  /// sind (mit `difference().inDays` wären es 0 Tage: keine Stabilitäts-
+  /// zunahme, das Intervall wüchse nicht). Über UTC-Daten gerechnet, damit
+  /// die Zeitumstellung (23-/25-Stunden-Tag) nichts verschiebt.
+  static int calendarDaysBetween(DateTime from, DateTime to) => max(
+        0,
+        DateTime.utc(to.year, to.month, to.day).difference(DateTime.utc(from.year, from.month, from.day)).inDays,
+      );
+
+  /// Mitternacht [days] Kalendertage nach [at] – ohne Stunden-Addition, die
+  /// an der Zeitumstellung eine Stunde daneben läge.
+  static DateTime _startOfDayPlus(DateTime at, int days) => DateTime(at.year, at.month, at.day + days);
+
+  static bool _sameDay(DateTime? a, DateTime b) =>
+      a != null && a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Ob [grade] ein ERNEUTER Fehlversuch am selben Tag wäre: die Karte wurde
+  /// heute schon beantwortet, und zwar falsch (Zustand learning/relearning) –
+  /// z.B. in der Wiederholungsrunde des Daily Quiz oder beim Üben. Das ist
+  /// dieselbe Wissenslücke wie beim ersten Fehlversuch, kein neues Vergessen:
+  /// [review] und ReviewService.evaluate verbuchen sie deshalb nicht noch
+  /// einmal – spiegelbildlich zum Aufstieg, der auch nur einmal pro Tag zählt.
+  static bool isRepeatFailureToday(Flashcard card, Grade grade, DateTime at) =>
+      grade == Grade.again &&
+      card.reps > 0 &&
+      _sameDay(card.lastReview, at) &&
+      (card.state == 'learning' || card.state == 'relearning');
+
   /// Startet eine gerade beförderte Karte auf ihrer neuen, schwereren Stufe
   /// neu: morgen fällig, Anfangs-Stabilität wie nach einem ersten "Gut",
   /// Ampel bei Gelb (masteryBox 1 – "angefangen, noch nicht gefestigt").
@@ -89,7 +119,7 @@ class FsrsService {
   Flashcard restartForNewStage(Flashcard card, {DateTime? now}) {
     final at = now ?? DateTime.now();
     return card.copyWithReview(
-      due: DateTime(at.year, at.month, at.day).add(const Duration(days: 1)),
+      due: _startOfDayPlus(at, 1),
       stability: _initialStability(Grade.good),
       difficulty: card.difficulty,
       elapsedDays: card.elapsedDays,
@@ -116,6 +146,7 @@ class FsrsService {
   Flashcard review(Flashcard card, Grade grade, {DateTime? now}) {
     final reviewedAt = now ?? DateTime.now();
     final isNew = card.reps == 0;
+    final repeatFailure = isRepeatFailureToday(card, grade, reviewedAt);
 
     double difficulty;
     double stability;
@@ -123,10 +154,13 @@ class FsrsService {
     if (isNew) {
       difficulty = _initialDifficulty(grade);
       stability = _initialStability(grade);
+    } else if (repeatFailure) {
+      // Siehe [isRepeatFailureToday]: Stabilität und Schwierigkeit wurden
+      // beim ersten Fehlversuch heute schon angepasst.
+      difficulty = card.difficulty;
+      stability = card.stability;
     } else {
-      final elapsed = card.lastReview == null
-          ? 0
-          : reviewedAt.difference(card.lastReview!).inDays;
+      final elapsed = card.lastReview == null ? 0 : calendarDaysBetween(card.lastReview!, reviewedAt);
       final r = _retrievability(elapsed, card.stability);
       difficulty = _nextDifficulty(card.difficulty, grade);
       stability = grade == Grade.again
@@ -144,8 +178,7 @@ class FsrsService {
     final isTransitStage = chain != null && card.variantLevel < chain.length - 1;
     final rawInterval = intervalDays(stability);
     final scheduled = isTransitStage ? min(rawInterval, transitStageMaxIntervalDays) : rawInterval;
-    final due = DateTime(reviewedAt.year, reviewedAt.month, reviewedAt.day)
-        .add(Duration(days: scheduled));
+    final due = _startOfDayPlus(reviewedAt, scheduled);
 
     // Generischer Mastery-Box-Zähler für die Ampel (siehe Flashcard.masteryBox
     // Doc-Kommentar): "gewusst" (good/easy) steigt ihn, "Nochmal" senkt ihn.
@@ -155,29 +188,31 @@ class FsrsService {
     // mehrfach richtig beantwortet (Üben-Modus, Wiederholungsrunde im Daily
     // Quiz), ist das Kurzzeitgedächtnis, kein über mehrere Sessions
     // nachgewiesenes Wissen – sonst wäre "Grün" in wenigen Minuten erreichbar.
-    final lastReview = card.lastReview;
-    final alreadyReviewedToday = lastReview != null &&
-        lastReview.year == reviewedAt.year &&
-        lastReview.month == reviewedAt.month &&
-        lastReview.day == reviewedAt.day;
+    // Sinken ebenso nur einmal pro Tag (siehe [isRepeatFailureToday]) – sonst
+    // würde aus Grün in einer einzigen Wiederholungsrunde Rot.
+    final alreadyReviewedToday = _sameDay(card.lastReview, reviewedAt);
     final masteryBox = switch (grade) {
       Grade.good || Grade.easy =>
         alreadyReviewedToday ? card.masteryBox : (card.masteryBox + 1).clamp(0, Flashcard.masteryBoxCap),
       Grade.hard => card.masteryBox,
-      Grade.again => (card.masteryBox - 1).clamp(0, Flashcard.masteryBoxCap),
+      Grade.again => repeatFailure ? card.masteryBox : (card.masteryBox - 1).clamp(0, Flashcard.masteryBoxCap),
     };
 
     return card.copyWithReview(
       due: due,
       stability: stability,
       difficulty: difficulty,
-      elapsedDays: card.lastReview == null
-          ? 0
-          : reviewedAt.difference(card.lastReview!).inDays,
+      elapsedDays: card.lastReview == null ? 0 : calendarDaysBetween(card.lastReview!, reviewedAt),
       scheduledDays: scheduled,
       reps: card.reps + 1,
-      lapses: grade == Grade.again ? card.lapses + 1 : card.lapses,
-      state: grade == Grade.again ? 'relearning' : 'review',
+      // Ein Lapse ist das Vergessen einer schon GELERNTEN Karte – eine neue
+      // Karte beim ersten Versuch nicht zu wissen, zählt nicht dazu (sonst
+      // stünde sie im Fehlertagebuch als "1× vergessen"), ein erneuter
+      // Fehlversuch am selben Tag ebenso wenig.
+      lapses: grade == Grade.again && !isNew && !repeatFailure ? card.lapses + 1 : card.lapses,
+      state: grade == Grade.again
+          ? (repeatFailure ? card.state : (isNew ? 'learning' : 'relearning'))
+          : 'review',
       lastReview: reviewedAt,
       masteryBox: masteryBox,
     );
@@ -186,8 +221,7 @@ class FsrsService {
   /// Aktuelle geschätzte Erinnerungswahrscheinlichkeit einer Karte "heute".
   double currentRetrievability(Flashcard card, {DateTime? now}) {
     if (card.reps == 0 || card.lastReview == null) return 0;
-    final elapsed = (now ?? DateTime.now()).difference(card.lastReview!).inDays;
-    return _retrievability(elapsed, card.stability);
+    return _retrievability(calendarDaysBetween(card.lastReview!, now ?? DateTime.now()), card.stability);
   }
 
   /// Leitet für automatisch auswertbare Fragetypen (Single-/Multiple-Choice,

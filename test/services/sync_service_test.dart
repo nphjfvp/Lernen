@@ -94,4 +94,17 @@ void main() {
       expect(mergeAiSettings(const AppSettings(), synced).pdfStorage.isConfigured, isFalse);
     });
   });
+
+  group('Download-Schutz', () {
+    test('Cloud-Stand einer neueren App-Version wird nicht gelesen', () {
+      expect(() => checkCloudFormat({'format': SyncService.syncFormat + 1}), throwsA(isA<SyncException>()));
+      expect(() => checkCloudFormat({'format': SyncService.syncFormat}), returnsNormally);
+      expect(() => checkCloudFormat({}), returnsNormally); // ältestes Format ohne Feld
+    });
+
+    test('ohne Fächerliste wird nichts ersetzt', () {
+      expect(() => checkUsablePayload({}), throwsA(isA<SyncException>()));
+      expect(() => checkUsablePayload({'modules': []}), returnsNormally);
+    });
+  });
 }

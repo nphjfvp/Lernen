@@ -57,39 +57,164 @@ class AnswerChecker {
     return AnswerCheckResult(isCorrect: ok, correctAnswerLabel: q.correctText ?? '');
   }
 
-  /// [answers] in derselben Reihenfolge wie [Flashcard.blanks].
-  static AnswerCheckResult checkFillBlank(Flashcard q, List<String> answers) {
-    final blanks = q.blanks ?? const [];
-    if (blanks.isEmpty) return const AnswerCheckResult(isCorrect: false, correctAnswerLabel: '');
-    var hits = 0;
-    for (var i = 0; i < blanks.length && i < answers.length; i++) {
-      if (answerMatches(answers[i], blanks[i])) hits++;
+  /// Die Lücken, die tatsächlich eine Lösung haben – eine leere Lösung wäre
+  /// nie zu treffen und machte die ganze Frage unlösbar.
+  static List<String> solvableBlanks(Flashcard q) =>
+      (q.blanks ?? const []).where((b) => b.trim().isNotEmpty).toList();
+
+  /// [answers] in derselben Reihenfolge wie [solvableBlanks].
+  static AnswerCheckResult checkFillBlank(Flashcard q, List<String> answers) =>
+      fillBlankResult(q, fillBlankHits(q, answers));
+
+  /// Je Lücke (Reihenfolge wie [solvableBlanks]), ob die Eingabe lokal
+  /// passt – exakt, mit kleinem Tippfehler oder als eine der per ";"
+  /// hinterlegten Varianten.
+  static List<bool> fillBlankHits(Flashcard q, List<String> answers) {
+    final blanks = solvableBlanks(q);
+    return [
+      for (var i = 0; i < blanks.length; i++) i < answers.length && answerMatches(answers[i], blanks[i]),
+    ];
+  }
+
+  /// Gesamtergebnis aus den Treffern je Lücke – lokal ([fillBlankHits]) oder
+  /// nach der KI-Zweitmeinung (siehe QuestionAnswerView).
+  static AnswerCheckResult fillBlankResult(Flashcard q, List<bool> hits) {
+    final blanks = solvableBlanks(q);
+    return AnswerCheckResult(
+      isCorrect: blanks.isNotEmpty && hits.length == blanks.length && hits.every((h) => h),
+      correctAnswerLabel: blanks.map(solutionLabel).join(' | '),
+    );
+  }
+
+  /// Eine Lösung zum Anzeigen: mehrere akzeptierte Varianten ("a; b")
+  /// als "a / b".
+  static String solutionLabel(String solution) =>
+      solution.split(';').map((s) => s.trim()).where((s) => s.isNotEmpty).join(' / ');
+
+  /// Ob [answer] einer der Varianten von [correct] genau entspricht (bis auf
+  /// Groß-/Kleinschreibung und Leerzeichen) – anders als [answerMatches]
+  /// ohne Tippfehler-Toleranz. Zeigt an, ob die hinterlegte Schreibweise
+  /// noch einmal eingeblendet werden sollte.
+  static bool answerExactlyMatches(String answer, String correct) {
+    final a = _normalize(answer);
+    return a.isNotEmpty && correct.split(';').map(_normalize).any((c) => c == a);
+  }
+
+  /// Begriffe/Ziele mit Inhalt – leere Einträge ließen sich nicht sinnvoll
+  /// ziehen bzw. treffen.
+  static List<DragPair> usableDragPairs(Flashcard q) => [
+        for (final p in q.dragPairs ?? const <DragPair>[])
+          if (p.source.trim().isNotEmpty && p.target.trim().isNotEmpty) p,
+      ];
+
+  /// Eine Zuordnen-Frage, bei der mehrere Begriffe zum selben Ziel gehören
+  /// (die KI schreibt dann dasselbe Ziel mehrfach), ist in Wahrheit eine
+  /// Kategorien-Frage – so wird sie angezeigt und geprüft, sonst ließen
+  /// sich die gleichnamigen Ziele nicht unterscheiden.
+  static bool isCategoryDrag(Flashcard q) {
+    if (q.type == QuestionType.dragCategory) return true;
+    if (q.type != QuestionType.dragDrop) return false;
+    final targets = usableDragPairs(q).map((p) => p.target.trim()).toList();
+    return targets.toSet().length < targets.length;
+  }
+
+  /// Die Kategorien einer Kategorien-Frage in der Reihenfolge ihres ersten
+  /// Auftretens.
+  static List<String> dragCategories(Flashcard q) {
+    final seen = <String>{};
+    return [
+      for (final p in usableDragPairs(q))
+        if (seen.add(p.target.trim())) p.target.trim(),
+    ];
+  }
+
+  /// Zuordnen: ob auf Ziel [zone] (Index in [usableDragPairs]) der richtige
+  /// Begriff liegt – [source] ist der Index des abgelegten Begriffs. Gleich
+  /// lautende Begriffe sind austauschbar, deshalb zählt der Text.
+  static bool dragZoneCorrect(Flashcard q, int zone, int? source) {
+    final pairs = usableDragPairs(q);
+    if (source == null || zone < 0 || zone >= pairs.length || source < 0 || source >= pairs.length) {
+      return false;
     }
-    return AnswerCheckResult(isCorrect: hits == blanks.length, correctAnswerLabel: blanks.join(' | '));
+    return pairs[source].source.trim() == pairs[zone].source.trim();
   }
 
-  /// [targetToSource]: für jedes Ziel (Zuordnungspunkt), welcher Begriff
-  /// dort abgelegt wurde.
-  static AnswerCheckResult checkDragDrop(Flashcard q, Map<String, String> targetToSource) {
-    final pairs = q.dragPairs ?? const [];
+  /// Zuordnen: [zoneToSource] – für jedes Ziel (Index in [usableDragPairs])
+  /// der Index des dort abgelegten Begriffs.
+  static AnswerCheckResult checkDragDrop(Flashcard q, Map<int, int> zoneToSource) {
+    final pairs = usableDragPairs(q);
     if (pairs.isEmpty) return const AnswerCheckResult(isCorrect: false, correctAnswerLabel: '');
-    final hits = pairs.where((p) => targetToSource[p.target] == p.source).length;
+    var hits = 0;
+    for (var zone = 0; zone < pairs.length; zone++) {
+      if (dragZoneCorrect(q, zone, zoneToSource[zone])) hits++;
+    }
     return AnswerCheckResult(
       isCorrect: hits == pairs.length,
       correctAnswerLabel: pairs.map((p) => '${p.source} → ${p.target}').join(', '),
     );
   }
 
-  /// [sourceToTarget]: für jeden Begriff, welcher Kategorie er zugeordnet
-  /// wurde.
-  static AnswerCheckResult checkDragCategory(Flashcard q, Map<String, String> sourceToTarget) {
-    final pairs = q.dragPairs ?? const [];
+  /// Kategorien: welche abgelegten Begriffe (Indizes in [usableDragPairs])
+  /// richtig liegen. Gleich lautende Begriffe werden gegen die erwarteten
+  /// Paare verrechnet – jedes erwartete Paar zählt nur einmal.
+  static Set<int> correctCategoryPlacements(Flashcard q, Map<int, String> sourceToCategory) {
+    final pairs = usableDragPairs(q);
+    String key(String source, String category) => '${source.trim()}\u0000${category.trim()}';
+    final remaining = <String, int>{};
+    for (final p in pairs) {
+      remaining.update(key(p.source, p.target), (n) => n + 1, ifAbsent: () => 1);
+    }
+    final correct = <int>{};
+    final placed = sourceToCategory.keys.toList()..sort();
+    for (final source in placed) {
+      if (source < 0 || source >= pairs.length) continue;
+      final k = key(pairs[source].source, sourceToCategory[source]!);
+      final left = remaining[k] ?? 0;
+      if (left > 0) {
+        remaining[k] = left - 1;
+        correct.add(source);
+      }
+    }
+    return correct;
+  }
+
+  /// Kategorien: [sourceToCategory] – für jeden Begriff (Index in
+  /// [usableDragPairs]) die gewählte Kategorie. Richtig, wenn jeder Begriff
+  /// in seiner Kategorie liegt.
+  static AnswerCheckResult checkDragCategory(Flashcard q, Map<int, String> sourceToCategory) {
+    final pairs = usableDragPairs(q);
     if (pairs.isEmpty) return const AnswerCheckResult(isCorrect: false, correctAnswerLabel: '');
-    final hits = pairs.where((p) => sourceToTarget[p.source] == p.target).length;
+    final correct = correctCategoryPlacements(q, sourceToCategory);
     return AnswerCheckResult(
-      isCorrect: hits == pairs.length,
-      correctAnswerLabel: pairs.map((p) => '${p.source} → ${p.target}').join(', '),
+      isCorrect: correct.length == pairs.length,
+      correctAnswerLabel: [
+        for (final category in dragCategories(q))
+          '$category: ${pairs.where((p) => p.target.trim() == category).map((p) => p.source).join(', ')}',
+      ].join(' · '),
     );
+  }
+
+  /// Ob sich die Frage in ihrem Typ überhaupt beantworten lässt. Karten mit
+  /// kaputten Daten (keine richtige Option, leere Lösung, keine Paare …)
+  /// zeigt die Oberfläche stattdessen als Karteikarte zum Selbstbewerten, statt
+  /// sie unlösbar – und damit immer falsch – abzufragen.
+  static bool isAnswerable(Flashcard q) {
+    switch (q.type) {
+      case QuestionType.flashcard:
+      case QuestionType.html:
+        return true;
+      case QuestionType.singleChoice:
+      case QuestionType.multipleChoice:
+        final options = q.options ?? const [];
+        return options.length >= 2 && options.any((o) => o.isCorrect);
+      case QuestionType.freeText:
+        return (q.correctText ?? '').split(';').any((c) => c.trim().isNotEmpty);
+      case QuestionType.fillBlank:
+        return solvableBlanks(q).isNotEmpty;
+      case QuestionType.dragDrop:
+      case QuestionType.dragCategory:
+        return usableDragPairs(q).isNotEmpty;
+    }
   }
 
   /// Vergleicht eine Antwort gegen eine Lösung (mehrere durch ';' getrennte

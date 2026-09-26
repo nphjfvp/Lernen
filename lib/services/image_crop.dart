@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -39,6 +40,31 @@ Future<ui.Size?> imageSizeOf(Uint8List bytes) async {
     final codec = await ui.instantiateImageCodec(bytes);
     final image = (await codec.getNextFrame()).image;
     return ui.Size(image.width.toDouble(), image.height.toDouble());
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Verkleinert ein Bild so, dass die längere Seite höchstens [maxSide]
+/// Pixel misst (als PNG) – für Bilder, die an Karten hängen: der
+/// Seiten-Screenshot entsteht in doppelter Bildschirmauflösung, liegt sonst
+/// in voller Größe in der lokalen Datenbank und reist bei jedem Cloud-Sync
+/// mit. Kleinere Bilder bleiben unverändert; `null` bei einem Fehler.
+Future<Uint8List?> downscaleImage(Uint8List bytes, {int maxSide = 1280}) async {
+  try {
+    final size = await imageSizeOf(bytes);
+    if (size == null) return null;
+    final longest = max(size.width, size.height);
+    if (longest <= maxSide) return bytes;
+    final scale = maxSide / longest;
+    final codec = await ui.instantiateImageCodec(
+      bytes,
+      targetWidth: max(1, (size.width * scale).round()),
+      targetHeight: max(1, (size.height * scale).round()),
+    );
+    final resized = (await codec.getNextFrame()).image;
+    final data = await resized.toByteData(format: ui.ImageByteFormat.png);
+    return data?.buffer.asUint8List();
   } catch (_) {
     return null;
   }

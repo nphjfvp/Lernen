@@ -19,7 +19,7 @@ class WeakCard {
 /// dem ohnehin vorhandenen Lernzustand (kein eigenes Protokoll nötig):
 /// wie oft eine schon gelernte Karte wieder vergessen wurde ([Flashcard.lapses]),
 /// ob sie gerade rot ist, ob sie in der letzten Wiederholung falsch war
-/// (`relearning`) und ob sie auf ihrer Schwierigkeitsstufe gerade mehrfach
+/// (`relearning`/`learning`) und ob sie auf ihrer Schwierigkeitsstufe gerade mehrfach
 /// in Folge scheitert ([Flashcard.variantMissStreak]).
 class WeaknessService {
   WeaknessService({MasteryService? mastery}) : _mastery = mastery ?? MasteryService();
@@ -37,7 +37,9 @@ class WeaknessService {
         score += card.lapses * 2;
         reasons.add('${card.lapses}× vergessen');
       }
-      if (card.state == 'relearning') {
+      // relearning: gelernte Karte zuletzt falsch; learning: neue Karte
+      // schon beim ersten Versuch falsch (siehe FsrsService.review).
+      if (card.state == 'relearning' || card.state == 'learning') {
         score += 2;
         reasons.add('zuletzt falsch');
       }

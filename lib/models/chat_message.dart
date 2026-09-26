@@ -1,7 +1,7 @@
 enum ChatRole { user, assistant }
 
-ChatRole chatRoleFromString(String value) =>
-    ChatRole.values.firstWhere((e) => e.name == value);
+ChatRole chatRoleFromString(String? value) =>
+    ChatRole.values.firstWhere((e) => e.name == value, orElse: () => ChatRole.assistant);
 
 /// Eine Nachricht im Frage-Chat eines Fachs (siehe ModuleChatScreen). Wird
 /// persistiert, damit der Gesprächsverlauf einen App-Neustart übersteht.
@@ -41,9 +41,9 @@ class ChatMessage {
   factory ChatMessage.fromMap(Map<String, dynamic> map) => ChatMessage(
         id: map['id'] as String,
         moduleId: map['moduleId'] as String,
-        role: chatRoleFromString(map['role'] as String),
-        content: map['content'] as String,
-        createdAt: DateTime.parse(map['createdAt'] as String),
+        role: chatRoleFromString(map['role']?.toString()),
+        content: map['content']?.toString() ?? '',
+        createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime(2000),
         sourceFileNames: (map['sourceFileNames'] as List?)?.map((e) => e.toString()).toList(),
       );
 }

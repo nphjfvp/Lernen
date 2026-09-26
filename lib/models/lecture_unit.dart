@@ -80,9 +80,9 @@ class LectureUnit {
   factory LectureUnit.fromMap(Map<String, dynamic> map) => LectureUnit(
         id: map['id'] as String,
         moduleId: map['moduleId'] as String,
-        title: map['title'] as String,
+        title: map['title']?.toString() ?? '',
         covered: map['covered'] as bool? ?? false,
-        createdAt: DateTime.parse(map['createdAt'] as String),
+        createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime(2000),
         notes: (map['notes'] as List?)?.map((e) => e.toString()).toList() ?? const [],
         scheduledDate: DateTime.tryParse(map['scheduledDate']?.toString() ?? ''),
       );

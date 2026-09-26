@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:sembast/sembast.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/concept.dart';
@@ -7,6 +8,8 @@ import '../models/flashcard.dart';
 import '../models/lecture_unit.dart';
 import '../models/material_item.dart';
 import '../models/module.dart';
+import '../models/summary.dart';
+import 'database_service.dart';
 import 'material_file_store.dart';
 
 /// Aktuelle Export-Formatversion – bei inkompatiblen Strukturänderungen
@@ -25,6 +28,7 @@ class ImportedModule {
     required this.materials,
     required this.concepts,
     required this.flashcards,
+    this.summaries = const [],
   });
 
   final Module module;
@@ -32,10 +36,24 @@ class ImportedModule {
   final List<MaterialItem> materials;
   final List<Concept> concepts;
   final List<Flashcard> flashcards;
+  final List<Summary> summaries;
+
+  /// Dieselben Inhalte, aber jede Karte wieder "neu" (siehe
+  /// [ModuleExportService.resetLearningState]) – für ein weitergegebenes
+  /// Fach, das die empfangende Person selbst lernen will.
+  ImportedModule withoutLearningState() => ImportedModule(
+        module: module,
+        lectureUnits: lectureUnits,
+        materials: materials,
+        concepts: concepts,
+        flashcards: flashcards.map(ModuleExportService.resetLearningState).toList(),
+        summaries: summaries,
+      );
 }
 
 /// Export/Import eines kompletten Fachs (Modul + Einheiten + Materialien +
-/// Konzepte + Karteikarten) als eigenständige, portable JSON-Datei – z.B. um
+/// Zusammenfassungen + Konzepte + Karteikarten) als eigenständige, portable
+/// JSON-Datei – z.B. um
 /// ein Fach lokal zu sichern oder auf ein anderes Gerät/an eine andere Person
 /// weiterzugeben, ohne den (Firebase-basierten) Cloud-Sync zu nutzen. Bewusst
 /// NICHT enthalten: Chat-Verlauf (ChatMessage) und Mastery-Snapshots – beides
@@ -91,6 +109,7 @@ class ModuleExportService {
     required List<MaterialItem> materialsWithBytes,
     required List<Concept> concepts,
     required List<Flashcard> flashcards,
+    List<Summary> summaries = const [],
   }) {
     return {
       'formatVersion': moduleExportFormatVersion,
@@ -98,9 +117,74 @@ class ModuleExportService {
       'module': module.toMap(),
       'lectureUnits': lectureUnits.map((u) => u.toMap()).toList(),
       'materials': materialsWithBytes.map((m) => m.toMap()).toList(),
+      'summaries': summaries.map((s) => s.toMap()).toList(),
       'concepts': concepts.map((c) => c.toMap()).toList(),
       'flashcards': flashcards.map((f) => f.toMap()).toList(),
     };
+  }
+
+  /// Schreibt ein importiertes Fach in EINER Transaktion – bricht der Import
+  /// ab (Fehler, Screen verlassen), bleibt kein halbes Fach ohne Karten o.ä.
+  /// zurück.
+  static Future<void> saveImported(DatabaseClient client, ImportedModule imported) async {
+    await DatabaseService.modules.record(imported.module.id).put(client, imported.module.toMap());
+    for (final u in imported.lectureUnits) {
+      await DatabaseService.lectureUnits.record(u.id).put(client, u.toMap());
+    }
+    for (final m in imported.materials) {
+      await DatabaseService.materials.record(m.id).put(client, m.toMap());
+    }
+    for (final s in imported.summaries) {
+      await DatabaseService.summaries.record(s.id).put(client, s.toMap());
+    }
+    for (final c in imported.concepts) {
+      await DatabaseService.concepts.record(c.id).put(client, c.toMap());
+    }
+    for (final f in imported.flashcards) {
+      await DatabaseService.flashcards.record(f.id).put(client, f.toMap());
+    }
+  }
+
+  /// Setzt den Lernstand einer Karte zurück (wieder "neu", Ampel leer) und
+  /// stellt bei einer Stufen-Kette die LEICHTESTE Stufe wieder her – die
+  /// schwereren liegen danach wie beim Erstellen als vorbereitete Stufen
+  /// bereit. Inhalt, Einheit und Fach-Zuordnung bleiben.
+  static Flashcard resetLearningState(Flashcard f) {
+    final history = f.variantHistory ?? const <VariantSnapshot>[];
+    final current = VariantSnapshot(
+      type: f.type,
+      front: f.front,
+      back: f.back,
+      options: f.options,
+      correctText: f.correctText,
+      blanks: f.blanks,
+      dragPairs: f.dragPairs,
+      htmlContent: f.htmlContent,
+      imageBase64: f.imageBase64,
+    );
+    final stages = [...history, current, ...?f.pendingVariants];
+    final first = stages.first;
+    final pending = stages.sublist(1);
+    return Flashcard(
+      id: f.id,
+      moduleId: f.moduleId,
+      conceptId: f.conceptId,
+      front: first.front,
+      back: first.back,
+      createdAt: f.createdAt,
+      due: DateTime.now(),
+      type: first.type,
+      options: first.options,
+      correctText: first.correctText,
+      blanks: first.blanks,
+      dragPairs: first.dragPairs,
+      htmlContent: first.htmlContent,
+      imageBase64: first.imageBase64,
+      variantChain: f.variantChain,
+      pendingVariants: pending.isEmpty ? null : pending,
+      unitId: f.unitId,
+      priorityIntroduction: f.priorityIntroduction,
+    );
   }
 
   /// Liest ein zuvor exportiertes Fach wieder ein und vergibt dabei
@@ -176,6 +260,20 @@ class ModuleExportService {
       );
     }).toList();
 
+    final summaries = ((json['summaries'] as List?) ?? const [])
+        .map((e) => Summary.fromMap(Map<String, dynamic>.from(e as Map)))
+        .map((s) => Summary(
+              id: const Uuid().v4(),
+              moduleId: newModuleId,
+              sourceMaterialIds: s.sourceMaterialIds.map((id) => materialIdMap[id]).whereType<String>().toList(),
+              title: s.title,
+              overview: s.overview,
+              keyPoints: s.keyPoints,
+              createdAt: s.createdAt,
+              unitId: s.unitId == null ? null : unitIdMap[s.unitId],
+            ))
+        .toList();
+
     final conceptIdMap = <String, String>{};
     final concepts = ((json['concepts'] as List?) ?? const [])
         .map((e) => Concept.fromMap(Map<String, dynamic>.from(e as Map)))
@@ -239,6 +337,7 @@ class ModuleExportService {
       materials: materials,
       concepts: concepts,
       flashcards: flashcards,
+      summaries: summaries,
     );
   }
 }

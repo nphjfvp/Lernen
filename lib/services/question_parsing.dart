@@ -99,7 +99,20 @@ class QuestionParsing {
     if (front.isEmpty) return null;
 
     final type = parseType(raw['type']?.toString());
-    if (_isComplete(raw, type)) return _withStringFields(raw);
+    if (_isComplete(raw, type)) return _sanitized(_withStringFields(raw), type);
+
+    // Lückentext ohne "___"-Markierung mit genau einer Lösung ist eine
+    // Freitextfrage – als Lückentext wüsste man nicht, wo die Lücke ist.
+    if (type == QuestionType.fillBlank) {
+      final blanks = _nonEmptyBlanks(raw);
+      if (blanks.length == 1 && blankMarkerCount(front) == 0) {
+        return {
+          ..._withStringFields(raw)..remove('blanks'),
+          'type': 'free_text',
+          'correctText': blanks.single,
+        };
+      }
+    }
 
     final fallbackAnswer = _bestAvailableAnswer(raw);
     if (fallbackAnswer == null) return null;
@@ -107,7 +120,7 @@ class QuestionParsing {
       'type': 'flashcard',
       'front': front,
       'back': fallbackAnswer,
-      if (raw['conceptTitle'] != null) 'conceptTitle': raw['conceptTitle'],
+      if (raw['conceptTitle'] != null) 'conceptTitle': raw['conceptTitle'].toString(),
     };
   }
 
@@ -119,23 +132,75 @@ class QuestionParsing {
           if (raw[key] != null && raw[key] is! String) key: raw[key].toString(),
       };
 
+  /// Anzahl der Lücken-Markierungen ("___", auch länger) in einem Text.
+  static int blankMarkerCount(String text) => RegExp(r'_{3,}').allMatches(text).length;
+
+  static List<String> _nonEmptyBlanks(Map<String, dynamic> raw) =>
+      (parseBlanks(raw['blanks']) ?? const []).where((b) => b.trim().isNotEmpty).toList();
+
+  static List<QuizOption> _nonEmptyOptions(Map<String, dynamic> raw) =>
+      (parseOptions(raw['options']) ?? const []).where((o) => o.text.trim().isNotEmpty).toList();
+
+  static List<DragPair> _usablePairs(Map<String, dynamic> raw) => [
+        for (final p in parseDragPairs(raw['dragPairs']) ?? const <DragPair>[])
+          if (p.source.trim().isNotEmpty && p.target.trim().isNotEmpty) p,
+      ];
+
+  /// Räumt einen vollständigen Eintrag auf, damit er in der App lösbar ist:
+  /// leere Optionen/Lücken/Paare fallen weg, und eine Zuordnen-Frage mit
+  /// mehrfach genanntem Ziel wird zur Kategorien-Frage (sonst ließen sich
+  /// die gleichnamigen Ziele nicht unterscheiden). Ein sauberer Eintrag
+  /// bleibt unverändert.
+  static Map<String, dynamic> _sanitized(Map<String, dynamic> entry, QuestionType type) {
+    switch (type) {
+      case QuestionType.singleChoice:
+      case QuestionType.multipleChoice:
+        final options = _nonEmptyOptions(entry);
+        if (options.length != (entry['options'] as List).length) {
+          return {...entry, 'options': options.map((o) => o.toMap()).toList()};
+        }
+        return entry;
+      case QuestionType.fillBlank:
+        final blanks = _nonEmptyBlanks(entry);
+        if (blanks.length != (entry['blanks'] as List).length) return {...entry, 'blanks': blanks};
+        return entry;
+      case QuestionType.dragDrop:
+      case QuestionType.dragCategory:
+        final pairs = _usablePairs(entry);
+        final targets = pairs.map((p) => p.target.trim()).toList();
+        final duplicateTargets = type == QuestionType.dragDrop && targets.toSet().length < targets.length;
+        if (pairs.length == (entry['dragPairs'] as List).length && !duplicateTargets) return entry;
+        return {
+          ...entry,
+          'dragPairs': pairs.map((p) => p.toMap()).toList(),
+          if (duplicateTargets) 'type': 'drag_category',
+        };
+      case QuestionType.flashcard:
+      case QuestionType.freeText:
+      case QuestionType.html:
+        return entry;
+    }
+  }
+
   static bool _isComplete(Map<String, dynamic> raw, QuestionType type) {
     switch (type) {
       case QuestionType.flashcard:
         return (raw['back'] ?? '').toString().trim().isNotEmpty;
       case QuestionType.singleChoice:
       case QuestionType.multipleChoice:
-        final options = parseOptions(raw['options']);
-        return options != null && options.isNotEmpty && options.any((o) => o.isCorrect);
+        // Mindestens zwei Optionen, sonst gibt es nichts auszuwählen.
+        final options = _nonEmptyOptions(raw);
+        return options.length >= 2 && options.any((o) => o.isCorrect);
       case QuestionType.fillBlank:
-        final blanks = parseBlanks(raw['blanks']);
-        return blanks != null && blanks.any((b) => b.trim().isNotEmpty);
+        // Jede markierte Lücke braucht genau eine Lösung – sonst gäbe es
+        // Eingabefelder ohne Lücke oder Lücken ohne Eingabefeld.
+        final blanks = _nonEmptyBlanks(raw);
+        return blanks.isNotEmpty && blankMarkerCount((raw['front'] ?? '').toString()) == blanks.length;
       case QuestionType.freeText:
-        return (raw['correctText'] ?? '').toString().trim().isNotEmpty;
+        return (raw['correctText'] ?? '').toString().split(';').any((c) => c.trim().isNotEmpty);
       case QuestionType.dragDrop:
       case QuestionType.dragCategory:
-        final pairs = parseDragPairs(raw['dragPairs']);
-        return pairs != null && pairs.isNotEmpty;
+        return _usablePairs(raw).isNotEmpty;
       case QuestionType.html:
         final html = (raw['htmlContent'] ?? '').toString();
         // Grobe Vertragsprüfung: die Seite muss den JS-Rückkanal tatsächlich
@@ -165,8 +230,9 @@ class QuestionParsing {
     final back = (raw['back'] ?? '').toString().trim();
     if (back.isNotEmpty) return back;
 
-    final correctText = (raw['correctText'] ?? '').toString().trim();
-    if (correctText.isNotEmpty) return correctText;
+    final alternatives =
+        (raw['correctText'] ?? '').toString().split(';').map((c) => c.trim()).where((c) => c.isNotEmpty);
+    if (alternatives.isNotEmpty) return alternatives.join('; ');
 
     final blanks = parseBlanks(raw['blanks'])?.where((b) => b.trim().isNotEmpty).toList();
     if (blanks != null && blanks.isNotEmpty) return blanks.join(', ');

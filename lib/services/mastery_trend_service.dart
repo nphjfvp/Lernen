@@ -1,3 +1,4 @@
+import 'calendar_days.dart';
 import '../models/mastery_snapshot.dart';
 
 /// Vergleich des heutigen Stands mit einem Schnappschuss aus der Vergangenheit
@@ -42,7 +43,7 @@ class MasteryTrendService {
     MasterySnapshot? reference;
     int? bestDistanceToTarget;
     for (final snapshot in history) {
-      final daysAgo = today.date.difference(snapshot.date).inDays;
+      final daysAgo = calendarDaysBetween(snapshot.date, today.date);
       if (daysAgo <= 0) continue; // nur echte Vergangenheit, nicht heute/Zukunft
       final distanceToTarget = (daysAgo - targetDaysAgo).abs();
       if (bestDistanceToTarget == null || distanceToTarget < bestDistanceToTarget) {
@@ -62,7 +63,7 @@ class MasteryTrendService {
     }
 
     return MasteryTrend(
-      daysAgo: today.date.difference(reference.date).inDays,
+      daysAgo: calendarDaysBetween(reference.date, today.date),
       retrievabilityDelta: retrievabilityDelta,
       greenShareDelta: greenShareDelta,
     );

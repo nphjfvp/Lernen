@@ -1,7 +1,9 @@
 enum MaterialKind { slide, exercise, practiceExam }
 
-MaterialKind materialKindFromString(String value) =>
-    MaterialKind.values.firstWhere((e) => e.name == value);
+/// Unbekannte Werte (z.B. aus einer neueren App-Version) werden zu Folien,
+/// statt den ganzen Download/Import abbrechen zu lassen.
+MaterialKind materialKindFromString(String? value) =>
+    MaterialKind.values.firstWhere((e) => e.name == value, orElse: () => MaterialKind.slide);
 
 /// Farbkategorie einer Nutzer- oder KI-Markierung (siehe [MaterialHighlight]):
 /// rot = eignet sich als Prüfungsfrage, grün = Antwort/Schlüsselfakt dazu,
@@ -63,12 +65,12 @@ class MaterialHighlight {
       };
 
   factory MaterialHighlight.fromMap(Map<String, dynamic> map) => MaterialHighlight(
-        id: map['id'] as String,
-        text: map['text'] as String,
+        id: map['id']?.toString() ?? '',
+        text: map['text']?.toString() ?? '',
         color: highlightColorFromString(map['color'] as String?),
         source: highlightSourceFromString(map['source'] as String?),
         reason: map['reason'] as String?,
-        pageNumber: map['pageNumber'] as int?,
+        pageNumber: (map['pageNumber'] as num?)?.toInt(),
       );
 }
 
@@ -210,10 +212,10 @@ class MaterialItem {
   factory MaterialItem.fromMap(Map<String, dynamic> map) => MaterialItem(
         id: map['id'] as String,
         moduleId: map['moduleId'] as String,
-        fileName: map['fileName'] as String,
-        kind: materialKindFromString(map['kind'] as String),
-        extractedText: map['extractedText'] as String,
-        createdAt: DateTime.parse(map['createdAt'] as String),
+        fileName: map['fileName']?.toString() ?? '',
+        kind: materialKindFromString(map['kind'] as String?),
+        extractedText: map['extractedText']?.toString() ?? '',
+        createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime(2000),
         covered: map['covered'] as bool? ?? false,
         topicIndex: map['topicIndex'] as String?,
         filePath: map['filePath'] as String?,

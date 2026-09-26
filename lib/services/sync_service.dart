@@ -58,6 +58,24 @@ Map<String, dynamic> syncedAiSettingsForPull(Map<String, dynamic> synced, {requi
   return {...synced, 'openRouterApiKey': null, 'pdfStorage': null};
 }
 
+/// Bricht ab, wenn der Cloud-Stand von einer NEUEREN App-Version stammt: ihn
+/// als "alten Stand" zu lesen hieße, nichts zu finden, lokal aber alles zu
+/// löschen.
+void checkCloudFormat(Map<String, dynamic> root) {
+  final format = (root['format'] as num?)?.toInt();
+  if (format != null && format > SyncService.syncFormat) {
+    throw SyncException('Der Cloud-Stand stammt von einer neueren App-Version – bitte diese App erst aktualisieren.');
+  }
+}
+
+/// Ohne Fächerliste ist ein Download kein brauchbarer Stand – dann lieber
+/// abbrechen, als die lokalen Daten durch nichts zu ersetzen.
+void checkUsablePayload(Map<String, dynamic> data) {
+  if (data['modules'] is! List) {
+    throw SyncException('Der Cloud-Stand ist unvollständig – lokale Daten bleiben unverändert.');
+  }
+}
+
 /// Wohin synchronisiert wird: an ein Firebase-Konto gebunden oder über
 /// einen frei gewählten Sync-Code.
 class SyncTarget {
@@ -255,6 +273,7 @@ class SyncService {
     DocumentReference<Map<String, dynamic>> doc,
     Map<String, dynamic> root,
   ) async {
+    checkCloudFormat(root);
     if (root['format'] != syncFormat) return root; // alter Stand: alles im Hauptdokument
     final partCount = (root['partCount'] as num?)?.toInt() ?? 0;
     if (partCount == 0) {
@@ -292,6 +311,7 @@ class SyncService {
     }
     final root = snapshot.data()!;
     final data = await _readPayload(doc, root);
+    checkUsablePayload(data);
     final db = await DatabaseService.instance.database;
 
     await db.transaction((txn) async {

@@ -113,12 +113,15 @@ class StatsService {
       if (lr != null) reviewDays.add(DateTime(lr.year, lr.month, lr.day));
     }
 
+    // Tage per Kalender zurückzählen, nicht per 24 Stunden: an der
+    // Zeitumstellung landete "minus 24 h" auf 23 bzw. 1 Uhr, der Tag wäre
+    // nicht mehr gefunden worden und der Streak dort abgerissen.
     final todayDate = DateTime(today.year, today.month, today.day);
-    var cursor = reviewDays.contains(todayDate) ? todayDate : todayDate.subtract(const Duration(days: 1));
+    var cursor = reviewDays.contains(todayDate) ? todayDate : DateTime(today.year, today.month, today.day - 1);
     var streak = 0;
     while (reviewDays.contains(cursor)) {
       streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
+      cursor = DateTime(cursor.year, cursor.month, cursor.day - 1);
     }
     return streak;
   }

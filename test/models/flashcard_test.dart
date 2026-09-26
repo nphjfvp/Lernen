@@ -216,6 +216,20 @@ void main() {
   });
 
   group('Flashcard.answerSummary', () {
+    test('Lückentext: Varianten einer Lücke als "a / b", Lücken per "; "', () {
+      final card = Flashcard(
+        id: 'fb',
+        moduleId: 'm1',
+        front: 'Die ___ liefert ___.',
+        back: '',
+        createdAt: DateTime(2026, 1, 1),
+        due: DateTime(2026, 1, 1),
+        type: QuestionType.fillBlank,
+        blanks: const ['Mitochondrium; Mitochondrien', 'ATP'],
+      );
+      expect(card.answerSummary, 'Mitochondrium / Mitochondrien; ATP');
+    });
+
     test('flashcard nutzt back', () {
       expect(_base().answerSummary, 'Antwort');
     });

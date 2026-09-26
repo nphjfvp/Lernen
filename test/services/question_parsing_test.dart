@@ -179,6 +179,95 @@ void main() {
     });
   });
 
+  group('QuestionParsing.normalizeGeneratedFlashcard – lösbar machen', () {
+    test('Zuordnen mit mehrfach genanntem Ziel wird zur Kategorien-Frage', () {
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'drag_drop',
+        'front': 'Ordnen Sie die Bauteile der Werkstoffklasse zu.',
+        'dragPairs': [
+          {'source': 'Turbinenschaufel', 'target': 'Metall'},
+          {'source': 'Fahrradrahmen', 'target': 'Metall'},
+          {'source': 'Zahnfüllung', 'target': 'Keramik'},
+        ],
+      });
+      expect(fixed!['type'], 'drag_category');
+      expect((fixed['dragPairs'] as List), hasLength(3));
+    });
+
+    test('leere Paare, Optionen und Lücken fallen weg', () {
+      final drag = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'drag_drop',
+        'front': 'Ordne zu',
+        'dragPairs': [
+          {'source': 'Hund', 'target': 'Tier'},
+          {'source': '', 'target': 'Pflanze'},
+        ],
+      });
+      expect(drag!['type'], 'drag_drop');
+      expect(drag['dragPairs'], [
+        {'source': 'Hund', 'target': 'Tier'},
+      ]);
+
+      final choice = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'single_choice',
+        'front': 'Frage?',
+        'options': [
+          {'text': 'A', 'isCorrect': true},
+          {'text': ' ', 'isCorrect': false},
+          {'text': 'B', 'isCorrect': false},
+        ],
+      });
+      expect((choice!['options'] as List).map((o) => o['text']), ['A', 'B']);
+    });
+
+    test('Single-Choice mit nur einer Option ist keine Auswahlfrage', () {
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'single_choice',
+        'front': 'Frage?',
+        'options': [
+          {'text': 'Einzige', 'isCorrect': true},
+        ],
+      });
+      expect(fixed!['type'], 'flashcard');
+      expect(fixed['back'], 'Einzige');
+    });
+
+    test('Lückentext: Anzahl der Lücken muss zu den Lösungen passen', () {
+      final ok = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'fill_blank',
+        'front': '___ ist die Hauptstadt von ____.',
+        'blanks': ['Paris', 'Frankreich'],
+      });
+      expect(ok!['type'], 'fill_blank');
+
+      final mismatch = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'fill_blank',
+        'front': 'Die Hauptstadt ist ___.',
+        'blanks': ['Paris', 'paris'],
+      });
+      expect(mismatch!['type'], 'flashcard');
+      expect(mismatch['back'], 'Paris, paris');
+    });
+
+    test('Lückentext ohne Lücke mit einer Lösung wird Freitext', () {
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'fill_blank',
+        'front': 'Wie heißt die Hauptstadt von Frankreich?',
+        'blanks': ['Paris'],
+      });
+      expect(fixed!['type'], 'free_text');
+      expect(fixed['correctText'], 'Paris');
+      expect(fixed.containsKey('blanks'), isFalse);
+    });
+
+    test('Freitext mit nur leeren Alternativen ist unvollständig', () {
+      expect(
+        QuestionParsing.normalizeGeneratedFlashcard({'type': 'free_text', 'front': 'Frage?', 'correctText': ' ; '}),
+        isNull,
+      );
+    });
+  });
+
   group('QuestionParsing.parseType – html', () {
     test('"html" wird auf QuestionType.html gemappt (nicht auf den flashcard-Default)', () {
       expect(QuestionParsing.parseType('html'), QuestionType.html);

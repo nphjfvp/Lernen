@@ -42,7 +42,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   DateTime _gridStart() {
     final offset = _visibleMonth.weekday - 1; // Montag=1 -> Offset 0
-    return _visibleMonth.subtract(Duration(days: offset));
+    return DateTime(_visibleMonth.year, _visibleMonth.month, _visibleMonth.day - offset);
   }
 
   @override
@@ -51,7 +51,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final modules = context.watch<ModuleRepository>().modules;
 
     final gridStart = _gridStart();
-    final gridEnd = gridStart.add(const Duration(days: 42));
+    final gridEnd = DateTime(gridStart.year, gridStart.month, gridStart.day + 42);
     final events = _service.eventsInRange(modules: modules, start: gridStart, end: gridEnd);
 
     final eventsByDay = <DateTime, List<CalendarEvent>>{};
@@ -178,7 +178,10 @@ class _MonthGrid extends StatelessWidget {
         for (var week = 0; week < 6; week++)
           Row(
             children: List.generate(7, (i) {
-              final day = gridStart.add(Duration(days: week * 7 + i));
+              // Kalendertage statt 24-h-Schritte: über die Zeitumstellung
+              // hinweg läge der Tag sonst auf 23 bzw. 1 Uhr – er fände seine
+              // Termine nicht und hieße im Oktober doppelt.
+              final day = DateTime(gridStart.year, gridStart.month, gridStart.day + week * 7 + i);
               final inMonth = day.month == visibleMonth.month;
               final isToday = day == today;
               final isSelected = day == selectedDay;

@@ -38,14 +38,16 @@ class Summary {
         'unitId': unitId,
       };
 
+  /// Tolerant gegenüber importierten/älteren Datensätzen (fehlende Felder,
+  /// Zahlen statt Texte) statt beim Laden abzustürzen.
   factory Summary.fromMap(Map<String, dynamic> map) => Summary(
         id: map['id'] as String,
         moduleId: map['moduleId'] as String,
-        sourceMaterialIds: List<String>.from(map['sourceMaterialIds'] as List),
-        title: map['title'] as String,
-        overview: map['overview'] as String,
-        keyPoints: List<String>.from(map['keyPoints'] as List),
-        createdAt: DateTime.parse(map['createdAt'] as String),
+        sourceMaterialIds: [for (final id in map['sourceMaterialIds'] as List? ?? const []) id.toString()],
+        title: map['title']?.toString() ?? '',
+        overview: map['overview']?.toString() ?? '',
+        keyPoints: [for (final p in map['keyPoints'] as List? ?? const []) p.toString()],
+        createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime(2000),
         unitId: map['unitId'] as String?,
       );
 }

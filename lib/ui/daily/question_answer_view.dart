@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -53,6 +54,25 @@ class QuestionAnswerView extends StatefulWidget {
   State<QuestionAnswerView> createState() => _QuestionAnswerViewState();
 }
 
+/// Anzeige-Reihenfolge von Antwortoptionen (Indizes in [Flashcard.options]):
+/// Die KI setzt die richtige Option auffällig oft an den Anfang – ohne
+/// Mischen lernt man die Position statt den Inhalt. Optionen wie "Alle
+/// genannten"/"Keine der genannten" bleiben am Ende, weil sie sich auf die
+/// übrigen beziehen.
+@visibleForTesting
+List<int> optionDisplayOrder(List<QuizOption> options, {Random? random}) {
+  final meta = RegExp(r'^\s*(alle|keine|beide|sowohl)\b', caseSensitive: false);
+  final regular = [
+    for (var i = 0; i < options.length; i++)
+      if (!meta.hasMatch(options[i].text)) i,
+  ]..shuffle(random);
+  return [
+    ...regular,
+    for (var i = 0; i < options.length; i++)
+      if (meta.hasMatch(options[i].text)) i,
+  ];
+}
+
 class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   bool _showBack = false;
 
@@ -61,16 +81,33 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   final _freeTextController = TextEditingController();
   late List<TextEditingController> _blankControllers;
 
-  late List<String> _pool;
-  final Map<String, String> _assignments = {};
+  /// Noch nicht abgelegte Begriffe als Indizes in [_pairs] – bewusst nicht
+  /// der Text: Begriffe und Ziele können gleich lauten (z.B. zweimal
+  /// "Metall"), dann würde ein Begriff sonst mehrere Felder belegen.
+  late List<int> _pool;
+
+  /// Zuordnen: Ziel-Index -> Index des dort abgelegten Begriffs.
+  final Map<int, int> _zoneToSource = {};
+
+  /// Kategorien: Begriff-Index -> gewählte Kategorie.
+  final Map<int, String> _sourceToCategory = {};
+
+  /// Per Antippen ausgewählter Begriff (Alternative zum Ziehen): danach ein
+  /// Ziel antippen legt ihn dort ab.
+  int? _selectedSource;
 
   bool _checked = false;
   AnswerCheckResult? _result;
 
-  /// true, während für eine Freitext-Antwort auf die KI-Zweitmeinung
-  /// gewartet wird (siehe [_checkFreeTextAnswer]) – deaktiviert währenddessen
-  /// den "Prüfen"-Button, damit nicht doppelt angefragt wird.
-  bool _freeTextAiChecking = false;
+  /// true, während für eine Freitext- oder Lückentext-Antwort auf die
+  /// KI-Zweitmeinung gewartet wird (siehe [_checkFreeTextAnswer],
+  /// [_checkFillBlankAnswer]) – sperrt währenddessen "Prüfen" und die
+  /// Eingabe, damit nicht doppelt angefragt oder nachträglich geändert wird.
+  bool _aiChecking = false;
+
+  /// Lückentext nach dem Prüfen: je Lücke, ob sie (lokal oder laut KI)
+  /// richtig war.
+  List<bool>? _blankHits;
 
   // -- html-Typ: interaktive Seite in einer sandboxed WebView -------------
   WebViewController? _webViewController;
@@ -103,14 +140,24 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     widget.onComplete(selfGrade: selfGrade, isCorrect: isCorrect);
   }
 
-  bool get _isCategoryDrag => widget.card.type == QuestionType.dragCategory;
+  /// Zuordnen-Fragen mit mehrfach genannten Zielen gelten als Kategorien
+  /// (siehe AnswerChecker.isCategoryDrag).
+  late final bool _isCategoryDrag = AnswerChecker.isCategoryDrag(widget.card);
+  late final List<DragPair> _pairs = AnswerChecker.usableDragPairs(widget.card);
+  late final List<String> _blanks = AnswerChecker.solvableBlanks(widget.card);
+
+  /// Karten mit unbrauchbaren Daten (keine richtige Option, leere Lösung …)
+  /// werden wie eine Karteikarte selbst bewertet statt unlösbar abgefragt.
+  late final bool _answerable = AnswerChecker.isAnswerable(widget.card);
+
+  /// Anzeige-Reihenfolge der Antwortoptionen (Indizes in [Flashcard.options]).
+  late final List<int> _optionOrder = optionDisplayOrder(widget.card.options ?? const []);
 
   @override
   void initState() {
     super.initState();
-    final blanksCount = widget.card.blanks?.length ?? 0;
-    _blankControllers = List.generate(blanksCount, (_) => TextEditingController());
-    _pool = (widget.card.dragPairs ?? const []).map((p) => p.source).toList()..shuffle();
+    _blankControllers = List.generate(_blanks.length, (_) => TextEditingController());
+    _pool = List.generate(_pairs.length, (i) => i)..shuffle();
     if (widget.card.type == QuestionType.html) _setupWebView();
   }
 
@@ -147,11 +194,25 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// abstürzen zu lassen – der Nutzer kann die Seite dann einfach nicht
   /// sinnvoll beenden und würde zum nächsten Öffnen dieser Karte erneut
   /// einen Versuch bekommen.
+  ///
+  /// Außerhalb der Probeklausur geht es danach NICHT sofort weiter: die
+  /// Seite zeigt meist ihr eigenes Feedback, das sonst nie zu sehen wäre –
+  /// die App zeigt ihr Ergebnis darunter mit "Weiter". Nur der erste
+  /// gemeldete Versuch zählt.
   void _handleHtmlAnswerMessage(JavaScriptMessage message) {
     try {
       final data = jsonDecode(message.message);
       if (data is Map && data['correct'] is bool) {
-        _submit(isCorrect: data['correct'] as bool);
+        final correct = data['correct'] as bool;
+        if (widget.examMode) {
+          _submit(isCorrect: correct);
+          return;
+        }
+        if (!mounted || _checked) return;
+        setState(() {
+          _checked = true;
+          _result = AnswerCheckResult(isCorrect: correct, correctAnswerLabel: widget.card.back);
+        });
       }
     } catch (_) {
       // Siehe Doc-Kommentar oben.
@@ -167,63 +228,58 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     super.dispose();
   }
 
-  List<String> get _dropZones {
-    final pairs = widget.card.dragPairs ?? const [];
-    if (_isCategoryDrag) {
-      final seen = <String>{};
-      final zones = <String>[];
-      for (final p in pairs) {
-        if (seen.add(p.target)) zones.add(p.target);
-      }
-      return zones;
-    }
-    return pairs.map((p) => p.target).toList();
-  }
-
-  void _placeInZone(String source, String zone) {
+  /// Legt Begriff [source] auf Ziel [zone] (Zuordnen) – ein dort liegender
+  /// Begriff wandert zurück in den Pool, sonst verschwände er aus der
+  /// Oberfläche und wäre nicht mehr zuordenbar.
+  void _placeOnZone(int source, int zone) {
     if (_checked) return;
     setState(() {
-      _assignments.removeWhere((k, v) => _isCategoryDrag ? k == source : v == source);
+      _selectedSource = null;
+      _zoneToSource.removeWhere((_, s) => s == source);
       _pool.remove(source);
-      if (_isCategoryDrag) {
-        _assignments[source] = zone;
-      } else {
-        // Belegtes Ziel: der bisherige Begriff muss zurück in den Pool,
-        // sonst verschwände er aus der Oberfläche und wäre nicht mehr
-        // zuordenbar.
-        final displaced = _assignments[zone];
-        if (displaced != null && displaced != source && !_pool.contains(displaced)) {
-          _pool.add(displaced);
-        }
-        _assignments[zone] = source;
+      final displaced = _zoneToSource[zone];
+      if (displaced != null && displaced != source && !_pool.contains(displaced)) {
+        _pool.add(displaced);
       }
+      _zoneToSource[zone] = source;
     });
   }
 
-  void _returnToPool(String source) {
+  void _placeInCategory(int source, String category) {
     if (_checked) return;
     setState(() {
-      _assignments.removeWhere((k, v) => _isCategoryDrag ? k == source : v == source);
+      _selectedSource = null;
+      _pool.remove(source);
+      _sourceToCategory[source] = category;
+    });
+  }
+
+  void _returnToPool(int source) {
+    if (_checked) return;
+    setState(() {
+      _selectedSource = null;
+      _zoneToSource.removeWhere((_, s) => s == source);
+      _sourceToCategory.remove(source);
       if (!_pool.contains(source)) _pool.add(source);
     });
   }
 
   bool get _canCheck {
-    if (_freeTextAiChecking) return false;
+    if (_aiChecking) return false;
     switch (widget.card.type) {
       case QuestionType.flashcard:
         return false;
       case QuestionType.singleChoice:
         return _selectedIndex != null;
       case QuestionType.multipleChoice:
-        return true;
+        return _selectedIndices.isNotEmpty;
       case QuestionType.freeText:
         return _freeTextController.text.trim().isNotEmpty;
       case QuestionType.fillBlank:
         return _blankControllers.every((c) => c.text.trim().isNotEmpty);
       case QuestionType.dragDrop:
       case QuestionType.dragCategory:
-        return _pool.isEmpty;
+        return _pool.isEmpty && _pairs.isNotEmpty;
       case QuestionType.html:
         return false; // eigener build()-Zweig, siehe _buildHtmlQuestion.
     }
@@ -253,11 +309,12 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.multipleChoice:
         return AnswerChecker.checkMultipleChoice(card, _selectedIndices);
       case QuestionType.fillBlank:
-        return AnswerChecker.checkFillBlank(card, _blankControllers.map((c) => c.text).toList());
+        return _checkFillBlankAnswer();
       case QuestionType.dragDrop:
-        return AnswerChecker.checkDragDrop(card, Map.of(_assignments));
       case QuestionType.dragCategory:
-        return AnswerChecker.checkDragCategory(card, Map.of(_assignments));
+        return _isCategoryDrag
+            ? AnswerChecker.checkDragCategory(card, Map.of(_sourceToCategory))
+            : AnswerChecker.checkDragDrop(card, Map.of(_zoneToSource));
       case QuestionType.freeText:
         return _checkFreeTextAnswer();
       case QuestionType.flashcard:
@@ -284,7 +341,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     final ai = _aiOrNull();
     if (ai == null) return localResult;
 
-    setState(() => _freeTextAiChecking = true);
+    setState(() => _aiChecking = true);
     try {
       final aiCorrect = await ai.checkFreeTextAnswer(
         question: card.front,
@@ -295,8 +352,35 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     } catch (_) {
       return localResult;
     } finally {
-      if (mounted) setState(() => _freeTextAiChecking = false);
+      if (mounted) setState(() => _aiChecking = false);
     }
+  }
+
+  /// Lückentext, zweistufig wie Freitext: zuerst lokal je Lücke (exakt,
+  /// kleiner Tippfehler oder eine der per ";" hinterlegten Varianten). Lehnt
+  /// das eine Lücke ab, bewertet die KI jede Lücke nach
+  /// (AiService.checkFillBlankAnswers) – andere richtige Begriffe, Synonyme,
+  /// gröbere Rechtschreibfehler. Die KI kann eine Lücke nur nachträglich als
+  /// richtig werten, nie eine lokal richtige verwerfen. Ohne API-Key oder bei
+  /// einem Fehler zählt das lokale Ergebnis.
+  Future<AnswerCheckResult> _checkFillBlankAnswer() async {
+    final card = widget.card;
+    final answers = _blankControllers.map((c) => c.text).toList();
+    var hits = AnswerChecker.fillBlankHits(card, answers);
+    final ai = hits.every((h) => h) ? null : _aiOrNull();
+    if (ai != null) {
+      setState(() => _aiChecking = true);
+      try {
+        final verdicts = await ai.checkFillBlankAnswers(text: card.front, solutions: _blanks, answers: answers);
+        hits = [for (var i = 0; i < hits.length; i++) hits[i] || (i < verdicts.length && verdicts[i])];
+      } catch (_) {
+        // Lokales Ergebnis bleibt, siehe oben.
+      } finally {
+        if (mounted) setState(() => _aiChecking = false);
+      }
+    }
+    _blankHits = hits;
+    return AnswerChecker.fillBlankResult(card, hits);
   }
 
   AiService? _aiOrNull() {
@@ -331,9 +415,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.fillBlank:
         return _blankControllers.map((c) => c.text).join('; ');
       case QuestionType.dragDrop:
-        return [for (final e in _assignments.entries) '${e.value} -> ${e.key}'].join('; ');
       case QuestionType.dragCategory:
-        return [for (final e in _assignments.entries) '${e.key} -> ${e.value}'].join('; ');
+        return _isCategoryDrag
+            ? [for (final e in _sourceToCategory.entries) '${_pairs[e.key].source} -> ${e.value}'].join('; ')
+            : [for (final e in _zoneToSource.entries) '${_pairs[e.value].source} -> ${_pairs[e.key].target}'].join('; ');
       case QuestionType.flashcard:
       case QuestionType.html:
         return null;
@@ -459,7 +544,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    if (widget.card.type == QuestionType.flashcard) {
+    if (widget.card.type == QuestionType.flashcard || !_answerable) {
       return _buildFlashcard(c);
     }
     if (widget.card.type == QuestionType.html) {
@@ -480,6 +565,25 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       children: [
         if (_webViewLoading) const LinearProgressIndicator(minHeight: 2),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
+        if (_checked)
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.45),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildFeedback(c),
+                  _buildExplainArea(c),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => _submit(isCorrect: _result!.isCorrect),
+                    child: const Text('Weiter'),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -523,7 +627,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                               child: Divider(height: 1, color: c.border),
                             ),
                             MathText(
-                              widget.card.back,
+                              _backText,
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 15, height: 1.6, color: c.inkMuted),
                             ),
@@ -582,6 +686,15 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     );
   }
 
+  /// Rückseite in der Karteikarten-Ansicht – bei der Ersatzansicht für
+  /// Karten mit kaputten Daten die bestmögliche Lösung.
+  String get _backText {
+    final card = widget.card;
+    if (card.back.trim().isNotEmpty) return card.back;
+    final summary = card.answerSummary.trim();
+    return summary.isNotEmpty ? summary : '(Keine Lösung hinterlegt)';
+  }
+
   /// Zeigt den an [Flashcard.imageBase64] hängenden Seiten-Screenshot,
   /// falls vorhanden (siehe PageQuestionCreationSheet – nur bei Fragen
   /// gesetzt, die das Vision-Modell als "needsImage" markiert hat, z.B. weil
@@ -638,7 +751,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                 decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(20)),
-                child: Text(card.type.label,
+                child: Text(_isCategoryDrag ? QuestionType.dragCategory.label : card.type.label,
                     style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.accentOnSoft, letterSpacing: 0.03)),
               ),
               const SizedBox(height: 12),
@@ -670,7 +783,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         else
           FilledButton(
             onPressed: _canCheck ? (widget.examMode ? _submitExamAnswer : _check) : null,
-            child: _freeTextAiChecking
+            child: _aiChecking
                 ? const SizedBox(
                     width: 18,
                     height: 18,
@@ -694,7 +807,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.freeText:
         return TextField(
           controller: _freeTextController,
-          enabled: !_checked,
+          enabled: !_checked && !_aiChecking,
           decoration: InputDecoration(
             hintText: 'Antwort eingeben …',
             filled: true,
@@ -714,7 +827,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   Widget _buildChoiceOptions(AppColors c, {required bool multiple}) {
     final options = widget.card.options ?? const [];
     return Column(
-      children: List.generate(options.length, (i) {
+      children: _optionOrder.map((i) {
         final option = options[i];
         final selected = multiple ? _selectedIndices.contains(i) : _selectedIndex == i;
         Color? tileColor;
@@ -772,27 +885,47 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             ),
           ),
         );
-      }),
+      }).toList(),
     );
+  }
+
+  /// Bei mehreren Lücken werden sie im Text nummeriert, damit klar ist,
+  /// welches Eingabefeld zu welcher Lücke gehört.
+  String get _fillBlankFront {
+    final front = widget.card.front;
+    if (_blanks.length < 2) return front;
+    var n = 0;
+    return front.replaceAllMapped(RegExp(r'_{3,}'), (m) => '${m[0]} (${++n})');
   }
 
   Widget _buildFillBlank(AppColors c) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        MathText(widget.card.front, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4)),
+        MathText(_fillBlankFront, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4)),
         const SizedBox(height: 16),
         ...List.generate(_blankControllers.length, (i) {
+          // Nach dem Prüfen je Lücke ✓/✗; die hinterlegte Lösung erscheint,
+          // wenn die Eingabe falsch war oder nur dank Tippfehler-Toleranz/KI
+          // als richtig galt (dann sieht man die korrekte Schreibweise).
+          final hit = _checked ? _blankHits?.elementAtOrNull(i) : null;
+          final showSolution = hit != null &&
+              !(hit && AnswerChecker.answerExactlyMatches(_blankControllers[i].text, _blanks[i]));
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: TextField(
               controller: _blankControllers[i],
-              enabled: !_checked,
+              enabled: !_checked && !_aiChecking,
               decoration: InputDecoration(
                 labelText: 'Lücke ${i + 1}',
                 filled: true,
-                fillColor: c.surfaceAlt,
+                fillColor: hit == null ? c.surfaceAlt : (hit ? c.goodSoft : c.dangerSoft),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                suffixIcon: hit == null
+                    ? null
+                    : Icon(hit ? Icons.check_circle : Icons.cancel, color: hit ? c.good : c.danger, size: 20),
+                helperText: showSolution ? 'Lösung: ${AnswerChecker.solutionLabel(_blanks[i])}' : null,
+                helperMaxLines: 3,
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -803,105 +936,178 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   }
 
   Widget _buildDragDrop(AppColors c) {
+    final correctPlacements =
+        _checked && _isCategoryDrag ? AnswerChecker.correctCategoryPlacements(widget.card, _sourceToCategory) : const <int>{};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          _isCategoryDrag ? 'Ordne jeden Begriff der richtigen Kategorie zu.' : 'Ziehe die Begriffe auf die passenden Ziele.',
+          _isCategoryDrag
+              ? 'Ordne jeden Begriff der richtigen Kategorie zu – ziehen oder antippen und dann die Kategorie antippen.'
+              : 'Ziehe die Begriffe auf die passenden Ziele – oder antippen und dann das Ziel antippen.',
           style: TextStyle(fontSize: 12.5, color: c.inkMuted),
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _pool.map((source) => _dragChip(c, source)).toList(),
+        DragTarget<int>(
+          onWillAcceptWithDetails: (details) => !_checked && !_pool.contains(details.data),
+          onAcceptWithDetails: (details) => _returnToPool(details.data),
+          builder: (context, candidates, _) => Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 40),
+            decoration: candidates.isNotEmpty
+                ? BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(14))
+                : null,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final source in _pool) _dragChip(c, source)],
+            ),
+          ),
         ),
         const SizedBox(height: 16),
-        ..._dropZones.map((zone) => Padding(
+        if (_isCategoryDrag)
+          for (final category in AnswerChecker.dragCategories(widget.card))
+            Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _dropZone(c, zone),
-            )),
+              child: _categoryZone(c, category, correctPlacements),
+            )
+        else
+          for (var zone = 0; zone < _pairs.length; zone++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _pairZone(c, zone),
+            ),
       ],
     );
   }
 
-  Widget _dragChip(AppColors c, String source) {
+  /// Ein Begriff im Pool: ziehen oder antippen (auswählen).
+  Widget _dragChip(AppColors c, int source) {
+    final selected = _selectedSource == source;
     final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(20)),
-      child: Text(source, style: TextStyle(fontSize: 13, color: c.accentOnSoft, fontWeight: FontWeight.w600)),
+      decoration: BoxDecoration(
+        color: selected ? c.accentSolid : c.accentSoft,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        _pairs[source].source,
+        style: TextStyle(fontSize: 13, color: selected ? c.accentInk : c.accentOnSoft, fontWeight: FontWeight.w600),
+      ),
     );
     if (_checked) return chip;
-    return Draggable<String>(
+    return Draggable<int>(
       data: source,
       feedback: Material(color: Colors.transparent, child: chip),
       childWhenDragging: Opacity(opacity: 0.3, child: chip),
-      child: chip,
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedSource = selected ? null : source),
+        child: chip,
+      ),
     );
   }
 
-  Widget _dropZone(AppColors c, String zone) {
-    final pairs = widget.card.dragPairs ?? const [];
-    // Zuordnen: genau ein Begriff pro Ziel. Kategorien: beliebig viele – ALLE
-    // anzeigen (einzeln zurücklegbar, nach dem Prüfen einzeln eingefärbt),
-    // sonst verschwänden weitere zugeordnete Begriffe unsichtbar.
-    final assignedSources = _isCategoryDrag
-        ? [for (final e in _assignments.entries) if (e.value == zone) e.key]
-        : [if (_assignments[zone] != null) _assignments[zone]!];
+  /// Ein bereits abgelegter Begriff: antippen legt ihn zurück, ziehen
+  /// verschiebt ihn auf ein anderes Ziel.
+  Widget _assignedChip(AppColors c, int source, {Color? color}) {
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: color ?? c.surface, borderRadius: BorderRadius.circular(20)),
+      child: Text(_pairs[source].source, style: TextStyle(fontSize: 12.5, color: c.ink)),
+    );
+    if (_checked) return chip;
+    return Draggable<int>(
+      data: source,
+      feedback: Material(color: Colors.transparent, child: chip),
+      childWhenDragging: Opacity(opacity: 0.3, child: chip),
+      child: GestureDetector(onTap: () => _returnToPool(source), child: chip),
+    );
+  }
 
-    Color? tileColor;
-    if (_checked && !_isCategoryDrag) {
-      final correctSource =
-          pairs.firstWhere((p) => p.target == zone, orElse: () => const DragPair(source: '', target: '')).source;
-      tileColor = assignedSources.isNotEmpty && assignedSources.first == correctSource ? c.goodSoft : c.dangerSoft;
-    }
-
-    Widget assignedChip(String source) {
-      final chipColor = _checked && _isCategoryDrag
-          ? (pairs.any((p) => p.source == source && p.target == zone) ? c.goodSoft : c.dangerSoft)
-          : c.surface;
-      return GestureDetector(
-        onTap: _checked ? null : () => _returnToPool(source),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(color: chipColor, borderRadius: BorderRadius.circular(20)),
-          child: Text(source, style: TextStyle(fontSize: 12.5, color: c.ink)),
+  Widget _zoneFrame(
+    AppColors c, {
+    required Color? tileColor,
+    required bool highlighted,
+    required VoidCallback? onTap,
+    required Widget child,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: tileColor ?? (highlighted ? c.accentSoft : c.surfaceAlt),
+          border: Border.all(color: highlighted ? c.accent : c.border),
+          borderRadius: BorderRadius.circular(14),
         ),
-      );
-    }
+        child: child,
+      ),
+    );
+  }
 
-    return DragTarget<String>(
+  /// Zuordnen: genau ein Begriff pro Ziel.
+  Widget _pairZone(AppColors c, int zone) {
+    final assigned = _zoneToSource[zone];
+    final Color? tileColor =
+        _checked ? (AnswerChecker.dragZoneCorrect(widget.card, zone, assigned) ? c.goodSoft : c.dangerSoft) : null;
+    final selected = _selectedSource;
+    return DragTarget<int>(
       onWillAcceptWithDetails: (_) => !_checked,
-      onAcceptWithDetails: (details) => _placeInZone(details.data, zone),
-      builder: (context, candidateData, rejectedData) {
-        final label = Text(zone, style: const TextStyle(fontWeight: FontWeight.w600));
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: tileColor ?? (candidateData.isNotEmpty ? c.accentSoft : c.surfaceAlt),
-            border: Border.all(color: c.border),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: _isCategoryDrag
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    label,
-                    if (assignedSources.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Wrap(spacing: 6, runSpacing: 6, children: assignedSources.map(assignedChip).toList()),
-                    ],
-                  ],
-                )
-              : Row(
-                  children: [
-                    Expanded(child: label),
-                    if (assignedSources.isNotEmpty) assignedChip(assignedSources.first),
-                  ],
-                ),
-        );
-      },
+      onAcceptWithDetails: (details) => _placeOnZone(details.data, zone),
+      builder: (context, candidates, _) => _zoneFrame(
+        c,
+        tileColor: tileColor,
+        highlighted: candidates.isNotEmpty || (selected != null && !_checked),
+        onTap: selected == null || _checked ? null : () => _placeOnZone(selected, zone),
+        child: Row(
+          children: [
+            Expanded(child: Text(_pairs[zone].target, style: const TextStyle(fontWeight: FontWeight.w600))),
+            if (assigned != null) _assignedChip(c, assigned),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Kategorien: beliebig viele Begriffe – ALLE anzeigen (einzeln
+  /// zurücklegbar, nach dem Prüfen einzeln eingefärbt).
+  Widget _categoryZone(AppColors c, String category, Set<int> correctPlacements) {
+    final assigned = [
+      for (final e in _sourceToCategory.entries)
+        if (e.value == category) e.key,
+    ];
+    final selected = _selectedSource;
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (_) => !_checked,
+      onAcceptWithDetails: (details) => _placeInCategory(details.data, category),
+      builder: (context, candidates, _) => _zoneFrame(
+        c,
+        tileColor: null,
+        highlighted: candidates.isNotEmpty || (selected != null && !_checked),
+        onTap: selected == null || _checked ? null : () => _placeInCategory(selected, category),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(category, style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (assigned.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final source in assigned)
+                    _assignedChip(
+                      c,
+                      source,
+                      color: _checked ? (correctPlacements.contains(source) ? c.goodSoft : c.dangerSoft) : null,
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 

@@ -51,12 +51,12 @@ class Concept {
   factory Concept.fromMap(Map<String, dynamic> map) => Concept(
         id: map['id'] as String,
         moduleId: map['moduleId'] as String,
-        title: map['title'] as String,
-        explanation: map['explanation'] as String,
-        sourceMaterialIds: List<String>.from(map['sourceMaterialIds'] as List),
-        createdAt: DateTime.parse(map['createdAt'] as String),
+        title: map['title']?.toString() ?? '',
+        explanation: map['explanation']?.toString() ?? '',
+        sourceMaterialIds: [for (final id in map['sourceMaterialIds'] as List? ?? const []) id.toString()],
+        createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime(2000),
         unitId: map['unitId'] as String?,
         linkedMaterialId: map['linkedMaterialId'] as String?,
-        linkedPageNumber: map['linkedPageNumber'] as int?,
+        linkedPageNumber: (map['linkedPageNumber'] as num?)?.toInt(),
       );
 }

@@ -4,7 +4,10 @@ import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/lecture_unit.dart';
 import 'package:lernen/models/material_item.dart';
 import 'package:lernen/models/module.dart';
+import 'package:lernen/models/summary.dart';
+import 'package:lernen/services/database_service.dart';
 import 'package:lernen/services/module_export_service.dart';
+import 'package:sembast/sembast_memory.dart';
 
 void main() {
   final module = Module(
@@ -148,6 +151,97 @@ void main() {
 
     test('wirft bei fehlendem "module"-Feld eine klare Fehlermeldung', () {
       expect(() => ModuleExportService.parse({'formatVersion': 1}), throwsFormatException);
+    });
+  });
+
+  group('ModuleExportService – Zusammenfassungen, Transaktion, Lernstand', () {
+    final summary = Summary(
+      id: 'sum1',
+      moduleId: 'mod1',
+      sourceMaterialIds: const ['mat1', 'fehlt'],
+      title: 'Überblick',
+      overview: 'Worum es geht',
+      keyPoints: const ['Punkt'],
+      createdAt: DateTime(2026, 1, 7),
+      unitId: 'unit1',
+    );
+
+    test('Zusammenfassungen reisen mit und zeigen auf die neuen IDs', () {
+      final payload = ModuleExportService.buildPayload(
+        module: module,
+        lectureUnits: [unit],
+        materialsWithBytes: [material],
+        concepts: [concept],
+        flashcards: [flashcard],
+        summaries: [summary],
+      );
+      final imported = ModuleExportService.parse(payload);
+      final s = imported.summaries.single;
+      expect(s.id, isNot('sum1'));
+      expect(s.moduleId, imported.module.id);
+      expect(s.unitId, imported.lectureUnits.single.id);
+      expect(s.sourceMaterialIds, [imported.materials.single.id]);
+      expect(s.title, 'Überblick');
+    });
+
+    test('ältere Exportdateien ohne Zusammenfassungen bleiben lesbar', () {
+      expect(ModuleExportService.parse(buildFullPayload()).summaries, isEmpty);
+    });
+
+    test('saveImported schreibt alles in eine Datenbank', () async {
+      final db = await databaseFactoryMemory.openDatabase('import_${DateTime.now().microsecondsSinceEpoch}');
+      addTearDown(db.close);
+      final imported = ModuleExportService.parse(ModuleExportService.buildPayload(
+        module: module,
+        lectureUnits: [unit],
+        materialsWithBytes: [material],
+        concepts: [concept],
+        flashcards: [flashcard],
+        summaries: [summary],
+      ));
+      await db.transaction((txn) => ModuleExportService.saveImported(txn, imported));
+      expect(await DatabaseService.modules.count(db), 1);
+      expect(await DatabaseService.lectureUnits.count(db), 1);
+      expect(await DatabaseService.materials.count(db), 1);
+      expect(await DatabaseService.summaries.count(db), 1);
+      expect(await DatabaseService.concepts.count(db), 1);
+      expect(await DatabaseService.flashcards.count(db), 1);
+    });
+
+    test('ohne Lernstand: Karte wieder neu, Kette beginnt bei der leichtesten Stufe', () {
+      final learned = Flashcard(
+        id: 'c',
+        moduleId: 'mod1',
+        front: 'Schwer?',
+        back: '',
+        createdAt: DateTime(2026, 1, 1),
+        due: DateTime(2026, 5, 1),
+        type: QuestionType.freeText,
+        correctText: 'A',
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
+        variantLevel: 2,
+        variantHistory: const [
+          VariantSnapshot(type: QuestionType.singleChoice, front: 'Leicht?', back: ''),
+          VariantSnapshot(type: QuestionType.fillBlank, front: 'Mittel ___', back: ''),
+        ],
+        masteryBox: 4,
+        reps: 9,
+        lapses: 2,
+        stability: 30,
+        state: 'review',
+        lastReview: DateTime(2026, 4, 1),
+      );
+      final reset = ModuleExportService.resetLearningState(learned);
+      expect(reset.reps, 0);
+      expect(reset.lapses, 0);
+      expect(reset.masteryBox, 0);
+      expect(reset.lastReview, isNull);
+      expect(reset.state, 'new');
+      expect(reset.variantLevel, 0);
+      expect(reset.front, 'Leicht?');
+      expect(reset.type, QuestionType.singleChoice);
+      expect(reset.variantHistory, isNull);
+      expect(reset.pendingVariants!.map((v) => v.front), ['Mittel ___', 'Schwer?']);
     });
   });
 }

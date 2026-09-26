@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cross_file/cross_file.dart';
@@ -19,6 +20,7 @@ import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../models/summary.dart';
 import '../../repositories/summary_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/auto_sync_service.dart';
@@ -119,7 +121,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     children: [
                       _RoundIconButton(
                         icon: Icons.ios_share_outlined,
-                        onTap: () => _exportModule(module, units, materials, concepts, flashcards),
+                        onTap: () => _exportModule(module, units, materials, concepts, flashcards, summaries),
                       ),
                       const SizedBox(width: 8),
                       _RoundIconButton(
@@ -549,22 +551,34 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
   bool _suggestingUnits = false;
 
   Future<void> _pickUnitDate(LectureUnit unit) async {
+    final repo = context.read<LectureUnitRepository>();
+    // Entfernen nur als ausdrückliche Wahl – früher hieß "Abbrechen" im
+    // Datumsdialog "Termin entfernen", schon ein Tippen daneben oder
+    // "Zurück" löschte den Termin.
+    if (unit.scheduledDate != null) {
+      final action = await showDialog<String>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: Text('Termin: ${_formatDay(unit.scheduledDate!)}'),
+          children: [
+            SimpleDialogOption(onPressed: () => Navigator.of(ctx).pop('change'), child: const Text('Termin ändern')),
+            SimpleDialogOption(onPressed: () => Navigator.of(ctx).pop('remove'), child: const Text('Termin entfernen')),
+          ],
+        ),
+      );
+      if (action == 'remove') await repo.setScheduledDate(unit.id, unit.moduleId, null);
+      if (action != 'change' || !mounted) return;
+    }
     final now = DateTime.now();
+    final initial = unit.scheduledDate ?? now;
     final picked = await showDatePicker(
       context: context,
-      initialDate: unit.scheduledDate ?? now,
-      firstDate: DateTime(now.year - 2),
-      lastDate: DateTime(now.year + 2),
+      initialDate: initial,
+      firstDate: DateTime(min(now.year, initial.year) - 2),
+      lastDate: DateTime(max(now.year, initial.year) + 2),
       helpText: 'Vorlesungstermin – ab dann gilt die Einheit als behandelt',
-      cancelText: unit.scheduledDate == null ? 'Abbrechen' : 'Termin entfernen',
     );
-    if (!mounted) return;
-    final repo = context.read<LectureUnitRepository>();
-    if (picked != null) {
-      await repo.setScheduledDate(unit.id, unit.moduleId, picked);
-    } else if (unit.scheduledDate != null) {
-      await repo.setScheduledDate(unit.id, unit.moduleId, null);
-    }
+    if (picked != null) await repo.setScheduledDate(unit.id, unit.moduleId, picked);
   }
 
   Future<void> _assignDatesFromSchedule(Module module, List<LectureUnit> units) async {
@@ -970,10 +984,13 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
       message: '"${material.fileName}" wird endgültig gelöscht.',
     );
     if (ok && mounted) {
+      // Alles vor dem ersten await lesen und erst den Datensatz löschen, dann
+      // die Datei – sonst bliebe beim Verlassen des Screens dazwischen ein
+      // Material stehen, dessen PDF schon weg ist.
       final store = PdfCloudStore.fromConfig(context.read<SettingsRepository>().settings.pdfStorage);
+      final repo = context.read<MaterialRepository>();
+      await repo.delete(material.id, material.moduleId);
       await MaterialFileStore.delete(filePath: material.filePath);
-      if (!mounted) return;
-      await context.read<MaterialRepository>().delete(material.id, material.moduleId);
       final remoteKey = material.remotePdfKey;
       if (store != null && remoteKey != null) await PdfCloudSyncService(store).deleteRemote([remoteKey]);
     }
@@ -1017,7 +1034,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
   }
 
   /// Exportiert dieses Fach (Modul + Einheiten + Materialien inkl. PDF-
-  /// Bytes + Konzepte + Karteikarten) als eigenständige JSON-Datei zum
+  /// Bytes + Zusammenfassungen + Konzepte + Karteikarten) als eigenständige JSON-Datei zum
   /// Sichern/Weitergeben – unabhängig vom (Firebase-basierten) Cloud-Sync,
   /// siehe ModuleExportService. Nutzt denselben plattformübergreifenden
   /// Speichern-Dialog wie file_picker ihn schon fürs Hochladen bereitstellt.
@@ -1027,6 +1044,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     List<MaterialItem> materials,
     List<Concept> concepts,
     List<Flashcard> flashcards,
+    List<Summary> summaries,
   ) async {
     final materialsWithBytes = await ModuleExportService.embedBytes(materials);
     if (!mounted) return;
@@ -1036,6 +1054,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
       materialsWithBytes: materialsWithBytes,
       concepts: concepts,
       flashcards: flashcards,
+      summaries: summaries,
     );
     final bytes = Uint8List.fromList(utf8.encode(jsonEncode(payload)));
     final safeName = module.name.replaceAll(RegExp(r'[^\w\säöüÄÖÜß-]'), '').trim();

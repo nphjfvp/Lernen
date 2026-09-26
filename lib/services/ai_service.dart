@@ -97,13 +97,16 @@ NICHT für alles denselben Typ, sondern möglichst den spezifischsten:
    - "multiple_choice": mehrere Antworten gleichzeitig richtig, gleiches Format.
    - "fill_blank": Lückentext. Markiere jede Lücke im "front"-Text mit genau
      drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
-     Reihenfolge. {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]}
+     Reihenfolge (passen mehrere Begriffe in eine Lücke, alle durch ";"
+     getrennt in denselben Eintrag). {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung; Variante"]}
    - "free_text": offene, aber eindeutig prüfbare Kurzantwort MIT EINER
      EINZELNEN, kompakten Musterlösung (Zahl, Formel, ein Satz). "correctText"
      enthält die Lösung (bei mehreren akzeptierten Formulierungen durch ";"
      getrennt). {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative"}
    - "drag_drop": Begriffe einander zuordnen (Paare). "dragPairs" enthält
-     {"source","target"}-Paare. {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]}
+     {"source","target"}-Paare, jedes "target" genau EINMAL (1:1-Zuordnung) –
+     gehören mehrere Begriffe zum selben Ziel, nimm "drag_category".
+     {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]}
    - "drag_category": Begriffe in Kategorien einsortieren. "dragPairs" wie bei
      drag_drop, "target" ist hier der Kategoriename (mehrere "source" können
      denselben "target"-Wert haben).
@@ -269,7 +272,19 @@ Antworte in der Sprache der Vorlage.
       final raw = await _complete(
           _summarySystemPrompt, 'Vorlesungsfolien:\n\n${chunks.first}');
       onProgress?.call(1, 1);
-      return _parseJsonObject(raw);
+      final parsed = _parseJsonObject(raw);
+      final points = parsed['key_points'];
+      // Felder als Text/Textliste, egal was das Modell liefert – die
+      // Oberfläche liest sie so (vorher: Absturz bei z.B. einer Zahl).
+      return {
+        'title': parsed['title']?.toString().trim() ?? '',
+        'overview': parsed['overview']?.toString().trim() ?? '',
+        'key_points': [
+          if (points is List)
+            for (final p in points)
+              if (p != null && p.toString().trim().isNotEmpty) p.toString(),
+        ],
+      };
     }
 
     String? title;
@@ -288,12 +303,12 @@ Antworte in der Sprache der Vorlage.
       final raw = await _complete(_summarySystemPrompt, userPrompt);
       final parsed = _parseJsonObject(raw);
 
-      title ??= (parsed['title'] as String?)?.trim();
-      final overview = (parsed['overview'] as String?)?.trim();
+      final chunkTitle = parsed['title']?.toString().trim() ?? '';
+      if (chunkTitle.isNotEmpty) title ??= chunkTitle;
+      final overview = parsed['overview']?.toString().trim();
       if (overview != null && overview.isNotEmpty) overviewParts.add(overview);
-      final points =
-          (parsed['key_points'] as List?)?.map((e) => e.toString()) ??
-              const <String>[];
+      final rawPoints = parsed['key_points'];
+      final points = rawPoints is List ? rawPoints.map((e) => e.toString()) : const <String>[];
       for (final p in points) {
         if (p.trim().isNotEmpty && !keyPoints.contains(p)) keyPoints.add(p);
       }
@@ -346,12 +361,14 @@ Frage den zum Inhalt passenden Typ:
    - "multiple_choice": wenn mehrere Aussagen gleichzeitig zutreffen können.
    - "fill_blank": Lückentext – markiere jede Lücke im "front"-Text mit genau
      drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
-     Reihenfolge.
+     Reihenfolge (passen mehrere Begriffe in eine Lücke, alle durch ";"
+     getrennt in denselben Eintrag).
    - "free_text": offene, aber eindeutig prüfbare Kurzantwort; "correctText"
      enthält die Lösung (bei mehreren akzeptierten Formulierungen durch ";"
      getrennt).
    - "drag_drop": Begriffe einander zuordnen (Paare); "dragPairs" enthält
-     {"source","target"}-Paare.
+     {"source","target"}-Paare, jedes "target" genau EINMAL (1:1-Zuordnung) –
+     gehören mehrere Begriffe zum selben Ziel, nimm "drag_category".
    - "drag_category": Begriffe in Kategorien einsortieren; "dragPairs" wie
      bei drag_drop, "target" ist hier der Kategoriename (mehrere "source"
      können denselben "target"-Wert haben).
@@ -473,16 +490,13 @@ Antworte in der Sprache der Vorlage.
       final raw = await _complete(_conceptsSystemPrompt, userPrompt);
       final parsed = _parseJsonObject(raw);
 
-      for (final entry in (parsed['concepts'] as List? ?? const [])) {
-        final c = Map<String, dynamic>.from(entry as Map);
+      for (final c in _mapsIn(parsed['concepts'])) {
         final title = (c['title'] ?? '').toString().trim();
         if (title.isNotEmpty && seenConceptTitles.add(title)) {
           concepts.add(c);
         }
       }
-      for (final entry in (parsed['flashcards'] as List? ?? const [])) {
-        flashcards.add(Map<String, dynamic>.from(entry as Map));
-      }
+      flashcards.addAll(_mapsIn(parsed['flashcards']));
       onProgress?.call(i + 1, chunks.length);
     }
 
@@ -582,7 +596,8 @@ anderen Typ passt – bevor du "free_text" wählst, prüfe der Reihe nach:
    - "multiple_choice": mehrere Antworten gleichzeitig richtig, analog.
    - "fill_blank": Lückentext im Original. Markiere jede Lücke im
      "front"-Text mit genau drei Unterstrichen "___", "blanks" enthält die
-     Lösungen in derselben Reihenfolge.
+     Lösungen in derselben Reihenfolge (mehrere akzeptierte Begriffe einer
+     Lücke durch ";" getrennt in denselben Eintrag).
    - "free_text": offene Rechen-/Kurzantwortaufgabe mit einer einzelnen,
      kompakten Musterlösung. "correctText" enthält die Lösung.
    - "flashcard": passt keiner der obigen Typen, offenes front/back. "back"
@@ -637,9 +652,7 @@ wenn es viele sind. Antworte in der Sprache der Vorlage.
               'Übungsdokuments.\n\nAbschnitt-Text:\n\n${chunks[i]}';
       final raw = await _complete(_importQuestionsSystemPrompt, userPrompt);
       final parsed = _parseJsonObject(raw);
-      for (final entry in (parsed['flashcards'] as List? ?? const [])) {
-        flashcards.add(Map<String, dynamic>.from(entry as Map));
-      }
+      flashcards.addAll(_mapsIn(parsed['flashcards']));
       onProgress?.call(i + 1, chunks.length);
     }
     return flashcards;
@@ -778,8 +791,7 @@ Sprache der Vorlage.
 
   static const int _pageQuestionGenerationTextCap = 20000;
 
-  /// Fragetypen, die beim Erstellen aus einer Seite wählbar sind (html ist
-  /// kein Bestandteil der Schwierigkeitsstufen, siehe [_variantTypeRule]).
+  /// Fragetypen, aus denen die KI bei "KI entscheidet" wählt.
   static const pageQuestionTypes = [
     QuestionType.singleChoice,
     QuestionType.multipleChoice,
@@ -789,6 +801,11 @@ Sprache der Vorlage.
     QuestionType.freeText,
     QuestionType.flashcard,
   ];
+
+  /// Fragetypen, die der Nutzer je Stufe fest wählen kann – zusätzlich
+  /// "Interaktiv" (html): aufwendig und nur auf Android/iOS interaktiv,
+  /// deshalb nur auf ausdrücklichen Wunsch statt als KI-Wahl.
+  static const selectablePageQuestionTypes = [...pageQuestionTypes, QuestionType.html];
 
   /// Erstellt (oder überarbeitet) [questionCount] Fragen direkt aus einer
   /// betrachteten Seite (MaterialViewerScreen, "Frage erstellen"), jede in
@@ -822,10 +839,12 @@ Sprache der Vorlage.
             '${tiers[i].type == null ? 'Typ frei wählbar' : 'Typ ${QuestionParsing.aiTypeName(tiers[i].type!)}'}',
     ].join('\n');
     // Bei frei wählbaren Stufen braucht die KI die Formatvorgaben aller
-    // wählbaren Typen, sonst nur die der vorgegebenen.
-    final ruleTypes = tiers.any((t) => t.type == null)
-        ? pageQuestionTypes
-        : {for (final t in tiers) t.type!}.toList();
+    // Typen, aus denen sie wählen darf, dazu die der vorgegebenen.
+    final ruleTypes = {
+      if (tiers.any((t) => t.type == null)) ...pageQuestionTypes,
+      for (final t in tiers)
+        if (t.type != null) t.type!,
+    }.toList();
     final typeRules = ruleTypes.map((t) => '- ${_variantTypeRule(t)}').join('\n');
     final systemPrompt = _pageQuestionGenerationSystemPrompt
         .replaceAll('{{COUNT}}', '$count')
@@ -981,15 +1000,18 @@ Antworte in der Sprache der Vorlage.
         QuestionType.fillBlank =>
           'Zieltyp "fill_blank": derselbe Fakt als Lückentext. Markiere '
               'jede Lücke im "front"-Text mit genau drei Unterstrichen '
-              '"___". Antwortformat: {"front": "Text mit ___ Lücke(n)", '
-              '"blanks": ["Lösung 1", "..."]}',
+              '"___"; passen mehrere Begriffe in eine Lücke, alle durch ";" '
+              'getrennt in denselben Eintrag. Antwortformat: {"front": '
+              '"Text mit ___ Lücke(n)", "blanks": ["Lösung 1", "..."]}',
         QuestionType.freeText =>
           'Zieltyp "free_text": derselbe Fakt als offene, aber eindeutig '
               'prüfbare Frage ohne Antwortoptionen (die schwerste Stufe – '
               'keine Auswahl mehr, nur Erinnerung). Antwortformat: '
               '{"front": "...", "correctText": "Lösung; ggf. Alternative"}',
         QuestionType.dragDrop =>
-          'Zieltyp "drag_drop": als Zuordnungspaare. Antwortformat: '
+          'Zieltyp "drag_drop": als Zuordnungspaare, jedes Ziel genau einmal '
+              '(1:1 – gehören mehrere Begriffe zum selben Ziel, ist es '
+              'drag_category). Antwortformat: '
               '{"front": "...", "dragPairs": [{"source": "...", "target": "..."}]}',
         QuestionType.dragCategory =>
           'Zieltyp "drag_category": Begriffe in Kategorien einsortieren. '
@@ -999,9 +1021,17 @@ Antworte in der Sprache der Vorlage.
           'Zieltyp "flashcard": offene Frage/Antwort. Antwortformat: '
               '{"front": "...", "back": "..."}',
         QuestionType.html =>
-          'Zieltyp "html": kein Bestandteil dieser einfachen Schwierigkeits-'
-              'Eskalation (siehe eigener Abschnitt zum html-Typ) – wird hier '
-              'nicht als Zielstufe verwendet.',
+          'Zieltyp "html": derselbe Fakt als eigenständige interaktive Seite '
+              '(z.B. Zuordnungs-Matrix, Tabelle zum Ausfüllen, Klick-Aufgabe). '
+              '"htmlContent" enthält NUR den Inhalt von <body> als EIN String mit '
+              'Inline-HTML/CSS/JS – keine externen Skripte/Bilder, kein '
+              'Netzwerkzugriff. Die Prüf-Logik steckt als Inline-JavaScript in der '
+              'Seite und MUSS beim Auswerten genau '
+              'window.FlutterAnswer.postMessage(JSON.stringify({correct: true})) '
+              'bzw. {correct: false} aufrufen. Dazu "front" (kurze Frage) und '
+              '"back" (Lösung als Text – Anzeige auf Geräten ohne interaktive '
+              'Seite). Antwortformat: {"front": "...", "back": "...", '
+              '"htmlContent": "..."}',
       };
 
   /// Erster Schritt der Schwierigkeits-Eskalation (siehe
@@ -1071,6 +1101,61 @@ Markdown-Codefences, ohne zusätzlichen Text:
     final raw = await _complete(_checkFreeTextSystemPrompt, userPrompt);
     final parsed = _parseJsonObject(raw);
     return parsed['correct'] == true;
+  }
+
+  static const _checkFillBlankSystemPrompt = '''
+Du bewertest die Eingaben eines Lernenden in einem Lückentext, JEDE LÜCKE
+EINZELN. Du bekommst den Text (Lücken als "___"), je Lücke die hinterlegte
+Lösung (mehrere akzeptierte Varianten durch ";" getrennt) und die Eingabe.
+Ein direkter Textvergleich mit kleiner Tippfehler-Toleranz ist bereits
+vorgeschaltet und hat mindestens eine Lücke abgelehnt – du bist die
+Zweitmeinung.
+Eine Lücke ist RICHTIG, wenn die Eingabe
+- dasselbe meint wie die Lösung: Synonym, gleichwertiger Fachbegriff,
+  Abkürzung bzw. ausgeschriebene Form, andere Schreibweise, Singular/Plural
+  oder andere Beugung, solange sie an dieser Stelle in den Satz passt,
+- nur Rechtschreib- oder Tippfehler enthält und das gemeinte Wort eindeutig
+  erkennbar ist (nicht, wenn dadurch ein anderes Fachwort entsteht),
+- eine andere, fachlich ebenso richtige Antwort ist, die an dieser Stelle
+  zutrifft (manche Lücken lassen mehrere richtige Lösungen zu).
+Eine Lücke ist FALSCH, wenn die Eingabe einen anderen Begriff oder Wert
+meint, fachlich falsch ist, nur geraten wirkt, zu allgemein ist oder leer
+ist. Zahlen, Formeln und Einheiten müssen im Wert stimmen (3,5 = 3.5 = 7/2,
+aber 35 ist nicht 3,5).
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
+Markdown-Codefences, ohne zusätzlichen Text – genau ein Wahrheitswert je
+Lücke, in derselben Reihenfolge:
+{"correct": [true, false]}
+''';
+
+  /// Zweitmeinung für Lückentexte, analog zu [checkFreeTextAnswer]: der
+  /// lokale Vergleich (AnswerChecker.fillBlankHits) kennt nur die
+  /// hinterlegten Varianten und kleine Tippfehler – ein anderer richtiger
+  /// Begriff, ein Synonym oder ein gröberer Rechtschreibfehler fällt durch.
+  /// Wird nur aufgerufen, wenn der lokale Vergleich eine Lücke abgelehnt hat.
+  /// Liefert je Lücke, ob die Eingabe gilt.
+  Future<List<bool>> checkFillBlankAnswers({
+    required String text,
+    required List<String> solutions,
+    required List<String> answers,
+  }) async {
+    final buffer = StringBuffer()..writeln('Lückentext: $text');
+    for (var i = 0; i < solutions.length; i++) {
+      final answer = i < answers.length ? answers[i].trim() : '';
+      buffer.writeln('Lücke ${i + 1}: Lösung "${solutions[i].trim()}" – Eingabe "$answer"');
+    }
+    final raw = await _complete(_checkFillBlankSystemPrompt, buffer.toString());
+    return parseBlankVerdicts(_parseJsonObject(raw), solutions.length);
+  }
+
+  /// Liest `{"correct": [true, false, …]}` für [count] Lücken. Fehlende oder
+  /// unklare Einträge zählen als falsch; ein einzelnes `true`/`false` gilt
+  /// für alle Lücken.
+  static List<bool> parseBlankVerdicts(Map<String, dynamic> parsed, int count) {
+    bool isTrue(Object? v) => v == true || (v is String && v.trim().toLowerCase() == 'true');
+    final verdicts = parsed['correct'];
+    if (verdicts is! List) return List.filled(count, isTrue(verdicts));
+    return [for (var i = 0; i < count; i++) i < verdicts.length && isTrue(verdicts[i])];
   }
 
   static const _explainSystemPrompt = '''
@@ -1500,6 +1585,15 @@ Antworte in der Sprache der Vorlage.
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
   }
+
+  /// Die Objekte einer JSON-Liste – ein einzelner kaputter Eintrag (Text
+  /// statt Objekt) oder ein fehlendes Feld kostet sonst das Ergebnis des
+  /// ganzen Abschnitts.
+  static List<Map<String, dynamic>> _mapsIn(Object? value) => [
+        if (value is List)
+          for (final e in value)
+            if (e is Map) Map<String, dynamic>.from(e),
+      ];
 
   Map<String, dynamic> _parseJsonObject(String raw) {
     // Einfache Backslashes in LaTeX-Formeln ("$\frac…$") wären in JSON

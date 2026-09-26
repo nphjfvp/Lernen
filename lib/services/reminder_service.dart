@@ -87,7 +87,10 @@ class ReminderService {
     final now = tz.TZDateTime.now(tz.local);
     var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
     if (scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+      // Morgen zur selben Uhrzeit – nicht +24 h, das läge an der
+      // Zeitumstellung eine Stunde daneben (und bliebe so, weil sich die
+      // Erinnerung an dieser Uhrzeit wiederholt).
+      scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day + 1, hour, minute);
     }
     return scheduled;
   }

@@ -6,11 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/module.dart';
-import '../../repositories/concept_repository.dart';
-import '../../repositories/flashcard_repository.dart';
-import '../../repositories/lecture_unit_repository.dart';
-import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../services/database_service.dart';
 import '../../services/module_export_service.dart';
 import '../../theme/app_colors.dart';
 import '../modules/module_detail_screen.dart';
@@ -22,43 +19,49 @@ class HomeScreen extends StatelessWidget {
 
   /// Importiert ein zuvor über ModuleDetailScreen exportiertes Fach (siehe
   /// ModuleExportService) aus einer JSON-Datei – vergibt dabei frische IDs
-  /// für alles (Modul, Einheiten, Materialien, Konzepte, Karteikarten), also
-  /// unabhängig davon ob es sich um ein neues Gerät oder eine zweite Kopie
-  /// auf demselben Gerät handelt.
+  /// für alles, also unabhängig davon ob es sich um ein neues Gerät oder eine
+  /// zweite Kopie auf demselben Gerät handelt. Fragt, ob der Lernstand
+  /// mitkommen soll (eigenes Backup) oder nicht (weitergegebenes Fach), und
+  /// schreibt alles in EINER Transaktion.
   Future<void> _importModule(BuildContext context) async {
     final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['json']);
-    if (file == null) return;
+    if (file == null || !context.mounted) return;
+    final moduleRepo = context.read<ModuleRepository>();
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final Uint8List bytes = await file.readAsBytes();
       final json = jsonDecode(utf8.decode(bytes));
       if (json is! Map) {
         throw const FormatException('Keine gültige Fach-Export-Datei.');
       }
-      final imported = ModuleExportService.parse(Map<String, dynamic>.from(json));
+      var imported = ModuleExportService.parse(Map<String, dynamic>.from(json));
+      if (!context.mounted) return;
+      final keepProgress = imported.flashcards.any((f) => f.reps > 0)
+          ? await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Lernstand übernehmen?'),
+                content: const Text('Die Datei enthält auch den Lernstand (Ampel, Fälligkeiten). '
+                    'Für ein eigenes Backup übernehmen – für ein weitergegebenes Fach lieber neu beginnen.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Neu beginnen')),
+                  FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Übernehmen')),
+                ],
+              ),
+            )
+          : true;
+      if (keepProgress == null) return;
+      if (!keepProgress) imported = imported.withoutLearningState();
 
+      final db = await DatabaseService.instance.database;
+      await db.transaction((txn) => ModuleExportService.saveImported(txn, imported));
+      await moduleRepo.load();
       if (!context.mounted) return;
-      await context.read<ModuleRepository>().save(imported.module);
-      for (final unit in imported.lectureUnits) {
-        if (!context.mounted) return;
-        await context.read<LectureUnitRepository>().save(unit);
-      }
-      for (final material in imported.materials) {
-        if (!context.mounted) return;
-        await context.read<MaterialRepository>().save(material);
-      }
-      if (!context.mounted) return;
-      await context.read<ConceptRepository>().saveAll(imported.concepts);
-      if (!context.mounted) return;
-      await context.read<FlashcardRepository>().saveAll(imported.flashcards);
-      if (!context.mounted) return;
-
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => ModuleDetailScreen(moduleId: imported.module.id)),
       );
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import fehlgeschlagen: $e')));
-      }
+      messenger.showSnackBar(SnackBar(content: Text('Import fehlgeschlagen: $e')));
     }
   }
 

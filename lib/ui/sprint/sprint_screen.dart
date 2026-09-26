@@ -97,6 +97,10 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
     // "Schwer" ist ein erfolgreicher, nur mühsamer Abruf – zählt als richtig.
     final wasCorrect = isCorrect ?? (selfGrade != Grade.again);
     unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect));
+    // Eine Antwort nach Zeitablauf (z.B. während der KI-Prüfung einer
+    // Freitextantwort) zählt fürs Lernen, aber nicht mehr für die Punkte –
+    // die Bestleistung ist dann schon ausgewertet.
+    if (_phase != _Phase.playing) return;
     setState(() {
       if (wasCorrect) _correct += 1;
       _index += 1;

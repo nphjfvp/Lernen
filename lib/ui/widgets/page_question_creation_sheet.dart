@@ -18,7 +18,7 @@ import 'page_region_picker.dart';
 import 'safe_set_state.dart';
 
 /// "Frage erstellen" im Lernmodus (siehe MaterialViewerScreen): erzeugt aus
-/// GENAU der gerade betrachteten Seite 1–2 Fragen, jede in bis zu 3
+/// GENAU der gerade betrachteten Seite 1–5 Fragen, jede in bis zu 3
 /// Schwierigkeitsstufen (Leicht/Mittel/Schwer) desselben Fakts – immer
 /// multimodal (Seiten-Screenshot ans Vision-Modell), da Folienseiten oft
 /// Diagramme/Formeln enthalten, die reiner Text nicht wiedergibt.
@@ -56,8 +56,9 @@ class PageQuestionCreationSheet extends StatefulWidget {
   final String? initialQuestionText;
   final String? examContext;
 
-  /// Wie viele Fragen auf einmal erstellt werden können.
-  static const maxQuestions = 2;
+  /// Wie viele Fragen auf einmal erstellt werden können – mehr gibt eine
+  /// einzelne Seite selten her, und die Antwort der KI würde sehr lang.
+  static const maxQuestions = 5;
 
   @override
   State<PageQuestionCreationSheet> createState() => _PageQuestionCreationSheetState();
@@ -265,15 +266,18 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
         previousQuestions: refine ? _previousRaw : null,
         instruction: refine ? _instructionController.text.trim() : null,
       );
+      // Mit markiertem Bereich hängt an einer Bild-Frage genau dieser
+      // Ausschnitt statt der ganzen Seite – verkleinert, weil das Bild in der
+      // Datenbank liegt und bei jedem Sync mitreist.
+      final attachSource = _focusImage ?? widget.pageImageBytes;
+      final attach = await downscaleImage(attachSource) ?? attachSource;
       final questions = buildPageQuestionCards(
         groups,
         moduleId: widget.material.moduleId,
         unitId: widget.material.unitId,
         questionCount: _questionCount,
         tierCount: slots.length,
-        // Mit markiertem Bereich hängt an einer Bild-Frage genau dieser
-        // Ausschnitt statt der ganzen Seite.
-        attachImageBase64: base64Encode(_focusImage ?? widget.pageImageBytes),
+        attachImageBase64: base64Encode(attach),
         now: DateTime.now(),
       );
       if (!mounted) return;
@@ -456,11 +460,12 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           decoration: _fieldDecoration(c, 'Antwort/Fakt dazu (optional)'),
         ),
         const SizedBox(height: 20),
-        _sectionTitle(c, 'Anzahl Fragen', 'Mehrere Fragen prüfen unterschiedliche Aspekte.'),
+        _sectionTitle(c, 'Anzahl Fragen', 'Mehrere Fragen prüfen unterschiedliche Aspekte der Seite.'),
         SegmentedButton<int>(
+          showSelectedIcon: false,
           segments: [
             for (var n = 1; n <= PageQuestionCreationSheet.maxQuestions; n++)
-              ButtonSegment(value: n, label: Text(n == 1 ? '1 Frage' : '$n Fragen')),
+              ButtonSegment(value: n, label: Text('$n')),
           ],
           selected: {_questionCount},
           onSelectionChanged: _generating ? null : (s) => setState(() => _questionCount = s.first),
@@ -470,7 +475,8 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           c,
           'Schwierigkeitsgrade',
           'Jede Frage in bis zu 3 Stufen, die nacheinander freigeschaltet werden. '
-              '"KI entscheidet" wählt das passende Format je Stufe.',
+              '"KI entscheidet" wählt das passende Format je Stufe. "Interaktiv" ist nur '
+              'auf Android/iOS eine interaktive Seite, sonst eine Karteikarte.',
         ),
         ..._slots.map((slot) => Padding(
               padding: const EdgeInsets.only(bottom: 4),
@@ -497,7 +503,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
                           value: null,
                           child: Text('KI entscheidet', style: TextStyle(fontSize: 13.5)),
                         ),
-                        for (final t in AiService.pageQuestionTypes)
+                        for (final t in AiService.selectablePageQuestionTypes)
                           DropdownMenuItem<QuestionType?>(
                             value: t,
                             child: Text(t.label, style: const TextStyle(fontSize: 13.5)),
@@ -565,7 +571,26 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
             ],
           ),
         ),
-        if (questions.length > 1)
+        if (questions.length > 1) ...[
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                for (var q = 0; q < questions.length; q++)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text('Frage ${q + 1}', style: TextStyle(color: questions[q].keep ? null : c.inkMuted)),
+                      selected: q == position.question,
+                      // Springt zur leichtesten Stufe dieser Frage.
+                      onSelected: (_) => setState(() => _previewIndex = flat.indexWhere((e) => e.question == q)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           CheckboxListTile(
             dense: true,
             controlAffinity: ListTileControlAffinity.leading,
@@ -574,6 +599,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
             onChanged: (v) => setState(() => question.keep = v ?? true),
             title: Text('Frage ${position.question + 1} speichern', style: const TextStyle(fontSize: 13.5)),
           ),
+        ],
         Expanded(
           child: QuestionAnswerView(
             key: ValueKey(card.id),

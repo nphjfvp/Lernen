@@ -79,7 +79,16 @@ engerem Fokus statt Feature-Fülle.
   Rückstand vorhanden ist (siehe `lib/services/daily_scheduler_service.dart`).
   Falsch beantwortete Karten der Hauptrunde werden am Ende derselben Session
   automatisch nochmal abgefragt (max. 3 Versuche je Karte), statt erst am
-  nächsten natürlichen FSRS-Fälligkeitsdatum wiederzukommen. Ist die Session
+  nächsten natürlichen FSRS-Fälligkeitsdatum wiederzukommen. Ein erneuter
+  Fehlversuch am selben Tag zählt dabei nicht noch einmal
+  (`FsrsService.isRepeatFailureToday`): die Ampel sinkt höchstens einen
+  Schritt pro Tag (wie sie auch höchstens einen pro Tag steigt), das
+  Fehlertagebuch zählt kein weiteres "vergessen", und eine Rückstufung der
+  Schwierigkeitsstufe braucht Fehlversuche an verschiedenen Tagen. Geplant
+  werden nur Karten bestehender Fächer (verwaiste Karten ohne Fach bleiben
+  außen vor, auch in Statistik, Fehlertagebuch und Sprint); wird die Session
+  mit über 60 Karten zu groß, kürzt sie neue Karten reihum je Fach, gezielt
+  selbst erstellte Fragen zuletzt. Ist die Session
   (inkl. Wiederholungsrunde) fertig, lässt sich per Button "Freiwillig
   weiterlernen" trotzdem freiwillig weitermachen: `DailySchedulerService.
   buildExtraBatch` ignoriert dafür bewusst das Klausur-Pacing-Budget und holt
@@ -147,7 +156,23 @@ engerem Fokus statt Feature-Fülle.
   KI-Zweitmeinung ein, die inhaltlich andere Formulierungen als richtig
   erkennt (ein reiner 1:1-Textvergleich wäre für frei formulierte Antworten
   fast unmöglich zu erfüllen) – ohne API-Key oder bei einem Fehler bleibt es
-  beim strengeren lokalen Ergebnis. Ausgewählte Single-Choice-
+  beim strengeren lokalen Ergebnis. **Lückentexte** genauso, je Lücke: lokal
+  zählen die hinterlegte Lösung, jede per ";" hinterlegte Variante
+  ("Mitochondrium; Mitochondrien") und kleine Tippfehler; lehnt das eine
+  Lücke ab, bewertet `AiService.checkFillBlankAnswers` jede Lücke nach
+  (andere richtige Begriffe, Synonyme, gröbere Rechtschreibfehler). Die KI
+  kann eine Lücke nur nachträglich als richtig werten, nie eine lokal
+  richtige verwerfen; nach dem Prüfen zeigt jede Lücke ✓/✗ und – wenn sie
+  falsch war oder nur dank Toleranz galt – die hinterlegte Schreibweise.
+  **Zuordnen/Kategorien** arbeitet mit Positionen statt Texten: gleich
+  lautende Begriffe oder Ziele (z.B. zweimal "Metall") belegen nie mehrere
+  Felder; kommt ein Ziel mehrfach vor, wird die Frage als Kategorien-Frage
+  angezeigt und geprüft. Begriffe lassen sich ziehen oder antippen und dann
+  ein Feld antippen; abgelegte Begriffe sind wieder verschiebbar. Die
+  Optionen von Single-/Multiple-Choice erscheinen gemischt ("Alle/Keine der
+  genannten" bleiben am Ende). Karten mit unbrauchbaren Daten (z.B. keine
+  richtige Option) werden als Karteikarte zum Selbstbewerten gezeigt statt
+  unlösbar abgefragt. Ausgewählte Single-Choice-
   Fragen tragen zusätzlich eine Eskalationskette (Single-Choice → Lückentext
   → Freitext): steht die aktuelle Stufe in der Ampel auf Grün (richtig an 4
   verschiedenen Tagen), wird die Frage befördert – liegt der Inhalt der
@@ -530,7 +555,8 @@ Löschen (`ModuleExportService`).
 - **Exportieren**: Im Modul-Detail oben rechts (Teilen-Symbol) – schreibt
   Modul, Einheiten, Materialien (inkl. Original-PDF-Bytes, plattform-
   unabhängig als Base64 eingebettet, siehe `ModuleExportService.embedBytes`),
-  Konzepte und Karteikarten in eine `.json`-Datei (Speichern-Dialog über
+  Zusammenfassungen (Vorbereiten), Konzepte und Karteikarten in eine
+  `.json`-Datei (Speichern-Dialog über
   `file_picker`, funktioniert auch im Web als Download). Bewusst NICHT
   enthalten: Chat-Verlauf und Ampel-Trend-Snapshots – geräte-/sitzungs-
   bezogene Verlaufsdaten ohne Bezug zum eigentlichen Fach-Inhalt.
@@ -540,7 +566,11 @@ Löschen (`ModuleExportService`).
   dabei frisch vergeben, alle Querverweise dazwischen konsistent
   mitübersetzt (`ModuleExportService.parse`) – dieselbe Datei lässt sich
   daher beliebig oft importieren, auch mehrfach auf demselben Gerät, ohne
-  mit vorhandenen Daten zu kollidieren.
+  mit vorhandenen Daten zu kollidieren. Enthält die Datei einen Lernstand,
+  fragt der Import "Übernehmen" oder "Neu beginnen" (bei weitergegebenen
+  Fächern: alle Karten neu, Stufen-Ketten wieder auf der leichtesten Stufe);
+  gespeichert wird in einer einzigen Transaktion (kein halbes Fach beim
+  Abbruch).
 
 ### 3b. Eigener PDF-Speicher (optional)
 
@@ -708,12 +738,14 @@ Nachbereiten-Modus zu wechseln.
   im Modul-Detail öffnet den Viewer direkt auf genau dieser Seite
   (`MaterialViewerScreen.initialPage`).
 - **Frage erstellen** (`PageQuestionCreationSheet`) – erzeugt aus derselben
-  Seite **1 oder 2 Fragen** auf einmal (mehrere prüfen unterschiedliche
+  Seite **1 bis 5 Fragen** auf einmal (mehrere prüfen unterschiedliche
   Aspekte), jede in bis zu drei Stufen **Leicht/Mittel/Schwer** desselben
   Fakts. Jede Stufe ist einzeln an-/abwählbar, der Fragetyp pro Stufe per
-  Dropdown wählbar oder auf **"KI entscheidet"** (Standard) – dann wählt die
-  KI das Format passend zur Stufe (leicht eher Auswahl, schwer eher freies
-  Erinnern, siehe `_variantTypeRule`/Schwierigkeits-Eskalation).
+  Dropdown wählbar – auch **"Interaktiv"** (html, nur auf Android/iOS
+  interaktiv, sonst Karteikarte) – oder auf **"KI entscheidet"** (Standard)
+  – dann wählt die KI das Format passend zur Stufe (leicht eher Auswahl,
+  schwer eher freies Erinnern, siehe `_variantTypeRule`/Schwierigkeits-
+  Eskalation); "Interaktiv" wählt sie dabei nie von selbst.
   **Fokus**, alles optional und kombinierbar: per **"Bereich markieren"**
   einen Rahmen um einen Teil der Seite ziehen (`PageRegionPicker` – ideal für
   Diagramme/Formeln, die sich nicht als Text auswählen lassen; der
@@ -727,8 +759,8 @@ Nachbereiten-Modus zu wechseln.
   generierten Karten lassen sich vor dem Speichern eins zu eins wie im
   echten Quiz durchklicken (`QuestionAnswerView`, dieselbe Ansicht wie
   Daily Quiz/Üben statt einer reinen Textvorschau), per freier Anweisung
-  ("einfacher formulieren", "anderer Fokus") überarbeiten und bei zwei
-  Fragen einzeln abwählen. Beim Speichern werden die Stufen einer Frage NICHT
+  ("einfacher formulieren", "anderer Fokus") überarbeiten und bei mehreren
+  Fragen einzeln abwählen (Fragen-Chips oben in der Vorschau). Beim Speichern werden die Stufen einer Frage NICHT
   als unabhängige Karten abgelegt, sondern zu einer Eskalationskette
   zusammengeführt (siehe oben): nur die leichteste Stufe landet sofort
   fällig (`due: jetzt`) im Daily Quiz, die übrigen liegen bereits fertig
@@ -824,7 +856,16 @@ deutlich mehr Einrichtungsaufwand.
 ```bash
 flutter analyze   # statische Analyse
 flutter test       # FSRS-Algorithmus, Exam-Scheduler, KI-JSON-Parsing, App-Smoke-Test
+TZ=Europe/Berlin flutter test   # zusätzlich über die Zeitumstellung (so läuft es auch in CI)
 ```
+
+Alle Datumsrechnungen laufen über Kalendertage (`DateTime(j, m, t ± n)`,
+`calendarDaysBetween`) statt über `Duration(days: …)`/`difference().inDays`:
+an der Sommer-/Winterzeit-Umstellung hat ein Tag 23 bzw. 25 Stunden, sonst
+verschieben sich Vorlesungszeiten, Fälligkeiten, Streak und Countdown
+(`test/services/dst_test.dart`, aussagekräftig nur mit einer Zeitzone mit
+Umstellung). Der ausführliche Analysebericht mit allen gefundenen und
+behobenen Fehlern steht in `CODE_ANALYSE.md`.
 
 Die Kernlogik (FSRS-Scheduling, Exam-Scheduler-Dosierung, robuste
 JSON-Extraktion aus KI-Antworten, Sync-Codec, LaTeX-Reparatur, CSV, S3-

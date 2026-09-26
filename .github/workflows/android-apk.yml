@@ -42,8 +42,12 @@ jobs:
       - name: Analyzer
         run: flutter analyze
 
+      # In einer Zeitzone mit Sommerzeit, damit die Tests zur Zeitumstellung
+      # (test/services/dst_test.dart) wirklich etwas prüfen.
       - name: Tests
         run: flutter test
+        env:
+          TZ: Europe/Berlin
 
       # --build-number = fortlaufende Actions-Run-Nummer, NIE doppelt und
       # immer aufsteigend über alle Pushes hinweg (anders als die

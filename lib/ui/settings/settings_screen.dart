@@ -10,6 +10,7 @@ import '../../models/app_settings.dart';
 import '../../models/pdf_storage_config.dart';
 import '../../repositories/auth_repository.dart';
 import '../../repositories/model_catalog_repository.dart';
+import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/auth_service.dart';
 import '../../services/auto_sync_service.dart';
@@ -207,6 +208,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (confirmed != true || !mounted) return;
     final repo = context.read<SettingsRepository>();
     final autoSync = context.read<AutoSyncService>();
+    final moduleRepo = context.read<ModuleRepository>();
     await _runSync(
       () async {
         // Der Download schreibt alle Daten neu – das soll keinen sofortigen
@@ -221,9 +223,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           lastSyncAt: DateTime.now(),
           lastSyncedPushId: pushId,
         ));
+        // Fächerliste sofort aktualisieren (die übrigen Ansichten laden beim
+        // Öffnen neu).
+        await moduleRepo.load();
         autoSync.markInSync();
       },
-      successMessage: 'Heruntergeladen. Bitte App neu starten, um alle Ansichten zu aktualisieren.',
+      successMessage: 'Heruntergeladen.',
     );
   }
 

@@ -30,10 +30,16 @@ class ReviewOutcome {
     required this.wasWrong,
     this.levelChange = LevelChange.none,
     this.targetType,
+    this.cardDeleted = false,
   });
 
   /// Der fertig fortgeschriebene Datensatz – so zu speichern.
   final Flashcard card;
+
+  /// true, wenn die Karte inzwischen gelöscht war und die Antwort deshalb
+  /// nicht gespeichert wurde (siehe CardReviewMixin.recordReview) – sie
+  /// gehört dann auch in keine Wiederholungsrunde mehr.
+  final bool cardDeleted;
 
   /// true, wenn die Antwort als "nicht gewusst" zählt: eine automatisch
   /// geprüfte Frage falsch beantwortet oder eine offene Karte selbst mit
@@ -73,15 +79,35 @@ class ReviewService {
   /// aber nur mit Tipp (siehe QuestionAnswerView) – die Bewertung folgt dann
   /// [selfGrade], und die Eskalationskette bleibt unberührt (mit Hilfe
   /// gelöst ist weder ein Grund zum Aufsteigen noch zum Absteigen).
-  ReviewOutcome evaluate(Flashcard card, {Grade? selfGrade, bool? isCorrect, DateTime? now}) {
+  ///
+  /// [allowLevelChange] false lässt die Eskalationskette ebenfalls in Ruhe –
+  /// für eine Antwort auf eine Stufe, die inzwischen nicht mehr gespeichert
+  /// ist (die Karte wurde währenddessen befördert oder zurückgestuft).
+  ReviewOutcome evaluate(
+    Flashcard card, {
+    Grade? selfGrade,
+    bool? isCorrect,
+    DateTime? now,
+    bool allowLevelChange = true,
+  }) {
     assert(selfGrade != null || isCorrect != null, 'selfGrade oder isCorrect muss gesetzt sein');
+    final at = now ?? DateTime.now();
     final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
     final wasWrong = isCorrect == false || selfGrade == Grade.again;
-    var updated = _fsrs.review(card, grade, now: now);
+    // Ein erneuter Fehlversuch am selben Tag (Wiederholungsrunde, Üben)
+    // zählt auch für die Rückstufung nicht noch einmal – sonst stufen zwei
+    // Fehler innerhalb weniger Minuten zurück, während der Aufstieg vier
+    // verschiedene Lerntage braucht (siehe FsrsService.isRepeatFailureToday).
+    final repeatFailure = FsrsService.isRepeatFailureToday(card, grade, at);
+    var updated = _fsrs.review(card, grade, now: at);
 
     // Die Eskalationskette gibt es nur bei automatisch geprüften Typen, und
     // nur für Antworten ohne Hilfe.
-    if (isCorrect == null || selfGrade != null || updated.variantChain == null) {
+    if (isCorrect == null ||
+        selfGrade != null ||
+        updated.variantChain == null ||
+        !allowLevelChange ||
+        repeatFailure) {
       return ReviewOutcome(card: updated, wasWrong: wasWrong);
     }
 
@@ -94,7 +120,7 @@ class ReviewService {
     if (nextType != null) {
       change = boxResult.needsGeneration ? LevelChange.promotionPending : LevelChange.promoted;
       target = nextType;
-      if (change == LevelChange.promoted) updated = _fsrs.restartForNewStage(updated, now: now);
+      if (change == LevelChange.promoted) updated = _fsrs.restartForNewStage(updated, now: at);
     } else if (updated.variantLevel < beforeLevel) {
       change = LevelChange.demoted;
       target = updated.type;
@@ -121,21 +147,38 @@ class ReviewService {
   }
 
   /// Wendet per KI erzeugten Stufen-Inhalt auf [card] an und startet die
-  /// neue Stufe neu (siehe FsrsService.restartForNewStage).
+  /// neue Stufe neu (siehe FsrsService.restartForNewStage). Der Inhalt wird
+  /// wie jede KI-Frage geprüft (QuestionParsing.normalizeGeneratedFlashcard):
+  /// eine unvollständige oder nur noch als Karteikarte rettbare Stufe wäre
+  /// unlösbar bzw. keine echte Steigerung und bliebe über Rück- und
+  /// Wiederbeförderung dauerhaft in der Karte hängen – dann wirft diese
+  /// Methode ([FormatException]), die Karte bleibt auf ihrer Stufe und der
+  /// nächste richtige Versuch probiert es erneut. Das Bild einer Karte
+  /// (Diagramm o.ä.) gilt für denselben Fakt weiter.
   static Flashcard applyPromotion(
     Flashcard card,
     QuestionType nextType,
     Map<String, dynamic> result, {
     DateTime? now,
   }) {
+    final fixed = QuestionParsing.normalizeGeneratedFlashcard({
+      ...result,
+      'front': (result['front'] ?? card.front).toString(),
+      'type': QuestionParsing.aiTypeName(nextType),
+    });
+    final type = fixed == null ? null : QuestionParsing.parseType(fixed['type'] as String?);
+    if (fixed == null || (type == QuestionType.flashcard && nextType != QuestionType.flashcard)) {
+      throw const FormatException('Die KI hat keine brauchbare nächste Stufe geliefert.');
+    }
     final promoted = card.copyWithPromotedVariant(
-      newType: nextType,
-      front: (result['front'] ?? card.front).toString(),
-      back: (result['back'] ?? '').toString(),
-      options: QuestionParsing.parseOptions(result['options']),
-      correctText: result['correctText']?.toString(),
-      blanks: QuestionParsing.parseBlanks(result['blanks']),
-      dragPairs: QuestionParsing.parseDragPairs(result['dragPairs']),
+      newType: type!,
+      front: (fixed['front'] ?? card.front).toString(),
+      back: (fixed['back'] ?? '').toString(),
+      options: QuestionParsing.parseOptions(fixed['options']),
+      correctText: fixed['correctText'] as String?,
+      blanks: QuestionParsing.parseBlanks(fixed['blanks']),
+      dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
+      imageBase64: card.imageBase64,
     );
     return FsrsService().restartForNewStage(promoted, now: now);
   }

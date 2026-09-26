@@ -41,8 +41,7 @@ class ModelCatalogRepository extends ChangeNotifier {
               .toList() ??
           [];
       if (list.isNotEmpty) _models = list;
-      final updatedAtRaw = record['updatedAt'] as String?;
-      _lastUpdated = updatedAtRaw == null ? null : DateTime.parse(updatedAtRaw);
+      _lastUpdated = DateTime.tryParse(record['updatedAt']?.toString() ?? '');
       notifyListeners();
     }
 

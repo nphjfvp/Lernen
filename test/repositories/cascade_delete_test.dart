@@ -84,4 +84,33 @@ void main() {
       expect((await MockExamRepository.loadFrom(db)).map((r) => r.moduleId), ['b']);
     });
   });
+
+  group('LectureUnitRepository.setCoveredIn', () {
+    Future<Map<String, Object?>?> unit(String id) => DatabaseService.lectureUnits.record(id).get(db);
+
+    test('Häkchen weg: erreichter Termin wird entfernt, künftiger bleibt', () async {
+      await DatabaseService.lectureUnits.record('past').put(db, {
+        'id': 'past',
+        'moduleId': 'm1',
+        'title': 'A',
+        'covered': true,
+        'createdAt': '2026-09-01T00:00:00.000',
+        'scheduledDate': '2026-09-20T00:00:00.000',
+      });
+      await DatabaseService.lectureUnits.record('future').put(db, {
+        'id': 'future',
+        'moduleId': 'm1',
+        'title': 'B',
+        'covered': true,
+        'createdAt': '2026-09-01T00:00:00.000',
+        'scheduledDate': '2026-10-05T00:00:00.000',
+      });
+      final now = DateTime(2026, 9, 26, 12);
+      await LectureUnitRepository.setCoveredIn(db, 'past', false, now: now);
+      await LectureUnitRepository.setCoveredIn(db, 'future', false, now: now);
+      expect((await unit('past'))!['scheduledDate'], isNull);
+      expect((await unit('future'))!['scheduledDate'], '2026-10-05T00:00:00.000');
+      expect((await unit('future'))!['covered'], false);
+    });
+  });
 }

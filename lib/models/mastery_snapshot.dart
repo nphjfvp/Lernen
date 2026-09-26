@@ -46,11 +46,11 @@ class MasterySnapshot {
       };
 
   factory MasterySnapshot.fromMap(Map<String, dynamic> map) => MasterySnapshot(
-        date: DateTime.parse(map['date'] as String),
-        red: map['red'] as int,
-        yellow: map['yellow'] as int,
-        green: map['green'] as int,
-        neu: map['neu'] as int,
+        date: DateTime.tryParse(map['date']?.toString() ?? '') ?? DateTime(2000),
+        red: (map['red'] as num?)?.toInt() ?? 0,
+        yellow: (map['yellow'] as num?)?.toInt() ?? 0,
+        green: (map['green'] as num?)?.toInt() ?? 0,
+        neu: (map['neu'] as num?)?.toInt() ?? 0,
         averageRetrievability: (map['averageRetrievability'] as num?)?.toDouble(),
       );
 }

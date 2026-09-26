@@ -135,6 +135,43 @@ void main() {
       expect(card.masteryBox, 2);
     });
 
+    test('erneuter Fehlversuch am selben Tag: kein weiterer Lapse, Ampel sinkt nicht weiter', () {
+      // Gelernte Karte (masteryBox 3) – im Daily Quiz falsch, in der
+      // Wiederholungsrunde noch dreimal falsch.
+      var card = _newCard();
+      for (var day = 1; day <= 3; day++) {
+        card = fsrs.review(card, Grade.good, now: DateTime(2026, 1, day, 9));
+      }
+      expect(card.masteryBox, 3);
+      final morning = DateTime(2026, 1, 10, 9);
+      card = fsrs.review(card, Grade.again, now: morning);
+      final afterFirst = card;
+      expect(card.masteryBox, 2);
+      expect(card.lapses, 1);
+      for (var i = 1; i <= 3; i++) {
+        card = fsrs.review(card, Grade.again, now: morning.add(Duration(minutes: i)));
+      }
+      expect(card.masteryBox, 2);
+      expect(card.lapses, 1);
+      expect(card.stability, afterFirst.stability);
+      expect(card.difficulty, afterFirst.difficulty);
+      expect(card.state, 'relearning');
+      expect(card.reps, afterFirst.reps + 3);
+
+      // Am nächsten Tag wieder falsch: das zählt erneut.
+      card = fsrs.review(card, Grade.again, now: DateTime(2026, 1, 11, 9));
+      expect(card.masteryBox, 1);
+      expect(card.lapses, 2);
+    });
+
+    test('neue Karte zweimal falsch am selben Tag bleibt "learning" ohne Lapse', () {
+      var card = fsrs.review(_newCard(), Grade.again, now: DateTime(2026, 1, 1, 9));
+      card = fsrs.review(card, Grade.again, now: DateTime(2026, 1, 1, 9, 5));
+      expect(card.state, 'learning');
+      expect(card.lapses, 0);
+      expect(card.masteryBox, 0);
+    });
+
     test('sinkt auch am selben Tag bei einer falschen Antwort', () {
       var card = fsrs.review(_newCard(), Grade.good, now: DateTime(2026, 1, 1, 9));
       card = fsrs.review(card, Grade.good, now: DateTime(2026, 1, 2, 9));
@@ -215,6 +252,32 @@ void main() {
       expect(restarted.masteryBox, 1);
       expect(restarted.reps, card.reps);
       expect(restarted.stability, lessThan(card.stability));
+    });
+  });
+
+  group('FsrsService – Kalendertage', () {
+    test('abends gelernt, am nächsten Morgen wiederholt: zählt als ein Tag Abstand', () {
+      final evening = DateTime(2026, 5, 4, 20);
+      final first = fsrs.review(_newCard(), Grade.good, now: evening);
+      final nextMorning = fsrs.review(first, Grade.good, now: DateTime(2026, 5, 5, 8));
+      final sameDay = fsrs.review(first, Grade.good, now: DateTime(2026, 5, 4, 23));
+      expect(nextMorning.elapsedDays, 1);
+      expect(nextMorning.stability, greaterThan(sameDay.stability));
+      expect(FsrsService.calendarDaysBetween(evening, DateTime(2026, 5, 5, 8)), 1);
+      expect(FsrsService.calendarDaysBetween(DateTime(2026, 5, 5, 8), evening), 0);
+    });
+
+    test('Fälligkeit ist immer Mitternacht des Zieltags', () {
+      final card = fsrs.review(_newCard(), Grade.good, now: DateTime(2026, 3, 28, 22, 30));
+      expect(card.due.hour, 0);
+      expect(card.due.minute, 0);
+      expect(card.due.isAfter(DateTime(2026, 3, 28, 23, 59)), isTrue);
+    });
+
+    test('neue Karte beim ersten Versuch falsch ist kein Lapse', () {
+      final card = fsrs.review(_newCard(), Grade.again, now: DateTime(2026, 1, 1));
+      expect(card.lapses, 0);
+      expect(card.state, 'learning');
     });
   });
 }

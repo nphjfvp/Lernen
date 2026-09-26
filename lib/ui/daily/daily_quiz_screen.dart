@@ -226,7 +226,8 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
   Future<void> _handleComplete(Flashcard card, {required _QuizStage stage, Grade? selfGrade, bool? isCorrect}) async {
     final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
     final updated = outcome.card;
-    final wasWrong = outcome.wasWrong;
+    // Eine inzwischen gelöschte Karte kommt nicht in die Wiederholungsrunde.
+    final wasWrong = outcome.wasWrong && !outcome.cardDeleted;
 
     if (!mounted) return;
     setState(() {

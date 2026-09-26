@@ -123,6 +123,17 @@ void main() {
     });
   });
 
+  group('downscaleImage', () {
+    test('verkleinert auf die längere Seite, kleine Bilder bleiben', () async {
+      final big = await _twoColorPng(2000, 1000);
+      final (w, h, _) = await _sizeAndFirstPixel((await downscaleImage(big, maxSide: 1280))!);
+      expect(w, 1280);
+      expect(h, 640);
+      final small = await _twoColorPng(300, 200);
+      expect(identical(await downscaleImage(small, maxSide: 1280), small), isTrue);
+    });
+  });
+
   testWidgets('Bereich markieren: Rahmen ziehen und übernehmen', (tester) async {
     final png = (await tester.runAsync(() => _twoColorPng(200, 100)))!;
     Rect? picked;
@@ -165,7 +176,7 @@ void main() {
     expect(picked!.bottom, closeTo(0.8, 0.02));
   });
 
-  testWidgets('Einstellungen: Stufen stehen auf "KI entscheidet", 2 Fragen wählbar', (tester) async {
+  testWidgets('Einstellungen: Stufen stehen auf "KI entscheidet", bis zu 5 Fragen wählbar', (tester) async {
     tester.view.physicalSize = const Size(1200, 4800);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -196,8 +207,13 @@ void main() {
     expect(find.text('Bereich markieren'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Frage erstellen'), findsOneWidget);
 
-    await tester.tap(find.text('2 Fragen'));
+    await tester.tap(find.text('5'));
     await tester.pump();
-    expect(find.widgetWithText(FilledButton, '2 Fragen erstellen'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '5 Fragen erstellen'), findsOneWidget);
+
+    // "Interaktiv" ist als fester Typ wählbar.
+    await tester.tap(find.text('KI entscheidet').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Interaktiv').last, findsOneWidget);
   });
 }

@@ -67,4 +67,36 @@ void main() {
       throwsA(isA<AiServiceException>()),
     );
   });
+
+  group('AiService.checkFillBlankAnswers', () {
+    test('liefert je Lücke das Urteil der KI und schickt Lösung und Eingabe je Lücke', () async {
+      String? sent;
+      final client = MockClient((request) async {
+        sent = request.body;
+        return _chatResponse(jsonEncode({
+          'correct': [true, false],
+        }));
+      });
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+      final result = await ai.checkFillBlankAnswers(
+        text: 'Die ___ liefert ___.',
+        solutions: const ['Mitochondrium', 'ATP'],
+        answers: const ['Kraftwerk der Zelle', 'Zucker'],
+      );
+
+      expect(result, [true, false]);
+      final user = (jsonDecode(sent!)['messages'] as List)[1]['content'] as String;
+      expect(user, contains('Lücke 1: Lösung "Mitochondrium" – Eingabe "Kraftwerk der Zelle"'));
+      expect(user, contains('Lücke 2: Lösung "ATP" – Eingabe "Zucker"'));
+    });
+
+    test('parseBlankVerdicts ist tolerant: zu kurze Liste, Strings, Einzelwert', () {
+      expect(AiService.parseBlankVerdicts({'correct': [true]}, 2), [true, false]);
+      expect(AiService.parseBlankVerdicts({'correct': ['true', 'nein']}, 2), [true, false]);
+      expect(AiService.parseBlankVerdicts({'correct': true}, 3), [true, true, true]);
+      expect(AiService.parseBlankVerdicts({'correct': 'vielleicht'}, 2), [false, false]);
+      expect(AiService.parseBlankVerdicts(const {}, 2), [false, false]);
+    });
+  });
 }

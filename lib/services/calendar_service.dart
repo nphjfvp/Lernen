@@ -48,7 +48,9 @@ class CalendarService {
               dateTime: occurrence,
               endDateTime: _endFor(slot, occurrence),
             ));
-            occurrence = occurrence.add(const Duration(days: 7));
+            // Kalenderwoche statt 7×24 h: sonst wanderte die Uhrzeit an der
+            // Zeitumstellung um eine Stunde (10:15 -> 11:15).
+            occurrence = DateTime(occurrence.year, occurrence.month, occurrence.day + 7, slot.hour, slot.minute);
           }
         }
       }

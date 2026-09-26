@@ -461,4 +461,44 @@ void main() {
       expect(plan.newCards.map((c) => c.id), ['fresh']);
     });
   });
+
+  group('verwaiste Karten und Kürzen', () {
+    test('Karten ohne bestehendes Fach werden nicht eingeplant (auch nicht freiwillig)', () {
+      final cards = [
+        _dueFlashcard('d1', 'm1', now),
+        _dueFlashcard('orphan', 'geloescht', now),
+        _newFlashcard('n-orphan', 'geloescht'),
+      ];
+      final plan = scheduler.buildPlan(modules: [_module('m1')], allCards: cards, now: now);
+      expect(plan.allCards.map((c) => c.id), ['d1']);
+
+      final extra = scheduler.buildExtraBatch(
+        modules: [_module('m1')],
+        allCards: cards,
+        excludeIds: const {},
+        now: now,
+      );
+      expect(extra.allCards.map((c) => c.moduleId).toSet(), {'m1'});
+    });
+
+    test('zu große Session: neue Karten werden fachübergreifend gleichmäßig gekürzt, selbst erstellte zuletzt', () {
+      final modules = [_module('a'), _module('b'), _module('c')];
+      final due = List.generate(DailySchedulerService.maxSessionSize - 6, (i) => _dueFlashcard('d$i', 'a', now));
+      final fresh = [
+        for (final m in ['a', 'b', 'c'])
+          for (var i = 0; i < 10; i++) _newFlashcard('$m$i', m, createdAt: DateTime(2026, 1, 1, 0, i)),
+        _newFlashcard('prio', 'c', priorityIntroduction: true),
+      ];
+      final plan = scheduler.buildPlan(modules: modules, allCards: [...due, ...fresh], now: now);
+
+      expect(plan.total, DailySchedulerService.maxSessionSize);
+      expect(plan.newCards.map((c) => c.id), contains('prio'));
+      final perModule = <String, int>{};
+      for (final c in plan.newCards.where((c) => !c.priorityIntroduction)) {
+        perModule[c.moduleId] = (perModule[c.moduleId] ?? 0) + 1;
+      }
+      // 6 Plätze: die selbst erstellte Frage, dann reihum a, b, c, a, b.
+      expect(perModule, {'a': 2, 'b': 2, 'c': 1});
+    });
+  });
 }

@@ -1,5 +1,6 @@
 import 'package:home_widget/home_widget.dart';
 
+import 'calendar_days.dart';
 import '../models/flashcard.dart';
 import '../models/module.dart';
 import 'calendar_service.dart';
@@ -64,10 +65,7 @@ class HomeWidgetService {
   String buildCountdownLine(List<Module> modules, {DateTime? from}) {
     final next = _calendarService.nextExam(modules, from: from);
     if (next == null) return 'Keine Klausur geplant';
-    final start = from ?? DateTime.now();
-    final startDay = DateTime(start.year, start.month, start.day);
-    final examDay = DateTime(next.dateTime.year, next.dateTime.month, next.dateTime.day);
-    final days = examDay.difference(startDay).inDays;
+    final days = calendarDaysBetween(from ?? DateTime.now(), next.dateTime);
     if (days <= 0) return '⏳ ${next.module.name}: Klausur heute!';
     return '⏳ ${next.module.name} in $days Tag${days == 1 ? '' : 'en'}';
   }

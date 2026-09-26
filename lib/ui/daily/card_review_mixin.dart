@@ -20,19 +20,36 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
 
   /// [showLevelFeedback] false unterdrückt die Stufenwechsel-SnackBar (z.B.
   /// in der Probeklausur, die kein Feedback während der Bearbeitung zeigt).
+  ///
+  /// Die Antwort wird auf den GESPEICHERTEN Stand der Karte angewendet, nicht
+  /// auf den beim Rundenstart geladenen [card]: dieselbe Karte kann
+  /// inzwischen woanders beantwortet worden sein (Üben, Probeklausur, Daily
+  /// Quiz) – sonst überschriebe diese Antwort die andere, und "höchstens ein
+  /// Ampel-Schritt pro Tag" griffe nicht. Eine inzwischen gelöschte Karte
+  /// wird nicht wieder angelegt.
   Future<ReviewOutcome> recordReview(
     Flashcard card, {
     Grade? selfGrade,
     bool? isCorrect,
     bool showLevelFeedback = true,
   }) async {
-    final outcome = _reviewService.evaluate(card, selfGrade: selfGrade, isCorrect: isCorrect);
     // Vor dem ersten await auslesen: die Hintergrund-Beförderung soll auch
     // dann noch gespeichert werden, wenn der Screen inzwischen geschlossen
     // wurde.
     final repo = context.read<FlashcardRepository>();
     final settings = context.read<SettingsRepository>().settings;
-    await repo.update(outcome.card);
+    final stored = await repo.loadById(card.id);
+    // Wurde die Karte währenddessen befördert/zurückgestuft, galt die
+    // Antwort einer anderen Stufe – dann zählt sie nur für FSRS/Ampel.
+    final sameStage = stored != null && stored.variantLevel == card.variantLevel && stored.type == card.type;
+    final outcome = _reviewService.evaluate(
+      stored ?? card,
+      selfGrade: selfGrade,
+      isCorrect: isCorrect,
+      allowLevelChange: sameStage,
+    );
+    final saved = stored != null && await repo.update(outcome.card);
+    if (!saved) return ReviewOutcome(card: outcome.card, wasWrong: outcome.wasWrong, cardDeleted: true);
     unawaited(StudyLogRepository().recordDay(DateTime.now()));
 
     final target = outcome.targetType;
@@ -40,7 +57,9 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
       unawaited(_promoteInBackground(repo, ai, outcome.card, target));
     }
-    final message = outcome.levelChangeMessage;
+    // Ohne API-Key kann die nächste Stufe nie erzeugt werden – dann auch
+    // nicht "nächstes Mal: …" versprechen.
+    final message = outcome.needsGeneration && !settings.hasApiKey ? null : outcome.levelChangeMessage;
     if (message != null && showLevelFeedback && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message), duration: const Duration(seconds: 2)),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/calendar_days.dart';
 
 /// Ein wöchentlich wiederkehrender Vorlesungstermin (Wochentag + Uhrzeit).
 /// Endzeit ist optional/nullable – ältere, vor der Endzeit-Unterstützung
@@ -33,13 +34,16 @@ class LectureSlot {
   /// das Ende, ohne die Startzeit, damit eine gerade laufende Vorlesung
   /// nicht schon als "nächste Woche" angezeigt wird).
   DateTime nextOccurrenceFrom(DateTime from) {
-    var candidateStart = DateTime(from.year, from.month, from.day, hour, minute);
+    // Kalendertage statt Duration-Addition: über die Zeitumstellung hinweg
+    // bliebe sonst die Uhrzeit nicht stehen.
     final daysUntilWeekday = (weekday - from.weekday) % 7;
-    candidateStart = candidateStart.add(Duration(days: daysUntilWeekday));
+    var candidateStart = DateTime(from.year, from.month, from.day + daysUntilWeekday, hour, minute);
     final candidateEnd = hasEndTime
         ? DateTime(candidateStart.year, candidateStart.month, candidateStart.day, endHour!, endMinute!)
         : candidateStart;
-    if (candidateEnd.isBefore(from)) candidateStart = candidateStart.add(const Duration(days: 7));
+    if (candidateEnd.isBefore(from)) {
+      candidateStart = DateTime(candidateStart.year, candidateStart.month, candidateStart.day + 7, hour, minute);
+    }
     return candidateStart;
   }
 
@@ -52,11 +56,11 @@ class LectureSlot {
       };
 
   factory LectureSlot.fromMap(Map<String, dynamic> map) => LectureSlot(
-        weekday: map['weekday'] as int,
-        hour: map['hour'] as int,
-        minute: map['minute'] as int,
-        endHour: map['endHour'] as int?,
-        endMinute: map['endMinute'] as int?,
+        weekday: (map['weekday'] as num?)?.toInt() ?? DateTime.monday,
+        hour: (map['hour'] as num?)?.toInt() ?? 8,
+        minute: (map['minute'] as num?)?.toInt() ?? 0,
+        endHour: (map['endHour'] as num?)?.toInt(),
+        endMinute: (map['endMinute'] as num?)?.toInt(),
       );
 }
 
@@ -86,10 +90,7 @@ class Module {
 
   int? get daysUntilExam {
     if (examDate == null) return null;
-    final today = DateTime.now();
-    final examDay = DateTime(examDate!.year, examDate!.month, examDate!.day);
-    final todayDay = DateTime(today.year, today.month, today.day);
-    return examDay.difference(todayDay).inDays;
+    return calendarDaysBetween(DateTime.now(), examDate!);
   }
 
   /// Nächster Vorlesungstermin ab [from] (Standard: jetzt), oder `null` wenn
@@ -138,13 +139,11 @@ class Module {
 
   factory Module.fromMap(Map<String, dynamic> map) => Module(
         id: map['id'] as String,
-        name: map['name'] as String,
-        colorValue: map['colorValue'] as int,
-        icon: map['icon'] as String,
-        examDate: map['examDate'] == null
-            ? null
-            : DateTime.parse(map['examDate'] as String),
-        createdAt: DateTime.parse(map['createdAt'] as String),
+        name: map['name']?.toString() ?? '',
+        colorValue: (map['colorValue'] as num?)?.toInt() ?? 0xFF6B74C4,
+        icon: map['icon']?.toString() ?? '📘',
+        examDate: DateTime.tryParse(map['examDate']?.toString() ?? ''),
+        createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime(2000),
         lectureSlots: (map['lectureSlots'] as List?)
             ?.map((e) => LectureSlot.fromMap(Map<String, dynamic>.from(e as Map)))
             .toList(),

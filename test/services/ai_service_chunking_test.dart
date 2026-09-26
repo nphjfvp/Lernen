@@ -150,4 +150,43 @@ void main() {
       expect((result['issues'] as List).length, 1);
     });
   });
+
+  group('AiService – tolerant gegenüber unerwarteten Feldtypen', () {
+    test('generateSummary: Zahl als Titel, Text statt Liste – kein Absturz', () async {
+      final client = MockClient((request) async => _chatResponse(jsonEncode({
+            'title': 42,
+            'overview': 'Übersicht',
+            'key_points': 'nur ein Text',
+          })));
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+      final result = await ai.generateSummary('kurzer Text');
+      expect(result['title'], '42');
+      expect(result['key_points'], isEmpty);
+    });
+
+    test('generateConceptsAndFlashcards (mehrere Abschnitte): kaputte Einträge fallen einzeln weg', () async {
+      final client = MockClient((request) async => _chatResponse(jsonEncode({
+            'concepts': [
+              'kein Objekt',
+              {'title': 'Konzept', 'explanation': 'E'},
+            ],
+            'flashcards': [
+              'kein Objekt',
+              {'type': 'flashcard', 'front': 'F', 'back': 'B'},
+            ],
+          })));
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+
+      final longText = ('Ein langer Satz mit genug Inhalt, um mehrere Chunks zu erzwingen. ' * 400);
+      final result = await ai.generateConceptsAndFlashcards(
+        slidesText: longText,
+        exercisesText: '',
+        granularity: ChunkGranularity.fine,
+      );
+      expect((result['concepts'] as List).length, 1);
+      expect((result['flashcards'] as List), isNotEmpty);
+      expect((result['flashcards'] as List).every((f) => f is Map), isTrue);
+    });
+  });
 }

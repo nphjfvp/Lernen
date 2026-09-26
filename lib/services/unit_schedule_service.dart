@@ -21,7 +21,7 @@ class UnitScheduleService {
   }) {
     final start = DateTime(from.year, from.month, from.day);
     // Offen = nicht abgehakt und Termin (falls vorhanden) nicht schon vor heute.
-    final open = units.where((u) => !u.isCoveredOn(start.subtract(const Duration(days: 1)))).toList();
+    final open = units.where((u) => !u.isCoveredOn(DateTime(start.year, start.month, start.day - 1))).toList();
     if (open.isEmpty) return const [];
     final lectures = _calendar
         .eventsInRange(modules: [module], start: start, end: start.add(const Duration(days: 400)))

@@ -20,7 +20,7 @@ class MasterySnapshotRepository {
   Future<List<MasterySnapshot>> loadRecent(int days, {DateTime? now}) async {
     final db = await DatabaseService.instance.database;
     final today = now ?? DateTime.now();
-    final cutoff = DateTime(today.year, today.month, today.day).subtract(Duration(days: days));
+    final cutoff = DateTime(today.year, today.month, today.day - days);
     final records = await DatabaseService.masterySnapshots.find(
       db,
       finder: Finder(

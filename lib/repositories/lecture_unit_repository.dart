@@ -47,12 +47,23 @@ class LectureUnitRepository extends ChangeNotifier {
   /// Häkchen entfernen bei einer Einheit, deren Termin schon erreicht ist,
   /// entfernt auch den Termin – sonst bliebe sie über den Termin trotzdem
   /// "behandelt" und das Häkchen ließe sich nicht wirksam abwählen.
-  Future<void> setCovered(String id, String moduleId, bool covered) async {
+  /// Ein Termin in der Zukunft bleibt dabei stehen.
+  Future<void> setCovered(String id, String moduleId, bool covered, {DateTime? now}) async {
     final db = await DatabaseService.instance.database;
-    await DatabaseService.lectureUnits
-        .record(id)
-        .update(db, {'covered': covered, if (!covered) 'scheduledDate': null});
+    await db.transaction((txn) => setCoveredIn(txn, id, covered, now: now ?? DateTime.now()));
     await loadForModule(moduleId);
+  }
+
+  /// Kern von [setCovered] – rein auf der DB, testbar.
+  static Future<void> setCoveredIn(DatabaseClient client, String id, bool covered, {required DateTime now}) async {
+    final ref = DatabaseService.lectureUnits.record(id);
+    final current = await ref.get(client);
+    if (current == null) return;
+    final unit = LectureUnit.fromMap(current);
+    final today = DateTime(now.year, now.month, now.day);
+    final date = unit.scheduledDate;
+    final dateReached = date != null && !DateTime(date.year, date.month, date.day).isAfter(today);
+    await ref.update(client, {'covered': covered, if (!covered && dateReached) 'scheduledDate': null});
   }
 
   Future<void> setScheduledDate(String id, String moduleId, DateTime? date) async {

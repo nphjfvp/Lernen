@@ -39,10 +39,15 @@ class QuizOption {
 
   Map<String, dynamic> toMap() => {'text': text, 'isCorrect': isCorrect};
 
-  factory QuizOption.fromMap(Map<String, dynamic> map) => QuizOption(
-        text: map['text'] as String,
-        isCorrect: map['isCorrect'] as bool? ?? false,
-      );
+  /// Tolerant gegenüber importierten/älteren Daten (fehlender Text,
+  /// `isCorrect` als 1 oder "true") statt beim Laden abzustürzen.
+  factory QuizOption.fromMap(Map<String, dynamic> map) {
+    final isCorrect = map['isCorrect'];
+    return QuizOption(
+      text: map['text']?.toString() ?? '',
+      isCorrect: isCorrect == true || isCorrect == 1 || const {'true', '1'}.contains(isCorrect?.toString()),
+    );
+  }
 }
 
 /// Ein Zuordnungspaar bei drag_drop (Begriff -> Ziel) bzw. drag_category
@@ -56,8 +61,8 @@ class DragPair {
   Map<String, dynamic> toMap() => {'source': source, 'target': target};
 
   factory DragPair.fromMap(Map<String, dynamic> map) => DragPair(
-        source: map['source'] as String,
-        target: map['target'] as String,
+        source: map['source']?.toString() ?? '',
+        target: map['target']?.toString() ?? '',
       );
 }
 
@@ -104,8 +109,8 @@ class VariantSnapshot {
 
   factory VariantSnapshot.fromMap(Map<String, dynamic> map) => VariantSnapshot(
         type: questionTypeFromString(map['type'] as String?),
-        front: map['front'] as String,
-        back: map['back'] as String? ?? '',
+        front: map['front']?.toString() ?? '',
+        back: map['back']?.toString() ?? '',
         options: (map['options'] as List?)
             ?.map((o) => QuizOption.fromMap(Map<String, dynamic>.from(o as Map)))
             .toList(),
@@ -302,7 +307,12 @@ class Flashcard {
         QuestionType.multipleChoice =>
           (options ?? const []).where((o) => o.isCorrect).map((o) => o.text).join('; '),
         QuestionType.freeText => correctText ?? '',
-        QuestionType.fillBlank => (blanks ?? const []).join('; '),
+        // Varianten einer Lücke ("a; b") als "a / b" – sonst wären sie von
+        // den übrigen Lücken nicht zu unterscheiden.
+        QuestionType.fillBlank => (blanks ?? const [])
+            .map((b) => b.split(';').map((s) => s.trim()).where((s) => s.isNotEmpty).join(' / '))
+            .where((b) => b.isNotEmpty)
+            .join('; '),
         QuestionType.dragDrop ||
         QuestionType.dragCategory =>
           (dragPairs ?? const []).map((p) => '${p.source} -> ${p.target}').join('; '),

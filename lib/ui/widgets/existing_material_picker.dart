@@ -1,12 +1,25 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../models/material_item.dart';
+import '../../services/material_file_store.dart';
 
 String _kindLabel(MaterialKind kind) => switch (kind) {
       MaterialKind.slide => 'Folie',
       MaterialKind.exercise => 'Übungsaufgabe',
       MaterialKind.practiceExam => 'Übungsklausur',
     };
+
+/// PDF-Bytes übernommener Materialien (für "Folie ansehen") – auf
+/// Mobile/Desktop liegt die PDF als Datei vor, nur im Web als Base64 in der
+/// DB; vorher wurde nur Letzteres gelesen, die Vorschau fehlte also auf dem
+/// Handy. Leer, wenn es keine (lesbare) PDF gibt.
+Future<List<Uint8List>> loadMaterialPdfBytes(List<MaterialItem> materials) => Future.wait([
+      for (final m in materials)
+        MaterialFileStore.load(filePath: m.filePath, fileBytesBase64: m.fileBytesBase64)
+            .then((b) => b ?? Uint8List(0), onError: (_) => Uint8List(0)),
+    ]);
 
 /// Öffnet eine Auswahlliste bereits im Fach hochgeladener Materialien (siehe
 /// MaterialRepository.forModule) zur Wiederverwendung in Vorbereiten/

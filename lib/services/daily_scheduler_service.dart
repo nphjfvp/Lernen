@@ -1,3 +1,4 @@
+import 'calendar_days.dart';
 import '../models/flashcard.dart';
 import '../models/module.dart';
 import 'fsrs_service.dart';
@@ -89,6 +90,27 @@ class DailySchedulerService {
     return result;
   }
 
+  /// Karten, die überhaupt eingeplant werden dürfen: nur Karten eines
+  /// bestehenden Fachs – verwaiste Karten (z.B. durch eine früher beim
+  /// Beantworten wieder angelegte, eigentlich gelöschte Karte) kämen sonst
+  /// täglich ohne Fach dran und ließen sich nirgends löschen – und nur aus
+  /// behandelten Einheiten (siehe [buildPlan]).
+  static List<Flashcard> _eligible(
+    List<Module> modules,
+    List<Flashcard> allCards,
+    Map<String, bool> unitCoveredById,
+  ) {
+    final moduleIds = {for (final m in modules) m.id};
+    bool isEligible(Flashcard c) {
+      if (!moduleIds.contains(c.moduleId)) return false;
+      final unitId = c.unitId;
+      if (unitId == null || c.priorityIntroduction) return true;
+      return unitCoveredById[unitId] ?? true;
+    }
+
+    return allCards.where(isEligible).toList();
+  }
+
   /// [unitCoveredById] ordnet jede Vorlesungseinheit (LectureUnit.id) ihrem
   /// "behandelt"-Status zu. Eine Karte mit gesetzter [Flashcard.unitId]
   /// wird NUR eingeplant, wenn diese Einheit als behandelt markiert ist –
@@ -115,15 +137,9 @@ class DailySchedulerService {
     final today = now ?? DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
 
-    bool isEligible(Flashcard c) {
-      final unitId = c.unitId;
-      if (unitId == null || c.priorityIntroduction) return true;
-      return unitCoveredById[unitId] ?? true;
-    }
+    final eligibleCards = _eligible(modules, allCards, unitCoveredById);
 
-    final eligibleCards = allCards.where(isEligible).toList();
-
-    final endOfToday = todayDay.add(const Duration(days: 1));
+    final endOfToday = DateTime(today.year, today.month, today.day + 1);
     final dueCards = eligibleCards
         .where((c) => c.reps > 0 && c.due.isBefore(endOfToday))
         .toList()
@@ -162,9 +178,7 @@ class DailySchedulerService {
       // echte Systemzeit, was Tests mit simuliertem Datum unzuverlässig
       // machen würde.
       final examDate = module.examDate;
-      final daysUntilExam = examDate == null
-          ? null
-          : DateTime(examDate.year, examDate.month, examDate.day).difference(todayDay).inDays;
+      final daysUntilExam = examDate == null ? null : calendarDaysBetween(todayDay, examDate);
       int introductionWindowDays;
       if (daysUntilExam == null || daysUntilExam < 0) {
         // Kein Klausurdatum ODER die Klausur liegt bereits in der
@@ -207,11 +221,16 @@ class DailySchedulerService {
 
     // Fällige Wiederholungen sind zeitkritisch (sonst sinkt die
     // Erinnerungswahrscheinlichkeit weiter) und gehen daher bei Bedarf vor
-    // neuen Karten, wenn die Session sonst zu groß würde.
+    // neuen Karten, wenn die Session sonst zu groß würde. Gekürzt wird
+    // fachübergreifend gleichmäßig, gezielt selbst erstellte Fragen zuletzt
+    // – nicht einfach die Fächer am Ende der Liste.
     var trimmedNew = newCards;
     if (dueCards.length + newCards.length > maxSessionSize) {
       final remainingSlots = (maxSessionSize - dueCards.length).clamp(0, maxSessionSize);
-      trimmedNew = newCards.take(remainingSlots).toList();
+      trimmedNew = [
+        ...newCards.where((c) => c.priorityIntroduction),
+        ...interleaveByModule(newCards.where((c) => !c.priorityIntroduction).toList()),
+      ].take(remainingSlots).toList();
     }
 
     return DailyPlan(
@@ -238,14 +257,8 @@ class DailySchedulerService {
     DateTime? now,
     int batchSize = 10,
   }) {
-    bool isEligible(Flashcard c) {
-      final unitId = c.unitId;
-      if (unitId == null || c.priorityIntroduction) return true;
-      return unitCoveredById[unitId] ?? true;
-    }
-
     final eligibleCards =
-        allCards.where(isEligible).where((c) => !excludeIds.contains(c.id)).toList();
+        _eligible(modules, allCards, unitCoveredById).where((c) => !excludeIds.contains(c.id)).toList();
 
     final freshNew = eligibleCards.where((c) => c.reps == 0).toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));

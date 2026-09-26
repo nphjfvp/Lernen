@@ -58,6 +58,12 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
   DateTime? _examDate;
   late List<LectureSlot> _lectureSlots;
 
+  /// Einmal vergeben: ein zweites "Fach anlegen" (Doppeltippen, solange das
+  /// Speichern samt Widget-Aktualisierung noch läuft) legte sonst ein
+  /// zweites, gleiches Fach an.
+  late final String _id = widget.existing?.id ?? const Uuid().v4();
+  bool _saving = false;
+
   @override
   void initState() {
     super.initState();
@@ -141,11 +147,20 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
 
   Future<void> _save() async {
     final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty || _saving) return;
+    setState(() => _saving = true);
+    try {
+      await _saveModule(name);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveModule(String name) async {
     final repo = context.read<ModuleRepository>();
     final existing = widget.existing;
     final module = Module(
-      id: existing?.id ?? const Uuid().v4(),
+      id: _id,
       name: name,
       colorValue: _colorValue,
       icon: _icon,
@@ -276,7 +291,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
           ),
           const SizedBox(height: 32),
           FilledButton(
-            onPressed: _save,
+            onPressed: _saving ? null : _save,
             child: Text(isEditing ? 'Speichern' : 'Fach anlegen'),
           ),
         ],

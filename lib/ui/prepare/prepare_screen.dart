@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -22,6 +21,7 @@ import '../../services/material_text_extractor.dart';
 import '../../services/pdf_ocr_service.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
+import '../widgets/discard_guard.dart';
 import '../widgets/existing_material_picker.dart';
 import '../widgets/ocr_notice.dart';
 import '../widgets/pdf_preview_screen.dart';
@@ -33,9 +33,22 @@ enum _Mode { kurz, ausfuehrlich }
 enum _Step { modeSelect, pick, extracting, ready, generating, preview, preparingSession, session }
 
 class _PickedFile {
-  _PickedFile({required this.fileName, required this.text, required this.bytes, this.existingMaterialId});
+  _PickedFile({
+    required this.fileName,
+    required this.text,
+    required this.bytes,
+    String? rawText,
+    this.existingMaterialId,
+  }) : rawText = rawText ?? text;
   final String fileName;
+
+  /// Text für die KI – ggf. mit den Markierungen eines gleichnamigen, schon
+  /// vorhandenen Materials als Zusatzkontext.
   final String text;
+
+  /// Der reine extrahierte Text, so wird ein neues Material gespeichert (die
+  /// Markierungen des alten Materials gehören nicht in seinen Text).
+  final String rawText;
   final Uint8List bytes;
 
   /// Gesetzt, wenn diese Datei nicht frisch hochgeladen, sondern aus bereits
@@ -75,6 +88,10 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
   String? _rawResponse;
 
   String _unitChoice = '';
+
+  /// Sperrt "Speichern"/"Fertig & speichern" während des Speicherns – ein
+  /// zweites Tippen legte sonst alles doppelt an.
+  bool _saving = false;
 
   // -- Ausführlich-Modus-Zustand -------------------------------------------
   Map<String, List<MaterialHighlight>> _highlightsByFile = {};
@@ -146,7 +163,7 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
           }
           final highlightBlock = match != null ? HighlightContext.build(match) : '';
           final combined = highlightBlock.isEmpty ? text : '$text\n\n$highlightBlock';
-          newFiles.add(_PickedFile(fileName: file.name, text: combined, bytes: bytes));
+          newFiles.add(_PickedFile(fileName: file.name, text: combined, rawText: text, bytes: bytes));
         }
       } catch (e) {
         setState(() => _error = '${file.name}: $e');
@@ -184,15 +201,18 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
       alreadyPickedIds: alreadyPicked,
     );
     if (selected == null || selected.isEmpty || !mounted) return;
+    final bytes = await loadMaterialPdfBytes(selected);
+    if (!mounted) return;
 
     setState(() {
-      for (final material in selected) {
+      for (var i = 0; i < selected.length; i++) {
+        final material = selected[i];
         final highlightBlock = HighlightContext.build(material);
         final combined = highlightBlock.isEmpty ? material.extractedText : '${material.extractedText}\n\n$highlightBlock';
         _files.add(_PickedFile(
           fileName: material.fileName,
           text: combined,
-          bytes: material.fileBytesBase64 == null ? Uint8List(0) : base64Decode(material.fileBytesBase64!),
+          bytes: bytes[i],
           existingMaterialId: material.id,
         ));
       }
@@ -285,6 +305,16 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
   }
 
   Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await _saveSummary();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveSummary() async {
     final result = _result!;
     final now = DateTime.now();
     final unitId = _unitChoice.isEmpty ? null : _unitChoice;
@@ -309,7 +339,7 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
         moduleId: widget.moduleId,
         fileName: f.fileName,
         kind: MaterialKind.slide,
-        extractedText: f.text,
+        extractedText: f.rawText,
         createdAt: now,
         unitId: unitId,
         filePath: filePath,
@@ -324,21 +354,23 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
         ...materials.map((m) => m.id),
         ..._files.map((f) => f.existingMaterialId).whereType<String>(),
       ],
-      title: (result['title'] as String?)?.trim().isNotEmpty == true
-          ? result['title'] as String
+      title: (result['title']?.toString().trim() ?? '').isNotEmpty
+          ? result['title'].toString().trim()
           : _files.first.fileName,
-      overview: result['overview'] as String? ?? '',
+      overview: result['overview']?.toString() ?? '',
       keyPoints: (result['key_points'] as List?)?.map((e) => e.toString()).toList() ?? [],
       createdAt: now,
       unitId: unitId,
     );
 
+    // Auch wenn der Screen währenddessen verlassen wird, vollständig
+    // speichern – sonst blieben Materialien ohne ihre Zusammenfassung zurück.
     final materialRepo = context.read<MaterialRepository>();
+    final summaryRepo = context.read<SummaryRepository>();
     for (final material in materials) {
       await materialRepo.save(material);
-      if (!mounted) return;
     }
-    await context.read<SummaryRepository>().save(summary);
+    await summaryRepo.save(summary);
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -428,6 +460,16 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
   }
 
   Future<void> _finishSession() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await _saveSession();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveSession() async {
     final now = DateTime.now();
     final unitId = _unitChoice.isEmpty ? null : _unitChoice;
     // Wiederverwendetes Material (existingMaterialId gesetzt, siehe
@@ -450,7 +492,7 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
         moduleId: widget.moduleId,
         fileName: f.fileName,
         kind: MaterialKind.slide,
-        extractedText: f.text,
+        extractedText: f.rawText,
         createdAt: now,
         unitId: unitId,
         highlights: _highlightsByFile[f.fileName] ?? const [],
@@ -460,37 +502,50 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
     }
 
     final materialRepo = context.read<MaterialRepository>();
+    final unitRepo = context.read<LectureUnitRepository>();
     for (final material in materials) {
       await materialRepo.save(material);
-      if (!mounted) return;
     }
 
     if (_qaTurns.isNotEmpty) {
       final noteText = _qaTurns.map((t) => 'F: ${t.question}\nA: ${t.answer}').join('\n\n');
-      if (unitId != null) {
-        final unitRepo = context.read<LectureUnitRepository>();
-        final unit = unitRepo.forModule(widget.moduleId).firstWhere((u) => u.id == unitId);
+      final unit = unitRepo.forModule(widget.moduleId).where((u) => u.id == unitId).firstOrNull;
+      // Ziel der Merkpunkte: die gewählte Einheit, sonst das erste neue
+      // Material – und wenn nur schon vorhandenes Material genutzt wurde,
+      // dessen Notiz (angehängt, nicht überschrieben). Vorher gingen die
+      // Rückfragen in diesem Fall stillschweigend verloren.
+      final existingId = _files.map((f) => f.existingMaterialId).whereType<String>().firstOrNull;
+      final target = materials.isNotEmpty
+          ? materials.first
+          : materialRepo.forModule(widget.moduleId).where((m) => m.id == existingId).firstOrNull;
+      if (unit != null) {
         await unitRepo.setNotes(unit.id, unit.moduleId, [...unit.notes, noteText]);
-      } else if (materials.isNotEmpty) {
+      } else if (target != null) {
         await materialRepo.saveHighlights(
-          materials.first.id,
+          target.id,
           widget.moduleId,
-          highlights: materials.first.highlights,
-          notes: noteText,
+          highlights: target.highlights,
+          notes: [target.notes.trim(), noteText].where((n) => n.isNotEmpty).join('\n\n'),
         );
       }
-      if (!mounted) return;
     }
     if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Vorbereiten-Modus')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _buildBody(),
+    return DiscardGuard(
+      active: const {_Step.generating, _Step.preview, _Step.preparingSession, _Step.session}.contains(_step),
+      message: _mode == _Mode.ausfuehrlich
+          ? 'Die KI-Markierungen und deine Fragen samt Antworten sind noch nicht gespeichert '
+              '("Fertig & speichern").'
+          : 'Die erstellte Zusammenfassung ist noch nicht gespeichert.',
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Vorbereiten-Modus')),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: _buildBody(),
+        ),
       ),
     );
   }
@@ -531,7 +586,7 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
       case _Step.generating:
         return const _LoadingView(label: 'KI erstellt Zusammenfassung …');
       case _Step.preview:
-        return _PreviewView(result: _result!, onSave: _save, onDiscard: () {
+        return _PreviewView(result: _result!, onSave: _saving ? null : _save, onDiscard: () {
           setState(() {
             _step = _Step.ready;
             _result = null;
@@ -549,7 +604,7 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
           asking: _asking,
           askError: _askError,
           onAsk: _ask,
-          onFinish: _finishSession,
+          onFinish: _saving ? null : _finishSession,
         );
     }
   }
@@ -836,7 +891,7 @@ class _PreviewView extends StatelessWidget {
   const _PreviewView({required this.result, required this.onSave, required this.onDiscard});
 
   final Map<String, dynamic> result;
-  final VoidCallback onSave;
+  final VoidCallback? onSave;
   final VoidCallback onDiscard;
 
   @override
@@ -847,7 +902,7 @@ class _PreviewView extends StatelessWidget {
         Expanded(
           child: ListView(
             children: [
-              Text(result['title'] as String? ?? '', style: Theme.of(context).textTheme.titleLarge),
+              Text(result['title']?.toString() ?? '', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               if (keyPoints.isNotEmpty) ...[
                 Text('Kernkonzepte', style: Theme.of(context).textTheme.titleMedium),
@@ -863,7 +918,7 @@ class _PreviewView extends StatelessWidget {
               ],
               Text('Zusammenfassung', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              Text(result['overview'] as String? ?? ''),
+              Text(result['overview']?.toString() ?? ''),
             ],
           ),
         ),
@@ -910,7 +965,7 @@ class _SessionView extends StatelessWidget {
   final bool asking;
   final String? askError;
   final VoidCallback onAsk;
-  final VoidCallback onFinish;
+  final VoidCallback? onFinish;
 
   Color _dotColor(AppColors c, HighlightColor color) => switch (color) {
         HighlightColor.red => c.danger,
@@ -1077,7 +1132,11 @@ class _FileViewButton extends StatelessWidget {
         break;
       }
     }
-    if (match == null) return const SizedBox.shrink();
+    // Nur echte PDFs mit vorhandenen Bytes – Word/PowerPoint-Dateien kann
+    // der PDF-Viewer nicht anzeigen.
+    if (match == null || !match.fileName.toLowerCase().endsWith('.pdf') || match.bytes.isEmpty) {
+      return const SizedBox.shrink();
+    }
     final file = match;
     return IconButton(
       tooltip: 'Folie ansehen',

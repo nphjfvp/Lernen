@@ -130,12 +130,14 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
       return;
     }
     final text = lines.map((l) => l.text).join(' ').trim();
+    final id = const Uuid().v4();
     final annotation = HighlightAnnotation(textBoundsCollection: lines)
-      ..color = _colorFor(color).withAlpha(110);
+      ..color = _colorFor(color).withAlpha(110)
+      ..subject = id;
     _pdfController.addAnnotation(annotation);
     setState(() {
       _highlights.add(MaterialHighlight(
-        id: const Uuid().v4(),
+        id: id,
         text: text,
         color: color,
         source: HighlightSource.manual,
@@ -147,11 +149,16 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
   }
 
   void _removeHighlight(MaterialHighlight highlight) {
-    // Entfernt die Markierung aus der an die KI weitergereichten Liste. Die
-    // visuelle Annotation im PDF bleibt bis zum nächsten Öffnen bestehen –
-    // ein gezieltes Zurückverfolgen einzelner Annotationen bräuchte ein
-    // highlight<->Annotation-Mapping, das für den eigentlichen Zweck hier
-    // (Markierung aus dem KI-Kontext nehmen) nicht nötig ist.
+    // Auch die farbige Annotation entfernen: "Speichern" bettet alle
+    // Annotationen ins PDF ein, eine entfernte Markierung bliebe sonst
+    // dauerhaft sichtbar. Zugeordnet über die Markierungs-ID im Feld
+    // `subject` (übersteht Speichern und Neu-Öffnen). Markierungen aus
+    // älteren Versionen tragen sie nicht – dort bleibt die Farbe stehen.
+    final annotations =
+        _pdfController.getAnnotations().where((a) => a.subject == highlight.id).toList();
+    for (final annotation in annotations) {
+      _pdfController.removeAnnotation(annotation);
+    }
     setState(() {
       _highlights.removeWhere((h) => h.id == highlight.id);
       _dirty = true;
@@ -214,13 +221,14 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
           final pdfTextLines = matchedRange
               .map((i) => PdfTextLine(pageLines[i].bounds, pageLines[i].text, matchedPage! + 1))
               .toList();
+          final id = const Uuid().v4();
           final annotation = HighlightAnnotation(textBoundsCollection: pdfTextLines)
             ..color = _colorFor(color).withAlpha(90)
-            ..subject = 'ai';
+            ..subject = id;
           _pdfController.addAnnotation(annotation);
           matched++;
           newHighlights.add(MaterialHighlight(
-            id: const Uuid().v4(),
+            id: id,
             text: text,
             color: color,
             source: HighlightSource.ai,

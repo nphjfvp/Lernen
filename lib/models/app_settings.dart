@@ -169,14 +169,15 @@ class AppSettings {
         ),
         rollingContextEnabled: map['rollingContextEnabled'] as bool? ?? true,
         syncCode: map['syncCode'] as String?,
-        lastSyncAt: map['lastSyncAt'] == null
-            ? null
-            : DateTime.parse(map['lastSyncAt'] as String),
+        // Tolerant gelesen: ein unerwarteter Wert darf den App-Start nicht
+        // verhindern (die Einstellungen werden beim Start geladen).
+        lastSyncAt: DateTime.tryParse(map['lastSyncAt']?.toString() ?? ''),
         dailyReminderEnabled: map['dailyReminderEnabled'] as bool? ?? false,
-        dailyReminderMinuteOfDay: map['dailyReminderMinuteOfDay'] as int? ?? defaultReminderMinuteOfDay,
-        bestSprintScore: map['bestSprintScore'] as int? ?? 0,
+        dailyReminderMinuteOfDay:
+            (map['dailyReminderMinuteOfDay'] as num?)?.toInt() ?? defaultReminderMinuteOfDay,
+        bestSprintScore: (map['bestSprintScore'] as num?)?.toInt() ?? 0,
         checkpointQuizPageInterval:
-            map['checkpointQuizPageInterval'] as int? ?? defaultCheckpointQuizPageInterval,
+            (map['checkpointQuizPageInterval'] as num?)?.toInt() ?? defaultCheckpointQuizPageInterval,
         autoSyncEnabled: map['autoSyncEnabled'] as bool? ?? false,
         deviceId: map['deviceId'] as String?,
         lastSyncedPushId: map['lastSyncedPushId'] as String?,

@@ -28,6 +28,7 @@ import '../../services/pdf_ocr_service.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
+import '../widgets/discard_guard.dart';
 import '../widgets/existing_material_picker.dart';
 import '../widgets/ocr_notice.dart';
 import '../widgets/pdf_preview_screen.dart';
@@ -49,9 +50,22 @@ enum _Step { pick, generating, preview }
 enum _GenerateMode { create, import, pasteJson }
 
 class _PickedFile {
-  _PickedFile({required this.fileName, required this.text, required this.bytes, this.existingMaterialId});
+  _PickedFile({
+    required this.fileName,
+    required this.text,
+    required this.bytes,
+    String? rawText,
+    this.existingMaterialId,
+  }) : rawText = rawText ?? text;
   final String fileName;
+
+  /// Text für die KI – ggf. mit den Markierungen eines gleichnamigen, schon
+  /// vorhandenen Materials als Zusatzkontext.
   final String text;
+
+  /// Der reine extrahierte Text, so wird ein neues Material gespeichert (die
+  /// Markierungen des alten Materials gehören nicht in seinen Text).
+  final String rawText;
   final Uint8List bytes;
 
   /// Gesetzt, wenn diese Datei nicht frisch hochgeladen, sondern aus bereits
@@ -155,15 +169,18 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
       alreadyPickedIds: alreadyPicked,
     );
     if (selected == null || selected.isEmpty || !mounted) return;
+    final bytes = await loadMaterialPdfBytes(selected);
+    if (!mounted) return;
 
     setState(() {
-      for (final material in selected) {
+      for (var i = 0; i < selected.length; i++) {
+        final material = selected[i];
         final highlightBlock = HighlightContext.build(material);
         final combined = highlightBlock.isEmpty ? material.extractedText : '${material.extractedText}\n\n$highlightBlock';
         target.add(_PickedFile(
           fileName: material.fileName,
           text: combined,
-          bytes: material.fileBytesBase64 == null ? Uint8List(0) : base64Decode(material.fileBytesBase64!),
+          bytes: bytes[i],
           existingMaterialId: material.id,
         ));
       }
@@ -212,7 +229,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
           }
           final highlightBlock = match != null ? HighlightContext.build(match) : '';
           final combined = highlightBlock.isEmpty ? text : '$text\n\n$highlightBlock';
-          target.add(_PickedFile(fileName: file.name, text: combined, bytes: bytes));
+          target.add(_PickedFile(fileName: file.name, text: combined, rawText: text, bytes: bytes));
         }
       } catch (e) {
         setState(() => _error = '${file.name}: $e');
@@ -278,12 +295,9 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
           // (QuestionParsing.normalizeGeneratedFlashcard) wie bei den beiden
           // anderen Modi greift unten identisch.
           final decoded = jsonDecode(MathMarkup.escapeLatexInJson(_pastedJson));
-          final rawFlashcards = decoded is Map
-              ? (decoded['flashcards'] as List? ?? const [])
-              : (decoded is List ? decoded : const []);
           result = {
-            'concepts': (decoded is Map ? decoded['concepts'] as List? : null) ?? [],
-            'flashcards': rawFlashcards,
+            'concepts': decoded is Map ? decoded['concepts'] : null,
+            'flashcards': decoded is Map ? decoded['flashcards'] : decoded,
           };
       }
 
@@ -292,10 +306,15 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
       // stumme "nur Vorderseite"-Karte zu speichern: retten, wenn irgendwo
       // im Eintrag noch eine brauchbare Antwort steckt, sonst verwerfen und
       // dem Nutzer sichtbar melden statt es zu verschweigen.
+      // Kaputte Einträge (kein Objekt, Konzept ohne Titel) einzeln verwerfen
+      // statt am Ende beim Speichern ohne Meldung hängen zu bleiben – gerade
+      // beim eingefügten JSON.
       final normalized = <Map<String, dynamic>>[];
       var dropped = 0;
-      for (final entry in (result['flashcards'] as List? ?? const [])) {
-        final fixed = QuestionParsing.normalizeGeneratedFlashcard(Map<String, dynamic>.from(entry as Map));
+      final rawCards = result['flashcards'];
+      for (final entry in rawCards is List ? rawCards : const []) {
+        final fixed =
+            entry is Map ? QuestionParsing.normalizeGeneratedFlashcard(Map<String, dynamic>.from(entry)) : null;
         if (fixed == null) {
           dropped++;
         } else {
@@ -303,6 +322,11 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         }
       }
       result['flashcards'] = normalized;
+      final rawConcepts = result['concepts'];
+      result['concepts'] = [
+        for (final c in rawConcepts is List ? rawConcepts : const [])
+          if (c is Map && (c['title'] ?? '').toString().trim().isNotEmpty) Map<String, dynamic>.from(c),
+      ];
 
       setState(() {
         _result = result;
@@ -443,8 +467,25 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     return (title == null || title.isEmpty) ? null : title;
   }
 
+  /// Sperrt "Speichern" während des Speicherns – ein zweites Tippen legte
+  /// sonst Materialien, Konzepte und Karten doppelt an.
+  bool _saving = false;
+
   Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await _saveResult();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveResult() async {
     final result = _result!;
+    final materialRepo = context.read<MaterialRepository>();
+    final conceptRepo = context.read<ConceptRepository>();
+    final flashcardRepo = context.read<FlashcardRepository>();
     final now = DateTime.now();
     final unitId = _unitChoice.isEmpty ? null : _unitChoice;
     // Nachbereiten setzt "behandelt" standardmäßig auf true: wer Folien UND
@@ -473,7 +514,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         moduleId: widget.moduleId,
         fileName: f.fileName,
         kind: MaterialKind.slide,
-        extractedText: f.text,
+        extractedText: f.rawText,
         createdAt: now,
         covered: true,
         unitId: unitId,
@@ -488,7 +529,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
               moduleId: widget.moduleId,
               fileName: f.fileName,
               kind: MaterialKind.exercise,
-              extractedText: f.text,
+              extractedText: f.rawText,
               createdAt: now,
               covered: true,
               unitId: unitId,
@@ -542,24 +583,27 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
       );
     }).toList();
 
-    final materialRepo = context.read<MaterialRepository>();
+    // Auch wenn der Screen währenddessen verlassen wird, vollständig
+    // speichern – sonst blieben z.B. Materialien ohne ihre Karten zurück.
     for (final material in [...slidesMaterials, ...exercisesMaterials]) {
       await materialRepo.save(material);
-      if (!mounted) return;
     }
-    await context.read<ConceptRepository>().saveAll(concepts);
-    if (!mounted) return;
-    await context.read<FlashcardRepository>().saveAll(flashcards);
+    await conceptRepo.saveAll(concepts);
+    await flashcardRepo.saveAll(flashcards);
     if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Nachbereiten-Modus')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _buildBody(),
+    return DiscardGuard(
+      active: _step != _Step.pick,
+      message: 'Die erstellten Konzepte und Karten sind noch nicht gespeichert.',
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Nachbereiten-Modus')),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: _buildBody(),
+        ),
       ),
     );
   }
@@ -614,7 +658,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         return _PreviewView(
           result: _result!,
           droppedFlashcardCount: _droppedFlashcardCount,
-          onSave: _save,
+          onSave: _saving ? null : _save,
           onDiscard: () => setState(() {
             _step = _Step.pick;
             _result = null;
@@ -1004,7 +1048,7 @@ class _PreviewView extends StatelessWidget {
 
   final Map<String, dynamic> result;
   final int droppedFlashcardCount;
-  final VoidCallback onSave;
+  final VoidCallback? onSave;
   final VoidCallback onDiscard;
   final bool crosschecking;
   final VoidCallback onCrosscheck;

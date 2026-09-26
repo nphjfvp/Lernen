@@ -142,10 +142,106 @@ void main() {
       ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Lücke ___', blanks: const ['x']);
       final first = service.evaluate(promoted, isCorrect: false, now: now);
       expect(first.levelChange, LevelChange.none);
-      final second = service.evaluate(first.card, isCorrect: false, now: now);
+      // Fehlversuch an einem weiteren Tag: jetzt wird zurückgestuft.
+      final second = service.evaluate(first.card, isCorrect: false, now: now.add(const Duration(days: 1)));
       expect(second.levelChange, LevelChange.demoted);
       expect(second.targetType, QuestionType.singleChoice);
       expect(second.levelChangeMessage, contains('Zurück'));
+    });
+
+    test('ein erneuter Fehlversuch am selben Tag stuft nicht zurück (Wiederholungsrunde)', () {
+      final promoted = _card(
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
+        reps: 3,
+        masteryBox: 2,
+        lastReview: DateTime(2026, 3, 5),
+      ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Lücke ___', blanks: const ['x']);
+      var outcome = service.evaluate(promoted, isCorrect: false, now: now);
+      for (var i = 1; i <= 3; i++) {
+        outcome = service.evaluate(outcome.card, isCorrect: false, now: now.add(Duration(minutes: i)));
+        expect(outcome.levelChange, LevelChange.none);
+        expect(outcome.wasWrong, isTrue);
+      }
+      expect(outcome.card.type, QuestionType.fillBlank);
+      expect(outcome.card.variantMissStreak, 1);
+    });
+  });
+
+  group('ReviewService.evaluate – allowLevelChange', () {
+    test('ohne Stufenwechsel-Erlaubnis zählt die Antwort nur für FSRS/Ampel', () {
+      final green = _card(
+        variantChain: const [QuestionType.singleChoice, QuestionType.freeText],
+        masteryBox: Flashcard.masteryBoxCap,
+        reps: 5,
+        lastReview: DateTime(2026, 3, 1),
+      );
+      final outcome = service.evaluate(green, isCorrect: true, now: now, allowLevelChange: false);
+      expect(outcome.levelChange, LevelChange.none);
+      expect(outcome.card.variantLevel, 0);
+      expect(outcome.card.reps, 6);
+    });
+  });
+
+  group('ReviewService.applyPromotion', () {
+    final base = Flashcard(
+      id: 'c1',
+      moduleId: 'm1',
+      front: 'Hauptstadt von Frankreich?',
+      back: '',
+      createdAt: DateTime(2026, 1, 1),
+      due: DateTime(2026, 1, 1),
+      type: QuestionType.singleChoice,
+      options: const [QuizOption(text: 'Paris', isCorrect: true), QuizOption(text: 'Rom', isCorrect: false)],
+      variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
+      masteryBox: Flashcard.masteryBoxCap,
+      imageBase64: 'BILD',
+    );
+
+    test('übernimmt eine vollständige Stufe samt Bild der Karte', () {
+      final promoted = ReviewService.applyPromotion(
+        base,
+        QuestionType.fillBlank,
+        {'front': 'Die Hauptstadt von Frankreich ist ___.', 'blanks': ['Paris']},
+        now: now,
+      );
+      expect(promoted.type, QuestionType.fillBlank);
+      expect(promoted.variantLevel, 1);
+      expect(promoted.blanks, ['Paris']);
+      expect(promoted.imageBase64, 'BILD');
+      expect(promoted.variantHistory!.single.type, QuestionType.singleChoice);
+    });
+
+    test('unvollständige KI-Stufe wirft, statt eine unlösbare Stufe zu speichern', () {
+      expect(
+        () => ReviewService.applyPromotion(base, QuestionType.fillBlank, {'front': 'Lücke ___'}, now: now),
+        throwsFormatException,
+      );
+      // Nur noch als Karteikarte rettbar: keine echte nächste Stufe.
+      expect(
+        () => ReviewService.applyPromotion(
+          base,
+          QuestionType.freeText,
+          {'front': 'Hauptstadt?', 'back': 'Paris'},
+          now: now,
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('Zuordnen mit doppeltem Ziel wird zur Kategorien-Stufe', () {
+      final promoted = ReviewService.applyPromotion(
+        base,
+        QuestionType.dragDrop,
+        {
+          'front': 'Ordne zu',
+          'dragPairs': [
+            {'source': 'Paris', 'target': 'Frankreich'},
+            {'source': 'Lyon', 'target': 'Frankreich'},
+          ],
+        },
+        now: now,
+      );
+      expect(promoted.type, QuestionType.dragCategory);
     });
   });
 }
