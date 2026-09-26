@@ -23,6 +23,7 @@ import '../daily/question_answer_view.dart';
 import '../widgets/page_concept_sheet.dart';
 import '../widgets/page_question_creation_sheet.dart';
 import '../widgets/page_question_sheet.dart';
+import '../widgets/safe_set_state.dart';
 
 /// Zeigt eine hochgeladene PDF-Folie visuell an und erlaubt es, Textstellen
 /// farblich zu markieren – rot: eignet sich als Prüfungsfrage, grün: die
@@ -49,7 +50,7 @@ class MaterialViewerScreen extends StatefulWidget {
   State<MaterialViewerScreen> createState() => _MaterialViewerScreenState();
 }
 
-class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
+class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSetState<MaterialViewerScreen> {
   final _pdfController = PdfViewerController();
   final _pdfViewerKey = GlobalKey<SfPdfViewerState>();
   final _pdfBoundaryKey = GlobalKey();
@@ -368,17 +369,18 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
       final cards = _parseCheckpointCards(raw);
       if (cards.isEmpty || !mounted) return;
 
+      // Vor dem await auslesen: die Fehlantworten sollen auch dann
+      // gespeichert werden, wenn der Viewer inzwischen geschlossen wurde.
+      final flashcardRepo = context.read<FlashcardRepository>();
       final missed = await Navigator.of(context).push<List<Flashcard>>(
         MaterialPageRoute(builder: (_) => _CheckpointQuizScreen(cards: cards)),
       );
-      if (missed != null && missed.isNotEmpty && mounted) {
+      if (missed != null && missed.isNotEmpty) {
         // Die Fehlantwort tatsächlich als solche verbuchen (Ampel rot, morgen
         // fällig) statt die Karte als unbeantwortet "Neu" abzulegen, wo sie
         // hinter dem Neu-Karten-Budget auf unbestimmte Zeit warten würde.
         final fsrs = FsrsService();
-        await context
-            .read<FlashcardRepository>()
-            .saveAll(missed.map((c) => fsrs.review(c, Grade.again)).toList());
+        await flashcardRepo.saveAll(missed.map((c) => fsrs.review(c, Grade.again)).toList());
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('${missed.length} Frage${missed.length == 1 ? '' : 'n'} fürs Daily Quiz vorgemerkt.'),

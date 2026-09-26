@@ -28,6 +28,13 @@ class FlashcardRepository extends ChangeNotifier {
     return records.map((r) => Flashcard.fromMap(r.value)).toList();
   }
 
+  /// Aktueller gespeicherter Stand einer Karte, oder null, wenn gelöscht.
+  Future<Flashcard?> loadById(String id) async {
+    final db = await DatabaseService.instance.database;
+    final record = await DatabaseService.flashcards.record(id).get(db);
+    return record == null ? null : Flashcard.fromMap(record);
+  }
+
   Future<void> saveAll(List<Flashcard> cards) async {
     if (cards.isEmpty) return;
     final db = await DatabaseService.instance.database;

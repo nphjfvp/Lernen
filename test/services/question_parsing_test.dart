@@ -5,6 +5,15 @@ import 'package:lernen/services/question_parsing.dart';
 
 void main() {
   group('QuestionParsing.parseOptions', () {
+    test('akzeptiert isCorrect auch als 1 bzw. "1"', () {
+      final options = QuestionParsing.parseOptions([
+        {'text': 'A', 'isCorrect': 1},
+        {'text': 'B', 'isCorrect': '1'},
+        {'text': 'C', 'isCorrect': 0},
+      ])!;
+      expect(options.map((o) => o.isCorrect).toList(), [true, true, false]);
+    });
+
     test('parst eine Liste von Optionen', () {
       final options = QuestionParsing.parseOptions([
         {'text': 'Paris', 'isCorrect': true},

@@ -4,6 +4,7 @@ import 'package:sembast/sembast.dart';
 import '../models/module.dart';
 import '../services/database_service.dart';
 import '../services/material_file_store.dart';
+import 'mock_exam_repository.dart';
 
 class ModuleRepository extends ChangeNotifier {
   List<Module> _modules = [];
@@ -46,8 +47,9 @@ class ModuleRepository extends ChangeNotifier {
     await load();
   }
 
-  /// Löscht das Fach samt ALLER zugehörigen Datensätze (auch Einheiten und
-  /// Chat-Verlauf, die sonst verwaist in der DB liegen blieben). Liefert die
+  /// Löscht das Fach samt ALLER zugehörigen Datensätze (auch Einheiten,
+  /// Chat-Verlauf und Probeklausur-Ergebnisse, die sonst verwaist in der DB
+  /// liegen blieben). Liefert die
   /// Pfade gespeicherter PDF-Dateien der gelöschten Materialien zurück – das
   /// Löschen der Dateien selbst passiert außerhalb der DB-Transaktion.
   static Future<List<String>> deleteCascade(DatabaseClient client, String moduleId) async {
@@ -62,6 +64,7 @@ class ModuleRepository extends ChangeNotifier {
     await DatabaseService.flashcards.delete(client, finder: byModule);
     await DatabaseService.lectureUnits.delete(client, finder: byModule);
     await DatabaseService.chatMessages.delete(client, finder: byModule);
+    await MockExamRepository.removeModuleIn(client, moduleId);
     return pdfPaths;
   }
 }

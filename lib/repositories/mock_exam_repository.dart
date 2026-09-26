@@ -30,4 +30,20 @@ class MockExamRepository {
     final updated = [result, ...existing].take(_maxResults).map((r) => r.toMap()).toList();
     await DatabaseService.settings.record(_recordKey).put(client, {'results': updated});
   }
+
+  /// Behält nur Ergebnisse von Fächern aus [moduleIds] – nach dem Löschen
+  /// eines Fachs bzw. nach einem Cloud-Download, der Fächer ersetzt hat.
+  static Future<void> retainModulesIn(DatabaseClient client, Set<String> moduleIds) async {
+    final existing = await loadFrom(client);
+    final kept = existing.where((r) => moduleIds.contains(r.moduleId)).toList();
+    if (kept.length == existing.length) return;
+    await DatabaseService.settings.record(_recordKey).put(client, {'results': kept.map((r) => r.toMap()).toList()});
+  }
+
+  static Future<void> removeModuleIn(DatabaseClient client, String moduleId) async {
+    final existing = await loadFrom(client);
+    final kept = existing.where((r) => r.moduleId != moduleId).toList();
+    if (kept.length == existing.length) return;
+    await DatabaseService.settings.record(_recordKey).put(client, {'results': kept.map((r) => r.toMap()).toList()});
+  }
 }

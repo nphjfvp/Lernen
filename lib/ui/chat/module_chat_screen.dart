@@ -12,6 +12,7 @@ import '../../services/ai_service.dart';
 import '../../services/chat_context_builder.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/math_text.dart';
+import '../widgets/safe_set_state.dart';
 
 /// Frage-Chat zu den hochgeladenen Materialien eines Fachs. Reagiert
 /// ausschließlich auf explizite Fragen – nichts wird von selbst erklärt.
@@ -33,7 +34,7 @@ class ModuleChatScreen extends StatefulWidget {
   State<ModuleChatScreen> createState() => _ModuleChatScreenState();
 }
 
-class _ModuleChatScreenState extends State<ModuleChatScreen> {
+class _ModuleChatScreenState extends State<ModuleChatScreen> with SafeSetState<ModuleChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   bool _sending = false;

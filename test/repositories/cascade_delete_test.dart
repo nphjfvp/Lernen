@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/repositories/lecture_unit_repository.dart';
+import 'package:lernen/repositories/mock_exam_repository.dart';
 import 'package:lernen/repositories/module_repository.dart';
 import 'package:lernen/services/database_service.dart';
+import 'package:lernen/services/mock_exam_service.dart';
 import 'package:sembast/sembast_memory.dart';
 
 void main() {
@@ -52,6 +54,34 @@ void main() {
       expect(await DatabaseService.chatMessages.count(db), 0);
       expect(await DatabaseService.flashcards.record('f1').get(db), isNull);
       expect(await DatabaseService.flashcards.record('f2').get(db), isNotNull);
+    });
+  });
+
+  group('Probeklausur-Ergebnisse', () {
+    MockExamResult result(String moduleId) => MockExamResult(
+          moduleId: moduleId,
+          takenAt: DateTime(2026, 9, 26),
+          correct: 5,
+          total: 10,
+          durationSeconds: 60,
+        );
+
+    test('Fach löschen entfernt dessen Probeklausur-Ergebnisse, andere bleiben', () async {
+      await DatabaseService.modules.record('m1').put(db, {'id': 'm1'});
+      await MockExamRepository.addIn(db, result('m1'));
+      await MockExamRepository.addIn(db, result('m2'));
+
+      await db.transaction((txn) => ModuleRepository.deleteCascade(txn, 'm1'));
+
+      final remaining = await MockExamRepository.loadFrom(db);
+      expect(remaining.map((r) => r.moduleId), ['m2']);
+    });
+
+    test('retainModulesIn behält nur Ergebnisse vorhandener Fächer', () async {
+      await MockExamRepository.addIn(db, result('a'));
+      await MockExamRepository.addIn(db, result('b'));
+      await MockExamRepository.retainModulesIn(db, {'b'});
+      expect((await MockExamRepository.loadFrom(db)).map((r) => r.moduleId), ['b']);
     });
   });
 }

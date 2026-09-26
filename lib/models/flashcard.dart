@@ -726,10 +726,10 @@ class Flashcard {
         id: map['id'] as String,
         moduleId: map['moduleId'] as String,
         conceptId: map['conceptId'] as String?,
-        front: map['front'] as String,
-        back: map['back'] as String,
-        createdAt: DateTime.parse(map['createdAt'] as String),
-        due: DateTime.parse(map['due'] as String),
+        front: map['front'] as String? ?? '',
+        back: map['back'] as String? ?? '',
+        createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime(2000),
+        due: DateTime.tryParse(map['due']?.toString() ?? '') ?? DateTime(2000),
         type: questionTypeFromString(map['type'] as String?),
         options: (map['options'] as List?)
             ?.map((o) => QuizOption.fromMap(Map<String, dynamic>.from(o as Map)))
@@ -743,26 +743,26 @@ class Flashcard {
         imageBase64: map['imageBase64'] as String?,
         variantChain:
             (map['variantChain'] as List?)?.map((t) => questionTypeFromString(t.toString())).toList(),
-        variantLevel: map['variantLevel'] as int? ?? 0,
-        variantBox: map['variantBox'] as int? ?? 0,
+        variantLevel: (map['variantLevel'] as num?)?.toInt() ?? 0,
+        variantBox: (map['variantBox'] as num?)?.toInt() ?? 0,
         variantHistory: (map['variantHistory'] as List?)
             ?.map((v) => VariantSnapshot.fromMap(Map<String, dynamic>.from(v as Map)))
             .toList(),
         pendingVariants: (map['pendingVariants'] as List?)
             ?.map((v) => VariantSnapshot.fromMap(Map<String, dynamic>.from(v as Map)))
             .toList(),
-        variantMissStreak: map['variantMissStreak'] as int? ?? 0,
-        masteryBox: map['masteryBox'] as int? ?? 0,
-        stability: (map['stability'] as num).toDouble(),
-        difficulty: (map['difficulty'] as num).toDouble(),
-        elapsedDays: map['elapsedDays'] as int,
-        scheduledDays: map['scheduledDays'] as int,
-        reps: map['reps'] as int,
-        lapses: map['lapses'] as int,
-        state: map['state'] as String,
-        lastReview: map['lastReview'] == null
-            ? null
-            : DateTime.parse(map['lastReview'] as String),
+        variantMissStreak: (map['variantMissStreak'] as num?)?.toInt() ?? 0,
+        masteryBox: (map['masteryBox'] as num?)?.toInt() ?? 0,
+        // Defaults + num statt int: fremde/ältere/importierte Datensätze
+        // (z.B. JSON mit 3.0 statt 3) sollen nicht abstürzen.
+        stability: (map['stability'] as num?)?.toDouble() ?? 0,
+        difficulty: (map['difficulty'] as num?)?.toDouble() ?? 0,
+        elapsedDays: (map['elapsedDays'] as num?)?.toInt() ?? 0,
+        scheduledDays: (map['scheduledDays'] as num?)?.toInt() ?? 0,
+        reps: (map['reps'] as num?)?.toInt() ?? 0,
+        lapses: (map['lapses'] as num?)?.toInt() ?? 0,
+        state: map['state'] as String? ?? 'new',
+        lastReview: DateTime.tryParse(map['lastReview']?.toString() ?? ''),
         unitId: map['unitId'] as String?,
         priorityIntroduction: map['priorityIntroduction'] as bool? ?? false,
       );

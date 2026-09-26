@@ -30,6 +30,7 @@ import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/existing_material_picker.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
+import '../widgets/safe_set_state.dart';
 
 enum _Step { pick, generating, preview }
 
@@ -73,7 +74,7 @@ class ReviewScreen extends StatefulWidget {
   State<ReviewScreen> createState() => _ReviewScreenState();
 }
 
-class _ReviewScreenState extends State<ReviewScreen> {
+class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScreen> {
   _Step _step = _Step.pick;
   _GenerateMode _mode = _GenerateMode.create;
   final List<_PickedFile> _slidesFiles = [];

@@ -24,7 +24,7 @@ class QuestionParsing {
         final isCorrect = o['isCorrect'];
         options.add(QuizOption(
           text: text.toString(),
-          isCorrect: isCorrect == true || isCorrect.toString().toLowerCase() == 'true',
+          isCorrect: isCorrect == true || isCorrect == 1 || const {'true', '1'}.contains(isCorrect.toString().toLowerCase()),
         ));
       } else if (o != null) {
         options.add(QuizOption(text: o.toString(), isCorrect: false));

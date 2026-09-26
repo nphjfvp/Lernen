@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Filter;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:sembast/sembast.dart' hide FieldValue;
 import 'package:uuid/uuid.dart';
@@ -12,6 +12,7 @@ import '../models/lecture_unit.dart';
 import '../models/material_item.dart';
 import '../models/module.dart';
 import '../models/summary.dart';
+import '../repositories/mock_exam_repository.dart';
 import '../services/database_service.dart';
 import 'sync_codec.dart';
 
@@ -42,6 +43,13 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     visionModelId: synced['visionModelId'] as String?,
     crosscheckModelId: synced['crosscheckModelId'] as String?,
   );
+}
+
+/// Entfernt beim Download über einen Sync-Code den API-Key aus den
+/// übernommenen KI-Einstellungen (siehe SyncService.pull) – rein, testbar.
+Map<String, dynamic> syncedAiSettingsForPull(Map<String, dynamic> synced, {required bool acceptApiKey}) {
+  if (acceptApiKey) return synced;
+  return {...synced, 'openRouterApiKey': null};
 }
 
 /// Wohin synchronisiert wird: an ein Firebase-Konto gebunden oder über
@@ -126,7 +134,11 @@ class SyncService {
 
   /// Ersetzt die lokalen Daten durch den Cloud-Stand. Liefert dessen
   /// `pushId` (null bei einem Cloud-Stand im alten Format).
-  Future<String?> pull(SyncTarget target) => _pull(_doc(target));
+  /// Über einen Sync-Code wird ein dort hinterlegter API-Key NIE übernommen:
+  /// wer den Code kennt oder errät, könnte sonst seinen eigenen Key
+  /// unterschieben und die KI-Anfragen (mit deinem Lernmaterial) über sein
+  /// Konto umleiten.
+  Future<String?> pull(SyncTarget target) => _pull(_doc(target), acceptApiKey: target.isAccount);
 
   static CloudSyncMeta? _metaOf(DocumentSnapshot<Map<String, dynamic>> snapshot) {
     final data = snapshot.data();
@@ -266,7 +278,7 @@ class SyncService {
   /// ein leerer/fehlender Cloud-API-Key löscht nie einen lokal
   /// vorhandenen Key (siehe [_writeAiSettings]). Lokal vorhandene PDFs
   /// bleiben erhalten (siehe SyncCodec.withLocalMaterialFields).
-  Future<String?> _pull(DocumentReference<Map<String, dynamic>> doc) async {
+  Future<String?> _pull(DocumentReference<Map<String, dynamic>> doc, {required bool acceptApiKey}) async {
     _ensureAvailable();
     final snapshot = await doc.get();
     if (!snapshot.exists) {
@@ -320,8 +332,22 @@ class SyncService {
         await DatabaseService.lectureUnits.record(unit.id).put(txn, unit.toMap());
       }
 
+      // Lokale, nicht gesyncte Daten zu Fächern, die es nach dem Download
+      // nicht mehr gibt, würden sonst verwaist liegen bleiben.
+      final moduleIds = {
+        for (final m in (data['modules'] as List? ?? [])) (m as Map)['id']?.toString() ?? '',
+      };
+      await DatabaseService.chatMessages.delete(
+        txn,
+        finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+      );
+      await MockExamRepository.retainModulesIn(txn, moduleIds);
+
       final aiSettings = root['aiSettings'] ?? data['aiSettings'];
-      await _writeAiSettings(txn, aiSettings == null ? null : Map<String, dynamic>.from(aiSettings as Map));
+      await _writeAiSettings(
+        txn,
+        aiSettings == null ? null : syncedAiSettingsForPull(Map<String, dynamic>.from(aiSettings as Map), acceptApiKey: acceptApiKey),
+      );
     });
     return root['pushId'] as String?;
   }

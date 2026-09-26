@@ -24,6 +24,7 @@ import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/existing_material_picker.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
+import '../widgets/safe_set_state.dart';
 
 enum _Mode { kurz, ausfuehrlich }
 
@@ -63,7 +64,7 @@ class PrepareScreen extends StatefulWidget {
   State<PrepareScreen> createState() => _PrepareScreenState();
 }
 
-class _PrepareScreenState extends State<PrepareScreen> {
+class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<PrepareScreen> {
   _Step _step = _Step.modeSelect;
   _Mode? _mode;
   final List<_PickedFile> _files = [];

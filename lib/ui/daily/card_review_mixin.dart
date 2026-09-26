@@ -59,8 +59,14 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
     QuestionType nextType,
   ) async {
     try {
-      final promoted = await ReviewService.generatePromotion(ai, card, nextType);
-      await repo.update(promoted);
+      final content = await ReviewService.fetchPromotionContent(ai, card, nextType);
+      // Der KI-Aufruf dauert Sekunden – in der Zeit kann dieselbe Karte
+      // woanders erneut beantwortet worden sein. Deshalb auf den AKTUELLEN
+      // Stand anwenden, nicht auf den alten Schnappschuss, und nur, wenn sie
+      // noch auf derselben Stufe steht.
+      final current = await repo.loadById(card.id);
+      if (current == null || current.variantLevel != card.variantLevel || current.type != card.type) return;
+      await repo.update(ReviewService.applyPromotion(current, nextType, content));
     } catch (_) {
       // Bewusst still, siehe Doc-Kommentar.
     }

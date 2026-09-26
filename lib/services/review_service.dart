@@ -104,22 +104,30 @@ class ReviewService {
     return ReviewOutcome(card: updated, wasWrong: wasWrong, levelChange: change, targetType: target);
   }
 
-  /// Erzeugt per KI den Inhalt der nächsten (schwereren) Stufe und liefert
-  /// die beförderte, auf der neuen Stufe neu gestartete Karte zurück (siehe
-  /// FsrsService.restartForNewStage). Wirft bei KI-Fehlern – der Aufrufer
-  /// entscheidet, ob er das still schluckt (die Karte bleibt dann auf ihrer
-  /// Stufe, der nächste richtige Versuch probiert es erneut).
-  static Future<Flashcard> generatePromotion(
+  /// Holt per KI den Inhalt der nächsten (schwereren) Stufe. Wirft bei
+  /// KI-Fehlern – der Aufrufer entscheidet, ob er das still schluckt (die
+  /// Karte bleibt dann auf ihrer Stufe, der nächste richtige Versuch
+  /// probiert es erneut).
+  static Future<Map<String, dynamic>> fetchPromotionContent(
     AiService ai,
     Flashcard card,
-    QuestionType nextType, {
-    DateTime? now,
-  }) async {
-    final result = await ai.generateHarderVariant(
+    QuestionType nextType,
+  ) {
+    return ai.generateHarderVariant(
       questionText: card.front,
       currentAnswer: card.answerSummary,
       targetType: nextType,
     );
+  }
+
+  /// Wendet per KI erzeugten Stufen-Inhalt auf [card] an und startet die
+  /// neue Stufe neu (siehe FsrsService.restartForNewStage).
+  static Flashcard applyPromotion(
+    Flashcard card,
+    QuestionType nextType,
+    Map<String, dynamic> result, {
+    DateTime? now,
+  }) {
     final promoted = card.copyWithPromotedVariant(
       newType: nextType,
       front: (result['front'] ?? card.front).toString(),
@@ -130,5 +138,14 @@ class ReviewService {
       dragPairs: QuestionParsing.parseDragPairs(result['dragPairs']),
     );
     return FsrsService().restartForNewStage(promoted, now: now);
+  }
+
+  static Future<Flashcard> generatePromotion(
+    AiService ai,
+    Flashcard card,
+    QuestionType nextType, {
+    DateTime? now,
+  }) async {
+    return applyPromotion(card, nextType, await fetchPromotionContent(ai, card, nextType), now: now);
   }
 }

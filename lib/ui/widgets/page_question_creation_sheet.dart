@@ -13,6 +13,7 @@ import '../../services/ai_service.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
+import 'safe_set_state.dart';
 
 /// "Frage erstellen" im Lernmodus (siehe MaterialViewerScreen): erzeugt aus
 /// GENAU der gerade betrachteten Seite bis zu 3 Karteikarten-Varianten
@@ -64,7 +65,7 @@ class _DifficultySlot {
   QuestionType type;
 }
 
-class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet> {
+class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet> with SafeSetState<PageQuestionCreationSheet> {
   late final TextEditingController _questionController;
   late final TextEditingController _answerController;
   final _instructionController = TextEditingController();

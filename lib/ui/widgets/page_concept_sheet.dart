@@ -8,6 +8,7 @@ import '../../repositories/concept_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../theme/app_colors.dart';
+import 'safe_set_state.dart';
 
 /// "Konzept speichern" im Lernmodus (siehe MaterialViewerScreen): erstellt
 /// aus GENAU der gerade betrachteten Seite ein eigenständiges Lernkonzept
@@ -36,7 +37,7 @@ class PageConceptSheet extends StatefulWidget {
   State<PageConceptSheet> createState() => _PageConceptSheetState();
 }
 
-class _PageConceptSheetState extends State<PageConceptSheet> {
+class _PageConceptSheetState extends State<PageConceptSheet> with SafeSetState<PageConceptSheet> {
   bool _includeNeighbors = true;
   bool _generating = false;
   bool _saving = false;

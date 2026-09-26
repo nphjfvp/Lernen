@@ -94,7 +94,8 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
   }
 
   void _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) {
-    final wasCorrect = isCorrect ?? (selfGrade == Grade.good || selfGrade == Grade.easy);
+    // "Schwer" ist ein erfolgreicher, nur mühsamer Abruf – zählt als richtig.
+    final wasCorrect = isCorrect ?? (selfGrade != Grade.again);
     unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect));
     setState(() {
       if (wasCorrect) _correct += 1;

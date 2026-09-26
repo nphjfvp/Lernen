@@ -150,9 +150,14 @@ class _StatsScreenState extends State<StatsScreen> {
                     ),
                     const SizedBox(height: 10),
                     _SprintEntryCard(
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SprintScreen()),
-                      ),
+                      onTap: () async {
+                        // Sprint-Antworten zählen für FSRS/Ampel – danach neu
+                        // laden (der Tab ist schon aktiv, didUpdateWidget greift nicht).
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const SprintScreen()),
+                        );
+                        if (mounted) await _load();
+                      },
                     ),
                     const SizedBox(height: 28),
                     Text(

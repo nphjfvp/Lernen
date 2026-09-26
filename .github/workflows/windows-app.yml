@@ -31,6 +31,15 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Qualitäts-Gate: ohne sauberen Analyzer und grüne Tests wird nichts
+      # gebaut oder veröffentlicht – sonst landen Regressionen still in der
+      # "latest"-Version, die sich die App per Update-Check holt.
+      - name: Analyzer
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test
+
       # --build-number = fortlaufende Actions-Run-Nummer, NIE doppelt und
       # immer aufsteigend über alle Pushes hinweg - Grundlage für den
       # In-App-Update-Check (siehe UpdateCheckerService).

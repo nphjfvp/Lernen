@@ -190,7 +190,15 @@ class MathMarkup {
         i += 1;
         continue;
       }
-      if (ch == '\$') inMath = !inMath;
+      if (ch == '\$') {
+        // `$$` ist EIN Begrenzer (abgesetzte Formel), nicht zwei – sonst stünde
+        // der Formelinhalt fälschlich außerhalb des Formelmodus.
+        final isDouble = i + 1 < json.length && json[i + 1] == '\$';
+        inMath = !inMath;
+        out.write(isDouble ? '\$\$' : ch);
+        i += isDouble ? 2 : 1;
+        continue;
+      }
       out.write(ch);
       i += 1;
     }

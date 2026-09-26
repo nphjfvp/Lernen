@@ -67,7 +67,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _timer;
   bool _dirty = false;
   bool _running = false;
-  bool _suppressed = false;
+  int _suppressDepth = 0;
   int _retryIndex = 0;
   Database? _db;
 
@@ -102,11 +102,13 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   /// Führt [action] aus, ohne dass die dabei geschriebenen Daten einen
   /// Upload auslösen – für den Download (der schreibt alle Stores neu).
   Future<T> runWithoutTrigger<T>(Future<T> Function() action) async {
-    _suppressed = true;
+    // Zähler statt bool: überlappende Aufrufe dürfen die Sperre nicht
+    // vorzeitig aufheben.
+    _suppressDepth += 1;
     try {
       return await action();
     } finally {
-      _suppressed = false;
+      _suppressDepth -= 1;
     }
   }
 
@@ -128,7 +130,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _onChanges(Transaction txn, List<RecordChange<String, Map<String, Object?>>> changes) {
-    if (_suppressed || !_settings.settings.autoSyncEnabled) return;
+    if (_suppressDepth > 0 || !_settings.settings.autoSyncEnabled) return;
     _dirty = true;
     if (_status == AutoSyncStatus.conflict) return; // wartet auf Download
     _schedule(debounce);

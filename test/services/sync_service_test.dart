@@ -47,4 +47,21 @@ void main() {
       expect(merged.questionModelId, 'model-a');
     });
   });
+
+  group('syncedAiSettingsForPull', () {
+    test('Sync-Code: ein API-Key aus der Cloud wird verworfen, der lokale bleibt', () {
+      final synced = syncedAiSettingsForPull(
+        {'openRouterApiKey': 'sk-fremd', 'questionModelId': 'model-a'},
+        acceptApiKey: false,
+      );
+      final merged = mergeAiSettings(const AppSettings(openRouterApiKey: 'sk-eigener'), synced);
+      expect(merged.openRouterApiKey, 'sk-eigener');
+      expect(merged.questionModelId, 'model-a');
+    });
+
+    test('Konto: der API-Key wird übernommen', () {
+      final synced = syncedAiSettingsForPull({'openRouterApiKey': 'sk-konto'}, acceptApiKey: true);
+      expect(mergeAiSettings(const AppSettings(), synced).openRouterApiKey, 'sk-konto');
+    });
+  });
 }

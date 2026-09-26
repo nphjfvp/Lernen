@@ -523,4 +523,22 @@ void main() {
       expect(demoted.masteryBox, Flashcard.masteryBoxCap - 1);
     });
   });
+
+  group('Flashcard.fromMap – robust gegen unvollständige Datensätze', () {
+    test('fehlende FSRS-Felder und Kommazahlen führen nicht zum Absturz', () {
+      final card = Flashcard.fromMap({
+        'id': 'x',
+        'moduleId': 'm1',
+        'front': 'F',
+        'reps': 3.0,
+        'variantLevel': 1.0,
+      });
+      expect(card.back, '');
+      expect(card.reps, 3);
+      expect(card.variantLevel, 1);
+      expect(card.stability, 0);
+      expect(card.state, 'new');
+      expect(card.lastReview, isNull);
+    });
+  });
 }

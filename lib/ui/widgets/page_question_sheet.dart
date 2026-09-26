@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../theme/app_colors.dart';
+import 'safe_set_state.dart';
 
 /// Frage-Chat zu EINER konkreten, gerade betrachteten Seite (siehe
 /// AiService.answerPageQuestion) – sieht sowohl den mitgegebenen Screenshot
@@ -33,7 +34,7 @@ class PageQuestionSheet extends StatefulWidget {
   State<PageQuestionSheet> createState() => _PageQuestionSheetState();
 }
 
-class _PageQuestionSheetState extends State<PageQuestionSheet> {
+class _PageQuestionSheetState extends State<PageQuestionSheet> with SafeSetState<PageQuestionSheet> {
   final _controller = TextEditingController();
   final List<({String question, String answer})> _turns = [];
   bool _asking = false;

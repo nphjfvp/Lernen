@@ -74,5 +74,11 @@ void main() {
       expect(decoded['front'], 'Was gibt echo \$HOME aus?\n 1. Zeile\n2');
       expect(decoded['u'], r'$ä \underline{x}$');
     });
+
+    test(r'abgesetzte Formeln ($$…$$) werden ebenso gerettet', () {
+      const raw = r'{"a": "$$\frac{1}{2}$$ und $$\beta + \nabla$$ dann $\theta$"}';
+      final decoded = jsonDecode(MathMarkup.escapeLatexInJson(raw)) as Map;
+      expect(decoded['a'], r'$$\frac{1}{2}$$ und $$\beta + \nabla$$ dann $\theta$');
+    });
   });
 }

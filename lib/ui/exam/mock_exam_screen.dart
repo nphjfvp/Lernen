@@ -117,6 +117,9 @@ class _MockExamScreenState extends State<MockExamScreen> with CardReviewMixin<Mo
   }
 
   Future<void> _answer(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
+    // Nach Zeitablauf/Abgabe zählt keine späte Antwort mehr (Note und
+    // gespeicherter Lernstand sollen übereinstimmen).
+    if (_phase != _Phase.running) return;
     final correct = isCorrect ?? (selfGrade != Grade.again);
     _correctById[card.id] = correct;
     unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect, showLevelFeedback: false));
