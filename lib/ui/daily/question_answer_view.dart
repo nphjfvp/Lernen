@@ -12,7 +12,9 @@ import '../../services/ai_service.dart';
 import '../../services/answer_checker.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/html_question_contract.dart';
+import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
+import '../study/study_aids.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
 import '../widgets/relative_image.dart';
@@ -662,9 +664,28 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     );
   }
 
+  /// Nach dem Antworten: Stelle im Skript, kurze Lerneinheit und – bei
+  /// Karten, die öfter schiefgehen – der Sokrates-Dialog.
+  Widget _buildStudyAids() {
+    final wrong = _result?.isCorrect == false;
+    final selfGraded = _result == null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: StudyAidsBar(
+        card: widget.card,
+        aiAvailable: _aiHelpAvailable,
+        wrongAnswer: wrong ? _userAnswerText : null,
+        suggestSocratic: selfGraded
+            ? WeaknessService.oftenWrong(widget.card)
+            : wrong && WeaknessService.oftenWrong(widget.card, wrongNow: true),
+      ),
+    );
+  }
+
   /// "Erklär mir das" nach dem Antworten, danach optional "Einfacher erklären".
   Widget _buildExplainArea(AppColors c) {
-    if (widget.examMode || !_aiHelpAvailable) return const SizedBox.shrink();
+    if (widget.examMode) return const SizedBox.shrink();
+    if (!_aiHelpAvailable) return _buildStudyAids();
     final explanation = _explanation;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
@@ -696,6 +717,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               padding: const EdgeInsets.only(top: 6),
               child: Text(_aiHelpError!, style: TextStyle(fontSize: 12, color: c.danger)),
             ),
+          _buildStudyAids(),
         ],
       ),
     );

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../models/flashcard.dart';
 import '../../models/material_item.dart';
@@ -127,6 +128,37 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     _setPdf(bytes: bytes, fileName: material.fileName, material: material);
   }
 
+  /// Eine hier hochgeladene PDF landet beim Import als Übung im Fach – so
+  /// führen die Fragen später per "Im Skript ansehen" zu ihrer Seite.
+  Future<MaterialItem?> _saveUploadedPdf() async {
+    final bytes = _bytes;
+    if (bytes == null) return null;
+    final repo = context.read<MaterialRepository>();
+    try {
+      final id = const Uuid().v4();
+      var text = '';
+      try {
+        text = PdfService().extractText(bytes);
+      } catch (_) {}
+      final (filePath, fileBytesBase64) = await MaterialFileStore.store(id, bytes);
+      final material = MaterialItem(
+        id: id,
+        moduleId: widget.moduleId,
+        fileName: _fileName ?? 'Import.pdf',
+        kind: MaterialKind.exercise,
+        extractedText: text,
+        createdAt: DateTime.now(),
+        filePath: filePath,
+        fileBytesBase64: fileBytesBase64,
+      );
+      await repo.save(material);
+      _material = material;
+      return material;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _upload() async {
     final picked = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: const ['pdf']);
     if (picked.isEmpty || !mounted) return;
@@ -197,10 +229,13 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     final selected = _questions.where((q) => q.selected).toList();
     if (selected.isEmpty) return;
     setState(() => _saving = true);
+    final material = _material ?? await _saveUploadedPdf();
+    if (!mounted) return;
     final cards = PdfQuestionImportService.toFlashcards(
       selected,
       moduleId: widget.moduleId,
-      unitId: _material?.unitId,
+      unitId: material?.unitId,
+      sourceMaterialId: material?.id,
       now: DateTime.now(),
     );
     await context.read<FlashcardRepository>().saveAll(cards);

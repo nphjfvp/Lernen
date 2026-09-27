@@ -260,6 +260,10 @@ void main() {
         onRequest?.call(request.body);
         return _chatResponse(aiVerdict);
       });
+      // Nach dem Prüfen kommen Lösung, Erklärung und Lernhilfen dazu.
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await http.runWithClient(() async {
         await tester.pumpWidget(ChangeNotifierProvider<SettingsRepository>(
           create: (_) => _SettingsWithKey(),

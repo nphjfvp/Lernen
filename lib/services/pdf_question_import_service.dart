@@ -353,6 +353,7 @@ class PdfQuestionImportService {
     Iterable<ScannedQuestion> questions, {
     required String moduleId,
     String? unitId,
+    String? sourceMaterialId,
     required DateTime now,
   }) {
     final result = <Flashcard>[];
@@ -376,6 +377,8 @@ class PdfQuestionImportService {
         htmlContent: f['htmlContent'] as String?,
         imageBase64: q.imageBase64,
         imageTargets: parseImageTargets(f['imageTargets']),
+        sourceMaterialId: sourceMaterialId,
+        sourcePage: sourceMaterialId == null ? null : q.page,
       ));
     }
     return result;

@@ -73,6 +73,29 @@ class FlashcardRepository extends ChangeNotifier {
     return written;
   }
 
+  /// Lernhilfen am GESPEICHERTEN Stand nachtragen (gefundene Quellseite,
+  /// erzeugte Lerneinheit) – so überschreibt das weder eine gleichzeitig
+  /// gespeicherte Bewertung noch umgekehrt. Gelöschte Karten bleiben weg.
+  Future<Flashcard?> updateStudyAids(String id, {String? sourceMaterialId, int? sourcePage, String? miniLesson}) async {
+    final db = await DatabaseService.instance.database;
+    final updated = await db.transaction((txn) async {
+      final ref = DatabaseService.flashcards.record(id);
+      final stored = await ref.get(txn);
+      if (stored == null) return null;
+      final card = Flashcard.fromMap(stored).copyWithStudyAids(
+        sourceMaterialId: sourceMaterialId,
+        sourcePage: sourcePage,
+        miniLesson: miniLesson,
+      );
+      await ref.put(txn, card.toMap());
+      return card;
+    });
+    if (updated != null && _byModule.containsKey(updated.moduleId)) {
+      await loadForModule(updated.moduleId);
+    }
+    return updated;
+  }
+
   Future<void> delete(String id, String moduleId) async {
     final db = await DatabaseService.instance.database;
     await DatabaseService.flashcards.record(id).delete(db);

@@ -1635,6 +1635,133 @@ Sprache der Frage.
     return raw.trim();
   }
 
+  static const _miniLessonSystemPrompt = '''
+Du schreibst eine KURZE Lerneinheit (höchstens etwa 200 Wörter) genau zum
+Thema einer Lernfrage – für jemanden, der die Frage nicht sicher
+beantworten konnte. Vier kurze Absätze, jeder beginnt mit seinem Stichwort:
+Worum es geht: ein, zwei Sätze Einordnung.
+Kern: das Prinzip Schritt für Schritt, so dass man die Frage danach selbst
+beantworten kann.
+Beispiel: ein kurzes, konkretes Beispiel (nicht die Frage selbst).
+Merke: ein Satz zum Behalten.
+Stütze dich auf den mitgegebenen Auszug aus den Unterlagen bzw. die
+Konzept-Erklärung – Begriffe und Schreibweisen wie dort; widersprich ihnen
+nicht und erfinde nichts dazu. Kein JSON, keine Codefences, kein Markdown.
+Formeln in LaTeX zwischen \$…\$. Antworte in der Sprache der Frage.
+''';
+
+  /// Kurze Lerneinheit zu einer Frage (siehe Flashcard.miniLesson): Worum
+  /// es geht, Kern, Beispiel, Merksatz – auf Basis der Quellseite
+  /// ([sourceText]) oder der Konzept-Erklärung, falls vorhanden.
+  Future<String> generateMiniLesson({
+    required String question,
+    required String correctAnswer,
+    String? sourceText,
+    String? conceptExplanation,
+    Uint8List? image,
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Frage: $question')
+      ..writeln('Richtige Lösung: $correctAnswer');
+    if ((conceptExplanation ?? '').trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Konzept-Erklärung aus dem Fach:')
+        ..writeln(_cap(conceptExplanation!.trim(), _studyAidSourceCap));
+    }
+    if ((sourceText ?? '').trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Auszug aus den Unterlagen (Seite, auf der das Thema steht):')
+        ..writeln(_cap(sourceText!.trim(), _studyAidSourceCap));
+    }
+    final raw = await _complete(_miniLessonSystemPrompt, _withOptionalImage(buffer.toString(), image));
+    return raw.trim();
+  }
+
+  static const _socraticSystemPrompt = '''
+Du bist ein sokratischer Tutor. Der Lernende tut sich mit einer Lernfrage
+schwer (er hat sie wiederholt falsch beantwortet). Führe ihn im Dialog mit
+Gegenfragen selbst zur Lösung, Schritt für Schritt.
+Regeln:
+1. Verrate die Lösung NIE direkt, auch nicht teilweise wörtlich. Bei
+   Auswahlfragen keine Option als richtig oder falsch bezeichnen, bevor der
+   Lernende sie selbst begründet hat.
+2. Pro Nachricht GENAU EINE kurze Frage (insgesamt höchstens drei Sätze),
+   die einen kleinen Schritt weiterführt. Knüpfe an seine letzte Antwort an;
+   bei einem Fehler frag nach seinem Gedankengang oder gib ein Gegenbeispiel.
+3. Steckt er fest ("weiß nicht"), gib einen kleinen Hinweis und stelle eine
+   leichtere Teilfrage.
+4. Beginne beim Denkfehler seiner falschen Antwort, falls sie bekannt ist.
+5. Hat er die Lösung selbst gefunden UND begründet, bestätige das in ein,
+   zwei Sätzen, fasse den Kerngedanken zusammen und schreibe als letzte
+   Zeile genau: [[GELÖST]]
+6. Stütze dich auf den Auszug aus den Unterlagen, falls mitgegeben.
+Kein JSON, keine Codefences, kein Markdown. Formeln in LaTeX zwischen \$…\$.
+Antworte in der Sprache der Frage und duze den Lernenden.
+''';
+
+  static final _solvedMarker = RegExp(r'\[\[\s*(GELÖST|GELOEST|SOLVED)\s*\]\]', caseSensitive: false);
+
+  /// Ein Schritt im Sokrates-Dialog: die nächste Gegenfrage des Tutors (bei
+  /// leerem [history] die erste). [solved] = der Lernende hat die Lösung
+  /// selbst erarbeitet (Marker in der Antwort, der aus [reply] entfernt ist).
+  Future<({String reply, bool solved})> socraticTurn({
+    required String question,
+    required String correctAnswer,
+    String? wrongAnswer,
+    String? sourceText,
+    List<({bool isUser, String content})> history = const [],
+    Uint8List? image,
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Lernfrage: $question')
+      ..writeln('Richtige Lösung (NUR für dich, nicht verraten): $correctAnswer');
+    if ((wrongAnswer ?? '').trim().isNotEmpty) buffer.writeln('Seine letzte falsche Antwort: $wrongAnswer');
+    if ((sourceText ?? '').trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Auszug aus den Unterlagen:')
+        ..writeln(_cap(sourceText!.trim(), _studyAidSourceCap));
+    }
+    buffer.writeln();
+    if (history.isEmpty) {
+      buffer.writeln('Beginne den Dialog mit deiner ersten Frage.');
+    } else {
+      buffer.writeln('Bisheriger Dialog:');
+      for (final turn in history.length > _socraticHistoryLimit
+          ? history.sublist(history.length - _socraticHistoryLimit)
+          : history) {
+        buffer.writeln('${turn.isUser ? 'Lernender' : 'Tutor'}: ${turn.content}');
+      }
+      buffer
+        ..writeln()
+        ..writeln('Antworte jetzt als Tutor auf die letzte Nachricht des Lernenden.');
+    }
+    final raw = await _complete(_socraticSystemPrompt, _withOptionalImage(buffer.toString(), image), temperature: 0.4);
+    final solved = _solvedMarker.hasMatch(raw);
+    return (reply: raw.replaceAll(_solvedMarker, '').trim(), solved: solved);
+  }
+
+  /// Genug Verlauf für den Zusammenhang, ohne dass lange Dialoge teuer werden.
+  static const _socraticHistoryLimit = 16;
+
+  /// Seitentext bzw. Konzept-Erklärung für Lernhilfen.
+  static const _studyAidSourceCap = 6000;
+
+  /// Text, bei vorhandenem Bild (z.B. Abbildung der Frage) als multimodale
+  /// Nachricht.
+  static Object _withOptionalImage(String text, Uint8List? image) => image == null
+      ? text
+      : [
+          {'type': 'text', 'text': text},
+          {'type': 'text', 'text': 'Bild zur Frage:'},
+          {
+            'type': 'image_url',
+            'image_url': {'url': 'data:image/png;base64,${base64Encode(image)}'},
+          },
+        ];
+
   static const _weaknessSystemPrompt = '''
 Du bist ein Lerncoach. Du bekommst die Lernfragen, mit denen sich ein
 Studierender gerade am schwersten tut (jeweils mit richtiger Lösung und wie

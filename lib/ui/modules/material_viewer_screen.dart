@@ -374,7 +374,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
           context.read<MaterialRepository>().forModule(widget.material.moduleId));
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
       final raw = await ai.generateCheckpointQuiz(pageText, examContext: examContext);
-      final cards = _parseCheckpointCards(raw);
+      final cards = _parseCheckpointCards(raw, fromPage: fromPage);
       if (cards.isEmpty || !mounted) return;
 
       // Vor dem await auslesen: die Fehlantworten sollen auch dann
@@ -411,7 +411,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
   /// gespeicherte [Flashcard]-Objekte um (siehe QuestionParsing für die
   /// Feld-Normalisierung) – erst falsch beantwortete Karten werden nach dem
   /// Quiz tatsächlich persistiert (siehe [_startCheckpointQuiz]).
-  List<Flashcard> _parseCheckpointCards(List<Map<String, dynamic>> raw) {
+  List<Flashcard> _parseCheckpointCards(List<Map<String, dynamic>> raw, {required int fromPage}) {
     final now = DateTime.now();
     final cards = <Flashcard>[];
     for (final entry in raw) {
@@ -436,6 +436,10 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
         blanks: QuestionParsing.parseBlanks(fixed['blanks']),
         dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
         htmlContent: fixed['htmlContent'] as String?,
+        // Anfang des gerade gelesenen Abschnitts – "Im Skript ansehen"
+        // führt dorthin zurück.
+        sourceMaterialId: widget.material.id,
+        sourcePage: fromPage,
       ));
     }
     return cards;

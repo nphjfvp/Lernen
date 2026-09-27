@@ -555,4 +555,71 @@ void main() {
       expect(card.lastReview, isNull);
     });
   });
+
+  group('Flashcard – Quelle und Lerneinheit', () {
+    Flashcard card() => Flashcard(
+          id: 'c1',
+          moduleId: 'm1',
+          front: 'Was ist U?',
+          back: 'Spannung',
+          createdAt: DateTime(2026, 9, 1),
+          due: DateTime(2026, 9, 1),
+          sourceMaterialId: 'mat1',
+          sourcePage: 7,
+          miniLesson: 'Kurz erklärt …',
+        );
+
+    test('Round-Trip und ältere Datensätze ohne die Felder', () {
+      final restored = Flashcard.fromMap(card().toMap());
+      expect(restored.sourceMaterialId, 'mat1');
+      expect(restored.sourcePage, 7);
+      expect(restored.miniLesson, 'Kurz erklärt …');
+      final old = card().toMap()..removeWhere((k, _) => k.startsWith('source') || k == 'miniLesson');
+      final legacy = Flashcard.fromMap(old);
+      expect(legacy.sourceMaterialId, isNull);
+      expect(legacy.sourcePage, isNull);
+      expect(legacy.miniLesson, isNull);
+    });
+
+    test('bleiben beim Lernen, Bearbeiten und Stufenwechsel erhalten', () {
+      final reviewed = card().copyWithReview(
+        due: DateTime(2026, 9, 3),
+        stability: 2,
+        difficulty: 5,
+        elapsedDays: 0,
+        scheduledDays: 2,
+        reps: 1,
+        lapses: 0,
+        state: 'review',
+        lastReview: DateTime(2026, 9, 1),
+      );
+      final edited = reviewed.copyWithContent(front: 'Was ist die Spannung U?');
+      final boxed = edited.copyWithBoxUpdate(isCorrect: false).card;
+      for (final c in [reviewed, edited, boxed]) {
+        expect(c.sourceMaterialId, 'mat1');
+        expect(c.sourcePage, 7);
+        expect(c.miniLesson, 'Kurz erklärt …');
+      }
+    });
+
+    test('copyWithStudyAids ergänzt nur, was angegeben ist', () {
+      final base = Flashcard(
+        id: 'c2',
+        moduleId: 'm1',
+        front: 'F',
+        back: 'B',
+        createdAt: DateTime(2026, 9, 1),
+        due: DateTime(2026, 9, 5),
+        reps: 3,
+      );
+      final withSource = base.copyWithStudyAids(sourceMaterialId: 'mat2', sourcePage: 4);
+      expect(withSource.sourceMaterialId, 'mat2');
+      expect(withSource.sourcePage, 4);
+      expect(withSource.reps, 3);
+      expect(withSource.due, DateTime(2026, 9, 5));
+      final withLesson = withSource.copyWithStudyAids(miniLesson: 'Lektion');
+      expect(withLesson.miniLesson, 'Lektion');
+      expect(withLesson.sourcePage, 4);
+    });
+  });
 }

@@ -412,6 +412,19 @@ class Flashcard {
   /// nach Tagen drankommt.
   final bool priorityIntroduction;
 
+  /// Wo die Frage in den Lernunterlagen steht: Material (siehe MaterialItem)
+  /// und Seite (1-basiert) – gesetzt, wenn die Karte aus einer bestimmten
+  /// Seite entstanden ist (Frage erstellen, PDF-Import) oder die Stelle
+  /// später gefunden wurde (siehe SourceLocator). Grundlage für "Im Skript
+  /// ansehen".
+  final String? sourceMaterialId;
+  final int? sourcePage;
+
+  /// Einmal erzeugte kurze Lerneinheit zur Frage (siehe
+  /// AiService.generateMiniLesson) – gespeichert, damit sie beim nächsten
+  /// Mal sofort da ist und mit synchronisiert.
+  final String? miniLesson;
+
   const Flashcard({
     required this.id,
     required this.moduleId,
@@ -445,6 +458,9 @@ class Flashcard {
     this.lastReview,
     this.unitId,
     this.priorityIntroduction = false,
+    this.sourceMaterialId,
+    this.sourcePage,
+    this.miniLesson,
   });
 
   /// Kanonische Antwort-Darstellung, unabhängig vom Fragetyp - Grundlage,
@@ -519,6 +535,9 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      sourceMaterialId: sourceMaterialId,
+      sourcePage: sourcePage,
+      miniLesson: miniLesson,
     );
   }
 
@@ -591,7 +610,22 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      sourceMaterialId: sourceMaterialId,
+      sourcePage: sourcePage,
+      miniLesson: miniLesson,
     );
+  }
+
+  /// Lernhilfen nachtragen: gefundene Stelle in den Unterlagen bzw. eine
+  /// erzeugte Lerneinheit. Lernstand und Inhalt bleiben unverändert.
+  Flashcard copyWithStudyAids({String? sourceMaterialId, int? sourcePage, String? miniLesson}) {
+    final map = toMap();
+    if (sourceMaterialId != null) {
+      map['sourceMaterialId'] = sourceMaterialId;
+      map['sourcePage'] = sourcePage;
+    }
+    if (miniLesson != null) map['miniLesson'] = miniLesson;
+    return Flashcard.fromMap(map);
   }
 
   /// Ab wie vielen FALSCHEN Antworten in Folge auf derselben Eskalationsstufe
@@ -672,6 +706,9 @@ class Flashcard {
         lastReview: lastReview,
         unitId: unitId,
         priorityIntroduction: priorityIntroduction,
+        sourceMaterialId: sourceMaterialId,
+        sourcePage: sourcePage,
+        miniLesson: miniLesson,
       );
       return (card: updated, nextType: chain[variantLevel + 1], needsGeneration: true);
     }
@@ -728,6 +765,9 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      sourceMaterialId: sourceMaterialId,
+      sourcePage: sourcePage,
+      miniLesson: miniLesson,
     );
     return (card: updated, nextType: null, needsGeneration: false);
   }
@@ -795,6 +835,9 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      sourceMaterialId: sourceMaterialId,
+      sourcePage: sourcePage,
+      miniLesson: miniLesson,
     );
   }
 
@@ -885,6 +928,9 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      sourceMaterialId: sourceMaterialId,
+      sourcePage: sourcePage,
+      miniLesson: miniLesson,
     );
   }
 
@@ -926,6 +972,9 @@ class Flashcard {
         'lastReview': lastReview?.toIso8601String(),
         'unitId': unitId,
         'priorityIntroduction': priorityIntroduction,
+        'sourceMaterialId': sourceMaterialId,
+        'sourcePage': sourcePage,
+        'miniLesson': miniLesson,
       };
 
   factory Flashcard.fromMap(Map<String, dynamic> map) => Flashcard(
@@ -972,5 +1021,8 @@ class Flashcard {
         lastReview: DateTime.tryParse(map['lastReview']?.toString() ?? ''),
         unitId: map['unitId'] as String?,
         priorityIntroduction: map['priorityIntroduction'] as bool? ?? false,
+        sourceMaterialId: map['sourceMaterialId'] as String?,
+        sourcePage: (map['sourcePage'] as num?)?.toInt(),
+        miniLesson: map['miniLesson'] as String?,
       );
 }

@@ -9,6 +9,7 @@ import '../../services/ai_service.dart';
 import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
 import '../practice/practice_screen.dart';
+import '../study/study_aids.dart';
 import '../widgets/mastery_dot.dart';
 import '../widgets/math_text.dart';
 
@@ -228,6 +229,12 @@ class _WeakCardTile extends StatelessWidget {
               Text('Lösung', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.inkMuted)),
               const SizedBox(height: 4),
               SelectionArea(child: MathText(answer, style: const TextStyle(fontSize: 13.5, height: 1.4))),
+              const SizedBox(height: 8),
+              StudyAidsBar(
+                card: card,
+                aiAvailable: context.read<SettingsRepository>().settings.hasApiKey,
+                showSocratic: true,
+              ),
             ],
           ),
         ),

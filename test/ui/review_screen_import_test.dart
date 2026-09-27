@@ -202,6 +202,10 @@ void main() {
     expect(byType[QuestionType.singleChoice]!.options!.map((o) => o.isCorrect), [false, true, false]);
     expect(byType[QuestionType.freeText]!.imageBase64, isNotNull);
     expect(byType[QuestionType.singleChoice]!.imageBase64, isNull);
+    // Jede Frage weiß, wo sie im Material steht.
+    expect(byType[QuestionType.singleChoice]!.sourceMaterialId, 'blatt3');
+    expect(byType[QuestionType.singleChoice]!.sourcePage, 1);
+    expect(byType[QuestionType.freeText]!.sourcePage, 2);
 
     await tester.pumpWidget(const SizedBox());
   });

@@ -186,6 +186,9 @@ class ModuleExportService {
       pendingVariants: pending.isEmpty ? null : pending,
       unitId: f.unitId,
       priorityIntroduction: f.priorityIntroduction,
+      sourceMaterialId: f.sourceMaterialId,
+      sourcePage: f.sourcePage,
+      miniLesson: f.miniLesson,
     );
   }
 
@@ -331,6 +334,9 @@ class ModuleExportService {
               state: f.state,
               lastReview: f.lastReview,
               unitId: f.unitId == null ? null : unitIdMap[f.unitId],
+              sourceMaterialId: f.sourceMaterialId == null ? null : materialIdMap[f.sourceMaterialId],
+              sourcePage: f.sourceMaterialId == null || materialIdMap[f.sourceMaterialId] == null ? null : f.sourcePage,
+              miniLesson: f.miniLesson,
             ))
         .toList();
 

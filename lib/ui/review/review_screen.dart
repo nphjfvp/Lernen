@@ -405,7 +405,11 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
               '${scan.errors.join('; ')}');
         }
         if (!scan.usedPageImages) withoutImages = true;
-        imported.addAll([for (final q in scan.questions) q.data]);
+        // Datei + Seite merken: beim Speichern wird daraus der Verweis auf
+        // die Stelle im Material (siehe Flashcard.sourceMaterialId).
+        imported.addAll([
+          for (final q in scan.questions) {...q.data, 'sourceFile': file.fileName, 'sourcePage': q.page},
+        ]);
       }
       if (withoutImages) {
         notes.add('Die Seiten ließen sich auf diesem Gerät nicht als Bild darstellen – Abbildungen sind nur '
@@ -656,11 +660,17 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     // nicht existierende UUID nicht) – hier gegen die gerade generierten
     // Concept-Titel aufgelöst.
     final conceptIdByTitle = {for (final c in concepts) c.title.trim().toLowerCase(): c.id};
+    final materialIdByFile = {
+      for (final f in _exercisesFiles)
+        if (f.existingMaterialId != null) f.fileName: f.existingMaterialId!,
+      for (final m in exercisesMaterials) m.fileName: m.id,
+    };
 
     final flashcards = ((result['flashcards'] as List?) ?? []).map((raw) {
       final f = Map<String, dynamic>.from(raw as Map);
       final type = QuestionParsing.parseType(f['type'] as String?);
       final escalate = f['escalate'] == true && type == QuestionType.singleChoice;
+      final sourceMaterialId = materialIdByFile[f['sourceFile']];
       return Flashcard(
         id: const Uuid().v4(),
         moduleId: widget.moduleId,
@@ -679,6 +689,8 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         imageBase64: f['imageBase64'] as String?,
         imageTargets: parseImageTargets(f['imageTargets']),
         variantChain: escalate ? QuestionParsing.escalationChain : null,
+        sourceMaterialId: sourceMaterialId,
+        sourcePage: sourceMaterialId == null ? null : (f['sourcePage'] as num?)?.toInt(),
       );
     }).toList();
 

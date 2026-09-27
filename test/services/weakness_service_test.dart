@@ -63,4 +63,12 @@ void main() {
     final cards = List.generate(10, (i) => _card('c$i', lapses: i + 1));
     expect(service.rank(cards, now: now, limit: 3), hasLength(3));
   });
+
+  test('"öfter falsch": ab dem zweiten Fehlversuch (in Folge oder schon einmal vergessen)', () {
+    expect(WeaknessService.oftenWrong(_card('a')), isFalse);
+    expect(WeaknessService.oftenWrong(_card('a'), wrongNow: true), isFalse);
+    expect(WeaknessService.oftenWrong(_card('b', variantMissStreak: 1), wrongNow: true), isTrue);
+    expect(WeaknessService.oftenWrong(_card('c', lapses: 1), wrongNow: true), isTrue);
+    expect(WeaknessService.oftenWrong(_card('d', lapses: 2)), isTrue);
+  });
 }

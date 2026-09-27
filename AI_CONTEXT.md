@@ -382,7 +382,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 576 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 593 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -438,6 +438,13 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     interaktiv und Bildfragen), Abbildungen als Ausschnitt; tolerantes
     Einlesen der KI-Antworten (Ursache für „nur Freitext“); Übungs-PDFs
     ansehbar; Nachbereiten-Import nutzt den seitenweisen Import.
+21. Lernhilfen: Karten kennen ihre Quellseite (`sourceMaterialId`/
+    `sourcePage`, sonst `SourceLocator`: Konzept-Link oder Textabgleich über
+    `extractPageTexts`, im Speicher gecacht), „Im Skript“ öffnet sie
+    (`openMaterialAt` in `material_opener.dart`, lädt bei Bedarf aus dem
+    Cloud-Speicher), „Kurze Lerneinheit“ (`miniLesson`, per
+    `FlashcardRepository.updateStudyAids` am gespeicherten Stand), Sokrates-
+    Dialog bei oft falschen Karten und im Fehlertagebuch.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

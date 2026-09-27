@@ -23,7 +23,6 @@ import '../../repositories/settings_repository.dart';
 import '../../models/summary.dart';
 import '../../repositories/summary_repository.dart';
 import '../../services/ai_service.dart';
-import '../../services/auto_sync_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
@@ -47,7 +46,7 @@ import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
 import '../widgets/mastery_dot.dart';
 import '../widgets/ocr_notice.dart';
-import 'material_viewer_screen.dart';
+import 'material_opener.dart';
 import 'module_form_screen.dart';
 
 class ModuleDetailScreen extends StatefulWidget {
@@ -939,55 +938,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     }
   }
 
-  Future<void> _openMaterial(MaterialItem material) async {
-    var toOpen = material;
-    if (!material.hasViewablePdf && material.hasRemotePdf) {
-      // PDF liegt nur im eigenen Cloud-Speicher (von einem anderen Gerät
-      // hochgeladen) – einmalig herunterladen und lokal ablegen.
-      final downloaded = await _downloadPdf(material);
-      if (downloaded == null || !mounted) return;
-      toOpen = downloaded;
-    }
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => MaterialViewerScreen(material: toOpen)),
-    );
-  }
-
-  Future<MaterialItem?> _downloadPdf(MaterialItem material) async {
-    final store = PdfCloudStore.fromConfig(context.read<SettingsRepository>().settings.pdfStorage);
-    final autoSync = context.read<AutoSyncService>();
-    final repo = context.read<MaterialRepository>();
-    final messenger = ScaffoldMessenger.of(context);
-    if (store == null) return null;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Expanded(child: Text('PDF wird aus deinem Speicher geladen …')),
-          ],
-        ),
-      ),
-    );
-    MaterialItem? result;
-    try {
-      // Nur geräte-lokale Felder ändern sich – kein neuer Upload nötig.
-      result = await autoSync.runWithoutTrigger(() => PdfCloudSyncService(store).download(material));
-      if (result == null) {
-        messenger.showSnackBar(const SnackBar(content: Text('Die PDF liegt nicht (mehr) im Speicher.')));
-      }
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('PDF konnte nicht geladen werden: $e')));
-    } finally {
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    }
-    await repo.loadForModule(material.moduleId);
-    return result;
-  }
+  Future<void> _openMaterial(MaterialItem material) => openMaterialAt(context, material);
 
   /// Folgt dem Quasi-Link eines im Lernmodus erstellten Konzepts (siehe
   /// Concept.linkedMaterialId/linkedPageNumber) zurück zu genau der Seite,
@@ -1006,16 +957,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           .showSnackBar(const SnackBar(content: Text('Quell-Material nicht mehr verfügbar.')));
       return;
     }
-    if (!material.hasViewablePdf) {
-      material = await _downloadPdf(material);
-      if (material == null || !mounted) return;
-    }
-    final toOpen = material;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => MaterialViewerScreen(material: toOpen, initialPage: concept.linkedPageNumber),
-      ),
-    );
+    await openMaterialAt(context, material, page: concept.linkedPageNumber);
   }
 
   Future<void> _deleteMaterial(MaterialItem material) async {

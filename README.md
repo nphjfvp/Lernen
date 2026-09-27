@@ -143,6 +143,23 @@ engerem Fokus statt Feature-Fülle.
   **"Erklär mir das"** (warum die Lösung stimmt, wo der Denkfehler lag, mit
   Merkhilfe) und bei Bedarf **"Einfacher erklären"**. Gilt in Daily Quiz,
   Üben, Sprint und Zwischen-Check.
+- **Lernhilfen nach dem Antworten** (`lib/ui/study/`): **"Im Skript"**
+  öffnet die Seite, auf der die Frage steht – gespeichert, wenn die Karte aus
+  einer Seite entstanden ist (Frage erstellen, Zwischen-Check, PDF-Import,
+  Nachbereiten-Import: `Flashcard.sourceMaterialId`/`sourcePage`), sonst über
+  das Konzept der Karte oder einen lokalen Textabgleich mit den PDFs des
+  Fachs (`SourceLocator`, zuerst in derselben Einheit; als "vermutlich"
+  gekennzeichnet). **"Kurze Lerneinheit"** (mit API-Key): Worum es geht,
+  Kern, Beispiel, Merksatz – auf Basis der gefundenen Seite bzw. der
+  Konzept-Erklärung, einmal erzeugt und an der Karte gespeichert
+  (`Flashcard.miniLesson`, reist mit dem Sync). **"Sokratisch erarbeiten"**
+  bei Karten, die öfter schiefgehen (ab dem zweiten Fehlversuch,
+  `WeaknessService.oftenWrong`) und im Fehlertagebuch: die KI verrät die
+  Lösung nicht, sondern führt mit einer Gegenfrage nach der anderen hin,
+  ausgehend von der falschen Antwort, bis man sie selbst begründet hat
+  (`SocraticScreen`, `AiService.socraticTurn`); "Lösung zeigen" beendet den
+  Dialog jederzeit. Bewusst schlank: ein Dialog pro Karte, nichts wird
+  gespeichert, kein eigener Modus im Menü.
 - **Karteikarten-Liste: Mehrfachauswahl + Löschen** (`lib/ui/flashcards/
   flashcard_list_screen.dart`) – lang auf eine Karte drücken startet den
   Auswahlmodus (Checkbox pro Karte, "Alle auswählen", gemeinsames Löschen in

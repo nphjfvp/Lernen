@@ -26,6 +26,12 @@ class WeaknessService {
 
   final MasteryService _mastery;
 
+  /// Geht diese Karte öfter schief? Zählt Fehlversuche in Folge auf der
+  /// aktuellen Stufe und frühere "vergessen" – [wrongNow] (gerade falsch
+  /// beantwortet) zählt mit. Ab zwei bietet die App den Sokrates-Dialog an.
+  static bool oftenWrong(Flashcard card, {bool wrongNow = false}) =>
+      card.variantMissStreak + card.lapses + (wrongNow ? 1 : 0) >= 2;
+
   List<WeakCard> rank(List<Flashcard> cards, {DateTime? now, int? limit}) {
     final result = <WeakCard>[];
     for (final card in cards) {

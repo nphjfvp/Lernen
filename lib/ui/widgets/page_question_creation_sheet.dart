@@ -121,6 +121,8 @@ List<List<Flashcard>> buildPageQuestionCards(
   required String attachImageBase64,
   required DateTime now,
   Map<String, List<Rect>>? coversOut,
+  String? sourceMaterialId,
+  int? sourcePage,
 }) {
   final result = <List<Flashcard>>[];
   for (final group in groups.take(questionCount)) {
@@ -154,6 +156,8 @@ List<List<Flashcard>> buildPageQuestionCards(
         htmlContent: fixed['htmlContent'] as String?,
         imageBase64: isImageType || entry['needsImage'] == true ? attachImageBase64 : null,
         imageTargets: targets,
+        sourceMaterialId: sourceMaterialId,
+        sourcePage: sourcePage,
       );
       cards.add(card);
       // Was abgedeckt werden soll: die Original-Beschriftungen der Stellen
@@ -219,6 +223,9 @@ Flashcard mergeTiersIntoChain(List<Flashcard> tiers) {
     pendingVariants: pending,
     unitId: base.unitId,
     priorityIntroduction: base.priorityIntroduction,
+    sourceMaterialId: base.sourceMaterialId,
+    sourcePage: base.sourcePage,
+    miniLesson: base.miniLesson,
   );
 }
 
@@ -350,6 +357,8 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
         attachImageBase64: attachBase64,
         now: DateTime.now(),
         coversOut: covers,
+        sourceMaterialId: widget.material.id,
+        sourcePage: widget.pageNumber,
       );
       final generated = [for (final tiers in questions) _GeneratedQuestion(tiers)];
       for (final question in generated) {
@@ -490,6 +499,8 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
       priorityIntroduction: true,
       imageBase64: base64Encode(result.bytes),
       imageTargets: result.targets,
+      sourceMaterialId: widget.material.id,
+      sourcePage: widget.pageNumber,
     );
     final question = _GeneratedQuestion([card], manual: true)
       ..imageBase = image
