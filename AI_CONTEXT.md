@@ -88,7 +88,10 @@ Befehle (Flutter liegt in dieser Umgebung unter `/home/user/flutter-sdk/flutter/
   `options`/`correctText`/`blanks`/`dragPairs`/`htmlContent`/`imageTargets`;
   `imageBase64` (Seiten-Screenshot/Bild, nur wenn für die Frage nötig).
 - Bildfragen: `imageTargets` (`List<ImageTarget>`, Koordinaten relativ zum
-  Bild 0..1). `diagramLabel` = Punkte MIT `label` (nur beschriftete zählen),
+  Bild 0..1; `group` = austauschbare Stellen, geprüft über
+  `AnswerChecker.diagramLabelZones`, Zuordnen exakt, Eintippen tolerant +
+  `AiService.checkDiagramLabelAnswers`; `fromMap` liest auch `box`
+  [l,o,r,u] und erkennt Prozent/Promille). `diagramLabel` = Punkte MIT `label` (nur beschriftete zählen),
   `markImage` = Rechtecke `x,y` (Mitte) + `w,h` (0 = Punkt → Mindestgröße
   `AnswerChecker.minRegionSide`). `ImageTarget.fromMap` liest auch Kreis
   (`radius`) und Vieleck (`points`) der Vorgänger-App. Ohne Bild oder Ziele
@@ -326,7 +329,12 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 - **Bild-Editor** (`showImageEditor`, `lib/ui/widgets/image_editor_screen.dart`):
   Abdecken/Text werden per `applyImageEdits` (`lib/services/image_edit.dart`)
   in Originalauflösung ins PNG gerechnet; im Modus `ImageTargetMode.labels`/
-  `regions` setzt er zusätzlich die `imageTargets`. Aufrufer: Vorschau in
+  `regions` setzt er zusätzlich die `imageTargets`. Alles ist darin
+  auswähl-, verschieb- und (Rahmen) skalierbar; `ImageEditResult.edits` +
+  Ausgangsbild erlauben späteres Weiterbearbeiten (in „Frage erstellen“ je
+  Frage in `_GeneratedQuestion.imageBase/imageEdits`; KI-Abdeckungen aus
+  `"covers"`/Kästen landen dort, `buildPageQuestionCards(coversOut:)`).
+  Für Bildfragen geht das Bild mit `drawCoordinateGrid` an die KI. Aufrufer: Vorschau in
   „Frage erstellen“, Kartenliste (`_editImage`), beim Lernen über
   `QuestionAnswerView.onImageEdited` → `CardReviewMixin.saveEditedImage`
   (lädt die gespeicherte Karte, nicht den Schnappschuss; nicht in der
@@ -346,7 +354,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 539 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 554 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -391,6 +399,10 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Probeklausuren, Chats, Ampel-Trend, Daily-Stand und Vorlieben reisen mit.
     Nach der Anmeldung Cloud-Stand anbieten, „Passwort vergessen“, Editor für
     alle Fragetypen und Suche in der Kartenliste, PdfJs für die Web-Version.
+18. Bild beschriften v2: austauschbare Stellen (Gruppen), Eintippen mit
+    Tippfehler-Toleranz + KI-Nachprüfung, Bild-Editor mit Verschieben/
+    Skalieren/Schriftgröße, KI deckt Original-Beschriftungen selbst ab
+    (bearbeitbar) und liest Positionen an einem Koordinatenraster ab.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

@@ -46,9 +46,18 @@ extension QuestionTypeLabel on QuestionType {
 /// [QuestionType.markImage]) in Koordinaten relativ zum Bild (0..1, Ursprung
 /// oben links). Beim Beschriften ein Punkt ([x]/[y]) mit [label] – dorthin
 /// gehört die Beschriftung; beim Markieren ein Bereich der Größe [w]×[h] um
-/// den Mittelpunkt [x]/[y], in den getippt werden muss.
+/// den Mittelpunkt [x]/[y], in den getippt werden muss. Beim Beschriften
+/// kann [w]×[h] die Fläche der (abgedeckten) Original-Beschriftung sein –
+/// dort sitzt dann das Ablagefeld.
 class ImageTarget {
-  const ImageTarget({required this.x, required this.y, this.w = 0, this.h = 0, this.label = ''});
+  const ImageTarget({
+    required this.x,
+    required this.y,
+    this.w = 0,
+    this.h = 0,
+    this.label = '',
+    this.group = '',
+  });
 
   final double x;
   final double y;
@@ -56,16 +65,23 @@ class ImageTarget {
   final double h;
   final String label;
 
+  /// Beschriften: Stellen mit derselben (nicht leeren) Gruppe sind
+  /// austauschbar – z.B. fünf Eingänge eines Prozesses, deren Reihenfolge
+  /// egal ist. Jede Beschriftung der Gruppe darf dann auf jeder ihrer
+  /// Stellen stehen, solange jede genau einmal vorkommt.
+  final String group;
+
   /// Liegt der Punkt [px]/[py] im Bereich (plus [tolerance] je Seite)?
   bool contains(double px, double py, {double tolerance = 0.02}) =>
       (px - x).abs() <= w / 2 + tolerance && (py - y).abs() <= h / 2 + tolerance;
 
-  ImageTarget copyWith({double? x, double? y, double? w, double? h, String? label}) => ImageTarget(
+  ImageTarget copyWith({double? x, double? y, double? w, double? h, String? label, String? group}) => ImageTarget(
         x: x ?? this.x,
         y: y ?? this.y,
         w: w ?? this.w,
         h: h ?? this.h,
         label: label ?? this.label,
+        group: group ?? this.group,
       );
 
   Map<String, dynamic> toMap() => {
@@ -74,18 +90,42 @@ class ImageTarget {
         if (w > 0) 'w': w,
         if (h > 0) 'h': h,
         if (label.isNotEmpty) 'label': label,
+        if (group.isNotEmpty) 'group': group,
       };
 
   /// Tolerant: Zahlen auch als Text, Werte auf 0..1 begrenzt; ein Kreis der
-  /// Vorgänger-App (`radius`) wird zum umschließenden Quadrat.
+  /// Vorgänger-App (`radius`) wird zum umschließenden Quadrat. Die KI darf
+  /// statt eines Punkts den Kasten der Beschriftung liefern (`box` =
+  /// [links, oben, rechts, unten]). Koordinaten in Prozent (0..100) oder
+  /// Promille (0..1000, z.B. Gemini) werden erkannt und umgerechnet.
   factory ImageTarget.fromMap(Map<String, dynamic> map) {
-    double read(String key) {
-      final v = map[key];
-      final n = v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
-      return (n ?? 0).clamp(0.0, 1.0).toDouble();
-    }
+    double? number(Object? v) => v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
+    final box = map['box'] is List ? [for (final v in map['box'] as List) number(v)] : null;
+    final raw = [
+      for (final key in const ['x', 'y', 'w', 'h', 'radius']) number(map[key]),
+      ...?box,
+    ].whereType<double>();
+    final largest = raw.isEmpty ? 0.0 : raw.map((v) => v.abs()).reduce(max);
+    // Knapp über 1 ist Rundungsüberschuss (wird begrenzt), erst deutlich
+    // größere Werte sind Prozent bzw. Promille.
+    final scale = largest <= 2.0 ? 1.0 : (largest <= 100 ? 100.0 : 1000.0);
+    double norm(double? v) => ((v ?? 0) / scale).clamp(0.0, 1.0).toDouble();
+    double read(String key) => norm(number(map[key]));
 
     final label = (map['label'] ?? map['text'] ?? '').toString().trim();
+    final group = (map['group'] ?? '').toString().trim();
+    if (box != null && box.length == 4 && box.every((v) => v != null)) {
+      final left = min(norm(box[0]), norm(box[2])), right = max(norm(box[0]), norm(box[2]));
+      final top = min(norm(box[1]), norm(box[3])), bottom = max(norm(box[1]), norm(box[3]));
+      return ImageTarget(
+        x: (left + right) / 2,
+        y: (top + bottom) / 2,
+        w: right - left,
+        h: bottom - top,
+        label: label,
+        group: group,
+      );
+    }
     // Vieleck der Vorgänger-App: umschließendes Rechteck.
     final points = map['points'];
     if (points is List && points.isNotEmpty) {
@@ -105,6 +145,7 @@ class ImageTarget {
           w: right - left,
           h: bottom - top,
           label: label,
+          group: group,
         );
       }
     }
@@ -115,6 +156,7 @@ class ImageTarget {
       w: map.containsKey('w') ? read('w') : radius * 2,
       h: map.containsKey('h') ? read('h') : radius * 2,
       label: label,
+      group: group,
     );
   }
 }

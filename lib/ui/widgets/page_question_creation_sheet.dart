@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/image_crop.dart';
+import '../../services/image_edit.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
@@ -82,6 +84,27 @@ class _GeneratedQuestion {
   /// KI-Überarbeitung erhalten.
   final bool manual;
   bool keep = true;
+
+  /// Bild ohne Abdeckungen/Texte und die Bearbeitungen darauf – so bleiben
+  /// z.B. die von der KI gesetzten Abdeckungen im Bild-Editor einzeln
+  /// verschieb- und entfernbar. [sharedImage] ist das daraus berechnete
+  /// Bild, das die Stufen dieser Frage tragen.
+  Uint8List? imageBase;
+  List<ImageEdit> imageEdits = const [];
+  String? sharedImage;
+}
+
+/// Abdeckungen etwas größer als der Kasten der KI, damit kein Rand der
+/// Original-Beschriftung stehen bleibt.
+Rect _paddedCover(ImageTarget c) {
+  final padX = math.max(0.006, c.w * 0.08);
+  final padY = math.max(0.006, c.h * 0.12);
+  return Rect.fromLTRB(
+    (c.x - c.w / 2 - padX).clamp(0.0, 1.0),
+    (c.y - c.h / 2 - padY).clamp(0.0, 1.0),
+    (c.x + c.w / 2 + padX).clamp(0.0, 1.0),
+    (c.y + c.h / 2 + padY).clamp(0.0, 1.0),
+  );
 }
 
 /// Wandelt die KI-Antwort (je Frage die Rohkarten in Stufen-Reihenfolge, siehe
@@ -97,6 +120,7 @@ List<List<Flashcard>> buildPageQuestionCards(
   required int tierCount,
   required String attachImageBase64,
   required DateTime now,
+  Map<String, List<Rect>>? coversOut,
 }) {
   final result = <List<Flashcard>>[];
   for (final group in groups.take(questionCount)) {
@@ -108,7 +132,8 @@ List<List<Flashcard>> buildPageQuestionCards(
       // Bildfragen brauchen ihr Bild immer, andere nur, wenn die KI es für
       // nötig hält.
       final isImageType = type == QuestionType.diagramLabel || type == QuestionType.markImage;
-      cards.add(Flashcard(
+      final targets = parseImageTargets(fixed['imageTargets']);
+      final card = Flashcard(
         id: const Uuid().v4(),
         moduleId: moduleId,
         front: (fixed['front'] ?? '').toString(),
@@ -128,8 +153,20 @@ List<List<Flashcard>> buildPageQuestionCards(
         dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
         htmlContent: fixed['htmlContent'] as String?,
         imageBase64: isImageType || entry['needsImage'] == true ? attachImageBase64 : null,
-        imageTargets: parseImageTargets(fixed['imageTargets']),
-      ));
+        imageTargets: targets,
+      );
+      cards.add(card);
+      // Was abgedeckt werden soll: die Original-Beschriftungen der Stellen
+      // (von der KI als Kasten geliefert) und weiterer verräterischer Text.
+      if (isImageType && coversOut != null) {
+        final covers = [
+          ...QuestionParsing.imageCoversIn(fixed),
+          if (type == QuestionType.diagramLabel)
+            for (final t in targets ?? const <ImageTarget>[])
+              if (t.w > 0 && t.h > 0) t,
+        ];
+        if (covers.isNotEmpty) coversOut[card.id] = [for (final c in covers) _paddedCover(c)];
+      }
     }
     if (cards.isNotEmpty) result.add(cards);
   }
@@ -270,32 +307,54 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.visionModelId);
       final focus = _focusController.text.trim();
       final answer = _answerController.text.trim();
+      // Für Bildfragen bekommt die KI das Bild mit Koordinatenraster (auf
+      // dem Ausschnitt, falls markiert – darauf beziehen sich dann die
+      // Koordinaten), damit sie Stellen genauer setzt.
+      final wantsPositions =
+          slots.any((s) => s.type == QuestionType.diagramLabel || s.type == QuestionType.markImage);
+      var pageImage = widget.pageImageBytes;
+      var focusImage = _focusImage;
+      if (wantsPositions) {
+        if (focusImage != null) {
+          focusImage = await drawCoordinateGrid(focusImage) ?? focusImage;
+        } else {
+          pageImage = await drawCoordinateGrid(pageImage) ?? pageImage;
+        }
+      }
       final groups = await ai.generateQuestionsFromPage(
-        pageImageBytes: widget.pageImageBytes,
+        pageImageBytes: pageImage,
         pageText: widget.pageText,
         tiers: [for (final s in slots) (level: s.label, type: s.type)],
         questionCount: _questionCount,
-        focusImageBytes: _focusImage,
+        focusImageBytes: focusImage,
         focusText: focus.isEmpty ? null : focus,
         answerText: answer.isEmpty ? null : answer,
         examContext: widget.examContext,
         previousQuestions: refine ? _previousRaw : null,
         instruction: refine ? _instructionController.text.trim() : null,
+        coordinateGrid: wantsPositions,
       );
       // Mit markiertem Bereich hängt an einer Bild-Frage genau dieser
       // Ausschnitt statt der ganzen Seite – verkleinert, weil das Bild in der
       // Datenbank liegt und bei jedem Sync mitreist.
       final attachSource = _focusImage ?? widget.pageImageBytes;
       final attach = await downscaleImage(attachSource) ?? attachSource;
+      final attachBase64 = base64Encode(attach);
+      final covers = <String, List<Rect>>{};
       final questions = buildPageQuestionCards(
         groups,
         moduleId: widget.material.moduleId,
         unitId: widget.material.unitId,
         questionCount: _questionCount,
         tierCount: slots.length,
-        attachImageBase64: base64Encode(attach),
+        attachImageBase64: attachBase64,
         now: DateTime.now(),
+        coversOut: covers,
       );
+      final generated = [for (final tiers in questions) _GeneratedQuestion(tiers)];
+      for (final question in generated) {
+        await _applyAiCovers(question, attach, attachBase64, covers);
+      }
       if (!mounted) return;
       if (refine && questions.isEmpty) {
         // Missglückte Überarbeitung: die bisherigen Fragen bleiben stehen.
@@ -307,7 +366,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
       }
       final manual = (_questions ?? const <_GeneratedQuestion>[]).where((q) => q.manual).toList();
       setState(() {
-        _questions = [for (final tiers in questions) _GeneratedQuestion(tiers), ...manual];
+        _questions = [...generated, ...manual];
         _generatedLevels = [for (final s in slots) s.label];
         _previousRaw = groups;
         _previewIndex = 0;
@@ -334,22 +393,57 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
         _ => null,
       };
 
+  /// Deckt die von der KI genannten Stellen (Original-Beschriftungen,
+  /// verräterischer Text) im angehängten Bild ab – als bearbeitbare
+  /// Abdeckungen, die sich im Bild-Editor noch verschieben oder entfernen
+  /// lassen.
+  Future<void> _applyAiCovers(
+    _GeneratedQuestion question,
+    Uint8List attach,
+    String attachBase64,
+    Map<String, List<Rect>> covers,
+  ) async {
+    final rects = [
+      for (final t in question.tiers) ...?covers[t.id],
+    ];
+    if (rects.isEmpty) return;
+    final edits = [for (final r in rects) CoverEdit(r)];
+    final bytes = await applyImageEdits(attach, edits);
+    if (bytes == null) return;
+    final shown = base64Encode(bytes);
+    question
+      ..imageBase = attach
+      ..imageEdits = edits
+      ..sharedImage = shown;
+    for (var i = 0; i < question.tiers.length; i++) {
+      final t = question.tiers[i];
+      if (t.imageBase64 == attachBase64) question.tiers[i] = t.copyWithImage(imageBase64: shown);
+    }
+  }
+
   /// Bild der Vorschau-Karte bearbeiten (abdecken, beschriften; bei
   /// Bildfragen auch Stellen/Bereiche). Die Abdeckung gilt für alle Stufen
-  /// der Frage, die dasselbe Bild tragen.
+  /// der Frage, die dasselbe Bild tragen. Kennt die Frage ihr Ausgangsbild
+  /// (KI-Abdeckungen, selbst erstellte Bildfrage), bleiben die bisherigen
+  /// Abdeckungen und Texte einzeln bearbeitbar.
   Future<void> _editPreviewImage(_GeneratedQuestion question, int tier) async {
     final card = question.tiers[tier];
     final base64 = card.imageBase64;
     if (base64 == null) return;
     final mode = _targetModeFor(card.type);
+    final base = question.imageBase;
+    final editable = base != null && base64 == question.sharedImage;
     final result = await showImageEditor(
       context,
-      base64Decode(base64),
+      editable ? base : base64Decode(base64),
       targetMode: mode,
       targets: card.imageTargets ?? const [],
+      edits: editable ? question.imageEdits : const [],
     );
     if (result == null || !mounted) return;
-    final newBase64 = result.imageChanged ? base64Encode(result.bytes) : null;
+    // Vom Ausgangsbild aus ist das Ergebnis immer das neue Bild (auch wenn
+    // alle Abdeckungen entfernt wurden); sonst nur, wenn sich etwas änderte.
+    final newBase64 = editable || result.imageChanged ? base64Encode(result.bytes) : null;
     setState(() {
       for (var i = 0; i < question.tiers.length; i++) {
         final t = question.tiers[i];
@@ -357,6 +451,16 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           imageBase64: t.imageBase64 == base64 ? newBase64 : null,
           imageTargets: i == tier && mode != null ? result.targets : null,
         );
+      }
+      if (editable) {
+        question
+          ..imageEdits = result.edits
+          ..sharedImage = newBase64;
+      } else if (newBase64 != null) {
+        question
+          ..imageBase = base64Decode(base64)
+          ..imageEdits = result.edits
+          ..sharedImage = newBase64;
       }
       _editRevision++;
     });
@@ -387,8 +491,12 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
       imageBase64: base64Encode(result.bytes),
       imageTargets: result.targets,
     );
+    final question = _GeneratedQuestion([card], manual: true)
+      ..imageBase = image
+      ..imageEdits = result.edits
+      ..sharedImage = card.imageBase64;
     setState(() {
-      _questions = [...?_questions, _GeneratedQuestion([card], manual: true)];
+      _questions = [...?_questions, question];
       _previewIndex = _flat.length - 1;
       _error = null;
     });

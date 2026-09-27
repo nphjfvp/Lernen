@@ -842,6 +842,7 @@ Sprache der Vorlage.
     String? examContext,
     List<List<Map<String, dynamic>>>? previousQuestions,
     String? instruction,
+    bool coordinateGrid = false,
   }) async {
     final count = questionCount < 1 ? 1 : questionCount;
     final tierLines = [
@@ -876,6 +877,16 @@ Sprache der Vorlage.
       }
       if (focus.isNotEmpty) buffer.writeln('- Worum es gehen soll: $focus');
       if (answer.isNotEmpty) buffer.writeln('- Erwartete Antwort/Fakt: $answer');
+    }
+    if (coordinateGrid) {
+      buffer
+        ..writeln()
+        ..writeln(focusImageBytes != null
+            ? 'Hinweis: Der markierte Ausschnitt (zweites Bild) trägt ein Koordinatenraster in Zehnteln '
+                '(0.1 … 0.9 an den Rändern) – lies Positionen für Bildfragen daran ab. Das Raster gehört '
+                'nicht zum Inhalt.'
+            : 'Hinweis: Das Bild trägt ein Koordinatenraster in Zehnteln (0.1 … 0.9 an den Rändern) – lies '
+                'Positionen für Bildfragen daran ab. Das Raster gehört nicht zum Inhalt.');
     }
     if (examContext != null && examContext.trim().isNotEmpty) {
       buffer
@@ -1046,23 +1057,35 @@ Antworte in der Sprache der Vorlage.
         QuestionType.diagramLabel =>
           'Zieltyp "diagram_label" (Bild beschriften): nur für ein Bild mit '
               'mehreren beschriftbaren Stellen (Diagramm, Skizze, Aufbau, '
-              'Schaltbild). "targets" enthält je Stelle die Beschriftung und ihre '
-              'Position relativ zum Bild: x und y von 0 bis 1, Ursprung oben links '
-              '(beziehe dich auf den markierten Ausschnitt, falls es einen gibt, '
-              'sonst auf die ganze Seite). Stehen die Beschriftungen schon im '
-              'Bild, zeige genau auf die beschriftete Stelle (sie wird später '
-              'abgedeckt). 2 bis 6 Stellen, jede Beschriftung kurz. '
-              'Antwortformat: {"front": "Beschrifte ...", "targets": '
-              '[{"label": "...", "x": 0.3, "y": 0.4}]}',
+              'Schaltbild, Prozess). Alle Koordinaten relativ zum Bild (markierter '
+              'Ausschnitt, falls es einen gibt, sonst die ganze Seite), von 0 bis 1, '
+              'Ursprung oben links – lies sie am eingezeichneten Koordinatenraster '
+              'ab. "targets" enthält je Stelle die Beschriftung ("label"). Steht '
+              'die Beschriftung schon als Text im Bild, gib "box" = [links, oben, '
+              'rechts, unten] an: ein ENGER Kasten genau um diesen Text – er wird '
+              'automatisch weiß abgedeckt, und genau dort beschriftet der Lernende. '
+              'Ohne Text im Bild stattdessen "x" und "y" = Mittelpunkt der gemeinten '
+              'Struktur. Stellen, deren Reihenfolge egal ist (z.B. mehrere '
+              'Inputs/Eingänge, gleichrangige Elemente einer Aufzählung), bekommen '
+              'denselben "group"-Namen (z.B. "Input") – dann zählt jede dieser '
+              'Beschriftungen an jeder dieser Stellen. "covers" (optional): weitere '
+              'Kästen [links, oben, rechts, unten] um Text, der die Lösung verraten '
+              'würde (Legende, Überschrift, Erklärtext). 2 bis 8 Stellen, jede '
+              'Beschriftung kurz, genau wie im Bild geschrieben. Antwortformat: '
+              '{"front": "Beschrifte ...", "targets": [{"label": "...", "box": '
+              '[0.10, 0.20, 0.24, 0.25], "group": "Input"}, {"label": "...", "x": '
+              '0.6, "y": 0.5}], "covers": [[0.70, 0.05, 0.95, 0.12]]}',
         QuestionType.markImage =>
           'Zieltyp "mark_image" (Bild markieren): eine Frage, deren Antwort '
               'genau EINE Stelle im Bild ist ("Wo liegt/befindet sich …?"). '
-              '"targets" enthält den richtigen Bereich als Rechteck relativ zum '
-              'Bild: x und y = Mittelpunkt, w und h = Breite und Höhe, alles von 0 '
-              'bis 1, Ursprung oben links (markierter Ausschnitt, falls es einen '
-              'gibt, sonst die ganze Seite). "back" sagt kurz, was dort zu sehen '
-              'ist. Antwortformat: {"front": "Wo ...?", "back": "...", '
-              '"targets": [{"x": 0.5, "y": 0.4, "w": 0.2, "h": 0.15}]}',
+              '"targets" enthält den richtigen Bereich als Kasten "box" = [links, '
+              'oben, rechts, unten], relativ zum Bild von 0 bis 1, Ursprung oben '
+              'links (markierter Ausschnitt, falls es einen gibt, sonst die ganze '
+              'Seite) – lies ihn am eingezeichneten Koordinatenraster ab. Steht die '
+              'Antwort als Beschriftung im Bild, gib unter "covers" einen Kasten um '
+              'diesen Text an, damit er abgedeckt wird. "back" sagt kurz, was dort '
+              'zu sehen ist. Antwortformat: {"front": "Wo ...?", "back": "...", '
+              '"targets": [{"box": [0.40, 0.30, 0.60, 0.45]}], "covers": []}',
       };
 
   /// Erster Schritt der Schwierigkeits-Eskalation (siehe
@@ -1192,6 +1215,53 @@ Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
     }
     final raw = await _complete(_checkFillBlankSystemPrompt, buffer.toString(), temperature: 0);
     return parseBlankVerdicts(_parseJsonObject(raw), solutions.length);
+  }
+
+  static const _checkDiagramLabelSystemPrompt = '''
+Du prüfst, wie ein Lernender die Stellen in einer Abbildung beschriftet hat
+(Lernfrage "Bild beschriften"). Je Stelle bekommst du, welche Beschriftung
+dort erwartet wird, und was der Lernende eingetippt hat. Geprüft wird Wissen,
+NICHT Rechtschreibung.
+
+Eine Stelle ist RICHTIG, wenn die Eingabe erkennbar die erwartete
+Beschriftung meint:
+1. Rechtschreib- oder Tippfehler, auch mehrere ("Mitokondrium",
+   "Zellmebran").
+2. Synonym, gleichwertiger Fachbegriff, Abkürzung oder Langform,
+   Singular/Plural, andere Wortform, deutsch/englisch ("ER" für
+   "endoplasmatisches Retikulum", "Nucleus" für "Zellkern").
+3. Austauschbare Stellen: stehen mehrere erlaubte Beschriftungen zur Auswahl
+   ("eine von …"), genügt jede davon – aber jede nur EINMAL innerhalb der
+   angegebenen Gruppe.
+
+FALSCH ist eine Stelle, wenn die Eingabe etwas anderes meint, leer ist oder
+erkennbar geraten ist. Im Zweifel, ob der Lernende das Richtige meint: zu
+seinen Gunsten.
+
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences und ohne
+Text davor oder danach – genau ein Eintrag je Stelle, in derselben
+Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
+{"results": [{"correct": true, "note": "Tippfehler"}, {"correct": false, "note": "andere Struktur"}]}
+''';
+
+  /// Zweitmeinung für "Bild beschriften" mit eingetippten Beschriftungen –
+  /// nur für die Stellen, die der lokale Vergleich (inkl. kleiner
+  /// Tippfehler, AnswerChecker.diagramLabelZones) abgelehnt hat. Je Stelle:
+  /// die erlaubten Beschriftungen (bei austauschbaren Stellen mehrere) und
+  /// die Eingabe; [group] fasst austauschbare Stellen zusammen.
+  Future<List<BlankVerdict>> checkDiagramLabelAnswers({
+    required String question,
+    required List<({int zone, List<String> allowed, String answer, String group})> items,
+  }) async {
+    final buffer = StringBuffer()..writeln('Frage: $question');
+    for (final item in items) {
+      final allowed = item.allowed.map((a) => '"${a.trim()}"').join(' oder ');
+      final group = item.group.isEmpty ? '' : ' (Gruppe "${item.group}", austauschbar)';
+      final expected = item.allowed.length > 1 ? 'eine von $allowed' : allowed;
+      buffer.writeln('Stelle ${item.zone}$group: erwartet $expected – Eingabe "${item.answer.trim()}"');
+    }
+    final raw = await _complete(_checkDiagramLabelSystemPrompt, buffer.toString(), temperature: 0);
+    return parseBlankVerdicts(_parseJsonObject(raw), items.length);
   }
 
   /// Liest `{"results": [{"correct": true, "note": "…"}, …]}` – oder das

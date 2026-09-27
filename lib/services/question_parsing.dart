@@ -183,12 +183,14 @@ class QuestionParsing {
         // Vorgänger-App nennen die Ziele "targets", "diagram_labels" oder
         // "mark_regions").
         final targets = imageTargetsIn(entry) ?? const <ImageTarget>[];
+        final covers = imageCoversIn(entry);
         return {
           ...entry,
           'imageTargets': [
             for (final t in targets)
               if (type == QuestionType.markImage || t.label.isNotEmpty) t.toMap(),
           ],
+          if (covers.isNotEmpty) 'imageCovers': [for (final c in covers) c.toMap()],
         };
       case QuestionType.flashcard:
       case QuestionType.freeText:
@@ -203,6 +205,21 @@ class QuestionParsing {
       parseImageTargets(raw['targets']) ??
       parseImageTargets(raw['diagram_labels']) ??
       parseImageTargets(raw['mark_regions']);
+
+  /// Von der KI vorgeschlagene Abdeckungen (Kästen um Text im Bild, der die
+  /// Lösung verraten würde) – als `[links, oben, rechts, unten]` oder als
+  /// Rechteck-Map; ohne Fläche verworfen.
+  static List<ImageTarget> imageCoversIn(Map<String, dynamic> raw) {
+    final list = raw['imageCovers'] ?? raw['covers'];
+    if (list is! List) return const [];
+    return [
+      for (final c in list)
+        if (c is List)
+          ImageTarget.fromMap({'box': c})
+        else if (c is Map)
+          ImageTarget.fromMap(Map<String, dynamic>.from(c)),
+    ].where((c) => c.w > 0 && c.h > 0).toList();
+  }
 
   static bool _isComplete(Map<String, dynamic> raw, QuestionType type) {
     switch (type) {

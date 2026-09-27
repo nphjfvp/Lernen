@@ -1,3 +1,4 @@
+import 'package:flutter/painting.dart' show Rect;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/services/answer_checker.dart';
@@ -137,6 +138,75 @@ void main() {
     });
   });
 
+  group('AnswerChecker – austauschbare Stellen und Eintippen', () {
+    final card = _card(targets: const [
+      ImageTarget(x: 0.1, y: 0.2, label: 'Arbeit', group: 'Input'),
+      ImageTarget(x: 0.1, y: 0.4, label: 'Kapital', group: 'Input'),
+      ImageTarget(x: 0.1, y: 0.6, label: 'Boden', group: 'Input'),
+      ImageTarget(x: 0.9, y: 0.4, label: 'Produkt'),
+    ]);
+
+    test('innerhalb einer Gruppe ist die Reihenfolge egal', () {
+      final result = AnswerChecker.checkDiagramLabelTexts(card, {0: 'Boden', 1: 'Arbeit', 2: 'Kapital', 3: 'Produkt'});
+      expect(result.isCorrect, isTrue);
+    });
+
+    test('jede Beschriftung einer Gruppe zählt nur einmal; außerhalb der Gruppe zählt der Ort', () {
+      final zones = AnswerChecker.diagramLabelZones(card, {0: 'Arbeit', 1: 'Arbeit', 2: 'Kapital', 3: 'Boden'});
+      expect(zones.map((z) => z.correct), [true, false, true, false]);
+      expect(zones[1].allowed, ['Boden']); // die noch offene der Gruppe
+      expect(zones[3].allowed, ['Produkt']);
+    });
+
+    test('Zuordnen per Chip-Index nutzt dieselbe Regel', () {
+      // Stelle 0 bekommt "Kapital" (Index 1), Stelle 1 "Arbeit" (Index 0).
+      expect(AnswerChecker.checkDiagramLabel(card, {0: 1, 1: 0, 2: 2, 3: 3}).isCorrect, isTrue);
+    });
+
+    test('Eintippen: kleine Tippfehler zählen, ohne Toleranz nicht', () {
+      final typed = {0: 'Kapitl', 1: 'arbeit', 2: 'Boden', 3: 'Produckt'};
+      expect(AnswerChecker.checkDiagramLabelTexts(card, typed, tolerant: true).isCorrect, isTrue);
+      expect(AnswerChecker.checkDiagramLabelTexts(card, typed).isCorrect, isFalse);
+    });
+
+    test('ein genauer Treffer wird vor einem Tippfehler-Treffer vergeben', () {
+      final similar = _card(targets: const [
+        ImageTarget(x: 0.1, y: 0.1, label: 'Anode', group: 'Pol'),
+        ImageTarget(x: 0.2, y: 0.1, label: 'Anoden', group: 'Pol'),
+      ]);
+      // "Anodn" passt zu beiden – "Anode" ist aber genau vergeben.
+      final zones = AnswerChecker.diagramLabelZones(similar, {0: 'Anodn', 1: 'Anode'}, tolerant: true);
+      expect(zones.every((z) => z.correct), isTrue);
+    });
+
+    test('Lösungstext fasst austauschbare Stellen zusammen', () {
+      expect(AnswerChecker.diagramLabelSolution(card),
+          '1/2/3 = Arbeit, Kapital, Boden (beliebige Reihenfolge), 4 = Produkt');
+    });
+
+    test('Gruppe übersteht Speichern/Laden, KI-Kasten und Prozent-Koordinaten werden gelesen', () {
+      final loaded = Flashcard.fromMap(card.toMap());
+      expect(loaded.imageTargets!.first.group, 'Input');
+
+      final box = ImageTarget.fromMap({
+        'label': 'Kern',
+        'group': 'Innen',
+        'box': [0.2, 0.3, 0.4, 0.5],
+      });
+      expect(box.x, closeTo(0.3, 1e-9));
+      expect(box.y, closeTo(0.4, 1e-9));
+      expect(box.w, closeTo(0.2, 1e-9));
+      expect(box.group, 'Innen');
+
+      final percent = ImageTarget.fromMap({'x': 50, 'y': 25, 'label': 'P'});
+      expect(percent.x, closeTo(0.5, 1e-9));
+      expect(percent.y, closeTo(0.25, 1e-9));
+      final permille = ImageTarget.fromMap({'box': [100, 200, 300, 400]});
+      expect(permille.x, closeTo(0.2, 1e-9));
+      expect(permille.h, closeTo(0.2, 1e-9));
+    });
+  });
+
   group('AnswerChecker – Bild markieren', () {
     final card = _card(type: QuestionType.markImage, targets: const [
       ImageTarget(x: 0.5, y: 0.5, w: 0.2, h: 0.2),
@@ -206,6 +276,42 @@ void main() {
         'back': 'in der Mitte',
       })!;
       expect(fallback['type'], 'flashcard');
+    });
+
+    test('Frage erstellen: Kästen der Beschriftungen und weitere Abdeckungen werden abgedeckt', () {
+      final covers = <String, List<Rect>>{};
+      final cards = buildPageQuestionCards(
+        [
+          [
+            {
+              'type': 'diagram_label',
+              'front': 'Beschrifte',
+              'targets': [
+                {'label': 'Arbeit', 'box': [0.10, 0.20, 0.30, 0.25], 'group': 'Input'},
+                {'label': 'Produkt', 'x': 0.8, 'y': 0.5},
+              ],
+              'covers': [
+                [0.6, 0.0, 0.9, 0.1],
+              ],
+            },
+          ],
+        ],
+        moduleId: 'm1',
+        questionCount: 1,
+        tierCount: 1,
+        attachImageBase64: 'QklMRA==',
+        now: DateTime(2026, 9, 27),
+        coversOut: covers,
+      );
+      final card = cards.single.single;
+      final rects = covers[card.id]!;
+      // Weitere Abdeckung + Kasten der Beschriftung (der Punkt ohne Kasten nicht).
+      expect(rects, hasLength(2));
+      final label = rects.firstWhere((r) => r.center.dx < 0.5);
+      expect(label.left, lessThan(0.10)); // etwas größer als der Kasten
+      expect(label.right, greaterThan(0.30));
+      expect(card.imageTargets!.first.group, 'Input');
+      expect(card.imageTargets!.first.x, closeTo(0.2, 1e-9));
     });
 
     test('Frage erstellen: Bildfragen bekommen immer das Bild und ihre Ziele', () {

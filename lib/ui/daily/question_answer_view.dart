@@ -114,6 +114,17 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   final Map<int, int> _zoneToLabel = {};
   int? _selectedLabel;
 
+  /// Bild beschriften: statt die vorgegebenen Beschriftungen zuzuordnen
+  /// selbst eintippen (schwerer – Tippfehler zählen nicht, die KI prüft
+  /// nach, siehe [_checkDiagramLabelAnswer]).
+  bool _labelTyping = false;
+  late final List<TextEditingController> _labelInputs;
+
+  /// Nach dem Prüfen je Stelle das Ergebnis (austauschbare Stellen
+  /// berücksichtigt) und ggf. die Begründung der KI.
+  List<LabelZoneResult>? _labelResults;
+  List<String?>? _labelNotes;
+
   /// Bild markieren: angetippte Stelle, relativ zum Bild.
   Offset? _markTap;
 
@@ -203,6 +214,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     _blankControllers = List.generate(_blanks.length, (_) => TextEditingController());
     _pool = List.generate(_pairs.length, (i) => i)..shuffle();
     _labelPool = List.generate(_labelTargets.length, (i) => i)..shuffle();
+    _labelInputs = List.generate(_labelTargets.length, (_) => TextEditingController());
     if (widget.card.type == QuestionType.html) _setupWebView();
   }
 
@@ -267,7 +279,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   @override
   void dispose() {
     _freeTextController.dispose();
-    for (final c in _blankControllers) {
+    for (final c in [..._blankControllers, ..._labelInputs]) {
       c.dispose();
     }
     super.dispose();
@@ -328,7 +340,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.html:
         return false; // eigener build()-Zweig, siehe _buildHtmlQuestion.
       case QuestionType.diagramLabel:
-        return _labelPool.isEmpty && _labelTargets.isNotEmpty;
+        if (_labelTargets.isEmpty) return false;
+        return _labelTyping ? _labelInputs.every((c) => c.text.trim().isNotEmpty) : _labelPool.isEmpty;
       case QuestionType.markImage:
         return _markTap != null;
     }
@@ -367,7 +380,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.freeText:
         return _checkFreeTextAnswer();
       case QuestionType.diagramLabel:
-        return AnswerChecker.checkDiagramLabel(card, Map.of(_zoneToLabel));
+        return _checkDiagramLabelAnswer();
       case QuestionType.markImage:
         return AnswerChecker.checkMarkImage(card, _markTap?.dx, _markTap?.dy);
       case QuestionType.flashcard:
@@ -449,6 +462,52 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     return AnswerChecker.fillBlankResult(card, hits);
   }
 
+  /// Bild beschriften. Zuordnen: es zählt der Text der abgelegten
+  /// Beschriftung. Eintippen: lokal mit Tippfehler-Toleranz; lehnt das eine
+  /// Stelle ab, prüft die KI nach (Rechtschreibung egal, Synonyme,
+  /// Abkürzungen) – wie beim Lückentext kann sie nur nachträglich als
+  /// richtig werten. Austauschbare Stellen (gleiche Gruppe) nehmen jede
+  /// Beschriftung ihrer Gruppe, jede aber nur einmal.
+  Future<AnswerCheckResult> _checkDiagramLabelAnswer() async {
+    final card = widget.card;
+    final answers = _labelTyping
+        ? {for (var i = 0; i < _labelInputs.length; i++) i: _labelInputs[i].text}
+        : {for (final e in _zoneToLabel.entries) e.key: _labelTargets[e.value].label};
+    final zones = AnswerChecker.diagramLabelZones(card, answers, tolerant: _labelTyping);
+    final wrong = [for (var i = 0; i < zones.length; i++) if (!zones[i].correct) i];
+    final ai = _labelTyping && wrong.isNotEmpty ? _aiOrNull() : null;
+    if (ai != null) {
+      setState(() => _aiChecking = true);
+      try {
+        final verdicts = await ai.checkDiagramLabelAnswers(
+          question: card.front,
+          items: [
+            for (final z in wrong)
+              (zone: z + 1, allowed: zones[z].allowed, answer: answers[z] ?? '', group: _labelTargets[z].group),
+          ],
+        );
+        final notes = List<String?>.filled(zones.length, null);
+        for (final (k, z) in wrong.indexed) {
+          final verdict = verdicts.elementAtOrNull(k);
+          if (verdict == null) continue;
+          notes[z] = verdict.note;
+          if (verdict.correct) zones[z] = (correct: true, allowed: zones[z].allowed);
+        }
+        _labelNotes = notes;
+        _checkInfo = 'Von der KI nachgeprüft.';
+      } catch (e) {
+        _checkInfo = _aiFailedInfo(e);
+      } finally {
+        if (mounted) setState(() => _aiChecking = false);
+      }
+    }
+    _labelResults = zones;
+    return AnswerCheckResult(
+      isCorrect: zones.isNotEmpty && zones.every((z) => z.correct),
+      correctAnswerLabel: AnswerChecker.diagramLabelSolution(card),
+    );
+  }
+
   /// Sicherheitsnetz für Freitext/Lückentext: hält der Nutzer eine als falsch
   /// gewertete Antwort für richtig (Formulierung, Rechtschreibung, andere
   /// Reihenfolge – auch die KI kann danebenliegen), zählt sie als richtig.
@@ -458,6 +517,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     setState(() {
       _result = AnswerCheckResult(isCorrect: true, correctAnswerLabel: result.correctAnswerLabel);
       if (_blankHits != null) _blankHits = List.filled(_blankHits!.length, true);
+      _labelResults = _labelResults?.map((z) => (correct: true, allowed: z.allowed)).toList();
       _checkInfo = 'Von dir als richtig gewertet.';
     });
   }
@@ -467,7 +527,9 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       !widget.examMode &&
       _result != null &&
       !_result!.isCorrect &&
-      (widget.card.type == QuestionType.freeText || widget.card.type == QuestionType.fillBlank);
+      (widget.card.type == QuestionType.freeText ||
+          widget.card.type == QuestionType.fillBlank ||
+          (widget.card.type == QuestionType.diagramLabel && _labelTyping));
 
   AiService? _aiOrNull() {
     final settings = context.read<SettingsRepository?>()?.settings;
@@ -506,6 +568,9 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             ? [for (final e in _sourceToCategory.entries) '${_pairs[e.key].source} -> ${e.value}'].join('; ')
             : [for (final e in _zoneToSource.entries) '${_pairs[e.value].source} -> ${_pairs[e.key].target}'].join('; ');
       case QuestionType.diagramLabel:
+        if (_labelTyping) {
+          return [for (var i = 0; i < _labelInputs.length; i++) '${i + 1} = ${_labelInputs[i].text.trim()}'].join(', ');
+        }
         final zones = _zoneToLabel.keys.toList()..sort();
         return [for (final z in zones) '${z + 1} = ${_labelTargets[_zoneToLabel[z]!].label}'].join(', ');
       case QuestionType.markImage:
@@ -1112,11 +1177,40 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
   /// Stelle [zone] im Bild: leer eine nummerierte Markierung, belegt die
   /// abgelegte Beschriftung (verschiebbar, Antippen legt sie zurück).
+  Color? _zoneVerdict(AppColors c, int zone) {
+    final result = _checked ? _labelResults?.elementAtOrNull(zone) : null;
+    return result == null ? null : (result.correct ? c.good : c.danger);
+  }
+
+  /// Nummerierte Markierung einer Stelle (Eintippen bzw. noch leer).
+  Widget _zoneNumber(AppColors c, int zone, {bool highlighted = false}) {
+    final verdict = _zoneVerdict(c, zone);
+    return Container(
+      key: ValueKey('label-zone-$zone'),
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: highlighted ? c.accent : c.surface.withAlpha(235),
+        shape: BoxShape.circle,
+        border: Border.all(color: verdict ?? c.accent, width: 2),
+      ),
+      child: Text(
+        '${zone + 1}',
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: highlighted ? c.accentInk : (verdict ?? c.accentOnSoft),
+        ),
+      ),
+    );
+  }
+
   Widget _labelZone(AppColors c, int zone) {
+    if (_labelTyping) return _zoneNumber(c, zone);
     final assigned = _zoneToLabel[zone];
     final selected = _selectedLabel;
-    final Color? verdict =
-        _checked ? (AnswerChecker.labelZoneCorrect(widget.card, zone, assigned) ? c.good : c.danger) : null;
+    final Color? verdict = _zoneVerdict(c, zone);
     return DragTarget<int>(
       onWillAcceptWithDetails: (_) => !_checked,
       onAcceptWithDetails: (details) => _placeLabel(details.data, zone),
@@ -1137,45 +1231,56 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         }
         return GestureDetector(
           onTap: selected == null || _checked ? null : () => _placeLabel(selected, zone),
-          child: Container(
-            key: ValueKey('label-zone-$zone'),
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: highlighted ? c.accent : c.surface.withAlpha(235),
-              shape: BoxShape.circle,
-              border: Border.all(color: verdict ?? c.accent, width: 2),
-            ),
-            child: Text(
-              '${zone + 1}',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: highlighted ? c.accentInk : (verdict ?? c.accentOnSoft),
-              ),
-            ),
-          ),
+          child: _zoneNumber(c, zone, highlighted: highlighted),
         );
       },
     );
   }
 
+  /// Was an Stelle [zone] richtig (gewesen) wäre, als Text.
+  String _zoneSolution(int zone) {
+    final allowed = _labelResults?.elementAtOrNull(zone)?.allowed ?? [_labelTargets[zone].label];
+    return allowed.length > 1
+        ? 'eine von ${allowed.map((a) => '„$a“').join(', ')}'
+        : '„${allowed.firstOrNull ?? ''}“';
+  }
+
   Widget _buildDiagramLabel(AppColors c) {
     final bytes = _imageBytes;
     if (bytes == null) return const SizedBox.shrink();
-    final wrongZones = [
-      if (_checked)
-        for (var zone = 0; zone < _labelTargets.length; zone++)
-          if (!AnswerChecker.labelZoneCorrect(widget.card, zone, _zoneToLabel[zone])) zone,
-    ];
+    final groups = {for (final t in _labelTargets) if (t.group.trim().isNotEmpty) t.group.trim()};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Center(
+          child: SegmentedButton<bool>(
+            key: const ValueKey('label-mode'),
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: false, icon: Icon(Icons.drag_indicator, size: 18), label: Text('Zuordnen')),
+              ButtonSegment(value: true, icon: Icon(Icons.keyboard_outlined, size: 18), label: Text('Eintippen')),
+            ],
+            selected: {_labelTyping},
+            onSelectionChanged:
+                _checked || _aiChecking ? null : (value) => setState(() => _labelTyping = value.first),
+          ),
+        ),
+        const SizedBox(height: 8),
         Text(
-          'Ziehe die Beschriftungen auf die nummerierten Stellen im Bild – oder antippen und dann die Stelle antippen.',
+          _labelTyping
+              ? 'Schreib zu jeder Nummer, was dort hingehört – Rechtschreibung ist egal.'
+              : 'Ziehe die Beschriftungen auf die nummerierten Stellen im Bild – oder antippen und dann die Stelle antippen.',
           style: TextStyle(fontSize: 12.5, color: c.inkMuted),
         ),
+        if (groups.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Stellen derselben Gruppe (${groups.join(', ')}) sind austauschbar – dort zählt nur, dass alles '
+              'im richtigen Bereich steht, nicht die Reihenfolge.',
+              style: TextStyle(fontSize: 12, color: c.inkMuted),
+            ),
+          ),
         const SizedBox(height: 12),
         RelativeImage(
           bytes: bytes,
@@ -1190,6 +1295,12 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
           ],
         ),
         const SizedBox(height: 14),
+        if (_labelTyping) ..._buildLabelInputs(c) else ..._buildLabelPool(c),
+      ],
+    );
+  }
+
+  List<Widget> _buildLabelPool(AppColors c) => [
         DragTarget<int>(
           onWillAcceptWithDetails: (details) => !_checked && !_labelPool.contains(details.data),
           onAcceptWithDetails: (details) => _returnLabel(details.data),
@@ -1220,17 +1331,59 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             ),
           ),
         ),
-        for (final zone in wrongZones)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              'Stelle ${zone + 1}: richtig ist „${_labelTargets[zone].label}“',
-              style: TextStyle(fontSize: 12.5, color: c.good, fontWeight: FontWeight.w600),
-            ),
-          ),
-      ],
-    );
-  }
+        if (_checked)
+          for (var zone = 0; zone < _labelTargets.length; zone++)
+            if (_labelResults?.elementAtOrNull(zone)?.correct == false)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Stelle ${zone + 1}: richtig ist ${_zoneSolution(zone)}',
+                  style: TextStyle(fontSize: 12.5, color: c.good, fontWeight: FontWeight.w600),
+                ),
+              ),
+      ];
+
+  /// Eintippen: je Stelle ein Feld; nach dem Prüfen ✓/✗, die richtige
+  /// Beschriftung (auch wenn nur dank Tippfehler-Toleranz/KI richtig) und
+  /// ggf. die Begründung der KI.
+  List<Widget> _buildLabelInputs(AppColors c) => [
+        for (var zone = 0; zone < _labelTargets.length; zone++)
+          Builder(builder: (context) {
+            final result = _checked ? _labelResults?.elementAtOrNull(zone) : null;
+            final typed = _labelInputs[zone].text;
+            final exact = result != null &&
+                result.correct &&
+                result.allowed.any((a) => AnswerChecker.answerExactlyMatches(typed, a));
+            final note = _checked ? _labelNotes?.elementAtOrNull(zone) : null;
+            final helper = [
+              if (result != null && !exact) 'Richtig: ${_zoneSolution(zone)}',
+              if (note != null) 'KI: $note',
+            ].join(' · ');
+            final group = _labelTargets[zone].group.trim();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: TextField(
+                key: ValueKey('label-input-$zone'),
+                controller: _labelInputs[zone],
+                enabled: !_checked && !_aiChecking,
+                textInputAction: zone == _labelTargets.length - 1 ? TextInputAction.done : TextInputAction.next,
+                decoration: InputDecoration(
+                  labelText: group.isEmpty ? 'Stelle ${zone + 1}' : 'Stelle ${zone + 1} · $group',
+                  filled: true,
+                  fillColor: result == null ? c.surfaceAlt : (result.correct ? c.goodSoft : c.dangerSoft),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  suffixIcon: result == null
+                      ? null
+                      : Icon(result.correct ? Icons.check_circle : Icons.cancel,
+                          color: result.correct ? c.good : c.danger, size: 20),
+                  helperText: helper.isEmpty ? null : helper,
+                  helperMaxLines: 3,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            );
+          }),
+      ];
 
   /// Bild markieren: Antippen setzt die Markierung (bis zum Prüfen
   /// verschiebbar); danach erscheinen die richtigen Bereiche grün.

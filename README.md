@@ -226,27 +226,47 @@ engerem Fokus statt Feature-Fülle.
   Vorgänger-App übernommen, `QuestionType.diagramLabel`/`markImage`). Beide
   nutzen das Bild der Karte (`Flashcard.imageBase64`) und dieselbe Liste
   `Flashcard.imageTargets` mit Koordinaten relativ zum Bild (0..1, siehe
-  `ImageTarget`): **Bild beschriften** – nummerierte Stellen im Bild, die
-  Beschriftungen liegen gemischt darunter und werden per Ziehen oder
-  Antippen (Beschriftung, dann Stelle) zugeordnet; gleich lautende
-  Beschriftungen sind austauschbar, falsche Stellen zeigen danach die
-  richtige Beschriftung. **Bild markieren** – eine Stelle im Bild antippen;
+  `ImageTarget`): **Bild beschriften** – nummerierte Stellen im Bild; zwei
+  Wege, umschaltbar über "Zuordnen / Eintippen": die Beschriftungen liegen
+  gemischt darunter und werden per Ziehen oder Antippen (Beschriftung, dann
+  Stelle) zugeordnet – oder man tippt sie selbst ein (schwerer; kleine
+  Tippfehler zählen lokal, bei Abweichungen prüft die KI nach –
+  Rechtschreibung, Synonyme, Abkürzungen egal, sie kann nur nachträglich als
+  richtig werten; "Als richtig werten" gibt es auch hier). **Austauschbare
+  Stellen:** Stellen mit derselben Gruppe (`ImageTarget.group`, z.B. fünf
+  Inputs eines Prozesses) nehmen jede Beschriftung ihrer Gruppe, jede aber
+  nur einmal – dort zählt nur der richtige Bereich, nicht die Reihenfolge
+  (`AnswerChecker.diagramLabelZones`). Gleich lautende Beschriftungen sind
+  ohnehin austauschbar; falsche Stellen zeigen danach, was dort richtig
+  gewesen wäre. **Bild markieren** – eine Stelle im Bild antippen;
   richtig, wenn sie in einem der hinterlegten Bereiche liegt (Rechtecke,
   mit etwas Toleranz; Punkte ohne Größe bekommen eine Mindestgröße). Die
   Formate der Vorgänger-App (`diagram_labels`, `mark_regions` mit Kreis
   bzw. Vieleck) werden beim Import/JSON-Einfügen gelesen. Ohne Bild oder
   ohne Stellen wird so eine Karte als Karteikarte gezeigt. Erstellen:
-  in **Frage erstellen** als Fragetyp wählbar (die KI setzt die Stellen
-  selbst, "KI entscheidet" wählt sie nie von allein) oder unter
-  **"Bildfrage selbst erstellen"** komplett von Hand.
+  in **Frage erstellen** als Fragetyp wählbar ("KI entscheidet" wählt sie
+  nie von allein) oder unter **"Bildfrage selbst erstellen"** komplett von
+  Hand. Die KI bekommt dafür das Bild mit einem **Koordinatenraster** in
+  Zehnteln (`drawCoordinateGrid`, nur für die Anfrage), liefert je Stelle
+  den Kasten um die im Bild stehende Beschriftung (`"box"`), Gruppen für
+  austauschbare Stellen und weitere verräterische Textstellen
+  (`"covers"`). Diese Kästen werden **automatisch weiß abgedeckt** – als
+  bearbeitbare Abdeckungen: in der Vorschau mit "Bild & Stellen bearbeiten"
+  lassen sie sich verschieben, vergrößern oder entfernen, genauso die
+  Stellen selbst (die KI liegt nicht immer genau).
 - **Bild-Editor** (`lib/ui/widgets/image_editor_screen.dart`) – Bilder von
   Karten lassen sich bearbeiten: **Abdecken** (Rahmen ziehen, weiß oder
   schwarz – z.B. Beschriftungen, die bei einer Zuordnen-/Beschriften-Frage
-  sonst die Antwort verraten) und **Text** (antippen, Beschriftung
-  eingeben). Beides wird in Originalauflösung fest ins Bild eingerechnet
-  (`lib/services/image_edit.dart`); Rückgängig ist möglich. Bei Bildfragen
-  setzt derselbe Editor die **Stellen** (antippen + Beschriftung) bzw. den
-  **Bereich** (Rahmen ziehen). Erreichbar in der Vorschau von "Frage
+  sonst die Antwort verraten) und **Text** (antippen, Text und
+  **Schriftgröße** wählen). Bei Bildfragen setzt derselbe Editor die
+  **Stellen** (antippen, Beschriftung und optional Gruppe) bzw. den
+  **Bereich** (Rahmen ziehen). Alles bleibt bis zum Übernehmen einzeln
+  bearbeitbar: **ziehen verschiebt** (Abdeckungen, Texte, Stellen,
+  Bereiche), ein ausgewählter Rahmen lässt sich an der Ecke **vergrößern/
+  verkleinern**, umfärben oder entfernen, Texte und Stellen öffnen sich per
+  Antippen zum Ändern; "Rückgängig" nimmt jeden Schritt zurück. Abdeckungen
+  und Text werden beim Übernehmen in Originalauflösung ins Bild
+  eingerechnet (`lib/services/image_edit.dart`). Erreichbar in der Vorschau von "Frage
   erstellen" ("Bild bearbeiten" / "Bild & Stellen bearbeiten"), in der
   Kartenliste (Knopf "Bild"/"Stellen"/"Bereich") und direkt beim Lernen
   (Stift-Knopf oben rechts am Bild im Daily Quiz, Üben und Sprint – nicht in

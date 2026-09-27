@@ -136,6 +136,47 @@ void main() {
       expect(system, isNot(contains('{{')));
     });
 
+    test('Bildfragen: Raster-Hinweis, Kästen um Beschriftungen, Gruppen und Abdeckungen', () async {
+      Map<String, dynamic>? capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return _chatResponse(jsonEncode({
+          'questions': [
+            {
+              'flashcards': [
+                {
+                  'type': 'diagram_label',
+                  'front': 'Beschrifte',
+                  'targets': [
+                    {'label': 'Arbeit', 'box': [0.1, 0.2, 0.2, 0.25], 'group': 'Input'},
+                  ],
+                  'covers': [
+                    [0.7, 0.05, 0.95, 0.12],
+                  ],
+                },
+              ],
+            },
+          ],
+        }));
+      });
+      final ai = AiService(apiKey: 'key', model: 'vision-model', client: client);
+
+      final groups = await ai.generateQuestionsFromPage(
+        pageImageBytes: Uint8List.fromList([1]),
+        pageText: 'Seitentext',
+        tiers: const [(level: 'Leicht', type: QuestionType.diagramLabel)],
+        coordinateGrid: true,
+      );
+
+      final system = systemOf(capturedBody!);
+      expect(system, contains('"box"'));
+      expect(system, contains('"group"'));
+      expect(system, contains('"covers"'));
+      expect(userContentOf(capturedBody!)[0]['text'] as String, contains('Koordinatenraster'));
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(groups.single.single)!;
+      expect(QuestionParsing.imageCoversIn(fixed).single.x, closeTo(0.825, 1e-9));
+    });
+
     test('Stufe ohne Typ: KI wählt frei und bekommt alle Formatvorgaben', () async {
       Map<String, dynamic>? capturedBody;
       final client = MockClient((request) async {

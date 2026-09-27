@@ -736,6 +736,59 @@ void main() {
       expect(find.text('Stelle 1: richtig ist „Zellkern“'), findsOneWidget);
     });
 
+    testWidgets('Bild beschriften eintippen: Tippfehler und vertauschte Gruppe zählen', (tester) async {
+      bool? reported;
+      final card = await imageCard(tester, QuestionType.diagramLabel, const [
+        ImageTarget(x: 0.2, y: 0.3, label: 'Arbeit', group: 'Input'),
+        ImageTarget(x: 0.2, y: 0.7, label: 'Kapital', group: 'Input'),
+        ImageTarget(x: 0.8, y: 0.5, label: 'Produkt'),
+      ]);
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reported = isCorrect));
+      await showImage(tester);
+
+      await tester.tap(find.text('Eintippen'));
+      await tester.pump();
+      // Im Eintipp-Modus sind die Beschriftungen nicht vorgegeben.
+      expect(find.text('Kapital'), findsNothing);
+      await tester.enterText(find.byKey(const ValueKey('label-input-0')), 'Kapitall');
+      await tester.enterText(find.byKey(const ValueKey('label-input-1')), 'arbeit');
+      await tester.enterText(find.byKey(const ValueKey('label-input-2')), 'Produkt');
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Richtig!'), findsOneWidget);
+      await tester.tap(find.text('Weiter'));
+      await tester.pumpAndSettle();
+      expect(reported, isTrue);
+    });
+
+    testWidgets('Bild beschriften eintippen: falsche Stelle zeigt die Lösung, "Als richtig werten" möglich',
+        (tester) async {
+      bool? reported;
+      final card = await imageCard(tester, QuestionType.diagramLabel, const [
+        ImageTarget(x: 0.25, y: 0.5, label: 'Zellkern'),
+        ImageTarget(x: 0.75, y: 0.5, label: 'Mitochondrium'),
+      ]);
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reported = isCorrect));
+      await showImage(tester);
+
+      await tester.tap(find.text('Eintippen'));
+      await tester.pump();
+      await tester.enterText(find.byKey(const ValueKey('label-input-0')), 'Zellkern');
+      await tester.enterText(find.byKey(const ValueKey('label-input-1')), 'Kraftwerk der Zelle');
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Nicht ganz.'), findsOneWidget);
+      expect(find.text('Richtig: „Mitochondrium“'), findsOneWidget);
+
+      await tester.tap(find.text('Als richtig werten'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Weiter'));
+      await tester.pumpAndSettle();
+      expect(reported, isTrue);
+    });
+
     testWidgets('Bild markieren: Treffer und Fehlschuss', (tester) async {
       for (final (fx, expected) in [(0.5, 'Richtig!'), (0.1, 'Nicht ganz.')]) {
         final card = await imageCard(tester, QuestionType.markImage, const [

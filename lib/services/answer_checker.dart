@@ -13,13 +13,17 @@ class AnswerCheckResult {
   final String correctAnswerLabel;
 }
 
+/// Bild beschriften, je Stelle: ob sie stimmt und welche Beschriftungen dort
+/// richtig (gewesen) wären – bei austauschbaren Stellen die noch offenen der
+/// Gruppe, sonst genau eine.
+typedef LabelZoneResult = ({bool correct, List<String> allowed});
+
 /// Prüft eine Nutzer-Antwort automatisch gegen die hinterlegte Lösung, je
 /// nach Fragetyp – reine Logik, keine Seiteneffekte. Portiert aus der
 /// Vorgänger-App (quiz-engine.js), inklusive der Tippfehlertoleranz für
 /// Freitext-/Lückentext-Antworten (kleine Fehler sollen nicht als falsch
-/// zählen). Deckt bewusst nur die Typen ab, die diese App unterstützt –
-/// math_formula, diagram_label und mark_image aus der Vorgänger-App fehlen
-/// hier absichtlich.
+/// zählen). Den Formel-Fragetyp (math_formula) der Vorgänger-App gibt es
+/// hier bewusst nicht.
 class AnswerChecker {
   AnswerChecker._();
 
@@ -213,29 +217,94 @@ class AnswerChecker {
 
   static bool _hasImage(Flashcard q) => (q.imageBase64 ?? '').isNotEmpty;
 
-  /// Bild beschriften: ob an Stelle [zone] die Beschriftung [label] liegt
-  /// (beides Indizes in [labelTargets]). Gleich lautende Beschriftungen sind
-  /// austauschbar, deshalb zählt der Text.
-  static bool labelZoneCorrect(Flashcard q, int zone, int? label) {
+  /// Bild beschriften: wertet die Antworten je Stelle aus ([answers]: Index
+  /// in [labelTargets] -> Text). Stellen derselben [ImageTarget.group] sind
+  /// austauschbar – jede Beschriftung der Gruppe zählt auf jeder ihrer
+  /// Stellen, aber nur einmal. Gleich lautende Beschriftungen sind ohnehin
+  /// austauschbar (es zählt der Text). [tolerant] (beim Eintippen) lässt
+  /// kleine Tippfehler gelten, sonst zählt der genaue Text (Zuordnen).
+  /// Liefert je Stelle, ob sie stimmt und was dort richtig gewesen wäre.
+  static List<LabelZoneResult> diagramLabelZones(Flashcard q, Map<int, String> answers, {bool tolerant = false}) {
     final targets = labelTargets(q);
-    if (label == null || zone < 0 || zone >= targets.length || label < 0 || label >= targets.length) return false;
-    return targets[label].label.trim() == targets[zone].label.trim();
+    final results = List<LabelZoneResult>.generate(
+      targets.length,
+      (i) => (correct: false, allowed: [targets[i].label.trim()]),
+    );
+    // Gruppen: benannte Gruppe oder jede Stelle für sich.
+    final groups = <String, List<int>>{};
+    for (var i = 0; i < targets.length; i++) {
+      final group = targets[i].group.trim();
+      groups.putIfAbsent(group.isEmpty ? '\u0000$i' : group, () => []).add(i);
+    }
+    for (final zones in groups.values) {
+      final open = [for (final z in zones) targets[z].label.trim()];
+      final pending = [...zones];
+      // Erst genaue Treffer vergeben, dann (beim Eintippen) Tippfehler – so
+      // nimmt ein ungenauer Treffer keinem genauen die Beschriftung weg.
+      for (final exact in [true, if (tolerant) false]) {
+        for (final zone in [...pending]) {
+          final answer = answers[zone] ?? '';
+          final hit = open.indexWhere(
+              (label) => exact ? answerExactlyMatches(answer, label) : answerMatches(answer, label));
+          if (hit < 0) continue;
+          results[zone] = (correct: true, allowed: [open[hit]]);
+          open.removeAt(hit);
+          pending.remove(zone);
+        }
+      }
+      // Was an den falschen Stellen richtig gewesen wäre: bei einer Gruppe
+      // eine der noch offenen Beschriftungen.
+      for (final zone in pending) {
+        if (zones.length > 1) results[zone] = (correct: false, allowed: List.of(open));
+      }
+    }
+    return results;
   }
 
-  /// "1 = Zellkern, 2 = Mitochondrium" – die Nummern der Stellen im Bild.
-  static String diagramLabelSolution(Flashcard q) =>
-      [for (final (i, t) in labelTargets(q).indexed) '${i + 1} = ${t.label}'].join(', ');
+  /// "1 = Zellkern, 2 = Mitochondrium" – die Nummern der Stellen im Bild;
+  /// austauschbare Stellen zusammen: "3/4 = Eingang, Ausgang (beliebig)".
+  static String diagramLabelSolution(Flashcard q) {
+    final targets = labelTargets(q);
+    final parts = <String>[];
+    final seenGroups = <String>{};
+    for (var i = 0; i < targets.length; i++) {
+      final group = targets[i].group.trim();
+      if (group.isEmpty) {
+        parts.add('${i + 1} = ${targets[i].label}');
+        continue;
+      }
+      if (!seenGroups.add(group)) continue;
+      final members = [
+        for (var j = 0; j < targets.length; j++)
+          if (targets[j].group.trim() == group) j,
+      ];
+      if (members.length == 1) {
+        parts.add('${i + 1} = ${targets[i].label}');
+      } else {
+        parts.add('${members.map((m) => m + 1).join('/')} = '
+            '${members.map((m) => targets[m].label).join(', ')} (beliebige Reihenfolge)');
+      }
+    }
+    return parts.join(', ');
+  }
 
-  /// Bild beschriften: [zoneToLabel] – für jede Stelle (Index in
-  /// [labelTargets]) der Index der dort abgelegten Beschriftung.
+  /// Bild beschriften per Zuordnen: [zoneToLabel] – für jede Stelle (Index
+  /// in [labelTargets]) der Index der dort abgelegten Beschriftung.
   static AnswerCheckResult checkDiagramLabel(Flashcard q, Map<int, int> zoneToLabel) {
     final targets = labelTargets(q);
-    if (targets.isEmpty) return const AnswerCheckResult(isCorrect: false, correctAnswerLabel: '');
-    var hits = 0;
-    for (var zone = 0; zone < targets.length; zone++) {
-      if (labelZoneCorrect(q, zone, zoneToLabel[zone])) hits++;
-    }
-    return AnswerCheckResult(isCorrect: hits == targets.length, correctAnswerLabel: diagramLabelSolution(q));
+    return checkDiagramLabelTexts(q, {
+      for (final e in zoneToLabel.entries)
+        if (e.value >= 0 && e.value < targets.length) e.key: targets[e.value].label,
+    });
+  }
+
+  /// Bild beschriften mit Text je Stelle; [tolerant] fürs Eintippen.
+  static AnswerCheckResult checkDiagramLabelTexts(Flashcard q, Map<int, String> answers, {bool tolerant = false}) {
+    final zones = diagramLabelZones(q, answers, tolerant: tolerant);
+    return AnswerCheckResult(
+      isCorrect: zones.isNotEmpty && zones.every((z) => z.correct),
+      correctAnswerLabel: diagramLabelSolution(q),
+    );
   }
 
   /// Bild markieren: richtig, wenn der Tipp ([x]/[y] relativ zum Bild) in

@@ -81,3 +81,47 @@ ui.Rect labelBox(ui.Paragraph paragraph, {required ui.Offset center, required do
   final height = paragraph.height + fontSize * 0.3;
   return ui.Rect.fromCenter(center: center, width: width, height: height);
 }
+
+/// Zeichnet ein feines Koordinatenraster in Zehnteln (mit 0.1 … 0.9 an den
+/// Rändern) über das Bild – nur für die KI, damit sie Positionen für
+/// Bildfragen genauer ablesen kann (ohne Raster schätzen Sprachmodelle
+/// Koordinaten oft grob daneben). `null`, wenn das Bild nicht lesbar ist.
+Future<Uint8List?> drawCoordinateGrid(Uint8List bytes) async {
+  try {
+    final image = (await (await ui.instantiateImageCodec(bytes)).getNextFrame()).image;
+    final w = image.width.toDouble();
+    final h = image.height.toDouble();
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawImage(image, ui.Offset.zero, ui.Paint());
+    final line = ui.Paint()
+      ..color = const ui.Color(0x99E6007E)
+      ..strokeWidth = (w < h ? w : h) / 500 + 0.5;
+    final fontSize = ((w < h ? w : h) * 0.028).clamp(9.0, 28.0);
+    for (var i = 1; i < 10; i++) {
+      final x = w * i / 10;
+      final y = h * i / 10;
+      canvas.drawLine(ui.Offset(x, 0), ui.Offset(x, h), line);
+      canvas.drawLine(ui.Offset(0, y), ui.Offset(w, y), line);
+      final label = '0.$i';
+      for (final (px, py) in [(x, fontSize * 0.9), (fontSize * 1.2, y)]) {
+        final builder = ui.ParagraphBuilder(ui.ParagraphStyle(fontSize: fontSize))
+          ..pushStyle(ui.TextStyle(color: const ui.Color(0xFFE6007E), fontSize: fontSize, fontWeight: ui.FontWeight.w700))
+          ..addText(label);
+        final paragraph = builder.build()..layout(const ui.ParagraphConstraints(width: 200));
+        final box = ui.Rect.fromCenter(
+          center: ui.Offset(px, py),
+          width: paragraph.longestLine + fontSize * 0.4,
+          height: paragraph.height + fontSize * 0.1,
+        );
+        canvas.drawRect(box, ui.Paint()..color = const ui.Color(0xD9FFFFFF));
+        canvas.drawParagraph(paragraph, box.topLeft + ui.Offset(fontSize * 0.2, fontSize * 0.05));
+      }
+    }
+    final result = await recorder.endRecording().toImage(image.width, image.height);
+    final data = await result.toByteData(format: ui.ImageByteFormat.png);
+    return data?.buffer.asUint8List();
+  } catch (_) {
+    return null;
+  }
+}
