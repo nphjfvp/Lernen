@@ -825,6 +825,52 @@ void main() {
       expect(find.textContaining('Wo liegt der Kern?'), findsOneWidget);
     });
 
+    testWidgets('unnötiges Bild beim Lernen entfernen', (tester) async {
+      final png = (await tester.runAsync(() => _png(200, 100)))!;
+      final card = Flashcard(
+        id: 'rm',
+        moduleId: 'm1',
+        front: 'Was ist ATP?',
+        back: 'Energieträger',
+        createdAt: DateTime(2026, 9, 27),
+        due: DateTime(2026, 9, 27),
+        imageBase64: base64Encode(png),
+      );
+      var called = false;
+      Uint8List? saved = Uint8List(1);
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: Column(
+            children: [
+              Expanded(
+                child: QuestionAnswerView(
+                  card: card,
+                  isNew: false,
+                  onComplete: ({selfGrade, isCorrect}) {},
+                  onImageEdited: (bytes) async {
+                    called = true;
+                    saved = bytes;
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pumpAndSettle();
+      expect(find.byType(Image), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Bild entfernen'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Entfernen'));
+      await tester.pumpAndSettle();
+      expect(called, isTrue);
+      expect(saved, isNull);
+      expect(find.byType(Image), findsNothing);
+    });
+
     testWidgets('Bild beim Lernen bearbeiten: abgedecktes Bild wird gemeldet und angezeigt', (tester) async {
       final png = (await tester.runAsync(() => _png(200, 100)))!;
       final card = Flashcard(

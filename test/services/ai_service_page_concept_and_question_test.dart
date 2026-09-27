@@ -136,6 +136,26 @@ void main() {
       expect(system, isNot(contains('{{')));
     });
 
+    test('Anzahl "KI entscheidet": kein fester Wert, Obergrenze im Prompt', () async {
+      Map<String, dynamic>? capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return _chatResponse(jsonEncode({'questions': []}));
+      });
+      final ai = AiService(apiKey: 'key', model: 'vision-model', client: client);
+      await ai.generateQuestionsFromPage(
+        pageImageBytes: Uint8List.fromList([1]),
+        pageText: 'Seitentext',
+        tiers: const [(level: 'Leicht', type: null)],
+        questionCount: 0,
+      );
+      final system = systemOf(capturedBody!);
+      expect(system, contains('Entscheide selbst, wie viele Fragen'));
+      expect(system, contains('höchstens ${AiService.maxAutoPageQuestions}'));
+      expect(system, isNot(contains('Erzeuge GENAU')));
+      expect(system, isNot(contains('{{')));
+    });
+
     test('Bildfragen: Raster-Hinweis, Kästen um Beschriftungen, Gruppen und Abdeckungen', () async {
       Map<String, dynamic>? capturedBody;
       final client = MockClient((request) async {

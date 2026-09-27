@@ -289,6 +289,21 @@ class _FlashcardTile extends StatelessWidget {
     ));
   }
 
+  /// Unnötig angehängtes Bild entfernen (nur bei Fragen, die kein Bild
+  /// brauchen – Bildfragen gehen ohne Bild nicht).
+  Future<void> _removeImage(BuildContext context) async {
+    final repo = context.read<FlashcardRepository>();
+    final ok = await confirmDelete(
+      context,
+      title: 'Bild entfernen?',
+      message: 'Das Bild wird aus dieser Frage gelöscht – die Frage selbst bleibt.',
+    );
+    if (!ok) return;
+    final stored = await repo.loadById(card.id);
+    if (stored == null) return;
+    await repo.update(stored.copyWithImage(clearImage: true));
+  }
+
   Future<void> _delete(BuildContext context) async {
     final ok = await confirmDelete(
       context,
@@ -364,6 +379,14 @@ class _FlashcardTile extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (card.imageBase64 != null &&
+                        card.type != QuestionType.diagramLabel &&
+                        card.type != QuestionType.markImage)
+                      IconButton(
+                        tooltip: 'Bild entfernen',
+                        onPressed: () => _removeImage(context),
+                        icon: const Icon(Icons.hide_image_outlined, size: 18),
+                      ),
                     if (card.imageBase64 != null)
                       TextButton.icon(
                         onPressed: () => _editImage(context),

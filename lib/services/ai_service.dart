@@ -663,6 +663,126 @@ wenn es viele sind. Antworte in der Sprache der Vorlage.
     return flashcards;
   }
 
+  static const _scanPdfQuestionsSystemPrompt = '''
+Du bekommst einige Seiten eines PDF-Dokuments (Folien, Übungsblatt,
+Altklausur, Skript …). Deine Aufgabe: Finde die Fragen und Aufgaben, die auf
+diesen Seiten TATSÄCHLICH stehen, und übernimm sie als Quizfragen. Erfinde
+KEINE neuen Fragen.
+
+WELCHE FRAGEN: {{SCOPE}}
+
+Übernimm jede Frage möglichst im Originalwortlaut; kürze nur, was für eine
+Quizfrage nötig ist. Eine Aufgabe mit Teilaufgaben (a, b, c …) wird zu
+mehreren Fragen – jede so formuliert, dass sie ohne die anderen verständlich
+ist (nötigen Kontext aus dem Aufgabentext übernehmen). Bezieht sich eine
+Frage auf eine Abbildung, beschreibe das Nötige kurz in eckigen Klammern in
+der Frage selbst; lässt sie sich ohne die Abbildung gar nicht beantworten,
+lass sie weg. Dieselbe Frage nur einmal, auch wenn sie mehrfach vorkommt.
+
+LÖSUNG: Steht die Lösung im Dokument (Musterlösung, Lösungsteil,
+angekreuzte/markierte Antwort, Auflösung auf einer der Seiten), übernimm sie
+und setze "solutionFromDocument": true. {{MISSING}}
+
+TYP – bestimme ihn aus der Struktur der Original-Frage:
+- Antwortoptionen zum Ankreuzen vorgegeben -> "single_choice" (genau eine
+  richtig) bzw. "multiple_choice": "options": [{"text": "...", "isCorrect": true}, …]
+- Lückentext -> "fill_blank": jede Lücke im "front" als "___", "blanks" = die
+  Lösungen in derselben Reihenfolge (mehrere richtige Varianten einer Lücke
+  mit ";" in einem Eintrag).
+- Zuordnungsaufgabe (Begriff <-> Begriff/Kategorie) -> "drag_drop":
+  "dragPairs": [{"source": "...", "target": "..."}]
+- Kurze Antwort (Begriff, Zahl, Formel, ein Satz) -> "free_text":
+  "correctText": "..."
+- Längere Erklär-, Rechen- oder Diskussionsaufgabe -> "flashcard":
+  "back": Musterlösung, knapp und vollständig
+
+Jede Frage bekommt "page" = ihre Seitenzahl im GESAMTEN Dokument (die
+Zuordnung Datei-Seite -> Dokument-Seite steht in der Nachricht).
+
+Mathematische Formeln schreibst du in LaTeX: \$…\$ im Satz, \$\$…\$\$ für
+abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash (z.B.
+"\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences und ohne
+Text davor oder danach:
+{"questions": [{"page": 3, "type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}], "solutionFromDocument": true}]}
+Stehen auf diesen Seiten keine passenden Fragen: {"questions": []}.
+Antworte in der Sprache des Dokuments.
+''';
+
+  static const _scanScopeEvery =
+      'JEDE Frage und Aufgabe, die auf den Seiten steht – auch Teilaufgaben, kurze '
+      'Zwischen- und Verständnisfragen im Fließtext oder auf Folien ("Was passiert, '
+      'wenn …?") und Rechenaufgaben. Weglassen nur, was gar keinen fachlichen Inhalt '
+      'hat (z.B. "Noch Fragen?", Organisatorisches, Abgabehinweise).';
+
+  static const _scanScopeContent =
+      'NUR inhaltliche Fragen und Aufgaben, die fachliches Wissen oder Verständnis '
+      'prüfen und eine klare Antwort haben. Weglassen: Organisatorisches, rhetorische '
+      'Einstiegs- oder Überschriftenfragen, Meinungs- und Reflexionsfragen ohne '
+      'fachliche Antwort, reine Verweise auf spätere Folien.';
+
+  /// Sucht auf einigen Seiten einer PDF ([pdfBytes], z.B. per
+  /// PdfService.extractPages ausgeschnitten) nach den dort vorhandenen
+  /// Fragen/Aufgaben und liefert sie als Rohkarten – jede mit "page" (Seite
+  /// im Gesamtdokument, [pageNumbers] = die Dokument-Seiten der Datei in
+  /// Reihenfolge) und "solutionFromDocument". [contentOnly] lässt
+  /// Organisatorisches/Rhetorisches weg; [fillMissingSolutions] beantwortet
+  /// Fragen ohne Lösung im Dokument selbst, sonst fallen sie weg. Gedacht
+  /// für das Vision-Modell (sieht auch Folien-Layout und Scans).
+  Future<List<Map<String, dynamic>>> scanPdfPagesForQuestions(
+    Uint8List pdfBytes, {
+    required List<int> pageNumbers,
+    required bool contentOnly,
+    required bool fillMissingSolutions,
+  }) async {
+    final systemPrompt = _scanPdfQuestionsSystemPrompt
+        .replaceFirst('{{SCOPE}}', contentOnly ? _scanScopeContent : _scanScopeEvery)
+        .replaceFirst(
+          '{{MISSING}}',
+          fillMissingSolutions
+              ? 'Steht keine Lösung im Dokument, beantworte die Frage selbst – fachlich korrekt, '
+                  'knapp und passend zum Stoff des Dokuments – und setze "solutionFromDocument": false.'
+              : 'Steht KEINE Lösung im Dokument, lass die Frage weg.',
+        );
+    final mapping = [
+      for (var i = 0; i < pageNumbers.length; i++) 'Datei-Seite ${i + 1} = Dokument-Seite ${pageNumbers[i]}',
+    ].join(', ');
+    final raw = await _complete(systemPrompt, [
+      {
+        'type': 'text',
+        'text': 'Die Datei enthält ${pageNumbers.length} Seite${pageNumbers.length == 1 ? '' : 'n'} '
+            '($mapping). Suche darauf nach Fragen und Aufgaben.',
+      },
+      {
+        'type': 'file',
+        'file': {
+          'filename': 'seiten.pdf',
+          'file_data': 'data:application/pdf;base64,${base64Encode(pdfBytes)}',
+        },
+      },
+    ], temperature: 0.1);
+    return parseScannedQuestions(_parseJsonObject(raw), pageNumbers);
+  }
+
+  /// Liest `{"questions": [...]}` (auch `{"flashcards": [...]}`) und sorgt
+  /// dafür, dass jede Frage eine gültige Dokument-Seite aus [pageNumbers]
+  /// trägt – eine fehlende oder unpassende Angabe wird zur ersten Seite.
+  static List<Map<String, dynamic>> parseScannedQuestions(Map<String, dynamic> parsed, List<int> pageNumbers) {
+    final list = parsed['questions'] ?? parsed['flashcards'];
+    if (list is! List) return const [];
+    final fallback = pageNumbers.isEmpty ? 1 : pageNumbers.first;
+    return [
+      for (final entry in list)
+        if (entry is Map)
+          () {
+            final map = Map<String, dynamic>.from(entry);
+            final page = map['page'] is num ? (map['page'] as num).toInt() : int.tryParse('${map['page']}');
+            map['page'] = page != null && pageNumbers.contains(page) ? page : fallback;
+            return map;
+          }(),
+    ];
+  }
+
   static const _pageConceptSystemPrompt = '''
 Du bist ein Lernassistent für Studierende im Lernmodus: der Nutzer betrachtet
 gerade EINE konkrete Seite eines Foliensatzes und möchte daraus ein
@@ -750,7 +870,7 @@ darauf beziehen – erfinde keinen anderen Inhalt; der Rest der Seite dient
 nur als Kontext. Ohne Vorgabe wählst du selbst die wichtigsten, klar
 abfragbaren Fakten der Seite.
 
-ANZAHL: Erzeuge GENAU {{COUNT}} Frage(n). Mehrere Fragen prüfen
+ANZAHL: {{COUNT_RULE}} Mehrere Fragen prüfen
 UNTERSCHIEDLICHE Fakten bzw. Aspekte (innerhalb des Fokus, falls
 vorgegeben) – nie zweimal denselben Fakt.
 
@@ -781,7 +901,9 @@ wenn die Frage OHNE das Bild nicht sinnvoll verständlich oder beantwortbar
 ist – z.B. weil sie sich auf ein Diagramm, eine Formel, eine Skizze, ein
 Foto oder ein Layout bezieht, das sich nicht vollständig in Worten
 wiedergeben lässt. Bei rein textbasierten Fakten setze "needsImage": false –
-das ist der Regelfall.
+das ist der Regelfall. Dass die Seite ein Diagramm enthält, reicht allein
+nicht – entscheidend ist, ob DIESE Frage es braucht; im Zweifel lieber
+anhängen (der Nutzer kann ein unnötiges Bild wieder entfernen).
 
 Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 \$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
@@ -789,12 +911,16 @@ Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {"questions": [{"flashcards": [{"type": "...", "front": "...", "needsImage": false, "...": "je nach Typ weitere Felder, siehe oben"}]}]}
-"questions" hat genau {{COUNT}} Einträge; "flashcards" enthält je Frage genau
+"questions" hat {{COUNT_ENTRIES}} Einträge; "flashcards" enthält je Frage genau
 eine Karte pro Stufe, in der Reihenfolge der Stufen. Antworte in der
 Sprache der Vorlage.
 ''';
 
   static const int _pageQuestionGenerationTextCap = 20000;
+
+  /// Obergrenze, wenn die KI die Anzahl der Fragen einer Seite selbst
+  /// bestimmt ("Frage erstellen", Anzahl "KI").
+  static const int maxAutoPageQuestions = 8;
 
   /// Fragetypen, aus denen die KI bei "KI entscheidet" wählt.
   static const pageQuestionTypes = [
@@ -818,7 +944,8 @@ Sprache der Vorlage.
     QuestionType.markImage,
   ];
 
-  /// Erstellt (oder überarbeitet) [questionCount] Fragen direkt aus einer
+  /// Erstellt (oder überarbeitet) [questionCount] Fragen (0 = so viele, wie
+  /// die Seite hergibt, siehe [maxAutoPageQuestions]) direkt aus einer
   /// betrachteten Seite (MaterialViewerScreen, "Frage erstellen"), jede in
   /// allen [tiers] – Varianten DESSELBEN Fakts von leicht nach schwer, die
   /// der Aufrufer zu einer Stufen-Kette zusammenführt. Liefert je Frage die
@@ -844,7 +971,9 @@ Sprache der Vorlage.
     String? instruction,
     bool coordinateGrid = false,
   }) async {
-    final count = questionCount < 1 ? 1 : questionCount;
+    // 0 = die KI entscheidet, wie viele Fragen die Seite hergibt.
+    final auto = questionCount <= 0;
+    final count = auto ? maxAutoPageQuestions : questionCount;
     final tierLines = [
       for (var i = 0; i < tiers.length; i++)
         '${i + 1}. Stufe "${tiers[i].level}": '
@@ -859,7 +988,16 @@ Sprache der Vorlage.
     }.toList();
     final typeRules = ruleTypes.map((t) => '- ${_variantTypeRule(t)}').join('\n');
     final systemPrompt = _pageQuestionGenerationSystemPrompt
-        .replaceAll('{{COUNT}}', '$count')
+        .replaceFirst(
+          '{{COUNT_RULE}}',
+          auto
+              ? 'Entscheide selbst, wie viele Fragen diese Seite (bzw. der Fokus) hergibt: eine je '
+                  'eigenständigem, prüfungsrelevantem Fakt oder Aspekt, höchstens $maxAutoPageQuestions. Eine '
+                  'inhaltsarme Seite (Titel, Gliederung, Überleitung) ergibt 1 Frage, eine dichte Seite mehrere – '
+                  'keine Füllfragen.'
+              : 'Erzeuge GENAU $count Frage(n).',
+        )
+        .replaceFirst('{{COUNT_ENTRIES}}', auto ? 'so viele (1 bis $maxAutoPageQuestions)' : 'genau $count')
         .replaceFirst('{{TIERS}}', tierLines)
         .replaceFirst('{{TYPE_RULES}}', typeRules);
 

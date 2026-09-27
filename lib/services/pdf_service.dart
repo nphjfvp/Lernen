@@ -45,6 +45,19 @@ extension PdfPageTools on PdfService {
     }
   }
 
+  /// Anzahl der Seiten; wirft [PdfExtractionException] bei kaputten Dateien.
+  int pageCount(Uint8List bytes) {
+    PdfDocument? document;
+    try {
+      document = PdfDocument(inputBytes: bytes);
+      return document.pages.count;
+    } catch (e) {
+      throw PdfExtractionException('PDF konnte nicht gelesen werden (beschädigt oder passwortgeschützt): $e');
+    } finally {
+      document?.dispose();
+    }
+  }
+
   /// Neue PDF, die nur die Seiten [pageIndices] (0-basiert) enthält – damit
   /// für die Texterkennung nicht das ganze Dokument verschickt werden muss.
   Uint8List extractPages(Uint8List bytes, List<int> pageIndices) {

@@ -340,6 +340,18 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   (lädt die gespeicherte Karte, nicht den Schnappschuss; nicht in der
   Probeklausur). `RelativeImage` zeigt Bilder im echten Seitenverhältnis mit
   Ebenen an relativen Koordinaten (Quiz + Editor).
+- **„Fragen aus PDF importieren“** (`PdfQuestionImportScreen` +
+  `PdfQuestionImportService`): Seiten paketweise (3) per
+  `PdfService.extractPages` als PDF an `AiService.scanPdfPagesForQuestions`
+  (Vision-Modell), 3 Pakete parallel, `contentOnly`/`fillMissingSolutions`
+  steuern den Prompt; Ergebnis nach Seite sortiert, fehlgeschlagene Pakete
+  wiederholbar, Import als Karten mit `priorityIntroduction`. Die KI
+  erfindet dort nichts, sie übernimmt vorhandene Fragen (anders als
+  „Frage erstellen“ und der ältere Text-Import im Nachbereiten).
+- „Frage erstellen“: `questionCount` 0 = KI entscheidet (bis
+  `AiService.maxAutoPageQuestions`). Bilder lassen sich überall wieder
+  entfernen (`copyWithImage(clearImage: true)`, beim Lernen über
+  `onImageEdited(null)` → `CardReviewMixin.saveEditedImage`).
 - Screens mit langen KI-Aufrufen nutzen `SafeSetState` (kein `setState` nach
   Verlassen). Context-Zugriffe (Repos, ScaffoldMessenger) VOR dem ersten
   `await` auslesen.
@@ -354,7 +366,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 554 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 563 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -403,6 +415,9 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Tippfehler-Toleranz + KI-Nachprüfung, Bild-Editor mit Verschieben/
     Skalieren/Schriftgröße, KI deckt Original-Beschriftungen selbst ab
     (bearbeitbar) und liest Positionen an einem Koordinatenraster ab.
+19. „Fragen aus PDF importieren“ (jede Seite, jede/inhaltliche Fragen,
+    fehlende Lösungen ergänzen), Anzahl „KI“ bei „Frage erstellen“, Bilder
+    aus Fragen entfernen.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

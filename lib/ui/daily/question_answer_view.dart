@@ -45,8 +45,9 @@ class QuestionAnswerView extends StatefulWidget {
 
   /// Gesetzt, wenn das Bild der Karte hier bearbeitet werden darf (z.B. eine
   /// verräterische Beschriftung abdecken, sobald sie beim Lernen auffällt) –
-  /// bekommt das bearbeitete Bild zum Speichern.
-  final Future<void> Function(Uint8List bytes)? onImageEdited;
+  /// bekommt das bearbeitete Bild zum Speichern, `null`, wenn das Bild ganz
+  /// entfernt wurde (unnötig angehängt).
+  final Future<void> Function(Uint8List? bytes)? onImageEdited;
 
   /// Probeklausur (siehe MockExamScreen): kein Feedback, keine KI-Hilfe –
   /// "Antwort abgeben" wertet aus und meldet das Ergebnis sofort weiter.
@@ -857,6 +858,28 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// Hier bearbeitetes Bild (ersetzt die Anzeige sofort, gespeichert wird
   /// über [QuestionAnswerView.onImageEdited]).
   Uint8List? _editedImage;
+  bool _imageRemoved = false;
+
+  /// Bild unnötig angehängt (die KI hängt lieber einmal zu oft eines an):
+  /// nach Rückfrage aus der Karte entfernen.
+  Future<void> _removeCardImage() async {
+    final save = widget.onImageEdited;
+    if (save == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Bild entfernen?'),
+        content: const Text('Das Bild wird aus dieser Frage gelöscht – die Frage selbst bleibt.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Entfernen')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _imageRemoved = true);
+    await save(null);
+  }
 
   Future<void> _editCardImage(Uint8List bytes) async {
     final save = widget.onImageEdited;
@@ -876,7 +899,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// bearbeiten (z.B. eine Beschriftung abdecken, die die Antwort verrät).
   Widget _buildCardImage(AppColors c) {
     final bytes = _editedImage ?? _imageBytes;
-    if (bytes == null) return const SizedBox.shrink();
+    if (bytes == null || _imageRemoved) return const SizedBox.shrink();
     final canEdit = widget.onImageEdited != null && !widget.examMode;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -893,11 +916,23 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             Positioned(
               top: 4,
               right: 4,
-              child: IconButton.filledTonal(
-                tooltip: 'Bild bearbeiten (z.B. Antwort abdecken)',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _editCardImage(bytes),
-                icon: const Icon(Icons.edit_outlined, size: 18),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton.filledTonal(
+                    tooltip: 'Bild entfernen',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _removeCardImage,
+                    icon: const Icon(Icons.hide_image_outlined, size: 18),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton.filledTonal(
+                    tooltip: 'Bild bearbeiten (z.B. Antwort abdecken)',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _editCardImage(bytes),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                  ),
+                ],
               ),
             ),
         ],

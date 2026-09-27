@@ -457,7 +457,7 @@ class _SessionView extends StatelessWidget {
   final int position;
   final bool isNew;
   final void Function({Grade? selfGrade, bool? isCorrect}) onComplete;
-  final Future<void> Function(Uint8List bytes)? onImageEdited;
+  final Future<void> Function(Uint8List? bytes)? onImageEdited;
 
   /// true, wenn die Hauptrunde bereits durch ist und dies eine
   /// Wiederholungsrunde für zuvor falsch beantwortete Karten ist (siehe

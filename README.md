@@ -37,7 +37,27 @@ engerem Fokus statt Feature-Fülle.
   fertig generiertes JSON wird direkt eingefügt (siehe Fragetyp "Interaktiv"
   weiter unten für den genauen Anwendungsfall). Einzelne Konzepte und
   Karteikarten lassen sich im Modul-Detail bzw. in der Karteikarten-
-  Übersicht jederzeit bearbeiten oder löschen. Zusätzlich: **Speedrun** –
+  Übersicht jederzeit bearbeiten oder löschen.
+- **Fragen aus PDF importieren** (`lib/ui/import/pdf_question_import_screen.dart`,
+  im Fach als eigener Eintrag und im ⋮-Menü jeder PDF unter
+  "Materialien") – die KI sucht **jede Seite** einer PDF nach den Fragen
+  und Aufgaben ab, die dort schon stehen (Altklausur, Übungsblatt, Fragen
+  auf Folien), und übernimmt sie ins Quiz, statt neue zu erfinden. Vorher
+  wählt man: **"Jede Frage"** (wirklich alles inkl. Teilaufgaben und
+  Zwischenfragen auf Folien) oder **"Nur inhaltliche"** (ohne
+  Organisatorisches, rhetorische oder Meinungsfragen), ob **fehlende
+  Lösungen von der KI ergänzt** werden (sonst werden Fragen ohne Lösung im
+  Dokument übersprungen) und optional einen Seitenbereich. Die Seiten gehen
+  paketweise (je 3) als PDF an das Vision-Modell (sieht auch Layout und
+  Scans), mehrere Pakete gleichzeitig (`PdfQuestionImportService`,
+  `AiService.scanPdfPagesForQuestions`); ein fehlgeschlagenes Paket lässt
+  sich einzeln wiederholen. Die Treffer erscheinen nach Seiten sortiert mit
+  Typ, Lösung und dem Hinweis "Lösung von der KI" zum Abwählen; importiert
+  werden sie als Karten des Fachs (Einheit des Materials,
+  `priorityIntroduction`) – danach direkt **"Jetzt üben"**. Fragen, die nur
+  mit einer Abbildung beantwortbar sind, lässt die KI weg bzw. beschreibt
+  das Nötige in der Frage (Bilder der Seite hängen hier nicht an – dafür
+  "Frage erstellen" im Viewer). Zusätzlich: **Speedrun** –
   schneller Selbsteinschätzungs-Durchlauf durch alle Konzepte eines Fachs
   (Titel zeigen, selbst einschätzen, Erklärung aufdecken); was man nicht
   wusste, landet in einer wiederholbaren Vertiefen-Runde
@@ -821,7 +841,10 @@ Nachbereiten-Modus zu wechseln.
   im Modul-Detail öffnet den Viewer direkt auf genau dieser Seite
   (`MaterialViewerScreen.initialPage`).
 - **Frage erstellen** (`PageQuestionCreationSheet`) – erzeugt aus derselben
-  Seite **1 bis 5 Fragen** auf einmal (mehrere prüfen unterschiedliche
+  Seite **1 bis 5 Fragen** auf einmal – oder mit Anzahl **"KI"** so viele,
+  wie die Seite hergibt (eine je prüfungsrelevantem Fakt, höchstens
+  `AiService.maxAutoPageQuestions` = 8; eine inhaltsarme Seite ergibt eine
+  Frage) – (mehrere prüfen unterschiedliche
   Aspekte), jede in bis zu drei Stufen **Leicht/Mittel/Schwer** desselben
   Fakts. Jede Stufe ist einzeln an-/abwählbar, der Fragetyp pro Stufe per
   Dropdown wählbar – auch **"Interaktiv"** (html, nur auf Android/iOS
@@ -865,7 +888,10 @@ Nachbereiten-Modus zu wechseln.
   mitgespeichert und später beim Beantworten (Daily Quiz, Üben, überall wo
   `QuestionAnswerView` genutzt wird) oberhalb der Frage angezeigt. Rein
   textbasierte Fragen bekommen bewusst KEIN Bild angehängt, um die lokale
-  Datenbank nicht unnötig aufzublähen.
+  Datenbank nicht unnötig aufzublähen. Im Zweifel hängt die KI lieber ein
+  Bild an – ein unnötiges lässt sich mit **"Bild entfernen"** wieder
+  löschen: in der Vorschau, in der Kartenliste und direkt beim Lernen
+  (Knopf oben rechts am Bild; nicht bei Bildfragen, die ihr Bild brauchen).
   Solche direkt beim Betrachten selbst erstellten Fragen tragen zusätzlich
   `Flashcard.priorityIntroduction = true`: sie umgehen damit das Einheiten-
   "behandelt"-Gate im DailyScheduler (eine bewusst JETZT gestellte Frage ist

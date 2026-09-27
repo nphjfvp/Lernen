@@ -37,6 +37,7 @@ import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
 import '../exam/mock_exam_screen.dart';
 import '../flashcards/flashcard_list_screen.dart';
+import '../import/pdf_question_import_screen.dart';
 import '../practice/practice_screen.dart';
 import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
@@ -195,6 +196,17 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    _SoftRow(
+                      icon: Icons.manage_search,
+                      title: 'Fragen aus PDF importieren',
+                      subtitle: 'KI sucht jede Seite nach vorhandenen Fragen/Aufgaben ab und übernimmt sie ins Quiz',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PdfQuestionImportScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _SoftRow(
@@ -507,6 +519,13 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
               : null,
           onRecognizeText: m.hasViewablePdf && context.watch<SettingsRepository>().settings.hasApiKey
               ? () => _recognizeScannedPages(m)
+              : null,
+          onImportQuestions: m.hasViewablePdf && m.fileName.toLowerCase().endsWith('.pdf')
+              ? () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => PdfQuestionImportScreen(moduleId: m.moduleId, material: m),
+                    ),
+                  )
               : null,
         ),
       );
@@ -1223,12 +1242,14 @@ class _MaterialRow extends StatelessWidget {
     required this.onDelete,
     this.onOpen,
     this.onRecognizeText,
+    this.onImportQuestions,
   });
   final MaterialItem material;
   final ValueChanged<bool> onToggleCovered;
   final VoidCallback onDelete;
   final VoidCallback? onOpen;
   final VoidCallback? onRecognizeText;
+  final VoidCallback? onImportQuestions;
 
   @override
   Widget build(BuildContext context) {
@@ -1294,12 +1315,33 @@ class _MaterialRow extends StatelessWidget {
                     value: material.covered,
                     onChanged: (v) => onToggleCovered(v ?? false),
                   ),
-                  if (onRecognizeText != null)
-                    IconButton(
-                      tooltip: 'Texterkennung für gescannte Seiten',
-                      icon: const Icon(Icons.document_scanner_outlined, size: 18),
-                      color: c.inkMuted,
-                      onPressed: onRecognizeText,
+                  // Seltenere Aktionen im Menü – nebeneinander wird die Zeile
+                  // auf dem Handy zu schmal für den Dateinamen.
+                  if (onImportQuestions != null || onRecognizeText != null)
+                    PopupMenuButton<VoidCallback>(
+                      tooltip: 'Weitere Aktionen',
+                      icon: Icon(Icons.more_vert, size: 18, color: c.inkMuted),
+                      onSelected: (action) => action(),
+                      itemBuilder: (_) => [
+                        if (onImportQuestions != null)
+                          PopupMenuItem(
+                            value: onImportQuestions,
+                            child: const ListTile(
+                              leading: Icon(Icons.manage_search),
+                              title: Text('Fragen daraus importieren'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        if (onRecognizeText != null)
+                          PopupMenuItem(
+                            value: onRecognizeText,
+                            child: const ListTile(
+                              leading: Icon(Icons.document_scanner_outlined),
+                              title: Text('Texterkennung für gescannte Seiten'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                      ],
                     ),
                   IconButton(
                     icon: const Icon(Icons.delete_outline, size: 18),

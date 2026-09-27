@@ -345,7 +345,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
         groups,
         moduleId: widget.material.moduleId,
         unitId: widget.material.unitId,
-        questionCount: _questionCount,
+        questionCount: _questionCount == 0 ? AiService.maxAutoPageQuestions : _questionCount,
         tierCount: slots.length,
         attachImageBase64: attachBase64,
         now: DateTime.now(),
@@ -707,10 +707,16 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           decoration: _fieldDecoration(c, 'Antwort/Fakt dazu (optional)'),
         ),
         const SizedBox(height: 20),
-        _sectionTitle(c, 'Anzahl Fragen', 'Mehrere Fragen prüfen unterschiedliche Aspekte der Seite.'),
+        _sectionTitle(
+          c,
+          'Anzahl Fragen',
+          'Mehrere Fragen prüfen unterschiedliche Aspekte der Seite. "KI" entscheidet selbst, wie viele '
+              'die Seite hergibt (bis ${AiService.maxAutoPageQuestions}).',
+        ),
         SegmentedButton<int>(
           showSelectedIcon: false,
           segments: [
+            const ButtonSegment(value: 0, label: Text('KI'), tooltip: 'KI entscheidet'),
             for (var n = 1; n <= PageQuestionCreationSheet.maxQuestions; n++)
               ButtonSegment(value: n, label: Text('$n')),
           ],
@@ -769,7 +775,11 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           icon: _generating
               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.auto_awesome_outlined),
-          label: Text(_questionCount == 1 ? 'Frage erstellen' : '$_questionCount Fragen erstellen'),
+          label: Text(switch (_questionCount) {
+            0 => 'Fragen erstellen (KI entscheidet)',
+            1 => 'Frage erstellen',
+            final n => '$n Fragen erstellen',
+          }),
         ),
         if (_error != null)
           Padding(
@@ -863,6 +873,15 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
+              if (canEditImage && card.type != QuestionType.diagramLabel && card.type != QuestionType.markImage)
+                IconButton(
+                  tooltip: 'Bild entfernen',
+                  onPressed: () => setState(() {
+                    question.tiers[position.tier] = card.copyWithImage(clearImage: true);
+                    _editRevision++;
+                  }),
+                  icon: const Icon(Icons.hide_image_outlined, size: 20),
+                ),
               if (canEditImage)
                 TextButton.icon(
                   onPressed: () => _editPreviewImage(question, position.tier),
