@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 
 /// E-Mail/Passwort- und Google-Anmeldung. Wird aus den Einstellungen
 /// aufgerufen, nie erzwungen – die App bleibt ohne Account voll nutzbar.
+/// Schließt mit `true`, wenn die Anmeldung geklappt hat.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -20,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isRegister = false;
   bool _busy = false;
   String? _error;
+  String? _info;
 
   @override
   void dispose() {
@@ -46,7 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         await repo.signInWithEmail(email, password);
       }
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop(true);
     } on AuthException catch (e) {
       setState(() => _error = e.message);
     } finally {
@@ -61,9 +63,32 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     try {
       await context.read<AuthRepository>().signInWithGoogle();
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop(true);
     } on AuthException catch (e) {
       setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() => _error = 'Gib oben deine E-Mail ein, dann schicken wir dir einen Link zum Zurücksetzen.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _info = null;
+    });
+    try {
+      await context.read<AuthRepository>().sendPasswordReset(email);
+      if (mounted) {
+        setState(() => _info = 'E-Mail zum Zurücksetzen an $email verschickt – auch im Spam-Ordner nachsehen.');
+      }
+    } on AuthException catch (e) {
+      if (mounted) setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -94,6 +119,14 @@ class _LoginScreenState extends State<LoginScreen> {
             onPressed: _busy ? null : _submitEmail,
             child: Text(_isRegister ? 'Konto erstellen' : 'Anmelden'),
           ),
+          if (!_isRegister)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _busy ? null : _resetPassword,
+                child: const Text('Passwort vergessen?'),
+              ),
+            ),
           const SizedBox(height: 8),
           TextButton(
             onPressed: _busy ? null : () => setState(() => _isRegister = !_isRegister),
@@ -119,6 +152,10 @@ class _LoginScreenState extends State<LoginScreen> {
           if (_busy) ...[
             const SizedBox(height: 20),
             const Center(child: CircularProgressIndicator()),
+          ],
+          if (_info != null) ...[
+            const SizedBox(height: 16),
+            Text(_info!, style: TextStyle(color: c.inkMuted), textAlign: TextAlign.center),
           ],
           if (_error != null) ...[
             const SizedBox(height: 16),

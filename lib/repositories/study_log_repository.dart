@@ -5,7 +5,8 @@ import '../services/database_service.dart';
 /// Kalendertage, an denen tatsächlich Karten wiederholt wurden – Grundlage
 /// für den Streak (siehe StatsService). `Flashcard.lastReview` allein reicht
 /// dafür nicht, weil es nur die LETZTE Wiederholung je Karte kennt.
-/// Geräte-lokal (wie die Ampel-Schnappschüsse), nicht Teil des Cloud-Syncs.
+/// Reist mit dem Cloud-Sync (beim Download zusammengeführt, siehe
+/// SyncService/applySyncedHistory).
 class StudyLogRepository {
   static const _recordKey = 'study_days';
 
@@ -31,6 +32,19 @@ class StudyLogRepository {
   static Future<void> recordDayIn(DatabaseClient client, DateTime day) async {
     final key = _dayKey(day);
     final days = (await _readKeys(client)).toSet()..add(key);
+    final sorted = days.toList()..sort();
+    final kept = sorted.length > _maxDays ? sorted.sublist(sorted.length - _maxDays) : sorted;
+    await DatabaseService.settings.record(_recordKey).put(client, {'days': kept});
+  }
+
+  /// Die gespeicherten Lerntage als "JJJJ-MM-TT" (für den Cloud-Sync).
+  static Future<List<String>> dayKeysFrom(DatabaseClient client) => _readKeys(client);
+
+  /// Vereinigt [keys] (z.B. aus der Cloud) mit den lokalen Lerntagen – ein
+  /// Download soll den Streak nie kürzen.
+  static Future<void> mergeDayKeysIn(DatabaseClient client, Iterable<String> keys) async {
+    final valid = keys.where((k) => RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(k));
+    final days = {...await _readKeys(client), ...valid};
     final sorted = days.toList()..sort();
     final kept = sorted.length > _maxDays ? sorted.sublist(sorted.length - _maxDays) : sorted;
     await DatabaseService.settings.record(_recordKey).put(client, {'days': kept});

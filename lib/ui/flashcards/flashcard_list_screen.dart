@@ -12,10 +12,10 @@ import '../../services/card_csv_service.dart';
 import '../../services/mastery_service.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/confirm_delete_dialog.dart';
-import '../widgets/edit_text_dialog.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/mastery_dot.dart';
 import '../widgets/math_text.dart';
+import 'card_edit_screen.dart';
 
 /// Listet alle Karteikarten eines Fachs auf – zum gezielten Bearbeiten oder
 /// Löschen einzelner Karten, unabhängig vom Daily-Quiz-Wiederholungsflow
@@ -33,8 +33,30 @@ class FlashcardListScreen extends StatefulWidget {
   State<FlashcardListScreen> createState() => _FlashcardListScreenState();
 }
 
+/// Suche in der Kartenliste: jedes Wort der Anfrage muss in Frage, Antwort,
+/// Optionen oder Lückentext vorkommen (Groß-/Kleinschreibung egal).
+bool flashcardMatchesQuery(Flashcard card, String query) {
+  final words = query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+  if (words.isEmpty) return true;
+  final text = [
+    card.front,
+    card.back,
+    card.answerSummary,
+    ...?card.options?.map((o) => o.text),
+  ].join(' ').toLowerCase();
+  return words.every(text.contains);
+}
+
 class _FlashcardListScreenState extends State<FlashcardListScreen> {
   final Set<String> _selected = {};
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   bool get _selecting => _selected.isNotEmpty;
 
@@ -116,7 +138,8 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final cards = context.watch<FlashcardRepository>().forModule(widget.moduleId);
+    final allCards = context.watch<FlashcardRepository>().forModule(widget.moduleId);
+    final cards = [for (final card in allCards) if (flashcardMatchesQuery(card, _query)) card];
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -145,32 +168,63 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
             : [
                 PopupMenuButton<String>(
                   tooltip: 'Export/Import',
-                  onSelected: (value) => value == 'export' ? _exportCsv(cards) : _importCsv(),
+                  onSelected: (value) => value == 'export' ? _exportCsv(allCards) : _importCsv(),
                   itemBuilder: (_) => [
-                    if (cards.isNotEmpty)
+                    if (allCards.isNotEmpty)
                       const PopupMenuItem(value: 'export', child: Text('Als CSV exportieren')),
                     const PopupMenuItem(value: 'import', child: Text('CSV importieren (Vorder-/Rückseite)')),
                   ],
                 ),
               ],
       ),
-      body: cards.isEmpty
+      body: allCards.isEmpty
           ? Center(child: Text('Noch keine Karteikarten.', style: TextStyle(color: c.inkMuted)))
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: cards.length,
-              itemBuilder: (ctx, i) {
-                final card = cards[i];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _FlashcardTile(
-                    card: card,
-                    selecting: _selecting,
-                    selected: _selected.contains(card.id),
-                    onToggleSelected: () => _toggle(card.id),
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _query = value),
+                    decoration: InputDecoration(
+                      hintText: 'Karten durchsuchen (${allCards.length})',
+                      prefixIcon: const Icon(Icons.search),
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                      suffixIcon: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Suche leeren',
+                              icon: const Icon(Icons.clear),
+                              onPressed: () => setState(() {
+                                _searchController.clear();
+                                _query = '';
+                              }),
+                            ),
+                    ),
                   ),
-                );
-              },
+                ),
+                Expanded(
+                  child: cards.isEmpty
+                      ? Center(child: Text('Keine Karte passt zur Suche.', style: TextStyle(color: c.inkMuted)))
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: cards.length,
+                          itemBuilder: (ctx, i) {
+                            final card = cards[i];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _FlashcardTile(
+                                card: card,
+                                selecting: _selecting,
+                                selected: _selected.contains(card.id),
+                                onToggleSelected: () => _toggle(card.id),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
     );
   }
@@ -188,18 +242,23 @@ class _FlashcardTile extends StatelessWidget {
   final bool selected;
   final VoidCallback onToggleSelected;
 
+  /// Inhalt korrigieren – für jeden Fragetyp (siehe CardEditScreen). Auf
+  /// den gespeicherten Stand angewendet, damit ein zwischenzeitlich
+  /// verbuchter Lernfortschritt nicht verloren geht.
   Future<void> _edit(BuildContext context) async {
-    final result = await editTwoFieldsDialog(
-      context,
-      title: 'Karteikarte bearbeiten',
-      label1: 'Vorderseite',
-      initial1: card.front,
-      label2: 'Rückseite',
-      initial2: card.back,
-    );
-    if (result == null || !context.mounted) return;
-    final (front, back) = result;
-    await context.read<FlashcardRepository>().update(card.copyWithText(front: front, back: back));
+    final repo = context.read<FlashcardRepository>();
+    final edited = await showCardEditor(context, card);
+    if (edited == null) return;
+    final stored = await repo.loadById(card.id);
+    if (stored == null) return;
+    await repo.update(stored.copyWithContent(
+      front: edited.front,
+      back: edited.back,
+      options: edited.options,
+      correctText: edited.correctText,
+      blanks: edited.blanks,
+      dragPairs: edited.dragPairs,
+    ));
   }
 
   /// Bild der Karte bearbeiten (abdecken, beschriften) – bei Bildfragen
@@ -315,12 +374,11 @@ class _FlashcardTile extends StatelessWidget {
                           _ => 'Bild',
                         }),
                       ),
-                    if (card.type == QuestionType.flashcard)
-                      TextButton.icon(
-                        onPressed: () => _edit(context),
-                        icon: const Icon(Icons.edit_outlined, size: 16),
-                        label: const Text('Bearbeiten'),
-                      ),
+                    TextButton.icon(
+                      onPressed: () => _edit(context),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Bearbeiten'),
+                    ),
                     TextButton.icon(
                       onPressed: () => _delete(context),
                       icon: const Icon(Icons.delete_outline, size: 16),

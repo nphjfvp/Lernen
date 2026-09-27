@@ -481,44 +481,8 @@ class Flashcard {
   }
 
   /// Für manuelle Textkorrekturen (siehe FlashcardListScreen) – der
-  /// Spaced-Repetition-Zustand bleibt dabei unverändert. Nur für den
-  /// einfachen `flashcard`-Typ gedacht (Vorderseite/Rückseite).
-  Flashcard copyWithText({required String front, required String back}) {
-    return Flashcard(
-      id: id,
-      moduleId: moduleId,
-      conceptId: conceptId,
-      front: front,
-      back: back,
-      createdAt: createdAt,
-      due: due,
-      type: type,
-      options: options,
-      correctText: correctText,
-      blanks: blanks,
-      dragPairs: dragPairs,
-      htmlContent: htmlContent,
-      imageBase64: imageBase64,
-      imageTargets: imageTargets,
-      variantChain: variantChain,
-      variantLevel: variantLevel,
-      variantBox: variantBox,
-      variantHistory: variantHistory,
-      pendingVariants: pendingVariants,
-      variantMissStreak: variantMissStreak,
-      masteryBox: masteryBox,
-      stability: stability,
-      difficulty: difficulty,
-      elapsedDays: elapsedDays,
-      scheduledDays: scheduledDays,
-      reps: reps,
-      lapses: lapses,
-      state: state,
-      lastReview: lastReview,
-      unitId: unitId,
-      priorityIntroduction: priorityIntroduction,
-    );
-  }
+  /// Spaced-Repetition-Zustand bleibt dabei unverändert.
+  Flashcard copyWithText({required String front, required String back}) => copyWithContent(front: front, back: back);
 
   /// Bild (bearbeitet: abgedeckt/beschriftet) und bei Bildfragen die Ziele
   /// bzw. die Frage ersetzen – der Lernstand bleibt. [clearImage] entfernt
@@ -529,6 +493,28 @@ class Flashcard {
     List<ImageTarget>? imageTargets,
     String? front,
     String? back,
+  }) =>
+      copyWithContent(
+        imageBase64: imageBase64,
+        clearImage: clearImage,
+        imageTargets: imageTargets,
+        front: front,
+        back: back,
+      );
+
+  /// Inhalt der Frage von Hand korrigieren (Kartenliste: Frage, Optionen,
+  /// Musterantwort, Lücken, Paare, Bild) – Typ, Lernstand und Stufenkette
+  /// bleiben unverändert. Nicht angegebene Felder bleiben, wie sie sind.
+  Flashcard copyWithContent({
+    String? front,
+    String? back,
+    List<QuizOption>? options,
+    String? correctText,
+    List<String>? blanks,
+    List<DragPair>? dragPairs,
+    String? imageBase64,
+    bool clearImage = false,
+    List<ImageTarget>? imageTargets,
   }) {
     return Flashcard(
       id: id,
@@ -539,10 +525,10 @@ class Flashcard {
       createdAt: createdAt,
       due: due,
       type: type,
-      options: options,
-      correctText: correctText,
-      blanks: blanks,
-      dragPairs: dragPairs,
+      options: options ?? this.options,
+      correctText: correctText ?? this.correctText,
+      blanks: blanks ?? this.blanks,
+      dragPairs: dragPairs ?? this.dragPairs,
       htmlContent: htmlContent,
       imageBase64: clearImage ? null : (imageBase64 ?? this.imageBase64),
       imageTargets: imageTargets ?? this.imageTargets,

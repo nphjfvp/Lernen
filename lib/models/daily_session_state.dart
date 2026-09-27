@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// Fortschritt des heutigen Daily Quiz – damit ein App-Neustart (oder
 /// "Aktualisieren") mitten am Tag nicht wieder bei Null anfängt: die
 /// Wiederholungsrunde für falsch beantwortete Karten bleibt erhalten, der
@@ -43,6 +45,24 @@ class DailySessionState {
       if (moduleId != null) counts[moduleId] = (counts[moduleId] ?? 0) + 1;
     }
     return counts;
+  }
+
+  /// Führt den Stand eines anderen Geräts vom selben Tag ein (Cloud-Sync):
+  /// dort eingeführte neue Karten zählen auch hier gegen das Tagesbudget –
+  /// sonst gäbe es mit zwei Geräten doppelt so viele neue Karten am Tag. Ein
+  /// Stand von einem anderen Tag ändert nichts.
+  DailySessionState mergedWith(DailySessionState other) {
+    if (other.day != day) return this;
+    return DailySessionState(
+      day: day,
+      reviewedCount: max(reviewedCount, other.reviewedCount),
+      introducedIds: {...introducedIds, ...other.introducedIds},
+      wrongIds: [...wrongIds, ...other.wrongIds.where((id) => !wrongIds.contains(id))],
+      wrongAttempts: {
+        ...other.wrongAttempts,
+        for (final e in wrongAttempts.entries) e.key: max(e.value, other.wrongAttempts[e.key] ?? 0),
+      },
+    );
   }
 
   DailySessionState copyWith({

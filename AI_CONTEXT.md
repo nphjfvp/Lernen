@@ -44,7 +44,11 @@ gewünschtes Verhalten.
   model_catalog, chat_messages`. Record-Keys im Store `settings`:
   `app_settings` = AppSettings, `study_days` = Lerntage-Protokoll,
   `daily_session` = heutiger Daily-Quiz-Stand, `mock_exam_results` =
-  Probeklausur-Verlauf (alle außer `app_settings` geräte-lokal, nie gesynct).
+  Probeklausur-Verlauf. Gesynct werden inzwischen auch Lerntage,
+  Probeklausuren, Daily-Stand (heute), Frage-Chats und Ampel-Trend (siehe
+  `applySyncedHistory` in sync_service.dart: Chats/Probeklausuren ersetzen,
+  Lerntage/Trend/Daily-Stand zusammenführen); `app_settings` nur die Felder
+  aus `syncedSettingsOf` (Geheimes nur übers Konto).
 - **KI**: OpenRouter Chat-Completions über `http` (`lib/services/ai_service.dart`),
   drei Modellrollen (Fragen/Text, Vision, Crosscheck). Timeout 3 min, Transport-
   fehler → `AiServiceException`.
@@ -342,7 +346,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 525 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 539 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -381,6 +385,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
 16. Bildfragen „Bild beschriften“/„Bild markieren“ (aus der Vorgänger-App)
     und Bild-Editor (abdecken, beschriften, Stellen/Bereich setzen) in
     „Frage erstellen“, Kartenliste und beim Lernen.
+17. Sync-Lücken: geänderte Einstellungen (API-Key, Modelle, PDF-Speicher)
+    lösen den Auto-Sync aus; Einstellungsfelder folgen einem Download (vorher
+    konnte ein leeres Feld den geholten Key überschreiben); Lerntage,
+    Probeklausuren, Chats, Ampel-Trend, Daily-Stand und Vorlieben reisen mit.
+    Nach der Anmeldung Cloud-Stand anbieten, „Passwort vergessen“, Editor für
+    alle Fragetypen und Suche in der Kartenliste, PdfJs für die Web-Version.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

@@ -5,7 +5,9 @@ import '../models/flashcard.dart';
 import '../services/database_service.dart';
 
 /// Speichert den Fortschritt des heutigen Daily Quiz (siehe
-/// [DailySessionState]). Geräte-lokal, nicht Teil des Cloud-Syncs.
+/// [DailySessionState]). Reist mit dem Cloud-Sync und wird beim Download
+/// mit dem Stand dieses Geräts zusammengeführt (siehe
+/// [DailySessionState.mergedWith]).
 class DailySessionRepository {
   static const _recordKey = 'daily_session';
 

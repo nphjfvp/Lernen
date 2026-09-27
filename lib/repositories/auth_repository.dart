@@ -24,8 +24,11 @@ class AuthRepository extends ChangeNotifier {
   StreamSubscription<User?>? _subscription;
   User? _currentUser;
 
-  User? get currentUser => _currentUser;
-  bool get isSignedIn => _currentUser != null;
+  /// Direkt nach einer Anmeldung kann das Stream-Ereignis noch ausstehen –
+  /// Firebase kennt den Nutzer aber schon (z.B. für das Cloud-Angebot gleich
+  /// nach dem Login).
+  User? get currentUser => _currentUser ?? _authService.currentUser;
+  bool get isSignedIn => currentUser != null;
   bool get isAvailable => _authService.isAvailable;
 
   Future<void> signUpWithEmail(String email, String password) =>
@@ -39,7 +42,13 @@ class AuthRepository extends ChangeNotifier {
   Future<void> linkEmailPassword(String email, String password) =>
       _authService.linkEmailPassword(email, password);
 
-  Future<void> signOut() => _authService.signOut();
+  Future<void> sendPasswordReset(String email) => _authService.sendPasswordReset(email);
+
+  Future<void> signOut() async {
+    await _authService.signOut();
+    _currentUser = null;
+    notifyListeners();
+  }
 
   @override
   void dispose() {

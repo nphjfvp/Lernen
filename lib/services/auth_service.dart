@@ -76,6 +76,16 @@ class AuthService {
     }
   }
 
+  /// Schickt eine E-Mail zum Zurücksetzen des Passworts (Firebase).
+  Future<void> sendPasswordReset(String email) async {
+    _requireAvailable();
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_messageFor(e));
+    }
+  }
+
   Future<void> signInWithGoogle() async {
     _requireAvailable();
     try {

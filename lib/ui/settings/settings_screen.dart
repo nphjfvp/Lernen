@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -41,12 +42,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _syncMessage;
   final _syncService = SyncService();
 
+  /// Zuletzt aus den Einstellungen ins Feld übernommener Wert – erkennt, ob
+  /// der Nutzer selbst etwas getippt hat (siehe [_onSettingsChanged]).
+  String _knownApiKey = '';
+  String _knownSyncCode = '';
+
   @override
   void initState() {
     super.initState();
-    final settings = context.read<SettingsRepository>().settings;
-    _apiKeyController = TextEditingController(text: settings.openRouterApiKey ?? '');
-    _syncCodeController = TextEditingController(text: settings.syncCode ?? '');
+    _settingsRepo = context.read<SettingsRepository>();
+    final settings = _settingsRepo.settings;
+    _knownApiKey = settings.openRouterApiKey ?? '';
+    _knownSyncCode = settings.syncCode ?? '';
+    _apiKeyController = TextEditingController(text: _knownApiKey);
+    _syncCodeController = TextEditingController(text: _knownSyncCode);
+    _settingsRepo.addListener(_onSettingsChanged);
     // Anders als jedes andere Feld auf diesem Screen (Modelle, Chunking,
     // Erinnerung – alle speichern sofort bei Änderung) verlangte der
     // API-Key bisher AUSSCHLIESSLICH den expliziten "Speichern"-Tap unten:
@@ -70,15 +80,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Fängt den Fall ab, dass der Screen verlassen wird, während das Feld
     // noch fokussiert ist (dann feuert der obige Fokus-Listener nicht mehr).
     _persistApiKey();
+    _settingsRepo.removeListener(_onSettingsChanged);
     _apiKeyFocusNode.dispose();
     _apiKeyController.dispose();
     _syncCodeController.dispose();
     super.dispose();
   }
 
+  /// Wurden die Einstellungen von außen geändert (Cloud-Download), zeigen die
+  /// Felder sonst weiter den alten Stand – und [_persistApiKey] schriebe ihn
+  /// beim Verlassen zurück (z.B. ein leeres Feld über den gerade
+  /// heruntergeladenen Key). Selbst Getipptes bleibt stehen.
+  void _onSettingsChanged() {
+    final settings = _settingsRepo.settings;
+    final key = settings.openRouterApiKey ?? '';
+    if (key != _knownApiKey) {
+      if (_apiKeyController.text.trim() == _knownApiKey) _apiKeyController.text = key;
+      _knownApiKey = key;
+    }
+    final code = settings.syncCode ?? '';
+    if (code != _knownSyncCode) {
+      if (_syncCodeController.text.trim() == _knownSyncCode) _syncCodeController.text = code;
+      _knownSyncCode = code;
+    }
+  }
+
   void _persistApiKey() {
     final trimmed = _apiKeyController.text.trim();
-    if (trimmed == (_settingsRepo.settings.openRouterApiKey ?? '')) return;
+    // Nur speichern, was hier getippt wurde – nicht einen veralteten Stand.
+    if (trimmed == _knownApiKey) return;
     unawaited(_settingsRepo.update(_settingsRepo.settings.copyWith(openRouterApiKey: trimmed)));
   }
 
@@ -153,6 +183,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<bool?> _confirmOverwrite() async {
     final counts = await _syncService.localCounts();
     if (!mounted) return false;
+    // Auf einem neuen Gerät ohne Daten gibt es nichts zu verlieren.
+    if (counts.modules == 0 && counts.materials == 0 && counts.concepts == 0 && counts.flashcards == 0) return true;
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -262,6 +294,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (target != null) await _pull(target);
   }
 
+  /// Direkt nach der Anmeldung: liegt im Konto schon ein Stand (z.B. vom
+  /// Handy), bietet die App an, ihn auf dieses Gerät zu holen – samt API-Key
+  /// und PDF-Speicher. Ist das Konto noch leer, stattdessen den Stand dieses
+  /// Geräts hochladen. Offline o.ä.: still, die Buttons bleiben ja da.
+  Future<void> _offerCloudSync() async {
+    final target = _accountTarget();
+    if (target == null || !_syncService.isAvailable) return;
+    final CloudSyncMeta? cloud;
+    try {
+      cloud = await _syncService.cloudMeta(target);
+    } catch (_) {
+      return;
+    }
+    final local = await _syncService.localCounts();
+    if (!mounted) return;
+    if (cloud == null) {
+      if (local.modules == 0) return;
+      final upload = await _askSync(
+        title: 'Konto ist noch leer',
+        message: 'In deinem Konto liegt noch nichts. Den Stand dieses Geräts (${local.modules} Fächer, '
+            '${local.flashcards} Karten) jetzt hochladen, damit deine anderen Geräte ihn holen können?',
+        action: 'Hochladen',
+      );
+      if (upload) await _push(target);
+      return;
+    }
+    if (cloud.pushId != null && cloud.pushId == _settingsRepo.settings.lastSyncedPushId) return;
+    final when = cloud.updatedAt == null ? '' : ' (${_formatRelative(cloud.updatedAt!)} hochgeladen)';
+    final what = cloud.modules == null ? '' : ' mit ${cloud.modules} Fächern und ${cloud.flashcards} Karten';
+    final download = await _askSync(
+      title: 'Stand aus deinem Konto holen?',
+      message: 'In deinem Konto liegt ein Stand$what$when – samt API-Key, Modellwahl und PDF-Speicher, '
+          'falls dort eingetragen. Jetzt auf dieses Gerät holen?',
+      action: 'Herunterladen',
+    );
+    if (download) await _pull(target);
+  }
+
+  Future<bool> _askSync({required String title, required String message, required String action}) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Später')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text(action)),
+        ],
+      ),
+    );
+    return ok == true && mounted;
+  }
+
   Future<void> _setAutoSync(bool enabled) async {
     final repo = context.read<SettingsRepository>();
     final autoSync = context.read<AutoSyncService>();
@@ -334,7 +419,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 4),
                   Text(
                     'Eigener OpenRouter-Key – Anfragen gehen direkt von diesem '
-                    'Gerät an OpenRouter, kein eigener Server.',
+                    'Gerät an OpenRouter, kein eigener Server. Mit Konto-Anmeldung '
+                    'kommt er per Sync auf deine anderen Geräte.',
                     style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
                   ),
                   const SizedBox(height: 12),
@@ -556,7 +642,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   _SectionLabel('Account'),
                   const SizedBox(height: 4),
-                  const _AccountSection(),
+                  _AccountSection(onSignedIn: _offerCloudSync),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 26),
                     child: Divider(height: 1, color: c.border),
@@ -576,8 +662,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'Läuft automatisch über dein Konto '
                       '(${auth.currentUser?.email ?? auth.currentUser?.displayName ?? "angemeldet"}) – '
                       'auf jedem Gerät mit demselben Konto anmelden, dann hier '
-                      'synchronisieren. Kein Code nötig. Überträgt auch API-Key und '
-                      'Modellwahl.',
+                      'synchronisieren. Kein Code nötig. Überträgt auch API-Key, '
+                      'Modellwahl und PDF-Speicher sowie Lerntage, Probeklausuren und Frage-Chats.',
                       style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
                     ),
                     const SizedBox(height: 12),
@@ -750,7 +836,10 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _AccountSection extends StatefulWidget {
-  const _AccountSection();
+  const _AccountSection({required this.onSignedIn});
+
+  /// Nach erfolgreicher Anmeldung (z.B. Cloud-Stand anbieten).
+  final Future<void> Function() onSignedIn;
 
   @override
   State<_AccountSection> createState() => _AccountSectionState();
@@ -859,9 +948,12 @@ class _AccountSectionState extends State<_AccountSection> {
             foregroundColor: c.accentInk,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-          ),
+          onPressed: () async {
+            final signedIn = await Navigator.of(context).push<bool>(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
+            if (signedIn == true && mounted) await widget.onSignedIn();
+          },
           child: const Text('Anmelden'),
         ),
       ],
@@ -939,32 +1031,55 @@ class _PdfStorageSection extends StatefulWidget {
 
 class _PdfStorageSectionState extends State<_PdfStorageSection> {
   late PdfStorageType _type;
-  late final TextEditingController _endpoint;
-  late final TextEditingController _bucket;
-  late final TextEditingController _region;
-  late final TextEditingController _accessKey;
-  late final TextEditingController _secret;
+  final _endpoint = TextEditingController();
+  final _bucket = TextEditingController();
+  final _region = TextEditingController();
+  final _accessKey = TextEditingController();
+  final _secret = TextEditingController();
   late bool _pathStyle;
   bool _busy = false;
   String? _message;
   int? _pending;
+  late final SettingsRepository _repo;
+
+  /// Gespeicherter Stand, den die Felder zeigen, und ob seitdem hier etwas
+  /// geändert wurde – kommt der Speicher per Cloud-Download an, werden die
+  /// Felder nachgeführt, außer der Nutzer tippt gerade selbst.
+  String _shownConfig = '';
+  bool _edited = false;
 
   @override
   void initState() {
     super.initState();
-    final config = context.read<SettingsRepository>().settings.pdfStorage;
-    _type = config.type;
-    _endpoint = TextEditingController(text: config.endpoint);
-    _bucket = TextEditingController(text: config.bucket);
-    _region = TextEditingController(text: config.region);
-    _accessKey = TextEditingController(text: config.accessKey);
-    _secret = TextEditingController(text: config.secret);
-    _pathStyle = config.pathStyle;
+    _repo = context.read<SettingsRepository>();
+    _fill(_repo.settings.pdfStorage);
+    _repo.addListener(_onSettingsChanged);
     _refreshPending();
   }
 
+  void _fill(PdfStorageConfig config) {
+    _type = config.type;
+    _endpoint.text = config.endpoint;
+    _bucket.text = config.bucket;
+    _region.text = config.region;
+    _accessKey.text = config.accessKey;
+    _secret.text = config.secret;
+    _pathStyle = config.pathStyle;
+    _shownConfig = jsonEncode(config.toMap());
+    _edited = false;
+  }
+
+  void _onSettingsChanged() {
+    final config = _repo.settings.pdfStorage;
+    if (!mounted || _edited || jsonEncode(config.toMap()) == _shownConfig) return;
+    setState(() => _fill(config));
+  }
+
+  void _markEdited([Object? _]) => _edited = true;
+
   @override
   void dispose() {
+    _repo.removeListener(_onSettingsChanged);
     for (final c in [_endpoint, _bucket, _region, _accessKey, _secret]) {
       c.dispose();
     }
@@ -994,6 +1109,8 @@ class _PdfStorageSectionState extends State<_PdfStorageSection> {
       _message = null;
     });
     await repo.update(repo.settings.copyWith(pdfStorage: config));
+    _shownConfig = jsonEncode(config.toMap());
+    _edited = false;
     final store = PdfCloudStore.fromConfig(config);
     if (store == null) {
       setState(() {
@@ -1004,7 +1121,17 @@ class _PdfStorageSectionState extends State<_PdfStorageSection> {
     }
     try {
       await store.testConnection();
-      if (mounted) setState(() => _message = 'Verbindung klappt. Gespeichert.');
+      if (mounted) {
+        final autoSync = context.read<AutoSyncService>();
+        final signedIn = context.read<AuthRepository>().currentUser != null;
+        setState(() => _message = !signedIn
+            ? 'Verbindung klappt. Gespeichert. Mit Konto-Anmeldung kommt der Speicher per Sync '
+                'auch auf deine anderen Geräte.'
+            : repo.settings.autoSyncEnabled && autoSync.target != null
+                ? 'Verbindung klappt. Gespeichert – der Auto-Sync bringt ihn auf deine anderen Geräte.'
+                : 'Verbindung klappt. Gespeichert. Für deine anderen Geräte: beim Konto "Hochladen", '
+                    'dort "Herunterladen".');
+      }
     } catch (e) {
       if (mounted) setState(() => _message = e.toString());
     } finally {
@@ -1055,7 +1182,9 @@ class _PdfStorageSectionState extends State<_PdfStorageSection> {
           'Damit die Original-PDFs auch auf deinen anderen Geräten da sind, trägst du hier deinen '
           'eigenen Speicher ein – z.B. Cloudflare R2 oder Backblaze B2 (S3-kompatibel, 10 GB '
           'kostenlos) oder eine Nextcloud/Uni-Cloud (WebDAV). Ohne Eintrag bleibt der PDF-Sync aus; '
-          'Text, Karten und Lernstand synchronisieren trotzdem. Im Web muss der Speicher CORS erlauben.',
+          'Text, Karten und Lernstand synchronisieren trotzdem. Einmal eintragen reicht: mit '
+          'Konto-Anmeldung reisen die Zugangsdaten (wie der API-Key) per Sync auf deine anderen '
+          'Geräte, über einen Sync-Code nicht. Im Web muss der Speicher CORS erlauben.',
           style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
         ),
         const SizedBox(height: 12),
@@ -1064,33 +1193,40 @@ class _PdfStorageSectionState extends State<_PdfStorageSection> {
             for (final t in PdfStorageType.values) ButtonSegment(value: t, label: Text(t.label)),
           ],
           selected: {_type},
-          onSelectionChanged: (s) => setState(() => _type = s.first),
+          onSelectionChanged: (s) => setState(() {
+            _type = s.first;
+            _edited = true;
+          }),
         ),
         if (_type == PdfStorageType.s3) ...[
           const SizedBox(height: 12),
           TextField(
             controller: _endpoint,
+            onChanged: _markEdited,
             decoration: field(context, label: 'Endpunkt (z.B. https://<konto>.r2.cloudflarestorage.com)'),
           ),
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: TextField(controller: _bucket, decoration: field(context, label: 'Bucket'))),
+              Expanded(child: TextField(controller: _bucket, onChanged: _markEdited, decoration: field(context, label: 'Bucket'))),
               const SizedBox(width: 10),
               SizedBox(
                 width: 120,
-                child: TextField(controller: _region, decoration: field(context, label: 'Region')),
+                child: TextField(controller: _region, onChanged: _markEdited, decoration: field(context, label: 'Region')),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          TextField(controller: _accessKey, decoration: field(context, label: 'Access Key ID')),
+          TextField(controller: _accessKey, onChanged: _markEdited, decoration: field(context, label: 'Access Key ID')),
           const SizedBox(height: 10),
-          TextField(controller: _secret, obscureText: true, decoration: field(context, label: 'Secret Access Key')),
+          TextField(controller: _secret, onChanged: _markEdited, obscureText: true, decoration: field(context, label: 'Secret Access Key')),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: _pathStyle,
-            onChanged: (v) => setState(() => _pathStyle = v),
+            onChanged: (v) => setState(() {
+              _pathStyle = v;
+              _edited = true;
+            }),
             title: const Text('Pfad-Adressierung'),
             subtitle: Text('An für R2, B2, MinIO; aus für neue AWS-Buckets.',
                 style: TextStyle(fontSize: 12, color: c.inkMuted)),
@@ -1100,12 +1236,13 @@ class _PdfStorageSectionState extends State<_PdfStorageSection> {
           const SizedBox(height: 12),
           TextField(
             controller: _endpoint,
+            onChanged: _markEdited,
             decoration: field(context, label: 'Ordner-URL (z.B. …/remote.php/dav/files/NAME/Lernen)'),
           ),
           const SizedBox(height: 10),
-          TextField(controller: _accessKey, decoration: field(context, label: 'Benutzername')),
+          TextField(controller: _accessKey, onChanged: _markEdited, decoration: field(context, label: 'Benutzername')),
           const SizedBox(height: 10),
-          TextField(controller: _secret, obscureText: true, decoration: field(context, label: 'App-Passwort')),
+          TextField(controller: _secret, onChanged: _markEdited, obscureText: true, decoration: field(context, label: 'App-Passwort')),
         ],
         const SizedBox(height: 12),
         Wrap(

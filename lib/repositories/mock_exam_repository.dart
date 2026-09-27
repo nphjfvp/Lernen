@@ -3,7 +3,7 @@ import 'package:sembast/sembast.dart';
 import '../services/database_service.dart';
 import '../services/mock_exam_service.dart';
 
-/// Verlauf der Probeklausuren (Note, Trefferquote), geräte-lokal.
+/// Verlauf der Probeklausuren (Note, Trefferquote); reist mit dem Cloud-Sync.
 class MockExamRepository {
   static const _recordKey = 'mock_exam_results';
   static const _maxResults = 100;
@@ -29,6 +29,14 @@ class MockExamRepository {
     final existing = await loadFrom(client);
     final updated = [result, ...existing].take(_maxResults).map((r) => r.toMap()).toList();
     await DatabaseService.settings.record(_recordKey).put(client, {'results': updated});
+  }
+
+  /// Ersetzt den ganzen Verlauf (Cloud-Download), neueste zuerst.
+  static Future<void> replaceIn(DatabaseClient client, List<MockExamResult> results) async {
+    final sorted = [...results]..sort((a, b) => b.takenAt.compareTo(a.takenAt));
+    await DatabaseService.settings
+        .record(_recordKey)
+        .put(client, {'results': sorted.take(_maxResults).map((r) => r.toMap()).toList()});
   }
 
   /// Behält nur Ergebnisse von Fächern aus [moduleIds] – nach dem Löschen

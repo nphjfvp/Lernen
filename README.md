@@ -116,8 +116,15 @@ engerem Fokus statt Feature-Fülle.
   Auswahlmodus (Checkbox pro Karte, "Alle auswählen", gemeinsames Löschen in
   einer Transaktion über `FlashcardRepository.deleteMany`), zum Aufräumen
   nach einer größeren Generierung ohne jede Karte einzeln aufklappen zu
-  müssen. Einzelne Karten lassen sich weiterhin wie bisher aufklappen und
-  per Button bearbeiten/löschen. Über das Menü oben rechts: **"Als CSV
+  müssen. Einzelne Karten lassen sich aufklappen und per Button
+  bearbeiten/löschen – **"Bearbeiten" gibt es für jeden Fragetyp**
+  (`lib/ui/flashcards/card_edit_screen.dart`): Frage, Antwortoptionen und
+  welche davon richtig sind, Musterantwort, Lückentext samt Lösungen (je
+  "___" ein Feld, Varianten mit ";"), Zuordnungspaare – eine von der KI
+  falsch erzeugte Frage lässt sich so korrigieren statt nur löschen;
+  Lernstand, Typ und Stufenkette bleiben (`Flashcard.copyWithContent`). Ein
+  **Suchfeld** oben filtert nach Wörtern in Frage, Antwort und Optionen
+  ("Alle auswählen" nimmt dann nur die Treffer). Über das Menü oben rechts: **"Als CSV
   exportieren"** (Vorderseite, Rückseite, Typ, Ampel, Fällig, Wiederholungen;
   Semikolon + BOM, öffnet sich direkt richtig in Excel/LibreOffice, Anki
   liest es ebenfalls) und **"CSV importieren"** – z.B. ein Anki-Export
@@ -421,8 +428,16 @@ engerem Fokus statt Feature-Fülle.
   demselben Konto anmelden und synchronisieren. **Ohne Account**:
   Sync-Code-basiert wie beim Vorgänger (`sync_codes/{code}`, funktioniert
   wie ein Passwort) – bleibt als Fallback erhalten. Beide Wege übertragen
-  Fächer, Einheiten, Materialien, Konzepte, Karteikarten und die Modellwahl. Der
-  eigentliche API-Key wird bewusst NUR über den Konto-Weg übertragen (dort
+  Fächer, Einheiten, Materialien, Konzepte, Karteikarten, Frage-Chats,
+  Probeklausur-Verlauf, Lerntage (Streak), Ampel-Trend, den heutigen
+  Daily-Quiz-Stand sowie Modellwahl und Vorlieben (Chunking, Rolling-Context,
+  Zwischen-Check-Intervall, Sprint-Rekord). Lerntage, Ampel-Trend und der
+  heutige Daily-Stand werden beim Herunterladen ZUSAMMENGEFÜHRT statt
+  ersetzt: der Streak wird nie kürzer, und heute auf einem Gerät eingeführte
+  neue Karten zählen auch auf dem anderen gegen das Tagesbudget (sonst gäbe
+  es mit Handy + iPad doppelt so viele neue Karten am Tag). Der
+  eigentliche API-Key und die Zugangsdaten zum eigenen PDF-Speicher werden
+  bewusst NUR über den Konto-Weg übertragen (dort
   regel-geschützt auf den Besitzer) – ein frei getippter Sync-Code hat keine
   Mindestkomplexität/Ratenbegrenzung und darf kein potenziell
   kostenpflichtiges API-Zugangsmittel offenlegen können. Geräte-lokales wie
@@ -442,7 +457,18 @@ engerem Fokus statt Feature-Fülle.
   30 s nach der letzten Änderung hoch, beim Verlassen der App sofort, offline
   mit wachsenden Abständen erneut und beim Zurückkehren in die App sofort. Hat seit dem letzten
   Abgleich ein anderes Gerät hochgeladen, überschreibt der Auto-Sync das NICHT,
-  sondern bittet erst um "Herunterladen".
+  sondern bittet erst um "Herunterladen". Auch geänderte Einstellungen, die
+  mitreisen (API-Key, Modelle, PDF-Speicher, Vorlieben), lösen den Auto-Sync
+  aus – vorher kamen sie erst mit der nächsten gelernten Karte an. Nach einem
+  Download zeigen die Einstellungsfelder sofort die übernommenen Werte (vorher
+  blieben sie leer und konnten beim Verlassen den gerade geholten API-Key
+  wieder überschreiben).
+- **Anmelden auf einem neuen Gerät** – direkt nach der Anmeldung fragt die
+  App, ob der Stand aus dem Konto geholt werden soll (mit Anzahl Fächer/
+  Karten; auf einem leeren Gerät ohne zusätzliche Überschreiben-Warnung). Ist
+  das Konto noch leer, bietet sie stattdessen an, den Stand dieses Geräts
+  hochzuladen. "Passwort vergessen?" im Anmeldebildschirm schickt eine
+  E-Mail zum Zurücksetzen.
 - **Account (optional)** – E-Mail/Passwort oder Google-Anmeldung über
   Firebase Auth, aus den Einstellungen heraus. Nie erzwungen: die App bleibt
   auch ohne Account voll nutzbar. Der Hauptzweck ist der automatische
@@ -633,7 +659,9 @@ PDF-Speicher**. Ohne Eintrag passiert nichts.
 (`lernen-pdfs/<material-id>.pdf`); öffnet man auf einem anderen Gerät ein
 Material ohne lokale Datei, wird sie dort bei Bedarf geholt. Gelöschte
 Materialien werden auch im Speicher entfernt. Die Zugangsdaten reisen wie der
-API-Key nur über den Konto-Sync, nie über einen Sync-Code.
+API-Key nur über den Konto-Sync, nie über einen Sync-Code – einmal eintragen
+reicht, die anderen Geräte bekommen sie beim nächsten "Herunterladen" (mit
+Auto-Sync wird die Änderung sofort hochgeladen).
 
 **Web-Version:** der Browser lässt die Anfragen nur zu, wenn der Speicher
 CORS für die Adresse der App erlaubt. Bei R2/B2 in den Bucket-Einstellungen
@@ -838,7 +866,8 @@ flutter run -d chrome
 ```
 
 Web läuft mit derselben Codebasis (lokale Daten liegen dann im
-IndexedDB des Browsers statt in einer Datei). Für die Ziel-Plattformen:
+IndexedDB des Browsers statt in einer Datei; die PDF-Anzeige nutzt dort
+PdfJs, eingebunden in `web/index.html`). Für die Ziel-Plattformen:
 
 ```bash
 flutter run -d windows   # Windows-Desktop (braucht Visual Studio C++-Workload)

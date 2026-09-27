@@ -49,6 +49,43 @@ void main() {
     });
   });
 
+  group('Vorlieben und Sprint-Rekord im Sync', () {
+    test('Vorlieben reisen mit, auch über einen Sync-Code; Geheimes nur übers Konto', () {
+      const settings = AppSettings(
+        openRouterApiKey: 'sk',
+        chunkGranularity: ChunkGranularity.fine,
+        rollingContextEnabled: false,
+        checkpointQuizPageInterval: 8,
+        bestSprintScore: 12,
+        dailyReminderEnabled: true,
+      );
+      final code = syncedSettingsOf(settings, includeSecrets: false);
+      expect(code['openRouterApiKey'], isNull);
+      expect(code['pdfStorage'], isNull);
+      expect(code['chunkGranularity'], 'fine');
+      expect(code.containsKey('dailyReminderEnabled'), isFalse); // geräte-lokal
+      expect(syncedSettingsOf(settings, includeSecrets: true)['openRouterApiKey'], 'sk');
+
+      final merged = mergeAiSettings(const AppSettings(), code);
+      expect(merged.chunkGranularity, ChunkGranularity.fine);
+      expect(merged.rollingContextEnabled, isFalse);
+      expect(merged.checkpointQuizPageInterval, 8);
+      expect(merged.bestSprintScore, 12);
+    });
+
+    test('der höhere Sprint-Rekord zählt, fehlende Felder lassen den lokalen Wert stehen', () {
+      const local = AppSettings(bestSprintScore: 20, chunkGranularity: ChunkGranularity.coarse);
+      final merged = mergeAiSettings(local, {'bestSprintScore': 15});
+      expect(merged.bestSprintScore, 20);
+      expect(merged.chunkGranularity, ChunkGranularity.coarse);
+    });
+
+    test('ein leerer API-Key aus der Cloud löscht den lokalen nicht', () {
+      final merged = mergeAiSettings(const AppSettings(openRouterApiKey: 'sk-local'), {'openRouterApiKey': '  '});
+      expect(merged.openRouterApiKey, 'sk-local');
+    });
+  });
+
   group('syncedAiSettingsForPull', () {
     test('Sync-Code: ein API-Key aus der Cloud wird verworfen, der lokale bleibt', () {
       final synced = syncedAiSettingsForPull(

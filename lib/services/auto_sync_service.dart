@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
 import 'package:sembast/sembast.dart';
@@ -72,6 +73,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   String? get lastPdfError => _lastPdfError;
 
   Timer? _timer;
+  bool _disposed = false;
   bool _dirty = false;
   bool _running = false;
   int _suppressDepth = 0;
@@ -85,7 +87,14 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     DatabaseService.concepts,
     DatabaseService.flashcards,
     DatabaseService.lectureUnits,
+    DatabaseService.chatMessages,
   ];
+
+  /// Stand der mitgesyncten Einstellungen beim letzten Blick – ändert sich
+  /// z.B. der API-Key, ein Modell oder der PDF-Speicher, soll das genauso
+  /// hochgeladen werden wie eine neue Karte (sonst kommt es auf den anderen
+  /// Geräten erst beim nächsten gelernten Stück an).
+  String? _settingsSignature;
 
   Future<void> start() async {
     if (!_sync.isAvailable) return;
@@ -94,7 +103,19 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     for (final store in _watchedStores) {
       store.addOnChangesListener(db, _onChanges);
     }
+    _settingsSignature = _currentSettingsSignature();
+    _settings.addListener(_onSettingsChanged);
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  String _currentSettingsSignature() =>
+      jsonEncode(syncedSettingsOf(_settings.settings, includeSecrets: true));
+
+  void _onSettingsChanged() {
+    final signature = _currentSettingsSignature();
+    if (signature == _settingsSignature) return; // z.B. nur "zuletzt synchronisiert"
+    _settingsSignature = signature;
+    _markDirty();
   }
 
   /// Welche Cloud-Stelle der Auto-Sync gerade bedienen würde, oder null.
@@ -129,6 +150,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   /// Nach einem manuellen Up- oder Download: Konflikt/Warteschlange
   /// zurücksetzen, der lokale Stand entspricht jetzt der Cloud.
   void markInSync() {
+    _settingsSignature = _currentSettingsSignature();
     _timer?.cancel();
     _dirty = false;
     _retryIndex = 0;
@@ -136,8 +158,10 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     _setStatus(AutoSyncStatus.idle);
   }
 
-  void _onChanges(Transaction txn, List<RecordChange<String, Map<String, Object?>>> changes) {
-    if (_suppressDepth > 0 || !_settings.settings.autoSyncEnabled) return;
+  void _onChanges(Transaction txn, List<RecordChange<String, Map<String, Object?>>> changes) => _markDirty();
+
+  void _markDirty() {
+    if (_disposed || _suppressDepth > 0 || !_settings.settings.autoSyncEnabled) return;
     _dirty = true;
     if (_status == AutoSyncStatus.conflict) return; // wartet auf Download
     _schedule(debounce);
@@ -246,12 +270,20 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     final db = _db;
     if (db != null) {
       for (final store in _watchedStores) {
-        store.removeOnChangesListener(db, _onChanges);
+        try {
+          store.removeOnChangesListener(db, _onChanges);
+        } on TypeError {
+          // Sembast vergleicht beim Entfernen Listener verschiedener Typen
+          // und scheitert dabei an der Typprüfung – dann bleibt der Listener
+          // eben registriert, [_disposed] schaltet ihn stumm.
+        }
       }
+      _settings.removeListener(_onSettingsChanged);
       WidgetsBinding.instance.removeObserver(this);
     }
     super.dispose();

@@ -6,15 +6,21 @@ import 'package:sembast/sembast.dart' hide FieldValue;
 import 'package:uuid/uuid.dart';
 
 import '../models/app_settings.dart';
+import '../models/chat_message.dart';
 import '../models/concept.dart';
+import '../models/daily_session_state.dart';
 import '../models/flashcard.dart';
 import '../models/lecture_unit.dart';
+import '../models/mastery_snapshot.dart';
 import '../models/material_item.dart';
 import '../models/module.dart';
 import '../models/pdf_storage_config.dart';
 import '../models/summary.dart';
+import '../repositories/daily_session_repository.dart';
 import '../repositories/mock_exam_repository.dart';
+import '../repositories/study_log_repository.dart';
 import '../services/database_service.dart';
+import 'mock_exam_service.dart';
 import 'sync_codec.dart';
 
 class SyncException implements Exception {
@@ -30,24 +36,54 @@ class SyncConflictException extends SyncException {
   SyncConflictException(super.message);
 }
 
-/// Merged den BYOK-Teil (API-Key + Modellwahl) aus einem Sync-Dokument in
+/// Die Einstellungen, die mit dem Lernstand in die Cloud reisen: KI-Key und
+/// Modellwahl, Zugangsdaten zum eigenen PDF-Speicher sowie Vorlieben, die
+/// auf jedem Gerät gleich sein sollen. Geheimes ([includeSecrets] = false,
+/// Sync-Code-Weg) wird als `null` geschrieben, nicht weggelassen – das
+/// überschreibt auch einen früher dort gelandeten Wert. Rein geräte-lokales
+/// (Erinnerung, Auto-Sync-Schalter, Gerätekennung) bleibt bewusst draußen.
+/// Rein, damit testbar; dient auch als "hat sich etwas geändert?"-Vergleich
+/// für den Auto-Sync.
+Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool includeSecrets}) => {
+      'openRouterApiKey': includeSecrets ? settings.openRouterApiKey : null,
+      'questionModelId': settings.questionModelId,
+      'visionModelId': settings.visionModelId,
+      'crosscheckModelId': settings.crosscheckModelId,
+      // Zugangsdaten zum eigenen PDF-Speicher sind geheim wie der API-Key.
+      'pdfStorage': includeSecrets ? settings.pdfStorage.toMap() : null,
+      'chunkGranularity': settings.chunkGranularity.name,
+      'rollingContextEnabled': settings.rollingContextEnabled,
+      'checkpointQuizPageInterval': settings.checkpointQuizPageInterval,
+      'bestSprintScore': settings.bestSprintScore,
+    };
+
+/// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
 /// [current] ein. Pure Logik (kein DB-/Firestore-Zugriff), damit die Regel
 /// "ein leerer/fehlender Cloud-Wert löscht nie einen lokal vorhandenen
 /// Wert" isoliert testbar ist – ein `pull` von einem Gerät, das noch nie
 /// einen API-Key gesetzt hat, soll den lokalen Key nicht versehentlich
-/// wegräumen.
+/// wegräumen. Fehlende Felder (ältere Cloud-Stände) lassen den lokalen Wert
+/// stehen; der Sprint-Rekord gilt geräteübergreifend (der höhere zählt).
 AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
   if (synced == null) return current;
   final storage = synced['pdfStorage'] is Map
       ? PdfStorageConfig.fromMap(Map<String, dynamic>.from(synced['pdfStorage'] as Map))
       : null;
+  final apiKey = (synced['openRouterApiKey'] as String?)?.trim();
+  final granularity = synced['chunkGranularity'];
+  final interval = (synced['checkpointQuizPageInterval'] as num?)?.toInt();
+  final bestSprint = (synced['bestSprintScore'] as num?)?.toInt() ?? 0;
   return current.copyWith(
-    openRouterApiKey: synced['openRouterApiKey'] as String?,
+    openRouterApiKey: apiKey == null || apiKey.isEmpty ? null : apiKey,
     questionModelId: synced['questionModelId'] as String?,
     visionModelId: synced['visionModelId'] as String?,
     crosscheckModelId: synced['crosscheckModelId'] as String?,
     // Wie beim API-Key: ein leerer Cloud-Stand löscht nie lokale Zugangsdaten.
     pdfStorage: (storage?.isConfigured ?? false) ? storage : null,
+    chunkGranularity: ChunkGranularity.values.where((g) => g.name == granularity).firstOrNull,
+    rollingContextEnabled: synced['rollingContextEnabled'] as bool?,
+    checkpointQuizPageInterval: interval != null && interval > 0 ? interval : null,
+    bestSprintScore: bestSprint > current.bestSprintScore ? bestSprint : null,
   );
 }
 
@@ -56,6 +92,55 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
 Map<String, dynamic> syncedAiSettingsForPull(Map<String, dynamic> synced, {required bool acceptApiKey}) {
   if (acceptApiKey) return synced;
   return {...synced, 'openRouterApiKey': null, 'pdfStorage': null};
+}
+
+/// Übernimmt Verlauf und Statistik aus einem heruntergeladenen Stand.
+/// Frage-Chats und Probeklausuren werden wie Karten ERSETZT (auch
+/// Löschungen sollen ankommen). Lerntage, Ampel-Trend und der heutige
+/// Daily-Quiz-Stand werden ZUSAMMENGEFÜHRT: ein Lerntag bleibt ein Lerntag,
+/// egal auf welchem Gerät gelernt wurde – der Streak soll durch einen
+/// Download nie kürzer werden, und heute schon eingeführte neue Karten
+/// zählen auf jedem Gerät gegen das Tagesbudget.
+/// Fehlt ein Schlüssel (Cloud-Stand einer älteren App-Version), bleibt der
+/// lokale Stand unverändert.
+Future<void> applySyncedHistory(DatabaseClient txn, Map<String, dynamic> data) async {
+  final chats = data['chatMessages'];
+  if (chats is List) {
+    await DatabaseService.chatMessages.delete(txn);
+    for (final m in chats) {
+      if (m is! Map) continue;
+      final message = ChatMessage.fromMap(Map<String, dynamic>.from(m));
+      await DatabaseService.chatMessages.record(message.id).put(txn, message.toMap());
+    }
+  }
+  final exams = data['mockExamResults'];
+  if (exams is List) {
+    await MockExamRepository.replaceIn(txn, [
+      for (final m in exams)
+        if (m is Map) MockExamResult.fromMap(Map<String, dynamic>.from(m)),
+    ]);
+  }
+  final snapshots = data['masterySnapshots'];
+  if (snapshots is List) {
+    for (final m in snapshots) {
+      if (m is! Map) continue;
+      final snapshot = MasterySnapshot.fromMap(Map<String, dynamic>.from(m));
+      await DatabaseService.masterySnapshots.record(snapshot.dateKey).put(txn, snapshot.toMap());
+    }
+  }
+  final days = data['studyDays'];
+  if (days is List) {
+    await StudyLogRepository.mergeDayKeysIn(txn, days.map((d) => d.toString()));
+  }
+  final session = data['dailySession'];
+  if (session is Map) {
+    final now = DateTime.now();
+    final cloud = DailySessionState.fromMap(Map<String, dynamic>.from(session));
+    if (cloud.isFor(now)) {
+      final local = await DailySessionRepository.loadFrom(txn, now);
+      await DailySessionRepository.saveIn(txn, local.mergedWith(cloud));
+    }
+  }
 }
 
 /// Bricht ab, wenn der Cloud-Stand von einer NEUEREN App-Version stammt: ihn
@@ -98,11 +183,15 @@ class SyncTarget {
 /// seit dem letzten eigenen Sync ein ANDERES Gerät hochgeladen, darf ein
 /// automatischer Upload dessen Fortschritt nicht still überschreiben.
 class CloudSyncMeta {
-  const CloudSyncMeta({this.pushId, this.deviceId, this.updatedAt});
+  const CloudSyncMeta({this.pushId, this.deviceId, this.updatedAt, this.modules, this.flashcards});
 
   final String? pushId;
   final String? deviceId;
   final DateTime? updatedAt;
+
+  /// Umfang des Cloud-Stands (fehlt bei sehr alten Ständen).
+  final int? modules;
+  final int? flashcards;
 }
 
 /// Cloud-Sync über Firestore, auf zwei Wegen erreichbar:
@@ -114,7 +203,9 @@ class CloudSyncMeta {
 ///    unter `sync_codes/{code}`, der Code wirkt wie ein Passwort.
 ///
 /// Beide Wege übertragen Fächer, Einheiten, Materialien (ohne die PDF-Datei
-/// selbst, siehe SyncCodec), Zusammenfassungen, Konzepte und Karteikarten.
+/// selbst, siehe SyncCodec), Zusammenfassungen, Konzepte, Karteikarten,
+/// Frage-Chats, Probeklausuren, Lerntage und Ampel-Trend (siehe
+/// [applySyncedHistory]) sowie Vorlieben (siehe [syncedSettingsOf]).
 /// Beim BYOK-Teil der Einstellungen (API-Key + Modellwahl) unterscheiden sie
 /// sich bewusst: der Konto-Weg überträgt auch den API-Key (nur der
 /// authentifizierte Besitzer hat Zugriff); der Code-Weg überträgt NUR die
@@ -168,11 +259,22 @@ class SyncService {
     final data = snapshot.data();
     if (!snapshot.exists || data == null) return null;
     final updatedAt = data['updatedAt'];
+    final counts = data['counts'] is Map ? data['counts'] as Map : const {};
     return CloudSyncMeta(
       pushId: data['pushId'] as String?,
       deviceId: data['deviceId'] as String?,
       updatedAt: updatedAt is Timestamp ? updatedAt.toDate() : null,
+      modules: (counts['modules'] as num?)?.toInt(),
+      flashcards: (counts['flashcards'] as num?)?.toInt(),
     );
+  }
+
+  /// Kopfdaten des Cloud-Stands (ohne die Daten selbst zu laden), `null`,
+  /// wenn dort noch nichts liegt – z.B. um nach der Anmeldung zu fragen, ob
+  /// der Stand geholt werden soll.
+  Future<CloudSyncMeta?> cloudMeta(SyncTarget target) async {
+    _ensureAvailable();
+    return _metaOf(await _doc(target).get());
   }
 
   /// Anzahl lokal vorhandener Datensätze je Kategorie – Grundlage für die
@@ -219,6 +321,15 @@ class SyncService {
       'concepts': (await DatabaseService.concepts.find(db)).map((r) => r.value).toList(),
       'flashcards': (await DatabaseService.flashcards.find(db)).map((r) => r.value).toList(),
       'lectureUnits': (await DatabaseService.lectureUnits.find(db)).map((r) => r.value).toList(),
+      // Verlauf und Statistik – ohne sie finge jedes weitere Gerät bei null
+      // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
+      'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
+      'masterySnapshots': (await DatabaseService.masterySnapshots.find(db)).map((r) => r.value).toList(),
+      'mockExamResults': (await MockExamRepository.loadFrom(db)).map((r) => r.toMap()).toList(),
+      'studyDays': await StudyLogRepository.dayKeysFrom(db),
+      // Heute eingeführte neue Karten – damit ein zweites Gerät am selben Tag
+      // nicht noch einmal das volle Neu-Karten-Budget verteilt.
+      'dailySession': (await DailySessionRepository.loadFrom(db, DateTime.now())).toMap(),
     };
     final parts = SyncCodec.encode(payload);
     final pushId = const Uuid().v4();
@@ -229,7 +340,10 @@ class SyncService {
       'updatedAt': FieldValue.serverTimestamp(),
       'pushId': pushId,
       'deviceId': deviceId,
-      'counts': {for (final e in payload.entries) e.key: e.value.length},
+      'counts': {
+        for (final e in payload.entries)
+          if (e.value case final List list) e.key: list.length,
+      },
       'aiSettings': await _readAiSettings(db, includeApiKey: includeApiKey),
     };
 
@@ -358,8 +472,11 @@ class SyncService {
         await DatabaseService.lectureUnits.record(unit.id).put(txn, unit.toMap());
       }
 
-      // Lokale, nicht gesyncte Daten zu Fächern, die es nach dem Download
-      // nicht mehr gibt, würden sonst verwaist liegen bleiben.
+      await applySyncedHistory(txn, data);
+
+      // Lokale Daten zu Fächern, die es nach dem Download nicht mehr gibt,
+      // würden sonst verwaist liegen bleiben (auch bei älteren Cloud-
+      // Ständen ohne Chat/Probeklausuren, dann bleiben die lokalen).
       final moduleIds = {
         for (final m in (data['modules'] as List? ?? [])) (m as Map)['id']?.toString() ?? '',
       };
@@ -381,17 +498,7 @@ class SyncService {
   Future<Map<String, dynamic>> _readAiSettings(DatabaseClient db, {required bool includeApiKey}) async {
     final record = await DatabaseService.settings.record(_settingsKey).get(db);
     final settings = record == null ? const AppSettings() : AppSettings.fromMap(record);
-    return {
-      // Explizit null (nicht einfach weggelassen) statt des echten Keys, wenn
-      // includeApiKey=false: überschreibt dabei auch einen eventuell VOR
-      // diesem Fix in dieses Dokument gelangten Key beim nächsten Push.
-      'openRouterApiKey': includeApiKey ? settings.openRouterApiKey : null,
-      'questionModelId': settings.questionModelId,
-      'visionModelId': settings.visionModelId,
-      'crosscheckModelId': settings.crosscheckModelId,
-      // Zugangsdaten zum eigenen PDF-Speicher sind geheim wie der API-Key.
-      'pdfStorage': includeApiKey ? settings.pdfStorage.toMap() : null,
-    };
+    return syncedSettingsOf(settings, includeSecrets: includeApiKey);
   }
 
   Future<void> _writeAiSettings(DatabaseClient db, Map<String, dynamic>? synced) async {
