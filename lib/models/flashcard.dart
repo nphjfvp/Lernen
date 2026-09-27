@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// Die Darstellungsform einer Karte. `flashcard` ist die ursprüngliche
 /// offene Vorderseite/Rückseite-Karte (selbst bewertet); alle anderen sind
 /// automatisch auswertbare Fragetypen (siehe AnswerChecker).
@@ -10,6 +12,14 @@ enum QuestionType {
   dragDrop,
   dragCategory,
   html,
+
+  /// Bild beschriften: Beschriftungen auf die richtigen Stellen eines Bildes
+  /// ziehen (aus der Vorgänger-App, dort `diagram_label`).
+  diagramLabel,
+
+  /// Bild markieren: die richtige Stelle im Bild antippen (Vorgänger-App:
+  /// `mark_image`).
+  markImage,
 }
 
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
@@ -27,7 +37,86 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.dragDrop => 'Zuordnen',
         QuestionType.dragCategory => 'Kategorien',
         QuestionType.html => 'Interaktiv',
+        QuestionType.diagramLabel => 'Bild beschriften',
+        QuestionType.markImage => 'Bild markieren',
       };
+}
+
+/// Ein Ziel auf dem Bild einer Bildfrage ([QuestionType.diagramLabel]/
+/// [QuestionType.markImage]) in Koordinaten relativ zum Bild (0..1, Ursprung
+/// oben links). Beim Beschriften ein Punkt ([x]/[y]) mit [label] – dorthin
+/// gehört die Beschriftung; beim Markieren ein Bereich der Größe [w]×[h] um
+/// den Mittelpunkt [x]/[y], in den getippt werden muss.
+class ImageTarget {
+  const ImageTarget({required this.x, required this.y, this.w = 0, this.h = 0, this.label = ''});
+
+  final double x;
+  final double y;
+  final double w;
+  final double h;
+  final String label;
+
+  /// Liegt der Punkt [px]/[py] im Bereich (plus [tolerance] je Seite)?
+  bool contains(double px, double py, {double tolerance = 0.02}) =>
+      (px - x).abs() <= w / 2 + tolerance && (py - y).abs() <= h / 2 + tolerance;
+
+  ImageTarget copyWith({double? x, double? y, double? w, double? h, String? label}) => ImageTarget(
+        x: x ?? this.x,
+        y: y ?? this.y,
+        w: w ?? this.w,
+        h: h ?? this.h,
+        label: label ?? this.label,
+      );
+
+  Map<String, dynamic> toMap() => {
+        'x': x,
+        'y': y,
+        if (w > 0) 'w': w,
+        if (h > 0) 'h': h,
+        if (label.isNotEmpty) 'label': label,
+      };
+
+  /// Tolerant: Zahlen auch als Text, Werte auf 0..1 begrenzt; ein Kreis der
+  /// Vorgänger-App (`radius`) wird zum umschließenden Quadrat.
+  factory ImageTarget.fromMap(Map<String, dynamic> map) {
+    double read(String key) {
+      final v = map[key];
+      final n = v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
+      return (n ?? 0).clamp(0.0, 1.0).toDouble();
+    }
+
+    final label = (map['label'] ?? map['text'] ?? '').toString().trim();
+    // Vieleck der Vorgänger-App: umschließendes Rechteck.
+    final points = map['points'];
+    if (points is List && points.isNotEmpty) {
+      final xs = <double>[];
+      final ys = <double>[];
+      for (final p in points) {
+        if (p is List && p.length >= 2 && p[0] is num && p[1] is num) {
+          xs.add((p[0] as num).toDouble().clamp(0.0, 1.0));
+          ys.add((p[1] as num).toDouble().clamp(0.0, 1.0));
+        }
+      }
+      if (xs.isNotEmpty) {
+        final left = xs.reduce(min), right = xs.reduce(max), top = ys.reduce(min), bottom = ys.reduce(max);
+        return ImageTarget(
+          x: (left + right) / 2,
+          y: (top + bottom) / 2,
+          w: right - left,
+          h: bottom - top,
+          label: label,
+        );
+      }
+    }
+    final radius = read('radius');
+    return ImageTarget(
+      x: read('x'),
+      y: read('y'),
+      w: map.containsKey('w') ? read('w') : radius * 2,
+      h: map.containsKey('h') ? read('h') : radius * 2,
+      label: label,
+    );
+  }
 }
 
 /// Eine Antwortmöglichkeit bei Single-/Multiple-Choice.
@@ -83,6 +172,7 @@ class VariantSnapshot {
     this.dragPairs,
     this.htmlContent,
     this.imageBase64,
+    this.imageTargets,
   });
 
   final QuestionType type;
@@ -94,6 +184,7 @@ class VariantSnapshot {
   final List<DragPair>? dragPairs;
   final String? htmlContent;
   final String? imageBase64;
+  final List<ImageTarget>? imageTargets;
 
   Map<String, dynamic> toMap() => {
         'type': type.name,
@@ -105,6 +196,7 @@ class VariantSnapshot {
         'dragPairs': dragPairs?.map((p) => p.toMap()).toList(),
         'htmlContent': htmlContent,
         'imageBase64': imageBase64,
+        'imageTargets': imageTargets?.map((t) => t.toMap()).toList(),
       };
 
   factory VariantSnapshot.fromMap(Map<String, dynamic> map) => VariantSnapshot(
@@ -121,7 +213,18 @@ class VariantSnapshot {
             .toList(),
         htmlContent: map['htmlContent'] as String?,
         imageBase64: map['imageBase64'] as String?,
+        imageTargets: parseImageTargets(map['imageTargets']),
       );
+}
+
+/// Liest eine Liste von [ImageTarget]s tolerant; `null`, wenn keine da sind.
+List<ImageTarget>? parseImageTargets(Object? raw) {
+  if (raw is! List) return null;
+  final targets = [
+    for (final t in raw)
+      if (t is Map) ImageTarget.fromMap(Map<String, dynamic>.from(t)),
+  ];
+  return targets.isEmpty ? null : targets;
 }
 
 /// Eine Karteikarte/Frage fürs Daily Quiz. Trägt ihren eigenen Spaced-
@@ -175,6 +278,10 @@ class Flashcard {
   /// angehängt, um die lokale Datenbank nicht unnötig aufzublähen. Wird in
   /// [QuestionAnswerView] oberhalb der Frage angezeigt, wenn gesetzt.
   final String? imageBase64;
+
+  /// Ziele auf [imageBase64] für die Bildfragen ([QuestionType.diagramLabel]:
+  /// Beschriftungen mit Position, [QuestionType.markImage]: Bereiche).
+  final List<ImageTarget>? imageTargets;
 
   final List<QuestionType>? variantChain;
   final int variantLevel;
@@ -278,6 +385,7 @@ class Flashcard {
     this.dragPairs,
     this.htmlContent,
     this.imageBase64,
+    this.imageTargets,
     this.variantChain,
     this.variantLevel = 0,
     this.variantBox = 0,
@@ -319,6 +427,9 @@ class Flashcard {
         // Die Antwort-Prüfung steckt in htmlContent selbst (siehe dort) -
         // back dient hier nur als textuelle Kurzfassung/Fallback-Anzeige.
         QuestionType.html => back,
+        QuestionType.diagramLabel =>
+          (imageTargets ?? const []).map((t) => t.label).where((l) => l.isNotEmpty).join(', '),
+        QuestionType.markImage => back.trim().isNotEmpty ? back : 'die markierte Stelle im Bild',
       };
 
   Flashcard copyWithReview({
@@ -348,6 +459,7 @@ class Flashcard {
       dragPairs: dragPairs,
       htmlContent: htmlContent,
       imageBase64: imageBase64,
+      imageTargets: imageTargets,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -387,6 +499,53 @@ class Flashcard {
       dragPairs: dragPairs,
       htmlContent: htmlContent,
       imageBase64: imageBase64,
+      imageTargets: imageTargets,
+      variantChain: variantChain,
+      variantLevel: variantLevel,
+      variantBox: variantBox,
+      variantHistory: variantHistory,
+      pendingVariants: pendingVariants,
+      variantMissStreak: variantMissStreak,
+      masteryBox: masteryBox,
+      stability: stability,
+      difficulty: difficulty,
+      elapsedDays: elapsedDays,
+      scheduledDays: scheduledDays,
+      reps: reps,
+      lapses: lapses,
+      state: state,
+      lastReview: lastReview,
+      unitId: unitId,
+      priorityIntroduction: priorityIntroduction,
+    );
+  }
+
+  /// Bild (bearbeitet: abgedeckt/beschriftet) und bei Bildfragen die Ziele
+  /// bzw. die Frage ersetzen – der Lernstand bleibt. [clearImage] entfernt
+  /// das Bild.
+  Flashcard copyWithImage({
+    String? imageBase64,
+    bool clearImage = false,
+    List<ImageTarget>? imageTargets,
+    String? front,
+    String? back,
+  }) {
+    return Flashcard(
+      id: id,
+      moduleId: moduleId,
+      conceptId: conceptId,
+      front: front ?? this.front,
+      back: back ?? this.back,
+      createdAt: createdAt,
+      due: due,
+      type: type,
+      options: options,
+      correctText: correctText,
+      blanks: blanks,
+      dragPairs: dragPairs,
+      htmlContent: htmlContent,
+      imageBase64: clearImage ? null : (imageBase64 ?? this.imageBase64),
+      imageTargets: imageTargets ?? this.imageTargets,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -467,6 +626,7 @@ class Flashcard {
         dragPairs: dragPairs,
         htmlContent: htmlContent,
         imageBase64: imageBase64,
+        imageTargets: imageTargets,
         variantChain: chain,
         variantLevel: variantLevel,
         variantBox: 0,
@@ -522,6 +682,7 @@ class Flashcard {
       dragPairs: dragPairs,
       htmlContent: htmlContent,
       imageBase64: imageBase64,
+      imageTargets: imageTargets,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: newBox,
@@ -558,6 +719,7 @@ class Flashcard {
     List<DragPair>? dragPairs,
     String? htmlContent,
     String? imageBase64,
+    List<ImageTarget>? imageTargets,
     List<VariantSnapshot>? pendingVariants,
   }) {
     final snapshot = VariantSnapshot(
@@ -570,6 +732,7 @@ class Flashcard {
       dragPairs: this.dragPairs,
       htmlContent: this.htmlContent,
       imageBase64: this.imageBase64,
+      imageTargets: this.imageTargets,
     );
     return Flashcard(
       id: id,
@@ -586,6 +749,7 @@ class Flashcard {
       dragPairs: dragPairs,
       htmlContent: htmlContent,
       imageBase64: imageBase64,
+      imageTargets: imageTargets,
       variantChain: variantChain,
       variantLevel: variantLevel + 1,
       variantBox: 0,
@@ -627,6 +791,7 @@ class Flashcard {
       dragPairs: next.dragPairs,
       htmlContent: next.htmlContent,
       imageBase64: next.imageBase64,
+      imageTargets: next.imageTargets,
       pendingVariants: remaining,
     );
   }
@@ -657,6 +822,7 @@ class Flashcard {
       dragPairs: dragPairs,
       htmlContent: htmlContent,
       imageBase64: imageBase64,
+      imageTargets: imageTargets,
     );
     return Flashcard(
       id: id,
@@ -673,6 +839,7 @@ class Flashcard {
       dragPairs: previous.dragPairs,
       htmlContent: previous.htmlContent,
       imageBase64: previous.imageBase64,
+      imageTargets: previous.imageTargets,
       variantChain: variantChain,
       variantLevel: variantLevel - 1,
       variantBox: 0,
@@ -713,6 +880,7 @@ class Flashcard {
         'dragPairs': dragPairs?.map((p) => p.toMap()).toList(),
         'htmlContent': htmlContent,
         'imageBase64': imageBase64,
+        'imageTargets': imageTargets?.map((t) => t.toMap()).toList(),
         'variantChain': variantChain?.map((t) => t.name).toList(),
         'variantLevel': variantLevel,
         'variantBox': variantBox,
@@ -751,6 +919,7 @@ class Flashcard {
             .toList(),
         htmlContent: map['htmlContent'] as String?,
         imageBase64: map['imageBase64'] as String?,
+        imageTargets: parseImageTargets(map['imageTargets']),
         variantChain:
             (map['variantChain'] as List?)?.map((t) => questionTypeFromString(t.toString())).toList(),
         variantLevel: (map['variantLevel'] as num?)?.toInt() ?? 0,

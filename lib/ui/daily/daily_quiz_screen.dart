@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -293,6 +294,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         isNew: plan.newCards.contains(card),
         onComplete: ({selfGrade, isCorrect}) =>
             _handleComplete(card, stage: _QuizStage.main, selfGrade: selfGrade, isCorrect: isCorrect),
+        onImageEdited: (bytes) => saveEditedImage(card, bytes),
       );
     } else if (_wrongQueue.isNotEmpty) {
       // Wiederholungsrunde: Hauptrunde ist durch, aber es gibt noch falsch
@@ -313,6 +315,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         revisitRemaining: _wrongQueue.length,
         onComplete: ({selfGrade, isCorrect}) =>
             _handleComplete(card, stage: _QuizStage.revisit, selfGrade: selfGrade, isCorrect: isCorrect),
+        onImageEdited: (bytes) => saveEditedImage(card, bytes),
       );
     } else if (_bonusQueue.isNotEmpty) {
       // Freiwillige Zusatzrunde (siehe _continueVoluntarily): Haupt- und
@@ -331,6 +334,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         revisitRemaining: _bonusQueue.length,
         onComplete: ({selfGrade, isCorrect}) =>
             _handleComplete(card, stage: _QuizStage.bonus, selfGrade: selfGrade, isCorrect: isCorrect),
+        onImageEdited: (bytes) => saveEditedImage(card, bytes),
       );
     } else if (plan.total == 0 && _reviewedCount == 0) {
       body = _AllDoneView(onContinue: _continueVoluntarily, loading: _bonusLoading);
@@ -440,6 +444,7 @@ class _SessionView extends StatelessWidget {
     required this.position,
     required this.isNew,
     required this.onComplete,
+    this.onImageEdited,
     this.isRevisit = false,
     this.isBonus = false,
     this.revisitRemaining = 0,
@@ -452,6 +457,7 @@ class _SessionView extends StatelessWidget {
   final int position;
   final bool isNew;
   final void Function({Grade? selfGrade, bool? isCorrect}) onComplete;
+  final Future<void> Function(Uint8List bytes)? onImageEdited;
 
   /// true, wenn die Hauptrunde bereits durch ist und dies eine
   /// Wiederholungsrunde für zuvor falsch beantwortete Karten ist (siehe
@@ -516,6 +522,7 @@ class _SessionView extends StatelessWidget {
             card: card,
             isNew: isNew,
             onComplete: onComplete,
+            onImageEdited: onImageEdited,
           ),
         ),
       ],

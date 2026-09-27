@@ -155,6 +155,7 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
                         key: ValueKey(_queue[_index].id),
                         card: _queue[_index],
                         isNew: false,
+                        onImageEdited: (bytes) => saveEditedImage(_queue[_index], bytes),
                         onComplete: ({selfGrade, isCorrect}) =>
                             _handleComplete(_queue[_index], selfGrade: selfGrade, isCorrect: isCorrect),
                       ),

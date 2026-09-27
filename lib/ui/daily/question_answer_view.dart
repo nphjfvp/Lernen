@@ -13,7 +13,9 @@ import '../../services/answer_checker.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/html_question_contract.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
+import '../widgets/relative_image.dart';
 
 /// Rendert und beantwortet EINE Frage, passend zu ihrem [Flashcard.type].
 ///
@@ -35,10 +37,16 @@ class QuestionAnswerView extends StatefulWidget {
     required this.isNew,
     required this.onComplete,
     this.examMode = false,
+    this.onImageEdited,
   });
 
   final Flashcard card;
   final bool isNew;
+
+  /// Gesetzt, wenn das Bild der Karte hier bearbeitet werden darf (z.B. eine
+  /// verräterische Beschriftung abdecken, sobald sie beim Lernen auffällt) –
+  /// bekommt das bearbeitete Bild zum Speichern.
+  final Future<void> Function(Uint8List bytes)? onImageEdited;
 
   /// Probeklausur (siehe MockExamScreen): kein Feedback, keine KI-Hilfe –
   /// "Antwort abgeben" wertet aus und meldet das Ergebnis sofort weiter.
@@ -95,6 +103,34 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// Per Antippen ausgewählter Begriff (Alternative zum Ziehen): danach ein
   /// Ziel antippen legt ihn dort ab.
   int? _selectedSource;
+
+  // -- Bildfragen -----------------------------------------------------------
+  /// Bild beschriften: die Stellen mit ihren Beschriftungen (Nummern 1..n).
+  late final List<ImageTarget> _labelTargets = AnswerChecker.labelTargets(widget.card);
+
+  /// Bild beschriften: noch nicht platzierte Beschriftungen (Indizes in
+  /// [_labelTargets]) und Stelle -> dort abgelegte Beschriftung.
+  late final List<int> _labelPool;
+  final Map<int, int> _zoneToLabel = {};
+  int? _selectedLabel;
+
+  /// Bild markieren: angetippte Stelle, relativ zum Bild.
+  Offset? _markTap;
+
+  /// Das Bild der Karte, einmal dekodiert (null ohne/mit kaputtem Bild).
+  late final Uint8List? _imageBytes = _decodeImage(widget.card.imageBase64);
+
+  static Uint8List? _decodeImage(String? base64) {
+    if (base64 == null || base64.isEmpty) return null;
+    try {
+      return base64Decode(base64);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get _isImageQuestion =>
+      widget.card.type == QuestionType.diagramLabel || widget.card.type == QuestionType.markImage;
 
   bool _checked = false;
   AnswerCheckResult? _result;
@@ -166,6 +202,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     super.initState();
     _blankControllers = List.generate(_blanks.length, (_) => TextEditingController());
     _pool = List.generate(_pairs.length, (i) => i)..shuffle();
+    _labelPool = List.generate(_labelTargets.length, (i) => i)..shuffle();
     if (widget.card.type == QuestionType.html) _setupWebView();
   }
 
@@ -290,6 +327,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         return _pool.isEmpty && _pairs.isNotEmpty;
       case QuestionType.html:
         return false; // eigener build()-Zweig, siehe _buildHtmlQuestion.
+      case QuestionType.diagramLabel:
+        return _labelPool.isEmpty && _labelTargets.isNotEmpty;
+      case QuestionType.markImage:
+        return _markTap != null;
     }
   }
 
@@ -325,6 +366,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             : AnswerChecker.checkDragDrop(card, Map.of(_zoneToSource));
       case QuestionType.freeText:
         return _checkFreeTextAnswer();
+      case QuestionType.diagramLabel:
+        return AnswerChecker.checkDiagramLabel(card, Map.of(_zoneToLabel));
+      case QuestionType.markImage:
+        return AnswerChecker.checkMarkImage(card, _markTap?.dx, _markTap?.dy);
       case QuestionType.flashcard:
       case QuestionType.html:
         return null; // eigene build()-Zweige.
@@ -460,6 +505,14 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         return _isCategoryDrag
             ? [for (final e in _sourceToCategory.entries) '${_pairs[e.key].source} -> ${e.value}'].join('; ')
             : [for (final e in _zoneToSource.entries) '${_pairs[e.value].source} -> ${_pairs[e.key].target}'].join('; ');
+      case QuestionType.diagramLabel:
+        final zones = _zoneToLabel.keys.toList()..sort();
+        return [for (final z in zones) '${z + 1} = ${_labelTargets[_zoneToLabel[z]!].label}'].join(', ');
+      case QuestionType.markImage:
+        final tap = _markTap;
+        return tap == null
+            ? null
+            : 'angetippte Stelle bei ${(tap.dx * 100).round()} % Breite, ${(tap.dy * 100).round()} % Höhe';
       case QuestionType.flashcard:
       case QuestionType.html:
         return null;
@@ -736,28 +789,53 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     return summary.isNotEmpty ? summary : '(Keine Lösung hinterlegt)';
   }
 
+  /// Hier bearbeitetes Bild (ersetzt die Anzeige sofort, gespeichert wird
+  /// über [QuestionAnswerView.onImageEdited]).
+  Uint8List? _editedImage;
+
+  Future<void> _editCardImage(Uint8List bytes) async {
+    final save = widget.onImageEdited;
+    if (save == null) return;
+    final result = await showImageEditor(context, bytes);
+    if (result == null || !result.imageChanged || !mounted) return;
+    setState(() => _editedImage = result.bytes);
+    await save(result.bytes);
+  }
+
   /// Zeigt den an [Flashcard.imageBase64] hängenden Seiten-Screenshot,
   /// falls vorhanden (siehe PageQuestionCreationSheet – nur bei Fragen
   /// gesetzt, die das Vision-Modell als "needsImage" markiert hat, z.B. weil
   /// sie sich auf ein Diagramm/eine Grafik beziehen). Ein defektes Base64
   /// wird still ignoriert statt die Karte unbenutzbar zu machen.
+  /// Mit [QuestionAnswerView.onImageEdited] lässt es sich beim Lernen
+  /// bearbeiten (z.B. eine Beschriftung abdecken, die die Antwort verrät).
   Widget _buildCardImage(AppColors c) {
-    final base64 = widget.card.imageBase64;
-    if (base64 == null || base64.isEmpty) return const SizedBox.shrink();
-    Uint8List bytes;
-    try {
-      bytes = base64Decode(base64);
-    } catch (_) {
-      return const SizedBox.shrink();
-    }
+    final bytes = _editedImage ?? _imageBytes;
+    if (bytes == null) return const SizedBox.shrink();
+    final canEdit = widget.onImageEdited != null && !widget.examMode;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 220),
-          child: Image.memory(bytes, fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
-        ),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: Image.memory(bytes, fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+            ),
+          ),
+          if (canEdit)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton.filledTonal(
+                tooltip: 'Bild bearbeiten (z.B. Antwort abdecken)',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _editCardImage(bytes),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -796,7 +874,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                     style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.accentOnSoft, letterSpacing: 0.03)),
               ),
               const SizedBox(height: 12),
-              _buildCardImage(c),
+              if (!_isImageQuestion) _buildCardImage(c),
               if (card.type != QuestionType.fillBlank)
                 MathText(card.front, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4)),
               const SizedBox(height: 16),
@@ -862,6 +940,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.dragDrop:
       case QuestionType.dragCategory:
         return _buildDragDrop(c);
+      case QuestionType.diagramLabel:
+        return _buildDiagramLabel(c);
+      case QuestionType.markImage:
+        return _buildMarkImage(c);
     }
   }
 
@@ -977,6 +1059,222 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             ),
           );
         }),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Bildfragen
+  // ---------------------------------------------------------------------
+
+  /// Bild beschriften: Beschriftung [label] auf Stelle [zone] legen – eine
+  /// dort liegende wandert zurück unter das Bild.
+  void _placeLabel(int label, int zone) {
+    if (_checked) return;
+    setState(() {
+      _selectedLabel = null;
+      _zoneToLabel.removeWhere((_, l) => l == label);
+      _labelPool.remove(label);
+      final displaced = _zoneToLabel[zone];
+      if (displaced != null && displaced != label && !_labelPool.contains(displaced)) _labelPool.add(displaced);
+      _zoneToLabel[zone] = label;
+    });
+  }
+
+  void _returnLabel(int label) {
+    if (_checked) return;
+    setState(() {
+      _selectedLabel = null;
+      _zoneToLabel.removeWhere((_, l) => l == label);
+      if (!_labelPool.contains(label)) _labelPool.add(label);
+    });
+  }
+
+  Widget _labelChip(AppColors c, int label, {String? prefix, Color? color}) {
+    final selected = _selectedLabel == label && prefix == null;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color ?? (selected ? c.accentSolid : c.accentSoft),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.surface, width: 1.5),
+      ),
+      child: Text(
+        '${prefix ?? ''}${_labelTargets[label].label}',
+        style: TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          color: color != null ? Colors.white : (selected ? c.accentInk : c.accentOnSoft),
+        ),
+      ),
+    );
+  }
+
+  /// Stelle [zone] im Bild: leer eine nummerierte Markierung, belegt die
+  /// abgelegte Beschriftung (verschiebbar, Antippen legt sie zurück).
+  Widget _labelZone(AppColors c, int zone) {
+    final assigned = _zoneToLabel[zone];
+    final selected = _selectedLabel;
+    final Color? verdict =
+        _checked ? (AnswerChecker.labelZoneCorrect(widget.card, zone, assigned) ? c.good : c.danger) : null;
+    return DragTarget<int>(
+      onWillAcceptWithDetails: (_) => !_checked,
+      onAcceptWithDetails: (details) => _placeLabel(details.data, zone),
+      builder: (context, candidates, _) {
+        final highlighted = !_checked && (candidates.isNotEmpty || selected != null);
+        if (assigned != null) {
+          final chip = _labelChip(c, assigned, prefix: '${zone + 1} · ', color: verdict ?? c.accent);
+          if (_checked) return chip;
+          return Draggable<int>(
+            data: assigned,
+            feedback: Material(color: Colors.transparent, child: chip),
+            childWhenDragging: Opacity(opacity: 0.3, child: chip),
+            child: GestureDetector(
+              onTap: () => selected != null ? _placeLabel(selected, zone) : _returnLabel(assigned),
+              child: chip,
+            ),
+          );
+        }
+        return GestureDetector(
+          onTap: selected == null || _checked ? null : () => _placeLabel(selected, zone),
+          child: Container(
+            key: ValueKey('label-zone-$zone'),
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: highlighted ? c.accent : c.surface.withAlpha(235),
+              shape: BoxShape.circle,
+              border: Border.all(color: verdict ?? c.accent, width: 2),
+            ),
+            child: Text(
+              '${zone + 1}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: highlighted ? c.accentInk : (verdict ?? c.accentOnSoft),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDiagramLabel(AppColors c) {
+    final bytes = _imageBytes;
+    if (bytes == null) return const SizedBox.shrink();
+    final wrongZones = [
+      if (_checked)
+        for (var zone = 0; zone < _labelTargets.length; zone++)
+          if (!AnswerChecker.labelZoneCorrect(widget.card, zone, _zoneToLabel[zone])) zone,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ziehe die Beschriftungen auf die nummerierten Stellen im Bild – oder antippen und dann die Stelle antippen.',
+          style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+        ),
+        const SizedBox(height: 12),
+        RelativeImage(
+          bytes: bytes,
+          overlayBuilder: (context, box) => [
+            for (var zone = 0; zone < _labelTargets.length; zone++)
+              positionedAt(
+                box: box,
+                x: _labelTargets[zone].x,
+                y: _labelTargets[zone].y,
+                child: _labelZone(c, zone),
+              ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        DragTarget<int>(
+          onWillAcceptWithDetails: (details) => !_checked && !_labelPool.contains(details.data),
+          onAcceptWithDetails: (details) => _returnLabel(details.data),
+          builder: (context, candidates, _) => Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 40),
+            decoration: candidates.isNotEmpty
+                ? BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(14))
+                : null,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final label in _labelPool)
+                  if (_checked)
+                    _labelChip(c, label)
+                  else
+                    Draggable<int>(
+                      data: label,
+                      feedback: Material(color: Colors.transparent, child: _labelChip(c, label)),
+                      childWhenDragging: Opacity(opacity: 0.3, child: _labelChip(c, label)),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedLabel = _selectedLabel == label ? null : label),
+                        child: _labelChip(c, label),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        ),
+        for (final zone in wrongZones)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Stelle ${zone + 1}: richtig ist „${_labelTargets[zone].label}“',
+              style: TextStyle(fontSize: 12.5, color: c.good, fontWeight: FontWeight.w600),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Bild markieren: Antippen setzt die Markierung (bis zum Prüfen
+  /// verschiebbar); danach erscheinen die richtigen Bereiche grün.
+  Widget _buildMarkImage(AppColors c) {
+    final bytes = _imageBytes;
+    if (bytes == null) return const SizedBox.shrink();
+    final tap = _markTap;
+    final Color markerColor = !_checked ? c.accent : ((_result?.isCorrect ?? false) ? c.good : c.danger);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Tippe auf die richtige Stelle im Bild.', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+        const SizedBox(height: 12),
+        RelativeImage(
+          key: const ValueKey('mark-image'),
+          bytes: bytes,
+          onTapRelative: _checked ? null : (p) => setState(() => _markTap = p),
+          overlayBuilder: (context, box) => [
+            if (_checked)
+              for (final r in AnswerChecker.markRegions(widget.card))
+                Positioned(
+                  left: (r.x - r.w / 2) * box.width,
+                  top: (r.y - r.h / 2) * box.height,
+                  width: r.w * box.width,
+                  height: r.h * box.height,
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: c.good.withAlpha(45),
+                        border: Border.all(color: c.good, width: 3),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ),
+                ),
+            if (tap != null)
+              positionedAt(
+                box: box,
+                x: tap.dx,
+                y: tap.dy,
+                child: IgnorePointer(child: Icon(Icons.adjust, key: const ValueKey('mark-marker'), size: 32, color: markerColor)),
+              ),
+          ],
+        ),
       ],
     );
   }

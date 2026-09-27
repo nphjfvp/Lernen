@@ -7,11 +7,13 @@ import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../services/answer_checker.dart';
 import '../../services/card_csv_service.dart';
 import '../../services/mastery_service.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
+import '../widgets/image_editor_screen.dart';
 import '../widgets/mastery_dot.dart';
 import '../widgets/math_text.dart';
 
@@ -200,6 +202,34 @@ class _FlashcardTile extends StatelessWidget {
     await context.read<FlashcardRepository>().update(card.copyWithText(front: front, back: back));
   }
 
+  /// Bild der Karte bearbeiten (abdecken, beschriften) – bei Bildfragen
+  /// auch die Stellen bzw. Bereiche. Der Lernstand bleibt.
+  Future<void> _editImage(BuildContext context) async {
+    final base64 = card.imageBase64;
+    if (base64 == null) return;
+    final Uint8List bytes;
+    try {
+      bytes = base64Decode(base64);
+    } catch (_) {
+      return;
+    }
+    final mode = switch (card.type) {
+      QuestionType.diagramLabel => ImageTargetMode.labels,
+      QuestionType.markImage => ImageTargetMode.regions,
+      _ => null,
+    };
+    final repo = context.read<FlashcardRepository>();
+    final result = await showImageEditor(context, bytes, targetMode: mode, targets: card.imageTargets ?? const []);
+    if (result == null) return;
+    // Auf den gespeicherten Stand anwenden (die Liste kann veraltet sein).
+    final stored = await repo.loadById(card.id);
+    if (stored == null) return;
+    await repo.update(stored.copyWithImage(
+      imageBase64: result.imageChanged ? base64Encode(result.bytes) : null,
+      imageTargets: mode != null ? result.targets : null,
+    ));
+  }
+
   Future<void> _delete(BuildContext context) async {
     final ok = await confirmDelete(
       context,
@@ -275,6 +305,16 @@ class _FlashcardTile extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (card.imageBase64 != null)
+                      TextButton.icon(
+                        onPressed: () => _editImage(context),
+                        icon: const Icon(Icons.image_outlined, size: 16),
+                        label: Text(switch (card.type) {
+                          QuestionType.diagramLabel => 'Stellen',
+                          QuestionType.markImage => 'Bereich',
+                          _ => 'Bild',
+                        }),
+                      ),
                     if (card.type == QuestionType.flashcard)
                       TextButton.icon(
                         onPressed: () => _edit(context),
@@ -400,6 +440,20 @@ class _AnswerDetail extends StatelessWidget {
         return Text(
           card.back.isEmpty ? '(Interaktive Seite – Antwort-Prüfung steckt im HTML-Inhalt.)' : card.back,
           style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5),
+        );
+      case QuestionType.diagramLabel:
+        final targets = AnswerChecker.labelTargets(card);
+        return Text(
+          targets.isEmpty ? 'Keine Beschriftungen hinterlegt.' : AnswerChecker.diagramLabelSolution(card),
+          style: TextStyle(color: targets.isEmpty ? c.danger : c.inkMuted, fontSize: 12.5, height: 1.5),
+        );
+      case QuestionType.markImage:
+        final regions = card.imageTargets?.length ?? 0;
+        return Text(
+          regions == 0
+              ? 'Kein Bereich im Bild hinterlegt.'
+              : '${card.answerSummary} ($regions Bereich${regions == 1 ? '' : 'e'} im Bild)',
+          style: TextStyle(color: regions == 0 ? c.danger : c.inkMuted, fontSize: 12.5, height: 1.5),
         );
     }
   }

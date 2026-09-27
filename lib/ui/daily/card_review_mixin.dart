@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -66,6 +68,18 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
       );
     }
     return outcome;
+  }
+
+  /// Speichert ein beim Lernen bearbeitetes Bild (z.B. eine verräterische
+  /// Beschriftung abgedeckt) in die GESPEICHERTE Karte – Lernstand und
+  /// Stufe bleiben unverändert. Die anschließende Antwort wird ohnehin auf
+  /// den gespeicherten Stand angewendet (siehe [recordReview]) und behält
+  /// das neue Bild damit.
+  Future<void> saveEditedImage(Flashcard card, Uint8List bytes) async {
+    final repo = context.read<FlashcardRepository>();
+    final stored = await repo.loadById(card.id);
+    if (stored == null) return;
+    await repo.update(stored.copyWithImage(imageBase64: base64Encode(bytes)));
   }
 
   /// Schlägt die KI-Erzeugung fehl (offline, kein Guthaben …), bleibt die

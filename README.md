@@ -215,6 +215,35 @@ engerem Fokus statt Feature-Fülle.
   Einzelfragen. Einen eigenen Mathe-Formel-Fragetyp mit Formel-Editor wie in
   der Vorgänger-App gibt es nicht – Formeln werden aber in allen Fragetypen
   als LaTeX dargestellt (siehe "Mathe/Formeln").
+- **Bildfragen: "Bild beschriften" und "Bild markieren"** (aus der
+  Vorgänger-App übernommen, `QuestionType.diagramLabel`/`markImage`). Beide
+  nutzen das Bild der Karte (`Flashcard.imageBase64`) und dieselbe Liste
+  `Flashcard.imageTargets` mit Koordinaten relativ zum Bild (0..1, siehe
+  `ImageTarget`): **Bild beschriften** – nummerierte Stellen im Bild, die
+  Beschriftungen liegen gemischt darunter und werden per Ziehen oder
+  Antippen (Beschriftung, dann Stelle) zugeordnet; gleich lautende
+  Beschriftungen sind austauschbar, falsche Stellen zeigen danach die
+  richtige Beschriftung. **Bild markieren** – eine Stelle im Bild antippen;
+  richtig, wenn sie in einem der hinterlegten Bereiche liegt (Rechtecke,
+  mit etwas Toleranz; Punkte ohne Größe bekommen eine Mindestgröße). Die
+  Formate der Vorgänger-App (`diagram_labels`, `mark_regions` mit Kreis
+  bzw. Vieleck) werden beim Import/JSON-Einfügen gelesen. Ohne Bild oder
+  ohne Stellen wird so eine Karte als Karteikarte gezeigt. Erstellen:
+  in **Frage erstellen** als Fragetyp wählbar (die KI setzt die Stellen
+  selbst, "KI entscheidet" wählt sie nie von allein) oder unter
+  **"Bildfrage selbst erstellen"** komplett von Hand.
+- **Bild-Editor** (`lib/ui/widgets/image_editor_screen.dart`) – Bilder von
+  Karten lassen sich bearbeiten: **Abdecken** (Rahmen ziehen, weiß oder
+  schwarz – z.B. Beschriftungen, die bei einer Zuordnen-/Beschriften-Frage
+  sonst die Antwort verraten) und **Text** (antippen, Beschriftung
+  eingeben). Beides wird in Originalauflösung fest ins Bild eingerechnet
+  (`lib/services/image_edit.dart`); Rückgängig ist möglich. Bei Bildfragen
+  setzt derselbe Editor die **Stellen** (antippen + Beschriftung) bzw. den
+  **Bereich** (Rahmen ziehen). Erreichbar in der Vorschau von "Frage
+  erstellen" ("Bild bearbeiten" / "Bild & Stellen bearbeiten"), in der
+  Kartenliste (Knopf "Bild"/"Stellen"/"Bereich") und direkt beim Lernen
+  (Stift-Knopf oben rechts am Bild im Daily Quiz, Üben und Sprint – nicht in
+  der Probeklausur); gespeichert wird in die Karte, der Lernstand bleibt.
 - **Fragetyp "Interaktiv" (html) + externer KI-Prompt** – für Vorlagen, die in
   keinen der obigen Typen passen (z.B. eine Zuordnungs-Matrix/Tabelle mit
   mehreren Kriterien-Zeilen, oder eine offene Diskussionsfrage, bei der ein
@@ -424,11 +453,11 @@ engerem Fokus statt Feature-Fülle.
 Der Vorgänger hatte 9 Fragetypen (inkl. Mathe-Formel-Fragen mit Formel-Editor
 und Diagramm-Beschriftung/Bild-Markierung), 6 Mini-Games, eine
 Coin-Economy/Shop, Mock-Klausuren, Formelsammlungen, Sokrates-Modus u.v.m.
-Diese App übernimmt 6 der 9 Fragetypen inkl. der adaptiven
-Schwierigkeits-Eskalation (siehe oben) sowie inzwischen Probeklausur,
-Fehlertagebuch, KI-Tipp/-Erklärung und LaTeX-Darstellung, lässt aber bewusst
-den Mathe-Formel-Fragetyp mit Formel-Editor sowie diagramm-/bildbasierte
-Fragetypen (Diagramm beschriften, Bild markieren) weg und konzentriert sich ansonsten auf den
+Diese App übernimmt 8 der 9 Fragetypen (inzwischen auch Bild beschriften
+und Bild markieren) inkl. der adaptiven Schwierigkeits-Eskalation (siehe
+oben) sowie inzwischen Probeklausur, Fehlertagebuch, KI-Tipp/-Erklärung und
+LaTeX-Darstellung, lässt aber bewusst den Mathe-Formel-Fragetyp mit
+Formel-Editor weg und konzentriert sich ansonsten auf den
 Kernkreislauf **Vorbereiten → Nachbereiten → Daily Quiz** ohne Mini-Games,
 Economy o.ä. Die Vision-Modell-Rolle wird für die Seiten-Fragefunktion
 (siehe 5b) und die Texterkennung gescannter PDFs genutzt.
@@ -751,7 +780,15 @@ Nachbereiten-Modus zu wechseln.
   interaktiv, sonst Karteikarte) – oder auf **"KI entscheidet"** (Standard)
   – dann wählt die KI das Format passend zur Stufe (leicht eher Auswahl,
   schwer eher freies Erinnern, siehe `_variantTypeRule`/Schwierigkeits-
-  Eskalation); "Interaktiv" wählt sie dabei nie von selbst.
+  Eskalation); "Interaktiv", "Bild beschriften" und "Bild markieren" wählt
+  sie dabei nie von selbst. Bei den beiden Bildfragen setzt die KI die
+  Stellen bzw. den Bereich selbst (relativ zum markierten Ausschnitt oder
+  zur ganzen Seite); in der Vorschau lassen sie sich mit "Bild & Stellen
+  bearbeiten" korrigieren. Unter **"Bildfrage selbst erstellen"** geht es
+  ohne KI: Ausschnitt bzw. Seite im Bild-Editor öffnen, Stellen setzen oder
+  Bereich ziehen, Beschriftungen abdecken, Frage eingeben – die Frage
+  landet wie die KI-Fragen in der Vorschau ("Selbst erstellt") und bleibt
+  bei einer Neu-Generierung erhalten.
   **Fokus**, alles optional und kombinierbar: per **"Bereich markieren"**
   einen Rahmen um einen Teil der Seite ziehen (`PageRegionPicker` – ideal für
   Diagramme/Formeln, die sich nicht als Text auswählen lassen; der

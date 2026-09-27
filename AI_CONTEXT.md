@@ -79,9 +79,16 @@ Befehle (Flutter liegt in dieser Umgebung unter `/home/user/flutter-sdk/flutter/
 
 **`Flashcard`** (`lib/models/flashcard.dart`) – Frage + eigener SR-Zustand:
 - Inhalt: `front`, `back`, `type` (`QuestionType`: flashcard, singleChoice,
-  multipleChoice, freeText, fillBlank, dragDrop, dragCategory, html), je nach Typ
-  `options`/`correctText`/`blanks`/`dragPairs`/`htmlContent`; `imageBase64`
-  (Seiten-Screenshot, nur wenn für die Frage nötig).
+  multipleChoice, freeText, fillBlank, dragDrop, dragCategory, html,
+  diagramLabel, markImage), je nach Typ
+  `options`/`correctText`/`blanks`/`dragPairs`/`htmlContent`/`imageTargets`;
+  `imageBase64` (Seiten-Screenshot/Bild, nur wenn für die Frage nötig).
+- Bildfragen: `imageTargets` (`List<ImageTarget>`, Koordinaten relativ zum
+  Bild 0..1). `diagramLabel` = Punkte MIT `label` (nur beschriftete zählen),
+  `markImage` = Rechtecke `x,y` (Mitte) + `w,h` (0 = Punkt → Mindestgröße
+  `AnswerChecker.minRegionSide`). `ImageTarget.fromMap` liest auch Kreis
+  (`radius`) und Vieleck (`points`) der Vorgänger-App. Ohne Bild oder Ziele
+  ist die Karte nicht beantwortbar → Karteikarte (`AnswerChecker.isAnswerable`).
 - FSRS: `due, stability, difficulty, elapsedDays, scheduledDays, reps, lapses,
   state, lastReview`.
 - Ampel: `masteryBox` (0…`masteryBoxCap`=4).
@@ -105,7 +112,10 @@ Auto-Sync-Felder), `MasterySnapshot` (tägliche Ampel-Verteilung für den Trend)
 Rekonstruktionen (`copyWith*`, Export/Import, Sync, `_mergeIntoChain`,
 `_editConcept` …). Ein neues Feld MUSS überall ergänzt werden – dieser Fehler
 ist in der Historie mehrfach passiert (verlorene `htmlContent`/`masteryBox`/
-Seiten-Links). Nach einem neuen Feld: `grep -rn "Flashcard(" lib`.
+Seiten-Links). Nach einem neuen Feld: `grep -rn "Flashcard(" lib`. Zuletzt
+dazugekommen: `imageTargets` (auch in `VariantSnapshot`, Stufenwechsel,
+Export/Import). Bild/Ziele einer gespeicherten Karte ändern:
+`Flashcard.copyWithImage` (Lernstand bleibt).
 
 ## 5. Logik-Regeln: Quiz, FSRS und Ampel (exakt)
 
@@ -303,7 +313,21 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   `cropImageRelative`, geht als zweites Bild mit), Text und Antwort. Antwort
   der KI: `{"questions":[{"flashcards":[…]}]}` (`parsePageQuestionGroups`
   liest auch das alte flache Format); jede Frage wird per
-  `mergeTiersIntoChain` EINE Karte mit `pendingVariants`.
+  `mergeTiersIntoChain` EINE Karte mit `pendingVariants`. Wählbar sind
+  zusätzlich `diagramLabel`/`markImage` (`selectablePageQuestionTypes`, die
+  KI liefert `"targets"`; nie bei „KI entscheidet“); Bildfragen bekommen
+  immer das Bild. Eigene Bildfragen ohne KI: „Bildfrage selbst erstellen“
+  (`_createImageQuestion`, als `manual` markiert, bleiben bei
+  Neu-Generierung erhalten).
+- **Bild-Editor** (`showImageEditor`, `lib/ui/widgets/image_editor_screen.dart`):
+  Abdecken/Text werden per `applyImageEdits` (`lib/services/image_edit.dart`)
+  in Originalauflösung ins PNG gerechnet; im Modus `ImageTargetMode.labels`/
+  `regions` setzt er zusätzlich die `imageTargets`. Aufrufer: Vorschau in
+  „Frage erstellen“, Kartenliste (`_editImage`), beim Lernen über
+  `QuestionAnswerView.onImageEdited` → `CardReviewMixin.saveEditedImage`
+  (lädt die gespeicherte Karte, nicht den Schnappschuss; nicht in der
+  Probeklausur). `RelativeImage` zeigt Bilder im echten Seitenverhältnis mit
+  Ebenen an relativen Koordinaten (Quiz + Editor).
 - Screens mit langen KI-Aufrufen nutzen `SafeSetState` (kein `setState` nach
   Verlassen). Context-Zugriffe (Repos, ScaffoldMessenger) VOR dem ersten
   `await` auslesen.
@@ -318,7 +342,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 495 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 525 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -354,6 +378,9 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Kalendertage/Zeitumstellung, Sync-Download-Schutz, Export mit
     Zusammenfassungen und Lernstand-Wahl, Doppelspeichern, Daily-Quiz-
     Wiederholungsrunde (Fehler zählen einmal pro Tag).
+16. Bildfragen „Bild beschriften“/„Bild markieren“ (aus der Vorgänger-App)
+    und Bild-Editor (abdecken, beschriften, Stellen/Bereich setzen) in
+    „Frage erstellen“, Kartenliste und beim Lernen.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

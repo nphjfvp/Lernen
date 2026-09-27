@@ -579,6 +579,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         blanks: QuestionParsing.parseBlanks(f['blanks']),
         dragPairs: QuestionParsing.parseDragPairs(f['dragPairs']),
         htmlContent: f['htmlContent'] as String?,
+        imageTargets: parseImageTargets(f['imageTargets']),
         variantChain: escalate ? QuestionParsing.escalationChain : null,
       );
     }).toList();
@@ -1227,6 +1228,8 @@ class _PreviewView extends StatelessWidget {
         QuestionType.dragDrop => Icons.compare_arrows,
         QuestionType.dragCategory => Icons.category_outlined,
         QuestionType.html => Icons.web_outlined,
+        QuestionType.diagramLabel => Icons.label_outline,
+        QuestionType.markImage => Icons.ads_click,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
@@ -1250,6 +1253,11 @@ class _PreviewView extends StatelessWidget {
         return pairs.map((p) => '${(p as Map)['source']} → ${p['target']}').join(', ');
       case QuestionType.html:
         return (f['back'] ?? '(Interaktive Seite)').toString();
+      case QuestionType.diagramLabel:
+      case QuestionType.markImage:
+        final targets = QuestionParsing.imageTargetsIn(f) ?? const [];
+        final labels = targets.map((t) => t.label).where((l) => l.isNotEmpty);
+        return labels.isNotEmpty ? labels.join(', ') : (f['back'] ?? '(Stelle im Bild)').toString();
     }
   }
 }

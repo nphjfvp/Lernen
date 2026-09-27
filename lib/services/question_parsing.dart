@@ -65,6 +65,8 @@ class QuestionParsing {
     'drag_drop': QuestionType.dragDrop,
     'drag_category': QuestionType.dragCategory,
     'html': QuestionType.html,
+    'diagram_label': QuestionType.diagramLabel,
+    'mark_image': QuestionType.markImage,
   };
 
   /// Wandelt den von der KI gelieferten "type"-String (snake_case, siehe
@@ -175,12 +177,32 @@ class QuestionParsing {
           'dragPairs': pairs.map((p) => p.toMap()).toList(),
           if (duplicateTargets) 'type': 'drag_category',
         };
+      case QuestionType.diagramLabel:
+      case QuestionType.markImage:
+        // Einheitlich unter "imageTargets" ablegen (die KI bzw. Dateien der
+        // Vorgänger-App nennen die Ziele "targets", "diagram_labels" oder
+        // "mark_regions").
+        final targets = imageTargetsIn(entry) ?? const <ImageTarget>[];
+        return {
+          ...entry,
+          'imageTargets': [
+            for (final t in targets)
+              if (type == QuestionType.markImage || t.label.isNotEmpty) t.toMap(),
+          ],
+        };
       case QuestionType.flashcard:
       case QuestionType.freeText:
       case QuestionType.html:
         return entry;
     }
   }
+
+  /// Die Bild-Ziele eines KI-/Import-Eintrags, egal unter welchem Namen.
+  static List<ImageTarget>? imageTargetsIn(Map<String, dynamic> raw) =>
+      parseImageTargets(raw['imageTargets']) ??
+      parseImageTargets(raw['targets']) ??
+      parseImageTargets(raw['diagram_labels']) ??
+      parseImageTargets(raw['mark_regions']);
 
   static bool _isComplete(Map<String, dynamic> raw, QuestionType type) {
     switch (type) {
@@ -201,6 +223,10 @@ class QuestionParsing {
       case QuestionType.dragDrop:
       case QuestionType.dragCategory:
         return _usablePairs(raw).isNotEmpty;
+      case QuestionType.diagramLabel:
+        return (imageTargetsIn(raw) ?? const []).any((t) => t.label.isNotEmpty);
+      case QuestionType.markImage:
+        return (imageTargetsIn(raw) ?? const []).isNotEmpty;
       case QuestionType.html:
         final html = (raw['htmlContent'] ?? '').toString();
         // Grobe Vertragsprüfung: die Seite muss den JS-Rückkanal tatsächlich
@@ -247,6 +273,9 @@ class QuestionParsing {
     if (pairs != null && pairs.isNotEmpty) {
       return pairs.map((p) => '${p.source} → ${p.target}').join(', ');
     }
+
+    final labels = (imageTargetsIn(raw) ?? const []).map((t) => t.label).where((l) => l.isNotEmpty);
+    if (labels.isNotEmpty) return labels.join(', ');
     return null;
   }
 }

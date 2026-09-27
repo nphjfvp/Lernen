@@ -14,6 +14,7 @@ import '../../services/image_crop.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
+import 'image_editor_screen.dart';
 import 'page_region_picker.dart';
 import 'safe_set_state.dart';
 
@@ -74,8 +75,12 @@ class _DifficultySlot {
 }
 
 class _GeneratedQuestion {
-  _GeneratedQuestion(this.tiers);
+  _GeneratedQuestion(this.tiers, {this.manual = false});
   final List<Flashcard> tiers;
+
+  /// Selbst im Bild-Editor erstellt (nicht von der KI) – bleibt bei einer
+  /// KI-Überarbeitung erhalten.
+  final bool manual;
   bool keep = true;
 }
 
@@ -99,6 +104,10 @@ List<List<Flashcard>> buildPageQuestionCards(
     for (final entry in group.take(tierCount)) {
       final fixed = QuestionParsing.normalizeGeneratedFlashcard(entry);
       if (fixed == null) continue;
+      final type = QuestionParsing.parseType(fixed['type'] as String?);
+      // Bildfragen brauchen ihr Bild immer, andere nur, wenn die KI es für
+      // nötig hält.
+      final isImageType = type == QuestionType.diagramLabel || type == QuestionType.markImage;
       cards.add(Flashcard(
         id: const Uuid().v4(),
         moduleId: moduleId,
@@ -106,7 +115,7 @@ List<List<Flashcard>> buildPageQuestionCards(
         back: (fixed['back'] ?? '').toString(),
         createdAt: now,
         due: now,
-        type: QuestionParsing.parseType(fixed['type'] as String?),
+        type: type,
         unitId: unitId,
         // Bewusst gerade jetzt beim Betrachten dieser Seite gestellt –
         // soll unabhängig vom Einheiten-"behandelt"-Status zeitnah im
@@ -118,7 +127,8 @@ List<List<Flashcard>> buildPageQuestionCards(
         blanks: QuestionParsing.parseBlanks(fixed['blanks']),
         dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
         htmlContent: fixed['htmlContent'] as String?,
-        imageBase64: entry['needsImage'] == true ? attachImageBase64 : null,
+        imageBase64: isImageType || entry['needsImage'] == true ? attachImageBase64 : null,
+        imageTargets: parseImageTargets(fixed['imageTargets']),
       ));
     }
     if (cards.isNotEmpty) result.add(cards);
@@ -149,6 +159,7 @@ Flashcard mergeTiersIntoChain(List<Flashcard> tiers) {
             dragPairs: t.dragPairs,
             htmlContent: t.htmlContent,
             imageBase64: t.imageBase64,
+            imageTargets: t.imageTargets,
           ))
       .toList();
   return Flashcard(
@@ -166,6 +177,7 @@ Flashcard mergeTiersIntoChain(List<Flashcard> tiers) {
     dragPairs: base.dragPairs,
     htmlContent: base.htmlContent,
     imageBase64: base.imageBase64,
+    imageTargets: base.imageTargets,
     variantChain: tiers.map((t) => t.type).toList(),
     pendingVariants: pending,
     unitId: base.unitId,
@@ -195,6 +207,10 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
   List<String> _generatedLevels = const [];
   List<List<Map<String, dynamic>>>? _previousRaw;
   int _previewIndex = 0;
+
+  /// Zählt Bild-Bearbeitungen hoch – die Vorschau braucht danach einen neuen
+  /// Zustand (sie merkt sich das Bild).
+  int _editRevision = 0;
 
   MaterialHighlight? _firstOfColor(HighlightColor color) {
     for (final h in widget.highlightsOnPage) {
@@ -289,8 +305,9 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
         });
         return;
       }
+      final manual = (_questions ?? const <_GeneratedQuestion>[]).where((q) => q.manual).toList();
       setState(() {
-        _questions = [for (final tiers in questions) _GeneratedQuestion(tiers)];
+        _questions = [for (final tiers in questions) _GeneratedQuestion(tiers), ...manual];
         _generatedLevels = [for (final s in slots) s.label];
         _previousRaw = groups;
         _previewIndex = 0;
@@ -310,6 +327,128 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
       });
     }
   }
+
+  static ImageTargetMode? _targetModeFor(QuestionType type) => switch (type) {
+        QuestionType.diagramLabel => ImageTargetMode.labels,
+        QuestionType.markImage => ImageTargetMode.regions,
+        _ => null,
+      };
+
+  /// Bild der Vorschau-Karte bearbeiten (abdecken, beschriften; bei
+  /// Bildfragen auch Stellen/Bereiche). Die Abdeckung gilt für alle Stufen
+  /// der Frage, die dasselbe Bild tragen.
+  Future<void> _editPreviewImage(_GeneratedQuestion question, int tier) async {
+    final card = question.tiers[tier];
+    final base64 = card.imageBase64;
+    if (base64 == null) return;
+    final mode = _targetModeFor(card.type);
+    final result = await showImageEditor(
+      context,
+      base64Decode(base64),
+      targetMode: mode,
+      targets: card.imageTargets ?? const [],
+    );
+    if (result == null || !mounted) return;
+    final newBase64 = result.imageChanged ? base64Encode(result.bytes) : null;
+    setState(() {
+      for (var i = 0; i < question.tiers.length; i++) {
+        final t = question.tiers[i];
+        question.tiers[i] = t.copyWithImage(
+          imageBase64: t.imageBase64 == base64 ? newBase64 : null,
+          imageTargets: i == tier && mode != null ? result.targets : null,
+        );
+      }
+      _editRevision++;
+    });
+  }
+
+  /// Bildfrage ganz ohne KI: Seite bzw. markierten Bereich im Bild-Editor
+  /// vorbereiten (Beschriftungen abdecken, Stellen/Bereich setzen), dann die
+  /// Frage formulieren. Landet wie die KI-Fragen in der Vorschau.
+  Future<void> _createImageQuestion(QuestionType type) async {
+    final source = _focusImage ?? widget.pageImageBytes;
+    final image = await downscaleImage(source) ?? source;
+    if (!mounted) return;
+    final result = await showImageEditor(context, image, targetMode: _targetModeFor(type), title: type.label);
+    if (result == null || !mounted) return;
+    final texts = await _askImageQuestionText(type);
+    if (texts == null || !mounted) return;
+    final now = DateTime.now();
+    final card = Flashcard(
+      id: const Uuid().v4(),
+      moduleId: widget.material.moduleId,
+      front: texts.front,
+      back: texts.back,
+      createdAt: now,
+      due: now,
+      type: type,
+      unitId: widget.material.unitId,
+      priorityIntroduction: true,
+      imageBase64: base64Encode(result.bytes),
+      imageTargets: result.targets,
+    );
+    setState(() {
+      _questions = [...?_questions, _GeneratedQuestion([card], manual: true)];
+      _previewIndex = _flat.length - 1;
+      _error = null;
+    });
+  }
+
+  Future<({String front, String back})?> _askImageQuestionText(QuestionType type) async {
+    final front = TextEditingController(
+      text: type == QuestionType.diagramLabel ? 'Beschrifte die nummerierten Stellen.' : '',
+    );
+    final back = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(type.label),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: front,
+              autofocus: true,
+              maxLines: null,
+              decoration: InputDecoration(
+                labelText: 'Frage',
+                hintText: type == QuestionType.markImage ? 'Wo liegt …?' : null,
+              ),
+            ),
+            if (type == QuestionType.markImage)
+              TextField(
+                controller: back,
+                decoration: const InputDecoration(labelText: 'Was ist dort zu sehen? (optional)'),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Übernehmen')),
+        ],
+      ),
+    );
+    final question = front.text.trim();
+    if (ok != true || question.isEmpty) return null;
+    return (front: question, back: back.text.trim());
+  }
+
+  Widget _manualImageButtons() => Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          OutlinedButton.icon(
+            onPressed: _generating ? null : () => _createImageQuestion(QuestionType.diagramLabel),
+            icon: const Icon(Icons.label_outline, size: 18),
+            label: const Text('Bild beschriften'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _generating ? null : () => _createImageQuestion(QuestionType.markImage),
+            icon: const Icon(Icons.ads_click, size: 18),
+            label: const Text('Bild markieren'),
+          ),
+        ],
+      );
 
   Future<void> _save() async {
     final kept = (_questions ?? const <_GeneratedQuestion>[]).where((q) => q.keep).toList();
@@ -476,7 +615,9 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           'Schwierigkeitsgrade',
           'Jede Frage in bis zu 3 Stufen, die nacheinander freigeschaltet werden. '
               '"KI entscheidet" wählt das passende Format je Stufe. "Interaktiv" ist nur '
-              'auf Android/iOS eine interaktive Seite, sonst eine Karteikarte.',
+              'auf Android/iOS eine interaktive Seite, sonst eine Karteikarte. Bei "Bild '
+              'beschriften"/"Bild markieren" schätzt die KI die Stellen – in der Vorschau '
+              'lassen sie sich im Bild-Editor korrigieren.',
         ),
         ..._slots.map((slot) => Padding(
               padding: const EdgeInsets.only(bottom: 4),
@@ -527,6 +668,14 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
             padding: const EdgeInsets.only(top: 14),
             child: Text(_error!, style: TextStyle(color: c.danger, fontSize: 12.5)),
           ),
+        const SizedBox(height: 24),
+        _sectionTitle(
+          c,
+          'Bildfrage selbst erstellen',
+          'Ohne KI: Seite (bzw. markierten Bereich) öffnen, Beschriftungen abdecken und die Stellen '
+              'zum Beschriften bzw. die richtige Stelle setzen.',
+        ),
+        _manualImageButtons(),
       ],
     );
   }
@@ -537,8 +686,10 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
     final position = flat[index];
     final question = questions[position.question];
     final card = question.tiers[position.tier];
-    final level =
-        position.tier < _generatedLevels.length ? _generatedLevels[position.tier] : 'Stufe ${position.tier + 1}';
+    final level = question.manual
+        ? 'Selbst erstellt'
+        : (position.tier < _generatedLevels.length ? _generatedLevels[position.tier] : 'Stufe ${position.tier + 1}');
+    final canEditImage = card.imageBase64 != null && !_generating;
     final label = [
       if (questions.length > 1) 'Frage ${position.question + 1}/${questions.length}',
       level,
@@ -600,9 +751,43 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
             title: Text('Frage ${position.question + 1} speichern', style: const TextStyle(fontSize: 13.5)),
           ),
         ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              if (canEditImage)
+                TextButton.icon(
+                  onPressed: () => _editPreviewImage(question, position.tier),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: Text(switch (card.type) {
+                    QuestionType.diagramLabel => 'Bild & Stellen bearbeiten',
+                    QuestionType.markImage => 'Bild & Bereich bearbeiten',
+                    _ => 'Bild bearbeiten',
+                  }),
+                ),
+              const Spacer(),
+              PopupMenuButton<QuestionType>(
+                tooltip: 'Bildfrage hinzufügen',
+                enabled: !_generating,
+                onSelected: _createImageQuestion,
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: QuestionType.diagramLabel, child: Text('Bild beschriften (selbst)')),
+                  PopupMenuItem(value: QuestionType.markImage, child: Text('Bild markieren (selbst)')),
+                ],
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [Icon(Icons.add_photo_alternate_outlined, size: 18), SizedBox(width: 4), Text('Bildfrage')],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: QuestionAnswerView(
-            key: ValueKey(card.id),
+            key: ValueKey('${card.id}-$_editRevision'),
             card: card,
             isNew: false,
             onComplete: ({selfGrade, isCorrect}) {

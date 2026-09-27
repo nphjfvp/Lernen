@@ -808,9 +808,15 @@ Sprache der Vorlage.
   ];
 
   /// Fragetypen, die der Nutzer je Stufe fest wählen kann – zusätzlich
-  /// "Interaktiv" (html): aufwendig und nur auf Android/iOS interaktiv,
-  /// deshalb nur auf ausdrücklichen Wunsch statt als KI-Wahl.
-  static const selectablePageQuestionTypes = [...pageQuestionTypes, QuestionType.html];
+  /// "Interaktiv" (html: aufwendig und nur auf Android/iOS interaktiv) und
+  /// die Bildfragen (brauchen ein passendes Bild, die KI schätzt Positionen)
+  /// – deshalb nur auf ausdrücklichen Wunsch statt als KI-Wahl.
+  static const selectablePageQuestionTypes = [
+    ...pageQuestionTypes,
+    QuestionType.html,
+    QuestionType.diagramLabel,
+    QuestionType.markImage,
+  ];
 
   /// Erstellt (oder überarbeitet) [questionCount] Fragen direkt aus einer
   /// betrachteten Seite (MaterialViewerScreen, "Frage erstellen"), jede in
@@ -1037,6 +1043,26 @@ Antworte in der Sprache der Vorlage.
               '"back" (Lösung als Text – Anzeige auf Geräten ohne interaktive '
               'Seite). Antwortformat: {"front": "...", "back": "...", '
               '"htmlContent": "..."}',
+        QuestionType.diagramLabel =>
+          'Zieltyp "diagram_label" (Bild beschriften): nur für ein Bild mit '
+              'mehreren beschriftbaren Stellen (Diagramm, Skizze, Aufbau, '
+              'Schaltbild). "targets" enthält je Stelle die Beschriftung und ihre '
+              'Position relativ zum Bild: x und y von 0 bis 1, Ursprung oben links '
+              '(beziehe dich auf den markierten Ausschnitt, falls es einen gibt, '
+              'sonst auf die ganze Seite). Stehen die Beschriftungen schon im '
+              'Bild, zeige genau auf die beschriftete Stelle (sie wird später '
+              'abgedeckt). 2 bis 6 Stellen, jede Beschriftung kurz. '
+              'Antwortformat: {"front": "Beschrifte ...", "targets": '
+              '[{"label": "...", "x": 0.3, "y": 0.4}]}',
+        QuestionType.markImage =>
+          'Zieltyp "mark_image" (Bild markieren): eine Frage, deren Antwort '
+              'genau EINE Stelle im Bild ist ("Wo liegt/befindet sich …?"). '
+              '"targets" enthält den richtigen Bereich als Rechteck relativ zum '
+              'Bild: x und y = Mittelpunkt, w und h = Breite und Höhe, alles von 0 '
+              'bis 1, Ursprung oben links (markierter Ausschnitt, falls es einen '
+              'gibt, sonst die ganze Seite). "back" sagt kurz, was dort zu sehen '
+              'ist. Antwortformat: {"front": "Wo ...?", "back": "...", '
+              '"targets": [{"x": 0.5, "y": 0.4, "w": 0.2, "h": 0.15}]}',
       };
 
   /// Erster Schritt der Schwierigkeits-Eskalation (siehe

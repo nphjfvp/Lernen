@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +13,7 @@ import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/services/fsrs_service.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/daily/question_answer_view.dart';
+import 'package:lernen/ui/widgets/relative_image.dart';
 import 'package:provider/provider.dart';
 
 class _SettingsWithKey extends SettingsRepository {
@@ -40,6 +43,14 @@ Flashcard _card({
     blanks: blanks,
     dragPairs: dragPairs,
   );
+}
+
+Future<Uint8List> _png(int width, int height) async {
+  final recorder = ui.PictureRecorder();
+  ui.Canvas(recorder).drawRect(
+      ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()), ui.Paint()..color = const ui.Color(0xFF3366CC));
+  final image = await recorder.endRecording().toImage(width, height);
+  return (await image.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
 }
 
 http.Response _chatResponse(Object json) => http.Response(
@@ -640,5 +651,188 @@ void main() {
       expect(find.text('Nicht ganz.'), findsNothing);
     });
   });
-}
 
+  group('QuestionAnswerView – Bildfragen', () {
+    Future<Flashcard> imageCard(WidgetTester tester, QuestionType type, List<ImageTarget> targets) async {
+      final png = (await tester.runAsync(() => _png(200, 100)))!;
+      return Flashcard(
+        id: 'img',
+        moduleId: 'm1',
+        front: type == QuestionType.markImage ? 'Wo liegt der Kern?' : 'Beschrifte die Zelle',
+        back: type == QuestionType.markImage ? 'in der Mitte' : '',
+        createdAt: DateTime(2026, 9, 27),
+        due: DateTime(2026, 9, 27),
+        type: type,
+        imageBase64: base64Encode(png),
+        imageTargets: targets,
+      );
+    }
+
+    Future<void> showImage(WidgetTester tester) async {
+      // Bildgröße wird asynchron dekodiert.
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pumpAndSettle();
+    }
+
+    setUp(() {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      binding.platformDispatcher.views.first.physicalSize = const Size(800, 1600);
+      binding.platformDispatcher.views.first.devicePixelRatio = 1;
+    });
+    tearDown(() {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      binding.platformDispatcher.views.first.resetPhysicalSize();
+      binding.platformDispatcher.views.first.resetDevicePixelRatio();
+    });
+
+    testWidgets('Bild beschriften: antippen und Stelle antippen, richtig zugeordnet', (tester) async {
+      bool? reported;
+      final card = await imageCard(tester, QuestionType.diagramLabel, const [
+        ImageTarget(x: 0.25, y: 0.5, label: 'Zellkern'),
+        ImageTarget(x: 0.75, y: 0.5, label: 'Mitochondrium'),
+      ]);
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reported = isCorrect));
+      await showImage(tester);
+
+      expect(find.byKey(const ValueKey('label-zone-0')), findsOneWidget);
+      expect(find.text('Prüfen'), findsOneWidget);
+      await tester.tap(find.text('Zellkern'));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('label-zone-0')));
+      await tester.pump();
+      expect(find.text('1 · Zellkern'), findsOneWidget);
+
+      await tester.tap(find.text('Mitochondrium'));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('label-zone-1')));
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Richtig!'), findsOneWidget);
+      await tester.tap(find.text('Weiter'));
+      await tester.pumpAndSettle();
+      expect(reported, isTrue);
+    });
+
+    testWidgets('Bild beschriften: falsch zugeordnet zeigt die richtige Beschriftung', (tester) async {
+      final card = await imageCard(tester, QuestionType.diagramLabel, const [
+        ImageTarget(x: 0.25, y: 0.5, label: 'Zellkern'),
+        ImageTarget(x: 0.75, y: 0.5, label: 'Mitochondrium'),
+      ]);
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+      await showImage(tester);
+
+      await tester.tap(find.text('Mitochondrium'));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('label-zone-0')));
+      await tester.pump();
+      await tester.tap(find.text('Zellkern'));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('label-zone-1')));
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Nicht ganz.'), findsOneWidget);
+      expect(find.text('Stelle 1: richtig ist „Zellkern“'), findsOneWidget);
+    });
+
+    testWidgets('Bild markieren: Treffer und Fehlschuss', (tester) async {
+      for (final (fx, expected) in [(0.5, 'Richtig!'), (0.1, 'Nicht ganz.')]) {
+        final card = await imageCard(tester, QuestionType.markImage, const [
+          ImageTarget(x: 0.5, y: 0.5, w: 0.2, h: 0.3),
+        ]);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+        await showImage(tester);
+
+        final box = tester.getRect(find.descendant(of: find.byType(RelativeImage), matching: find.byType(Stack)).first);
+        await tester.tapAt(Offset(box.left + box.width * fx, box.top + box.height * 0.5));
+        await tester.pump();
+        expect(find.byKey(const ValueKey('mark-marker')), findsOneWidget);
+        await tester.tap(find.text('Prüfen'));
+        await tester.pumpAndSettle();
+        expect(find.text(expected), findsOneWidget);
+      }
+    });
+
+    testWidgets('ohne Bild wird eine Bildfrage als Karteikarte gezeigt', (tester) async {
+      final card = Flashcard(
+        id: 'noimg',
+        moduleId: 'm1',
+        front: 'Wo liegt der Kern?',
+        back: 'in der Mitte',
+        createdAt: DateTime(2026, 9, 27),
+        due: DateTime(2026, 9, 27),
+        type: QuestionType.markImage,
+        imageTargets: const [ImageTarget(x: 0.5, y: 0.5)],
+      );
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+      await tester.pump();
+      expect(find.text('Prüfen'), findsNothing);
+      expect(find.textContaining('Wo liegt der Kern?'), findsOneWidget);
+    });
+
+    testWidgets('Bild beim Lernen bearbeiten: abgedecktes Bild wird gemeldet und angezeigt', (tester) async {
+      final png = (await tester.runAsync(() => _png(200, 100)))!;
+      final card = Flashcard(
+        id: 'edit',
+        moduleId: 'm1',
+        front: 'Was ist markiert?',
+        back: 'Zellkern',
+        createdAt: DateTime(2026, 9, 27),
+        due: DateTime(2026, 9, 27),
+        imageBase64: base64Encode(png),
+      );
+      Uint8List? saved;
+      Widget view({bool withCallback = true}) => MaterialApp(
+            theme: AppTheme.light,
+            home: Scaffold(
+              body: Column(
+                children: [
+                  Expanded(
+                    child: QuestionAnswerView(
+                      card: card,
+                      isNew: false,
+                      onComplete: ({selfGrade, isCorrect}) {},
+                      onImageEdited: withCallback ? (bytes) async => saved = bytes : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+
+      // Ohne Speicher-Callback (z.B. Vorschau) kein Bearbeiten-Knopf.
+      await tester.pumpWidget(view(withCallback: false));
+      expect(find.byTooltip('Bild bearbeiten (z.B. Antwort abdecken)'), findsNothing);
+
+      await tester.pumpWidget(view());
+      // Bild erst dekodieren lassen – vorher hat es keine Größe.
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Bild bearbeiten (z.B. Antwort abdecken)'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500)); // Seitenübergang
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pumpAndSettle();
+
+      final box = tester.getRect(find
+          .descendant(of: find.byKey(const ValueKey('image-editor-canvas')), matching: find.byType(Stack))
+          .first);
+      await tester.dragFrom(Offset(box.left + box.width * 0.1, box.top + box.height * 0.1),
+          Offset(box.width * 0.4, box.height * 0.5));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Übernehmen'));
+      for (var i = 0; i < 8; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 40)));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+
+      expect(saved, isNotNull);
+      expect(saved, isNot(png));
+      final shown = tester.widget<Image>(find.byType(Image).first).image as MemoryImage;
+      expect(shown.bytes, same(saved));
+    });
+  });
+}

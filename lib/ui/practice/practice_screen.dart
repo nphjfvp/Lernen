@@ -151,6 +151,7 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
                               key: ValueKey(queue[_index].id),
                               card: queue[_index],
                               isNew: queue[_index].reps == 0,
+                              onImageEdited: (bytes) => saveEditedImage(queue[_index], bytes),
                               onComplete: ({selfGrade, isCorrect}) => _handleComplete(
                                 queue[_index],
                                 selfGrade: selfGrade,

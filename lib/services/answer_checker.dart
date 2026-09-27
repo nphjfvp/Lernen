@@ -194,6 +194,57 @@ class AnswerChecker {
     );
   }
 
+  /// Bild beschriften: die Stellen mit Beschriftung, in Ziel-Reihenfolge
+  /// (Nummern 1..n in der Anzeige).
+  static List<ImageTarget> labelTargets(Flashcard q) => [
+        for (final t in q.imageTargets ?? const <ImageTarget>[])
+          if (t.label.trim().isNotEmpty) t,
+      ];
+
+  /// Kleinste Größe eines Markier-Bereichs – ein Punkt ohne Ausdehnung wäre
+  /// kaum zu treffen.
+  static const minRegionSide = 0.08;
+
+  /// Bild markieren: die Bereiche, in die getippt werden muss.
+  static List<ImageTarget> markRegions(Flashcard q) => [
+        for (final t in q.imageTargets ?? const <ImageTarget>[])
+          t.copyWith(w: math.max(t.w, minRegionSide), h: math.max(t.h, minRegionSide)),
+      ];
+
+  static bool _hasImage(Flashcard q) => (q.imageBase64 ?? '').isNotEmpty;
+
+  /// Bild beschriften: ob an Stelle [zone] die Beschriftung [label] liegt
+  /// (beides Indizes in [labelTargets]). Gleich lautende Beschriftungen sind
+  /// austauschbar, deshalb zählt der Text.
+  static bool labelZoneCorrect(Flashcard q, int zone, int? label) {
+    final targets = labelTargets(q);
+    if (label == null || zone < 0 || zone >= targets.length || label < 0 || label >= targets.length) return false;
+    return targets[label].label.trim() == targets[zone].label.trim();
+  }
+
+  /// "1 = Zellkern, 2 = Mitochondrium" – die Nummern der Stellen im Bild.
+  static String diagramLabelSolution(Flashcard q) =>
+      [for (final (i, t) in labelTargets(q).indexed) '${i + 1} = ${t.label}'].join(', ');
+
+  /// Bild beschriften: [zoneToLabel] – für jede Stelle (Index in
+  /// [labelTargets]) der Index der dort abgelegten Beschriftung.
+  static AnswerCheckResult checkDiagramLabel(Flashcard q, Map<int, int> zoneToLabel) {
+    final targets = labelTargets(q);
+    if (targets.isEmpty) return const AnswerCheckResult(isCorrect: false, correctAnswerLabel: '');
+    var hits = 0;
+    for (var zone = 0; zone < targets.length; zone++) {
+      if (labelZoneCorrect(q, zone, zoneToLabel[zone])) hits++;
+    }
+    return AnswerCheckResult(isCorrect: hits == targets.length, correctAnswerLabel: diagramLabelSolution(q));
+  }
+
+  /// Bild markieren: richtig, wenn der Tipp ([x]/[y] relativ zum Bild) in
+  /// einem der Bereiche liegt.
+  static AnswerCheckResult checkMarkImage(Flashcard q, double? x, double? y) {
+    final hit = x != null && y != null && markRegions(q).any((r) => r.contains(x, y));
+    return AnswerCheckResult(isCorrect: hit, correctAnswerLabel: q.answerSummary);
+  }
+
   /// Ob sich die Frage in ihrem Typ überhaupt beantworten lässt. Karten mit
   /// kaputten Daten (keine richtige Option, leere Lösung, keine Paare …)
   /// zeigt die Oberfläche stattdessen als Karteikarte zum Selbstbewerten, statt
@@ -214,6 +265,10 @@ class AnswerChecker {
       case QuestionType.dragDrop:
       case QuestionType.dragCategory:
         return usableDragPairs(q).isNotEmpty;
+      case QuestionType.diagramLabel:
+        return _hasImage(q) && labelTargets(q).isNotEmpty;
+      case QuestionType.markImage:
+        return _hasImage(q) && markRegions(q).isNotEmpty;
     }
   }
 
