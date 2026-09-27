@@ -527,8 +527,33 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     ),
                   )
               : null,
+          onAttachPdf: !m.hasViewablePdf && !m.hasRemotePdf && m.fileName.toLowerCase().endsWith('.pdf')
+              ? () => _attachPdf(m)
+              : null,
         ),
       );
+
+  /// Legt die Original-PDF zu einem früher nur als Text gespeicherten
+  /// Material nach (z.B. Übungen, deren PDF bisher nicht aufbewahrt wurde) –
+  /// danach lässt es sich ansehen und seitenweise importieren.
+  Future<void> _attachPdf(MaterialItem material) async {
+    final repo = context.read<MaterialRepository>();
+    final messenger = ScaffoldMessenger.of(context);
+    final picked = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: const ['pdf']);
+    if (picked.isEmpty) return;
+    try {
+      final bytes = await picked.first.readAsBytes();
+      final (filePath, fileBytesBase64) = await MaterialFileStore.store(material.id, bytes);
+      await repo.save(MaterialItem.fromMap({
+        ...material.toMap(),
+        'filePath': filePath,
+        'fileBytesBase64': fileBytesBase64,
+      }));
+      messenger.showSnackBar(SnackBar(content: Text('PDF zu „${material.fileName}“ hinzugefügt.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('PDF konnte nicht gespeichert werden: $e')));
+    }
+  }
 
   /// Fragt einen Einheit-Titel ab (z.B. für "+ Neue Einheit anlegen" beim
   /// Hochladen). Schlägt "Einheit N" als Vorgabe vor. Null bei Abbruch.
@@ -840,16 +865,13 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           continue;
         }
         final id = const Uuid().v4();
-        // Original-PDF-Bytes zusätzlich speichern (für Folien UND
-        // Übungsklausuren im PDF-Format) – Grundlage für die visuelle
-        // Ansicht + Markier-Funktion in MaterialViewerScreen. Andere
-        // Formate/Übungsaufgaben funktionieren wie bisher rein textbasiert.
+        // Original-PDF-Bytes zusätzlich speichern (Folien, Übungen und
+        // Übungsklausuren) – Grundlage für die Ansicht in
+        // MaterialViewerScreen und für den seitenweisen Fragen-Import mit
+        // Abbildungen. Andere Formate bleiben rein textbasiert.
         String? filePath;
         String? fileBytesBase64;
-        final isPdfViewable =
-            (kind == MaterialKind.slide || kind == MaterialKind.practiceExam) &&
-                file.name.toLowerCase().endsWith('.pdf');
-        if (isPdfViewable) {
+        if (file.name.toLowerCase().endsWith('.pdf')) {
           (filePath, fileBytesBase64) = await MaterialFileStore.store(id, bytes);
         }
         await repo.save(MaterialItem(
@@ -1243,6 +1265,7 @@ class _MaterialRow extends StatelessWidget {
     this.onOpen,
     this.onRecognizeText,
     this.onImportQuestions,
+    this.onAttachPdf,
   });
   final MaterialItem material;
   final ValueChanged<bool> onToggleCovered;
@@ -1250,6 +1273,7 @@ class _MaterialRow extends StatelessWidget {
   final VoidCallback? onOpen;
   final VoidCallback? onRecognizeText;
   final VoidCallback? onImportQuestions;
+  final VoidCallback? onAttachPdf;
 
   @override
   Widget build(BuildContext context) {
@@ -1317,7 +1341,7 @@ class _MaterialRow extends StatelessWidget {
                   ),
                   // Seltenere Aktionen im Menü – nebeneinander wird die Zeile
                   // auf dem Handy zu schmal für den Dateinamen.
-                  if (onImportQuestions != null || onRecognizeText != null)
+                  if (onImportQuestions != null || onRecognizeText != null || onAttachPdf != null)
                     PopupMenuButton<VoidCallback>(
                       tooltip: 'Weitere Aktionen',
                       icon: Icon(Icons.more_vert, size: 18, color: c.inkMuted),
@@ -1329,6 +1353,16 @@ class _MaterialRow extends StatelessWidget {
                             child: const ListTile(
                               leading: Icon(Icons.manage_search),
                               title: Text('Fragen daraus importieren'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        if (onAttachPdf != null)
+                          PopupMenuItem(
+                            value: onAttachPdf,
+                            child: const ListTile(
+                              leading: Icon(Icons.picture_as_pdf_outlined),
+                              title: Text('Original-PDF hinzufügen'),
+                              subtitle: Text('Zum Ansehen und Importieren'),
                               contentPadding: EdgeInsets.zero,
                             ),
                           ),

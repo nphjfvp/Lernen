@@ -25,6 +25,8 @@ import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/math_markup.dart';
 import '../../services/pdf_ocr_service.dart';
+import '../../services/pdf_question_import_service.dart';
+import '../../services/pdf_service.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
@@ -86,6 +88,11 @@ class ReviewScreen extends StatefulWidget {
 
   final String moduleId;
 
+  /// Test-Hook: erzeugt den seitenweisen Import-Dienst (z.B. mit einem
+  /// Seiten-Renderer ohne Plattform-Engine).
+  @visibleForTesting
+  static PdfQuestionImportService Function(AiService ai)? importServiceFactory;
+
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
 }
@@ -126,6 +133,12 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
   /// QuestionParsing.normalizeGeneratedFlashcard) – wurden verworfen statt
   /// als stumme "nur Vorderseite"-Karte gespeichert zu werden.
   int _droppedFlashcardCount = 0;
+
+  /// Fortschritt während der KI arbeitet (z.B. "Seite 4 von 12").
+  String? _progressText;
+
+  /// Hinweise zum Import (fehlgeschlagene Seiten, keine Seitenbilder).
+  List<String> _importNotes = const [];
 
   /// "create": Folien allein reichen (Übungsaufgaben verbessern die
   /// Konzepte, sind aber nicht mehr Pflicht – "nur erstellen" direkt aus
@@ -264,6 +277,8 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
       _rawResponse = null;
       _crosscheckResult = null;
       _crosscheckError = null;
+      _progressText = null;
+      _importNotes = const [];
     });
 
     try {
@@ -281,12 +296,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
             examContext: examContext,
           );
         case _GenerateMode.import:
-          final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
-          final imported = await ai.importQuestionsFromExercises(
-            _exercisesText,
-            granularity: settings.chunkGranularity,
-          );
-          result = {'concepts': [], 'flashcards': imported};
+          result = {'concepts': [], 'flashcards': await _importQuestions(settings)};
         case _GenerateMode.pasteJson:
           // Kein AiService-Aufruf: das JSON wurde bereits fertig von einem
           // extern befragten Modell geliefert (siehe
@@ -347,6 +357,73 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     }
   }
 
+  /// Import-Modus: PDFs werden Seite für Seite vom Vision-Modell gelesen
+  /// (als Bild, siehe PdfQuestionImportService) – so bleiben Aufgabenform,
+  /// Tabellen und Abbildungen erhalten. Die übrigen Dateien dienen dabei als
+  /// Nachschlagewerk für Lösungen (z.B. eine separate Musterlösung). Nur
+  /// Dateien ohne PDF (Word, PowerPoint …) laufen über den Text-Import.
+  Future<List<Map<String, dynamic>>> _importQuestions(AppSettings settings) async {
+    // PDFs, die sich nicht öffnen lassen, gehen den Text-Weg.
+    final pageCounts = <_PickedFile, int>{};
+    for (final f in _exercisesFiles) {
+      if (!f.fileName.toLowerCase().endsWith('.pdf') || f.bytes.isEmpty) continue;
+      try {
+        final count = PdfService().pageCount(f.bytes);
+        if (count > 0) pageCounts[f] = count;
+      } catch (_) {}
+    }
+    final pdfs = pageCounts.keys.toList();
+    final others = [for (final f in _exercisesFiles) if (!pageCounts.containsKey(f)) f];
+    final imported = <Map<String, dynamic>>[];
+    final notes = <String>[];
+    if (pdfs.isNotEmpty) {
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.visionModelId);
+      final service = ReviewScreen.importServiceFactory?.call(ai) ?? PdfQuestionImportService(ai: ai);
+      var withoutImages = false;
+      for (final (i, file) in pdfs.indexed) {
+        final pageCount = pageCounts[file]!;
+        final reference = [
+          for (final o in _exercisesFiles)
+            if (o != file && o.rawText.trim().isNotEmpty) '=== ${o.fileName} ===\n${o.rawText}',
+        ].join('\n\n');
+        final scan = await service.scan(
+          file.bytes,
+          firstPage: 1,
+          lastPage: pageCount,
+          contentOnly: false,
+          fillMissingSolutions: true,
+          referenceText: reference.isEmpty ? null : reference,
+          onProgress: (done, total) => setState(() => _progressText = pdfs.length == 1
+              ? 'Seitenpaket $done von $total'
+              : '${file.fileName}: Seitenpaket $done von $total (Datei ${i + 1} von ${pdfs.length})'),
+        );
+        if (scan.failedBatches.isNotEmpty) {
+          if (scan.questions.isEmpty && pdfs.length == 1 && others.isEmpty) {
+            throw AiServiceException(scan.errors.isEmpty ? 'Der Import ist fehlgeschlagen.' : scan.errors.first);
+          }
+          notes.add('${file.fileName}: ${scan.failedBatches.length} Seitenpaket(e) fehlgeschlagen – '
+              '${scan.errors.join('; ')}');
+        }
+        if (!scan.usedPageImages) withoutImages = true;
+        imported.addAll([for (final q in scan.questions) q.data]);
+      }
+      if (withoutImages) {
+        notes.add('Die Seiten ließen sich auf diesem Gerät nicht als Bild darstellen – Abbildungen sind nur '
+            'beschrieben statt angehängt.');
+      }
+    }
+    if (others.isNotEmpty) {
+      setState(() => _progressText = 'Weitere Dateien werden gelesen …');
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      imported.addAll(await ai.importQuestionsFromExercises(
+        others.map((f) => '=== Datei: ${f.fileName} ===\n${f.text}').join('\n\n'),
+        granularity: settings.chunkGranularity,
+      ));
+    }
+    _importNotes = notes;
+    return imported;
+  }
+
   Future<void> _crosscheck() async {
     final settings = context.read<SettingsRepository>().settings;
     if (!settings.hasApiKey || _result == null) return;
@@ -404,7 +481,16 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     setState(() {
       final list = List<dynamic>.from(_result![listKey] as List? ?? const []);
       if (targetIndex >= 0 && targetIndex < list.length) {
-        list[targetIndex] = Map<String, dynamic>.from(fix);
+        final original = list[targetIndex];
+        final fixed = Map<String, dynamic>.from(fix);
+        // Der Crosscheck sieht keine Bilder – eine angehängte Abbildung samt
+        // Stellen bleibt an der korrigierten Karte.
+        if (original is Map) {
+          for (final key in const ['imageBase64', 'imageTargets']) {
+            if (original[key] != null && fixed[key] == null) fixed[key] = original[key];
+          }
+        }
+        list[targetIndex] = fixed;
         _result![listKey] = list;
       }
       _appliedIssueIndices.add(issueIndex);
@@ -522,19 +608,30 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         fileBytesBase64: fileBytesBase64,
       ));
     }
-    final exercisesMaterials = _exercisesFiles
-        .where((f) => f.existingMaterialId == null)
-        .map((f) => MaterialItem(
-              id: const Uuid().v4(),
-              moduleId: widget.moduleId,
-              fileName: f.fileName,
-              kind: MaterialKind.exercise,
-              extractedText: f.rawText,
-              createdAt: now,
-              covered: true,
-              unitId: unitId,
-            ))
-        .toList();
+    // Übungs-PDFs ebenso ablegen – sonst ließen sie sich weder ansehen
+    // noch später seitenweise (mit Abbildungen) importieren.
+    final exercisesMaterials = <MaterialItem>[];
+    for (final f in _exercisesFiles) {
+      if (f.existingMaterialId != null) continue;
+      final id = const Uuid().v4();
+      String? filePath;
+      String? fileBytesBase64;
+      if (f.fileName.toLowerCase().endsWith('.pdf')) {
+        (filePath, fileBytesBase64) = await MaterialFileStore.store(id, f.bytes);
+      }
+      exercisesMaterials.add(MaterialItem(
+        id: id,
+        moduleId: widget.moduleId,
+        fileName: f.fileName,
+        kind: MaterialKind.exercise,
+        extractedText: f.rawText,
+        createdAt: now,
+        covered: true,
+        unitId: unitId,
+        filePath: filePath,
+        fileBytesBase64: fileBytesBase64,
+      ));
+    }
     final sourceIds = [
       ...slidesMaterials.map((m) => m.id),
       ...exercisesMaterials.map((m) => m.id),
@@ -579,6 +676,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         blanks: QuestionParsing.parseBlanks(f['blanks']),
         dragPairs: QuestionParsing.parseDragPairs(f['dragPairs']),
         htmlContent: f['htmlContent'] as String?,
+        imageBase64: f['imageBase64'] as String?,
         imageTargets: parseImageTargets(f['imageTargets']),
         variantChain: escalate ? QuestionParsing.escalationChain : null,
       );
@@ -621,7 +719,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
           mode: _mode,
           onModeChanged: (m) => setState(() => _mode = m),
           slidesFiles: _slidesFiles,
-          exercisesFiles: _exercisesFiles.map((f) => f.fileName).toList(),
+          exercisesFiles: _exercisesFiles,
           extracting: _extracting,
           error: _error,
           rawResponse: _rawResponse,
@@ -649,9 +747,15 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
             children: [
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
-              Text(_mode == _GenerateMode.pasteJson
-                  ? 'JSON wird eingelesen …'
-                  : 'KI erstellt Konzepte und Karteikarten …'),
+              Text(switch (_mode) {
+                _GenerateMode.pasteJson => 'JSON wird eingelesen …',
+                _GenerateMode.import => 'KI liest die Aufgaben Seite für Seite …',
+                _GenerateMode.create => 'KI erstellt Konzepte und Karteikarten …',
+              }),
+              if (_progressText != null) ...[
+                const SizedBox(height: 6),
+                Text(_progressText!, style: TextStyle(fontSize: 12.5, color: context.colors.inkMuted)),
+              ],
             ],
           ),
         );
@@ -659,6 +763,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         return _PreviewView(
           result: _result!,
           droppedFlashcardCount: _droppedFlashcardCount,
+          notes: _importNotes,
           onSave: _saving ? null : _save,
           onDiscard: () => setState(() {
             _step = _Step.pick;
@@ -707,7 +812,7 @@ class _PickView extends StatelessWidget {
   final _GenerateMode mode;
   final void Function(_GenerateMode mode) onModeChanged;
   final List<_PickedFile> slidesFiles;
-  final List<String> exercisesFiles;
+  final List<_PickedFile> exercisesFiles;
   final bool extracting;
   final VoidCallback onPickSlides;
   final VoidCallback onPickExercises;
@@ -757,10 +862,12 @@ class _PickView extends StatelessWidget {
                 'generierten Konzepte/Karteikarten) – die KI erstellt daraus '
                 'gezielte Lernkonzepte und Karteikarten.',
           _GenerateMode.import =>
-            'Lade ein Übungsdokument mit bereits vorhandenen Fragen samt '
-                'Musterlösung hoch (z.B. eine alte Klausur) – die tatsächlich '
-                'enthaltenen Fragen werden möglichst originalgetreu als '
-                'Karteikarten übernommen statt neue zu erfinden.',
+            'Lade ein Übungsdokument mit bereits vorhandenen Fragen hoch (z.B. '
+                'eine alte Klausur, gern samt Musterlösung – auch als eigene Datei). '
+                'Die KI liest PDFs Seite für Seite als Bild und übernimmt jede '
+                'Aufgabe 1:1: Ankreuzen, Lücken, Zuordnen, Tabellen (interaktiv) '
+                'und Beschriften – nötige Abbildungen hängen als Ausschnitt an der '
+                'Frage. Fehlt eine Lösung, ergänzt die KI sie.',
           _GenerateMode.pasteJson =>
             'Für Fragetypen, an denen ein hier hinterlegtes Modell scheitert '
                 '(z.B. Zuordnungs-Matrizen, offene Diskussionsfragen): kopiere '
@@ -856,10 +963,27 @@ class _PickView extends StatelessWidget {
                 ...exercisesFiles.asMap().entries.map((e) => Card(
                       child: ListTile(
                         leading: const Icon(Icons.assignment_outlined),
-                        title: Text(e.value),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => onRemoveExercise(e.key),
+                        title: Text(e.value.fileName),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (e.value.fileName.toLowerCase().endsWith('.pdf') && e.value.bytes.isNotEmpty)
+                              IconButton(
+                                tooltip: 'Übung ansehen',
+                                icon: const Icon(Icons.visibility_outlined),
+                                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => PdfPreviewScreen(
+                                    fileName: e.value.fileName,
+                                    bytes: e.value.bytes,
+                                    documentText: e.value.text,
+                                  ),
+                                )),
+                              ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () => onRemoveExercise(e.key),
+                            ),
+                          ],
                         ),
                       ),
                     )),
@@ -1036,6 +1160,7 @@ class _PreviewView extends StatelessWidget {
   const _PreviewView({
     required this.result,
     required this.droppedFlashcardCount,
+    this.notes = const [],
     required this.onSave,
     required this.onDiscard,
     required this.crosschecking,
@@ -1049,6 +1174,7 @@ class _PreviewView extends StatelessWidget {
 
   final Map<String, dynamic> result;
   final int droppedFlashcardCount;
+  final List<String> notes;
   final VoidCallback? onSave;
   final VoidCallback onDiscard;
   final bool crosschecking;
@@ -1081,6 +1207,10 @@ class _PreviewView extends StatelessWidget {
                   style: const TextStyle(color: Colors.orange, fontSize: 12.5),
                 ),
               ],
+              for (final note in notes) ...[
+                const SizedBox(height: 6),
+                Text(note, style: const TextStyle(color: Colors.orange, fontSize: 12.5)),
+              ],
               const SizedBox(height: 16),
               ...concepts.map((c) => Card(
                     child: ExpansionTile(
@@ -1101,11 +1231,13 @@ class _PreviewView extends StatelessWidget {
               ...flashcards.map((raw) {
                 final f = Map<String, dynamic>.from(raw as Map);
                 final type = QuestionParsing.parseType(f['type'] as String?);
+                final image = f['imageBase64'];
                 return Card(
                   child: ListTile(
                     leading: Icon(_iconFor(type)),
                     title: Text((f['front'] ?? '').toString()),
                     subtitle: Text('${type.label} · ${_answerPreview(f, type)}'),
+                    trailing: image is String ? _Base64Thumbnail(image) : null,
                   ),
                 );
               }),
@@ -1259,5 +1391,48 @@ class _PreviewView extends StatelessWidget {
         final labels = targets.map((t) => t.label).where((l) => l.isNotEmpty);
         return labels.isNotEmpty ? labels.join(', ') : (f['back'] ?? '(Stelle im Bild)').toString();
     }
+  }
+}
+
+/// Kleines Vorschaubild einer angehängten Abbildung (einmal dekodiert).
+class _Base64Thumbnail extends StatefulWidget {
+  const _Base64Thumbnail(this.base64);
+  final String base64;
+
+  @override
+  State<_Base64Thumbnail> createState() => _Base64ThumbnailState();
+}
+
+class _Base64ThumbnailState extends State<_Base64Thumbnail> {
+  Uint8List? _bytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _decode();
+  }
+
+  @override
+  void didUpdateWidget(_Base64Thumbnail old) {
+    super.didUpdateWidget(old);
+    if (old.base64 != widget.base64) _decode();
+  }
+
+  void _decode() {
+    try {
+      _bytes = base64Decode(widget.base64);
+    } catch (_) {
+      _bytes = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _bytes;
+    if (bytes == null) return const SizedBox.shrink();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: Image.memory(bytes, width: 56, height: 56, fit: BoxFit.cover, gaplessPlayback: true),
+    );
   }
 }

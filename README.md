@@ -47,17 +47,29 @@ engerem Fokus statt Feature-Fülle.
   Zwischenfragen auf Folien) oder **"Nur inhaltliche"** (ohne
   Organisatorisches, rhetorische oder Meinungsfragen), ob **fehlende
   Lösungen von der KI ergänzt** werden (sonst werden Fragen ohne Lösung im
-  Dokument übersprungen) und optional einen Seitenbereich. Die Seiten gehen
-  paketweise (je 3) als PDF an das Vision-Modell (sieht auch Layout und
-  Scans), mehrere Pakete gleichzeitig (`PdfQuestionImportService`,
-  `AiService.scanPdfPagesForQuestions`); ein fehlgeschlagenes Paket lässt
-  sich einzeln wiederholen. Die Treffer erscheinen nach Seiten sortiert mit
-  Typ, Lösung und dem Hinweis "Lösung von der KI" zum Abwählen; importiert
+  Dokument übersprungen) und optional einen Seitenbereich. Die Seiten werden
+  auf dem Gerät als **Bild** gerendert (`PdfPageRenderer`, dieselbe Engine
+  wie der PDF-Viewer) und paketweise (je 3) mit einer Randskala und ihrem
+  Text an das Vision-Modell geschickt, mehrere Pakete gleichzeitig
+  (`PdfQuestionImportService`, `AiService.scanPdfPagesForQuestions`). Die
+  KI übernimmt jede Aufgabe **1:1 in ihrer Form** – Ankreuzen, Lücken,
+  Zuordnen/Kategorien, Tabellen und Matrizen als interaktive Frage,
+  Abbildung beschriften/markieren als Bildfrage – und gibt für nötige
+  Abbildungen, Tabellen, Schaltungen o.ä. den Bereich auf der Seite an: der
+  wird ausgeschnitten und hängt an der Frage (Lösungen im Bild werden
+  abgedeckt). Lässt sich die PDF auf dem Gerät nicht rendern, geht sie als
+  Datei an die KI, Abbildungen sind dann nur beschrieben. Ein
+  fehlgeschlagenes Paket lässt sich einzeln wiederholen. Die Treffer
+  erscheinen nach Seiten sortiert mit Typ, Lösung, Abbildung (einzeln
+  entfernbar) und dem Hinweis "Lösung von der KI" zum Abwählen; importiert
   werden sie als Karten des Fachs (Einheit des Materials,
-  `priorityIntroduction`) – danach direkt **"Jetzt üben"**. Fragen, die nur
-  mit einer Abbildung beantwortbar sind, lässt die KI weg bzw. beschreibt
-  das Nötige in der Frage (Bilder der Seite hängen hier nicht an – dafür
-  "Frage erstellen" im Viewer). Zusätzlich: **Speedrun** –
+  `priorityIntroduction`) – danach direkt **"Jetzt üben"**. Derselbe
+  seitenweise Import läuft auch im **Nachbereiten-Modus "Fragen
+  importieren"** für PDFs (weitere Dateien, z.B. eine separate
+  Musterlösung, dienen dabei als Nachschlagewerk für Lösungen). Übungs-PDFs
+  werden jetzt wie Folien gespeichert und lassen sich ansehen; bei früher
+  hochgeladenen Übungen lässt sich die PDF über ⋮ → "Original-PDF
+  hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   schneller Selbsteinschätzungs-Durchlauf durch alle Konzepte eines Fachs
   (Titel zeigen, selbst einschätzen, Erklärung aufdecken); was man nicht
   wusste, landet in einer wiederholbaren Vertiefen-Runde

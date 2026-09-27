@@ -56,6 +56,9 @@ dependencies:
   flutter_timezone: ^4.1.1
   home_widget: ^0.9.4
   syncfusion_flutter_pdfviewer: ^34.2.7
+  # Seiten als Bild rendern (dieselbe Engine wie der PDF-Viewer), z.B. für den
+  # Fragen-Import mit Abbildungen.
+  syncfusion_pdfviewer_platform_interface: ^34.2.7
   desktop_drop: ^0.8.4
   cross_file: ^0.3.5+5
   url_launcher: ^6.3.2

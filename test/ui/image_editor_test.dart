@@ -67,6 +67,21 @@ void main() {
       expect(await _pixel(gridded, 105, 75), 0x0000FFFF);
     });
 
+    test('Randskala: Striche nur am Rand, die Seitenmitte bleibt frei', () async {
+      final png = await _bluePng(400, 600);
+      final ruled = (await drawEdgeRuler(png))!;
+      final image = (await (await ui.instantiateImageCodec(ruled)).getNextFrame()).image;
+      expect(image.width, 400);
+      expect(image.height, 600);
+      // Strich bei 0.5 am oberen und linken Rand.
+      expect(await _pixel(ruled, 200, 2), isNot(0x0000FFFF));
+      expect(await _pixel(ruled, 2, 300), isNot(0x0000FFFF));
+      // Innen bleibt alles unverändert, auch auf Höhe der Striche.
+      expect(await _pixel(ruled, 200, 300), 0x0000FFFF);
+      expect(await _pixel(ruled, 200, 150), 0x0000FFFF);
+      expect(await drawEdgeRuler(Uint8List.fromList([1, 2, 3])), isNull);
+    });
+
     test('ohne Bearbeitung unverändert, kaputtes Bild -> null', () async {
       final png = await _bluePng(10, 10);
       expect(identical(await applyImageEdits(png, const []), png), isTrue);

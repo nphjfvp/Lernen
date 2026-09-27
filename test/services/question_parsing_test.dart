@@ -326,4 +326,161 @@ void main() {
       expect(QuestionParsing.matchConceptId('Unbekanntes Konzept', {'a': 'id-a'}), isNull);
     });
   });
+  group('QuestionParsing – abweichende KI-Formate', () {
+    test('liest Typen in anderer Schreibweise statt auf Karteikarte zu fallen', () {
+      expect(QuestionParsing.parseType('singleChoice'), QuestionType.singleChoice);
+      expect(QuestionParsing.parseType('Multiple Choice'), QuestionType.multipleChoice);
+      expect(QuestionParsing.parseType('fill-in-the-blank'), QuestionType.fillBlank);
+      expect(QuestionParsing.parseType('Lückentext'), QuestionType.fillBlank);
+      expect(QuestionParsing.parseType('MC'), QuestionType.multipleChoice);
+      expect(QuestionParsing.parseType('matching'), QuestionType.dragDrop);
+      expect(QuestionParsing.parseType('Freitext'), QuestionType.freeText);
+      expect(QuestionParsing.parseType('diagramLabel'), QuestionType.diagramLabel);
+      expect(QuestionParsing.parseType('interactive'), QuestionType.html);
+      expect(QuestionParsing.parseType('unbekannt'), QuestionType.flashcard);
+    });
+
+    test('Optionen als Texte mit Lösung als Buchstabe', () {
+      final entry = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'single choice',
+        'question': 'Hauptstadt von Frankreich?',
+        'options': ['Lyon', 'Paris', 'Nizza'],
+        'answer': 'B',
+      })!;
+      expect(entry['type'], 'single_choice');
+      expect(entry['front'], 'Hauptstadt von Frankreich?');
+      final options = QuestionParsing.parseOptions(entry['options'])!;
+      expect(options.map((o) => o.isCorrect), [false, true, false]);
+    });
+
+    test('Lösung als Index oder Text, mehrere richtige ergeben Multiple Choice', () {
+      final byIndex = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'sc',
+        'front': 'Welche Zahl ist gerade?',
+        'choices': ['3', '4', '5'],
+        'correctIndex': 1,
+      })!;
+      expect(QuestionParsing.parseOptions(byIndex['options'])!.map((o) => o.isCorrect), [false, true, false]);
+
+      final byText = QuestionParsing.normalizeGeneratedFlashcard({
+        'front': 'Welche sind Primzahlen?',
+        'options': ['a) 2', 'b) 4', 'c) 5'],
+        'correctAnswers': ['2', '5'],
+      })!;
+      expect(byText['type'], 'multiple_choice');
+      expect(QuestionParsing.parseOptions(byText['options'])!.map((o) => o.isCorrect), [true, false, true]);
+    });
+
+    test('"correct" statt "isCorrect" in Options-Objekten', () {
+      final entry = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'multipleChoice',
+        'front': 'Säugetiere?',
+        'options': [
+          {'option': 'Wal', 'correct': true},
+          {'option': 'Hai', 'correct': false},
+          {'option': 'Fledermaus', 'correct': 'ja'},
+        ],
+      })!;
+      expect(entry['type'], 'multiple_choice');
+      final options = QuestionParsing.parseOptions(entry['options'])!;
+      expect(options.map((o) => o.text), ['Wal', 'Hai', 'Fledermaus']);
+      expect(options.map((o) => o.isCorrect), [true, false, true]);
+    });
+
+    test('schon korrekte Optionen bleiben unverändert', () {
+      final raw = {
+        'type': 'single_choice',
+        'front': 'F',
+        'options': [
+          {'text': 'A', 'isCorrect': true},
+          {'text': 'B', 'isCorrect': false},
+        ],
+        'answer': 'B',
+      };
+      final entry = QuestionParsing.normalizeGeneratedFlashcard(raw)!;
+      expect(QuestionParsing.parseOptions(entry['options'])!.map((o) => o.isCorrect), [true, false]);
+    });
+
+    test('Paare als left/right oder als Objekt', () {
+      final lr = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'Zuordnung',
+        'front': 'Ordne zu',
+        'pairs': [
+          {'left': 'H2O', 'right': 'Wasser'},
+          {'left': 'NaCl', 'right': 'Kochsalz'},
+        ],
+      })!;
+      expect(lr['type'], 'drag_drop');
+      expect(QuestionParsing.parseDragPairs(lr['dragPairs'])!.map((p) => '${p.source}>${p.target}'),
+          ['H2O>Wasser', 'NaCl>Kochsalz']);
+
+      final map = QuestionParsing.normalizeGeneratedFlashcard({
+        'front': 'Ordne zu',
+        'matches': {'Herz': 'Pumpe', 'Lunge': 'Gasaustausch'},
+      })!;
+      expect(map['type'], 'drag_drop');
+      expect(QuestionParsing.parseDragPairs(map['dragPairs'])!.length, 2);
+    });
+
+    test('Lücken als Text oder Varianten-Listen', () {
+      final text = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'cloze',
+        'front': 'Die ___ ist das Kraftwerk der ___.',
+        'blanks': 'Mitochondrie | Zelle',
+      })!;
+      expect(text['type'], 'fill_blank');
+      expect(text['blanks'], ['Mitochondrie', 'Zelle']);
+
+      final variants = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'fill_blank',
+        'front': 'Wasser siedet bei ___ °C.',
+        'answers': [
+          ['100', 'hundert'],
+        ],
+      })!;
+      expect(variants['blanks'], ['100; hundert']);
+    });
+
+    test('ohne Typ wird er aus der Struktur abgeleitet', () {
+      final choice = QuestionParsing.normalizeGeneratedFlashcard({
+        'front': 'Farbe des Himmels?',
+        'options': [
+          {'text': 'Blau', 'isCorrect': true},
+          {'text': 'Grün', 'isCorrect': false},
+        ],
+      })!;
+      expect(choice['type'], 'single_choice');
+
+      final blank = QuestionParsing.normalizeGeneratedFlashcard({
+        'front': '2 + 2 = ___ und 3 + 3 = ___',
+        'blanks': ['4', '6'],
+      })!;
+      expect(blank['type'], 'fill_blank');
+
+      final free = QuestionParsing.normalizeGeneratedFlashcard({
+        'front': 'Nenne das Ohmsche Gesetz.',
+        'correctText': 'U = R · I',
+      })!;
+      expect(free['type'], 'free_text');
+    });
+
+    test('Antwort unter anderem Namen landet im passenden Feld', () {
+      final free = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'free_text',
+        'frage': 'Was misst ein Voltmeter?',
+        'lösung': 'Spannung',
+      })!;
+      expect(free['type'], 'free_text');
+      expect(free['front'], 'Was misst ein Voltmeter?');
+      expect(free['correctText'], 'Spannung');
+
+      final card = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'Karteikarte',
+        'front': 'Definition Entropie',
+        'solution': 'Maß für Unordnung',
+      })!;
+      expect(card['type'], 'flashcard');
+      expect(card['back'], 'Maß für Unordnung');
+    });
+  });
 }

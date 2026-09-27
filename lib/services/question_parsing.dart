@@ -80,7 +80,73 @@ class QuestionParsing {
   /// zurückfallen (der eigentliche Grund, warum früher scheinbar nur noch
   /// einfache Karteikarten ohne Rückseite erzeugt wurden) – deshalb hier
   /// eine eigene, für das KI-JSON-Format zuständige Zuordnung.
-  static QuestionType parseType(String? value) => _aiTypeAliases[value] ?? QuestionType.flashcard;
+  static QuestionType parseType(String? value) => _parseTypeOrNull(value) ?? QuestionType.flashcard;
+
+  /// Weitere Schreibweisen, die Modelle trotz Vorgabe liefern (camelCase,
+  /// Leerzeichen/Bindestriche, Abkürzungen, deutsch) – vorher fiel jede
+  /// davon still auf "flashcard" zurück, und aus einer Auswahlfrage wurde
+  /// eine offene Karte.
+  static const _typeSynonyms = {
+    'sc': 'single_choice',
+    'single': 'single_choice',
+    'singlechoice': 'single_choice',
+    'single_answer': 'single_choice',
+    'choice': 'single_choice',
+    'einfachauswahl': 'single_choice',
+    'mc': 'multiple_choice',
+    'multi': 'multiple_choice',
+    'multiplechoice': 'multiple_choice',
+    'multi_choice': 'multiple_choice',
+    'multiple_answer': 'multiple_choice',
+    'mehrfachauswahl': 'multiple_choice',
+    'freitext': 'free_text',
+    'freetext': 'free_text',
+    'short_answer': 'free_text',
+    'open': 'free_text',
+    'luckentext': 'fill_blank',
+    'lückentext': 'fill_blank',
+    'lueckentext': 'fill_blank',
+    'cloze': 'fill_blank',
+    'fillblank': 'fill_blank',
+    'fill_in_the_blank': 'fill_blank',
+    'fill_in_blank': 'fill_blank',
+    'fill_the_blank': 'fill_blank',
+    'gap_fill': 'fill_blank',
+    'zuordnen': 'drag_drop',
+    'zuordnung': 'drag_drop',
+    'matching': 'drag_drop',
+    'match': 'drag_drop',
+    'dragdrop': 'drag_drop',
+    'drag_and_drop': 'drag_drop',
+    'kategorien': 'drag_category',
+    'kategorie': 'drag_category',
+    'categorize': 'drag_category',
+    'categorization': 'drag_category',
+    'dragcategory': 'drag_category',
+    'karteikarte': 'flashcard',
+    'card': 'flashcard',
+    'open_question': 'flashcard',
+    'interaktiv': 'html',
+    'interactive': 'html',
+    'bild_beschriften': 'diagram_label',
+    'diagramlabel': 'diagram_label',
+    'labeling': 'diagram_label',
+    'bild_markieren': 'mark_image',
+    'markimage': 'mark_image',
+    'hotspot': 'mark_image',
+  };
+
+  static QuestionType? _parseTypeOrNull(String? value) {
+    if (value == null) return null;
+    final direct = _aiTypeAliases[value];
+    if (direct != null) return direct;
+    final key = value
+        .trim()
+        .replaceAllMapped(RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]}_${m[2]}')
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s\-/]+'), '_');
+    return _aiTypeAliases[key] ?? _aiTypeAliases[_typeSynonyms[key] ?? _typeSynonyms[key.replaceAll('_', '')] ?? ''];
+  }
 
   /// Gegenstück zu [parseType]: der snake_case-Name eines Typs im KI-JSON
   /// (z.B. für Prompts, die einen bestimmten Typ verlangen).
@@ -96,7 +162,8 @@ class QuestionParsing {
   /// Nur wenn sich GAR keine Antwort finden lässt, wird `null` zurückgegeben
   /// (vom Aufrufer zu verwerfen) – so landen keine stummen
   /// "nur Vorderseite ohne Antwort"-Karten in der App.
-  static Map<String, dynamic>? normalizeGeneratedFlashcard(Map<String, dynamic> raw) {
+  static Map<String, dynamic>? normalizeGeneratedFlashcard(Map<String, dynamic> original) {
+    final raw = canonicalize(original);
     final front = (raw['front'] ?? '').toString().trim();
     if (front.isEmpty) return null;
 
@@ -124,6 +191,203 @@ class QuestionParsing {
       'back': fallbackAnswer,
       if (raw['conceptTitle'] != null) 'conceptTitle': raw['conceptTitle'].toString(),
     };
+  }
+
+  static Object? _first(Map<String, dynamic> raw, List<String> keys) {
+    for (final key in keys) {
+      final value = raw[key];
+      if (value != null && !(value is String && value.trim().isEmpty)) return value;
+    }
+    return null;
+  }
+
+  /// Optionen schon im erwarteten Format ({text, isCorrect}, mindestens eine
+  /// richtig) – dann bleibt der Eintrag unverändert.
+  static bool _wellFormedOptions(Object? options) =>
+      options is List &&
+      options.isNotEmpty &&
+      options.every((o) => o is Map && o.containsKey('text') && o.containsKey('isCorrect')) &&
+      options.any((o) => (o as Map)['isCorrect'] == true);
+
+  static bool _truthy(Object? v) =>
+      v == true || v == 1 || const {'true', '1', 'yes', 'ja', 'richtig', 'correct'}.contains('$v'.trim().toLowerCase());
+
+  /// Bringt abweichend geformte KI-Einträge in das erwartete Format, bevor
+  /// sie geprüft werden: Typ in anderer Schreibweise oder gar nicht
+  /// angegeben (dann aus der Struktur abgeleitet), Frage/Antwort unter
+  /// anderen Namen, Optionen als reine Texte mit separat genannter Lösung
+  /// (Text, Buchstabe oder Index), "correct" statt "isCorrect", Paare als
+  /// left/right oder als Objekt, Lücken als Text. Vorhandene, schon richtig
+  /// benannte Felder bleiben unverändert.
+  static Map<String, dynamic> canonicalize(Map<String, dynamic> raw) {
+    final entry = {...raw};
+    void fill(String key, Object? value) {
+      if (value != null && (entry[key] == null || (entry[key] is String && (entry[key] as String).trim().isEmpty))) {
+        entry[key] = value;
+      }
+    }
+
+    fill('front', _first(raw, const ['question', 'frage', 'prompt', 'aufgabe', 'task']));
+
+    final declared = _parseTypeOrNull(raw['type']?.toString());
+    final isChoice = declared == QuestionType.singleChoice || declared == QuestionType.multipleChoice;
+
+    // Optionen: andere Feldnamen, Texte statt Objekte, Lösung separat.
+    // "answers" gilt nur bei einer (vermuteten) Auswahlfrage als Optionen –
+    // bei einem Lückentext sind es die Lösungen.
+    final rawOptions = _first(raw, [
+      'options',
+      'choices',
+      'optionen',
+      if (isChoice || declared == null) ...['answers', 'antworten'],
+    ]);
+    if (rawOptions is List && rawOptions.isNotEmpty && !_wellFormedOptions(raw['options'])) {
+      final options = <Map<String, dynamic>>[];
+      for (final o in rawOptions) {
+        if (o is Map) {
+          final text = _first(Map<String, dynamic>.from(o), const ['text', 'option', 'label', 'answer', 'content', 'value']);
+          if (text == null) continue;
+          final flag = _first(Map<String, dynamic>.from(o),
+              const ['isCorrect', 'correct', 'is_correct', 'isRight', 'right', 'richtig', 'isTrue']);
+          options.add({'text': text.toString(), 'isCorrect': _truthy(flag)});
+        } else if (o != null && o is! List) {
+          options.add({'text': o.toString(), 'isCorrect': false});
+        }
+      }
+      if (options.isNotEmpty && !options.any((o) => o['isCorrect'] == true)) {
+        _markCorrectOptions(options, raw);
+      }
+      if (options.isNotEmpty && (raw['options'] != null || isChoice || options.length >= 2)) {
+        entry['options'] = options;
+      }
+    }
+
+    // Lücken als Text oder als Listen von Varianten.
+    final rawBlanks = _first(raw, [
+      'blanks',
+      'gaps',
+      'luecken',
+      'lücken',
+      if (declared == QuestionType.fillBlank) ...['answers', 'solutions', 'antworten'],
+    ]);
+    if (raw['blanks'] is List && (raw['blanks'] as List).every((b) => b is String)) {
+      // schon im erwarteten Format
+    } else if (rawBlanks is String) {
+      entry['blanks'] = rawBlanks.split('|').map((b) => b.trim()).where((b) => b.isNotEmpty).toList();
+    } else if (rawBlanks is List) {
+      entry['blanks'] = [
+        for (final b in rawBlanks)
+          if (b is List) b.map((v) => v.toString()).join('; ') else if (b != null) b.toString(),
+      ];
+    }
+
+    // Paare: left/right, term/definition … oder ein Objekt {Begriff: Ziel}.
+    final rawPairs = _first(raw, const ['dragPairs', 'pairs', 'matches', 'matching', 'zuordnungen']);
+    final pairsWellFormed = raw['dragPairs'] is List &&
+        (raw['dragPairs'] as List).every((p) => p is Map && p.containsKey('source') && p.containsKey('target'));
+    if (pairsWellFormed) {
+      // schon im erwarteten Format
+    } else if (rawPairs is Map) {
+      entry['dragPairs'] = [
+        for (final e in rawPairs.entries) {'source': e.key.toString(), 'target': e.value.toString()},
+      ];
+    } else if (rawPairs is List) {
+      entry['dragPairs'] = [
+        for (final p in rawPairs)
+          if (p is List && p.length >= 2)
+            {'source': p[0].toString(), 'target': p[1].toString()}
+          else if (p is Map)
+            () {
+              final m = Map<String, dynamic>.from(p);
+              final source = _first(m, const ['source', 'left', 'term', 'begriff', 'item', 'from', 'a']);
+              final target =
+                  _first(m, const ['target', 'right', 'definition', 'match', 'ziel', 'category', 'kategorie', 'to', 'b']);
+              return {'source': source?.toString(), 'target': target?.toString()};
+            }(),
+      ].where((p) => p['source'] != null && p['target'] != null).toList();
+    }
+
+    fill('htmlContent', _first(raw, const ['html']));
+
+    // Typ: tolerant lesen, sonst aus der Struktur ableiten.
+    final type = declared ?? _inferType(entry, raw);
+    entry['type'] = aiTypeName(type);
+
+    // Lösung/Rückseite unter anderen Namen.
+    final answer = _first(raw, const ['answer', 'antwort', 'solution', 'loesung', 'lösung', 'correctAnswer', 'musterloesung']);
+    if (answer != null && answer is! List && answer is! Map) {
+      if (type == QuestionType.freeText) fill('correctText', answer.toString());
+      if (type == QuestionType.flashcard || type == QuestionType.html) fill('back', answer.toString());
+    }
+    return entry;
+  }
+
+  /// Optionen ohne Kennzeichnung: die separat genannte Lösung zuordnen –
+  /// als Text, Buchstabe ("B", "b)") oder Index (0-basiert).
+  static void _markCorrectOptions(List<Map<String, dynamic>> options, Map<String, dynamic> raw) {
+    final hint = _first(raw, const [
+      'correctIndex',
+      'correct_index',
+      'answerIndex',
+      'correctIndices',
+      'correctOption',
+      'correctOptions',
+      'correctAnswer',
+      'correctAnswers',
+      'correct',
+      'answer',
+      'solution',
+      'loesung',
+      'lösung',
+    ]);
+    if (hint == null) return;
+    String norm(String s) => s.trim().toLowerCase().replaceAll(RegExp(r'^[\(\[]?[a-z][\)\].:]\s+'), '').trim();
+    void mark(Object value) {
+      if (value is num) {
+        final i = value.toInt();
+        if (i >= 0 && i < options.length) options[i]['isCorrect'] = true;
+        return;
+      }
+      final text = value.toString().trim();
+      final letter = RegExp(r'^[\(\[]?([A-Za-z])[\)\].:]?$').firstMatch(text);
+      if (letter != null && options.length <= 26) {
+        final i = letter.group(1)!.toUpperCase().codeUnitAt(0) - 65;
+        if (i >= 0 && i < options.length) {
+          options[i]['isCorrect'] = true;
+          return;
+        }
+      }
+      for (final o in options) {
+        if (norm(o['text'] as String) == norm(text) || (o['text'] as String).trim().toLowerCase() == text.toLowerCase()) {
+          o['isCorrect'] = true;
+        }
+      }
+    }
+
+    if (hint is List) {
+      for (final h in hint) {
+        if (h != null) mark(h);
+      }
+    } else {
+      mark(hint);
+    }
+  }
+
+  /// Typ aus dem, was der Eintrag enthält, wenn "type" fehlt oder unbekannt ist.
+  static QuestionType _inferType(Map<String, dynamic> entry, Map<String, dynamic> raw) {
+    if ((entry['htmlContent'] ?? '').toString().contains(htmlAnswerChannelName)) return QuestionType.html;
+    final targets = imageTargetsIn(raw);
+    if (targets != null && targets.isNotEmpty) {
+      return targets.any((t) => t.label.isNotEmpty) ? QuestionType.diagramLabel : QuestionType.markImage;
+    }
+    final options = parseOptions(entry['options']);
+    if (options != null && options.length >= 2) {
+      return options.where((o) => o.isCorrect).length > 1 ? QuestionType.multipleChoice : QuestionType.singleChoice;
+    }
+    if ((parseBlanks(entry['blanks']) ?? const []).isNotEmpty) return QuestionType.fillBlank;
+    if ((parseDragPairs(entry['dragPairs']) ?? const []).isNotEmpty) return QuestionType.dragDrop;
+    if ((raw['correctText'] ?? '').toString().trim().isNotEmpty) return QuestionType.freeText;
+    return QuestionType.flashcard;
   }
 
   /// Aufrufer lesen diese Felder per `as String?` – eine Zahl oder ein Bool

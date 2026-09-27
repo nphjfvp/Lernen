@@ -351,8 +351,12 @@ die Frage lieber weg statt zu raten.
 WICHTIG zur Typwahl: verwende NICHT für alle Karten denselben Typ. "flashcard"
 (freies front/back) ist die LETZTE Wahl, nur wenn WIRKLICH keiner der
 anderen Typen passt – erzeuge höchstens für etwa ein Fünftel der Karten
-diesen Typ, den Rest möglichst mit den spezifischeren Typen unten. Wähle pro
-Frage den zum Inhalt passenden Typ:
+diesen Typ, den Rest möglichst mit den spezifischeren Typen unten. Auch
+"free_text" ist kein Standardtyp: "flashcard" und "free_text" ZUSAMMEN
+höchstens etwa ein Drittel der Karten; der Rest verteilt sich auf
+Auswahl-, Lücken-, Zuordnungs- und (wo sinnvoll) interaktive Fragen.
+Übungsaufgaben mit fester Aufgabenform (Ankreuzen, Lücken, Zuordnen,
+Tabelle) behalten diese Form. Wähle pro Frage den zum Inhalt passenden Typ:
    - "single_choice": klares Faktenwissen mit genau einer richtigen Antwort.
      Setze zusätzlich "escalate": true – das System steigert den
      Schwierigkeitsgrad solcher Fragen automatisch in mehreren Stufen
@@ -664,50 +668,103 @@ wenn es viele sind. Antworte in der Sprache der Vorlage.
   }
 
   static const _scanPdfQuestionsSystemPrompt = '''
-Du bekommst einige Seiten eines PDF-Dokuments (Folien, Übungsblatt,
-Altklausur, Skript …). Deine Aufgabe: Finde die Fragen und Aufgaben, die auf
-diesen Seiten TATSÄCHLICH stehen, und übernimm sie als Quizfragen. Erfinde
-KEINE neuen Fragen.
+Du bekommst einige Seiten eines Dokuments (Folien, Übungsblatt, Altklausur,
+Skript …). Deine Aufgabe: Finde die Fragen und Aufgaben, die auf diesen
+Seiten TATSÄCHLICH stehen, und übernimm sie 1:1 als Quizfragen – in derselben
+Aufgabenform wie im Original. Erfinde KEINE neuen Fragen.
 
 WELCHE FRAGEN: {{SCOPE}}
 
 Übernimm jede Frage möglichst im Originalwortlaut; kürze nur, was für eine
 Quizfrage nötig ist. Eine Aufgabe mit Teilaufgaben (a, b, c …) wird zu
 mehreren Fragen – jede so formuliert, dass sie ohne die anderen verständlich
-ist (nötigen Kontext aus dem Aufgabentext übernehmen). Bezieht sich eine
-Frage auf eine Abbildung, beschreibe das Nötige kurz in eckigen Klammern in
-der Frage selbst; lässt sie sich ohne die Abbildung gar nicht beantworten,
-lass sie weg. Dieselbe Frage nur einmal, auch wenn sie mehrfach vorkommt.
+ist (nötigen Kontext aus dem Aufgabentext übernehmen). Dieselbe Frage nur
+einmal, auch wenn sie mehrfach vorkommt.
+
+ABBILDUNGEN: {{FIGURES}}
 
 LÖSUNG: Steht die Lösung im Dokument (Musterlösung, Lösungsteil,
 angekreuzte/markierte Antwort, Auflösung auf einer der Seiten), übernimm sie
 und setze "solutionFromDocument": true. {{MISSING}}
 
-TYP – bestimme ihn aus der Struktur der Original-Frage:
-- Antwortoptionen zum Ankreuzen vorgegeben -> "single_choice" (genau eine
-  richtig) bzw. "multiple_choice": "options": [{"text": "...", "isCorrect": true}, …]
-- Lückentext -> "fill_blank": jede Lücke im "front" als "___", "blanks" = die
-  Lösungen in derselben Reihenfolge (mehrere richtige Varianten einer Lücke
-  mit ";" in einem Eintrag).
-- Zuordnungsaufgabe (Begriff <-> Begriff/Kategorie) -> "drag_drop":
-  "dragPairs": [{"source": "...", "target": "..."}]
-- Kurze Antwort (Begriff, Zahl, Formel, ein Satz) -> "free_text":
-  "correctText": "..."
-- Längere Erklär-, Rechen- oder Diskussionsaufgabe -> "flashcard":
-  "back": Musterlösung, knapp und vollständig
+TYP – übernimm die Aufgabenform des Originals. "free_text" ist NICHT der
+Auffangtyp für alles; prüfe der Reihe nach:
+1. Antwortoptionen zum Ankreuzen vorgegeben (auch "richtig/falsch" zu EINER
+   Aussage) -> "single_choice" (genau eine richtig) bzw. "multiple_choice":
+   "options": [{"text": "...", "isCorrect": true}, …]
+2. Lückentext -> "fill_blank": jede Lücke im "front" als "___", "blanks" = die
+   Lösungen in derselben Reihenfolge (mehrere richtige Varianten einer Lücke
+   mit ";" in einem Eintrag).
+3. Zuordnen (Begriff <-> Begriff, Linien/Pfeile verbinden) -> "drag_drop":
+   "dragPairs": [{"source": "...", "target": "..."}]. Einordnen in Kategorien
+   (mehrere Begriffe je Kategorie) -> "drag_category" mit denselben
+   "dragPairs" (target = Kategorie).
+4. {{LABEL_RULE}}
+5. Tabelle ausfüllen, Wahr/Falsch-Matrix mit mehreren Aussagen, Reihenfolge
+   ordnen, mehrere Eingabefelder (z.B. Rechenweg mit Zwischenergebnissen)
+   oder eine Aufgabe, deren Lösung aus mehreren getrennten Kernpunkten
+   besteht -> "html" (siehe HTML) – NICHT zu free_text vereinfachen.
+6. Kurze Antwort (Begriff, Zahl, Formel, ein Satz) -> "free_text":
+   "correctText": "..." (mehrere akzeptierte Varianten mit ";").
+7. Längere Erklär-, Herleitungs- oder Diskussionsaufgabe ohne kurze
+   Antwort -> "flashcard": "back": Musterlösung, knapp und vollständig.
+
+HTML: "htmlContent" enthält NUR den <body>-Inhalt (kein
+<html>/<head>/<style>-Rahmen) als eigenständige, interaktive Seite: reines
+Inline-HTML/CSS/JS, kein externes Skript/Bild, keine Netzwerk-Anfrage. Die
+Seite enthält ihre eigene Prüf-Logik (die Lösung kennst du) und ruft beim
+Auswerten GENAU das auf:
+window.FlutterAnswer.postMessage(JSON.stringify({correct: true}))
+(bzw. correct: false) – ohne diesen Aufruf bekommt die App kein Ergebnis.
+Offene Teile großzügig prüfen (Kernbegriffe, Groß-/Kleinschreibung egal).
+Gib zusätzlich "front"/"back" als kurze Text-Fassung an.
 
 Jede Frage bekommt "page" = ihre Seitenzahl im GESAMTEN Dokument (die
-Zuordnung Datei-Seite -> Dokument-Seite steht in der Nachricht).
+Zuordnung steht in der Nachricht).
 
 Mathematische Formeln schreibst du in LaTeX: \$…\$ im Satz, \$\$…\$\$ für
 abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash (z.B.
 "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences und ohne
 Text davor oder danach:
-{"questions": [{"page": 3, "type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}], "solutionFromDocument": true}]}
+{"questions": [{"page": 3, "type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}], "solutionFromDocument": true}{{EXAMPLE}}]}
 Stehen auf diesen Seiten keine passenden Fragen: {"questions": []}.
 Antworte in der Sprache des Dokuments.
 ''';
+
+  static const _scanFiguresFromImages =
+      'Du siehst jede Seite als Bild. Am Rand steht eine Skala von 0 bis 1 '
+      '(links/oben = 0, rechts/unten = 1) zum Ablesen von Positionen; dazu '
+      'kommt – falls vorhanden – der Text der Seite für den genauen Wortlaut '
+      'und Formeln. Gehört zu einer Frage eine Abbildung, Grafik, Tabelle, '
+      'Schaltung, Diagramm, Code- oder Formelbild, das man zum Beantworten '
+      'sehen muss, gib "imageBox": [links, oben, rechts, unten] an – ihren '
+      'Bereich auf der Seite (Werte 0–1, lieber etwas zu groß als '
+      'abgeschnitten). Die App schneidet genau diesen Bereich aus und zeigt '
+      'ihn mit der Frage; beschreibe die Abbildung dann nicht zusätzlich. '
+      'Keine imageBox für reinen Text, der schon in der Frage steht. Steht in '
+      'der Abbildung die Lösung (z.B. ausgefüllte Beschriftungen in einer '
+      'Musterlösung), gib "imageCovers": [[links, oben, rechts, unten], …] an '
+      '(Seitenkoordinaten) – diese Stellen werden abgedeckt.';
+
+  static const _scanFiguresFromPdf =
+      'Bezieht sich eine Frage auf eine Abbildung, beschreibe das Nötige kurz '
+      'in eckigen Klammern in der Frage selbst; lässt sie sich ohne die '
+      'Abbildung gar nicht beantworten, lass sie weg.';
+
+  static const _scanLabelFromImages =
+      'Abbildung beschriften (Stellen in einer Abbildung benennen) -> '
+      '"diagram_label": "imageBox" = die Abbildung, "targets": [{"box": [links, '
+      'oben, rechts, unten], "label": "..."}] – box = die Stelle, an die die '
+      'Beschriftung gehört, in Seitenkoordinaten wie imageBox; Stellen, deren '
+      'Reihenfolge egal ist, bekommen dieselbe "group". Eine Stelle in der '
+      'Abbildung markieren/ankreuzen -> "mark_image": "imageBox" und '
+      '"targets": [{"box": [...]}] = die richtige(n) Stelle(n).';
+
+  static const _scanLabelFromPdf =
+      'Abbildung beschriften mit nummerierten Stellen -> "drag_drop" (Nummer '
+      'der Stelle -> Begriff), die Abbildung kurz in eckigen Klammern '
+      'beschreiben.';
 
   static const _scanScopeEvery =
       'JEDE Frage und Aufgabe, die auf den Seiten steht – auch Teilaufgaben, kurze '
@@ -721,22 +778,42 @@ Antworte in der Sprache des Dokuments.
       'Einstiegs- oder Überschriftenfragen, Meinungs- und Reflexionsfragen ohne '
       'fachliche Antwort, reine Verweise auf spätere Folien.';
 
-  /// Sucht auf einigen Seiten einer PDF ([pdfBytes], z.B. per
-  /// PdfService.extractPages ausgeschnitten) nach den dort vorhandenen
+  /// Sucht auf einigen Seiten eines Dokuments nach den dort vorhandenen
   /// Fragen/Aufgaben und liefert sie als Rohkarten – jede mit "page" (Seite
-  /// im Gesamtdokument, [pageNumbers] = die Dokument-Seiten der Datei in
-  /// Reihenfolge) und "solutionFromDocument". [contentOnly] lässt
-  /// Organisatorisches/Rhetorisches weg; [fillMissingSolutions] beantwortet
-  /// Fragen ohne Lösung im Dokument selbst, sonst fallen sie weg. Gedacht
-  /// für das Vision-Modell (sieht auch Folien-Layout und Scans).
+  /// im Gesamtdokument, [pageNumbers] = die Dokument-Seiten in Reihenfolge)
+  /// und "solutionFromDocument". Mit [pageImages] (je Seite ein PNG,
+  /// passend zu [pageNumbers], plus optional [pageTexts]) sieht die KI die
+  /// Seiten als Bild und kann Abbildungen per "imageBox" angeben sowie
+  /// Bildfragen erstellen; sonst bekommt sie die Seiten als PDF-Datei
+  /// ([pdfBytes], z.B. per PdfService.extractPages ausgeschnitten).
+  /// [contentOnly] lässt Organisatorisches/Rhetorisches weg;
+  /// [fillMissingSolutions] beantwortet Fragen ohne Lösung im Dokument
+  /// selbst, sonst fallen sie weg. Gedacht für das Vision-Modell.
   Future<List<Map<String, dynamic>>> scanPdfPagesForQuestions(
-    Uint8List pdfBytes, {
+    Uint8List? pdfBytes, {
     required List<int> pageNumbers,
     required bool contentOnly,
     required bool fillMissingSolutions,
+    List<Uint8List>? pageImages,
+    List<String>? pageTexts,
+    String? referenceText,
   }) async {
+    final withImages = pageImages != null && pageImages.length == pageNumbers.length;
+    if (!withImages && pdfBytes == null) {
+      throw ArgumentError('Weder Seitenbilder noch PDF übergeben.');
+    }
     final systemPrompt = _scanPdfQuestionsSystemPrompt
         .replaceFirst('{{SCOPE}}', contentOnly ? _scanScopeContent : _scanScopeEvery)
+        .replaceFirst('{{FIGURES}}', withImages ? _scanFiguresFromImages : _scanFiguresFromPdf)
+        .replaceFirst('{{LABEL_RULE}}', withImages ? _scanLabelFromImages : _scanLabelFromPdf)
+        .replaceFirst(
+          '{{EXAMPLE}}',
+          withImages
+              ? ', {"page": 4, "type": "free_text", "front": "Wie groß ist der Strom I in der abgebildeten '
+                  'Schaltung?", "correctText": "2 A", "imageBox": [0.12, 0.30, 0.78, 0.62], '
+                  '"solutionFromDocument": false}'
+              : '',
+        )
         .replaceFirst(
           '{{MISSING}}',
           fillMissingSolutions
@@ -744,25 +821,67 @@ Antworte in der Sprache des Dokuments.
                   'knapp und passend zum Stoff des Dokuments – und setze "solutionFromDocument": false.'
               : 'Steht KEINE Lösung im Dokument, lass die Frage weg.',
         );
-    final mapping = [
-      for (var i = 0; i < pageNumbers.length; i++) 'Datei-Seite ${i + 1} = Dokument-Seite ${pageNumbers[i]}',
-    ].join(', ');
-    final raw = await _complete(systemPrompt, [
-      {
-        'type': 'text',
-        'text': 'Die Datei enthält ${pageNumbers.length} Seite${pageNumbers.length == 1 ? '' : 'n'} '
-            '($mapping). Suche darauf nach Fragen und Aufgaben.',
-      },
-      {
-        'type': 'file',
-        'file': {
-          'filename': 'seiten.pdf',
-          'file_data': 'data:application/pdf;base64,${base64Encode(pdfBytes)}',
+    final List<Map<String, dynamic>> content;
+    if (withImages) {
+      content = [
+        {
+          'type': 'text',
+          'text': 'Du siehst ${pageNumbers.length} Seite${pageNumbers.length == 1 ? '' : 'n'} des Dokuments '
+              '(${pageNumbers.map((p) => 'Dokument-Seite $p').join(', ')}). Suche darauf nach Fragen und Aufgaben.',
         },
-      },
-    ], temperature: 0.1);
+        for (var i = 0; i < pageNumbers.length; i++) ...[
+          {
+            'type': 'text',
+            'text': () {
+              final text = i < (pageTexts?.length ?? 0) ? pageTexts![i].trim() : '';
+              return text.isEmpty
+                  ? 'Dokument-Seite ${pageNumbers[i]} (ohne Textebene – nur das Bild):'
+                  : 'Dokument-Seite ${pageNumbers[i]} – Text der Seite:\n${_cap(text, _scanPageTextCap)}\n\nBild der Seite:';
+            }(),
+          },
+          {
+            'type': 'image_url',
+            'image_url': {'url': 'data:image/png;base64,${base64Encode(pageImages[i])}'},
+          },
+        ],
+      ];
+    } else {
+      final mapping = [
+        for (var i = 0; i < pageNumbers.length; i++) 'Datei-Seite ${i + 1} = Dokument-Seite ${pageNumbers[i]}',
+      ].join(', ');
+      content = [
+        {
+          'type': 'text',
+          'text': 'Die Datei enthält ${pageNumbers.length} Seite${pageNumbers.length == 1 ? '' : 'n'} '
+              '($mapping). Suche darauf nach Fragen und Aufgaben.',
+        },
+        {
+          'type': 'file',
+          'file': {
+            'filename': 'seiten.pdf',
+            'file_data': 'data:application/pdf;base64,${base64Encode(pdfBytes!)}',
+          },
+        },
+      ];
+    }
+    if ((referenceText ?? '').trim().isNotEmpty) {
+      content.add({
+        'type': 'text',
+        'text': 'Begleitdokumente (z.B. eine separate Musterlösung) – NUR zum Nachschlagen von Lösungen '
+            'für die Fragen auf den Seiten oben; übernimm daraus KEINE eigenen Fragen. Eine dort gefundene '
+            'Lösung zählt als "solutionFromDocument": true.\n\n${_cap(referenceText!.trim(), _scanReferenceCap)}',
+      });
+    }
+    final raw = await _complete(systemPrompt, content, temperature: 0.1);
     return parseScannedQuestions(_parseJsonObject(raw), pageNumbers);
   }
+
+  /// Seitentext je Seite beim Import mit Seitenbildern – genug für eine dicht
+  /// beschriebene Klausurseite.
+  static const _scanPageTextCap = 8000;
+
+  /// Begleittext (andere Dateien, z.B. Musterlösung) je Anfrage.
+  static const _scanReferenceCap = 15000;
 
   /// Liest `{"questions": [...]}` (auch `{"flashcards": [...]}`) und sorgt
   /// dafür, dass jede Frage eine gültige Dokument-Seite aus [pageNumbers]
@@ -1142,11 +1261,22 @@ Antworte in der Sprache der Vorlage.
           ..writeln(_cap(exercisesText, _crosscheckSourceCap))
           ..writeln()
           ..writeln('Generierte Konzepte und Karteikarten (zu prüfen):')
-          ..writeln(jsonEncode(generated)))
+          ..writeln(jsonEncode(withoutImageData(generated))))
         .toString();
     final raw = await _complete(_crosscheckSystemPrompt, userPrompt);
     return _parseJsonObject(raw);
   }
+
+  /// Karten ohne angehängte Bilddaten (Base64) – die gehören nicht in eine
+  /// Text-Anfrage und würden sie nur aufblähen.
+  static Map<String, dynamic> withoutImageData(Map<String, dynamic> generated) => {
+        ...generated,
+        if (generated['flashcards'] is List)
+          'flashcards': [
+            for (final f in generated['flashcards'] as List)
+              if (f is Map) {...Map<String, dynamic>.from(f)}..remove('imageBase64') else f,
+          ],
+      };
 
   static String _variantTypeRule(QuestionType targetType) => switch (targetType) {
         QuestionType.singleChoice =>

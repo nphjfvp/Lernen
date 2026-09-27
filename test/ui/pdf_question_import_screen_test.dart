@@ -95,8 +95,11 @@ void main() {
               builder: (_) => PdfQuestionImportScreen(
                 moduleId: 'm1',
                 material: material,
-                serviceFactory: () =>
-                    PdfQuestionImportService(ai: AiService(apiKey: 'k', model: 'vision', client: client)),
+                serviceFactory: () => PdfQuestionImportService(
+                  ai: AiService(apiKey: 'k', model: 'vision', client: client),
+                  // Ohne Render-Engine im Test: Seiten gehen als PDF an die KI.
+                  renderer: (_) async => null,
+                ),
               ),
             )),
             child: const Text('Öffnen'),

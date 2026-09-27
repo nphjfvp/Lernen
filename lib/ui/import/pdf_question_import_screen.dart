@@ -75,6 +75,10 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
   List<String> _errors = [];
   int _dropped = 0;
   bool _saving = false;
+
+  /// Die KI hat die Seiten als Bild gesehen – nur dann können Abbildungen
+  /// an den Fragen hängen.
+  bool _usedPageImages = true;
   String? _error;
 
   @override
@@ -177,9 +181,11 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       if (retry == null) {
         _questions = result.questions;
         _dropped = result.dropped;
+        _usedPageImages = result.usedPageImages;
       } else {
         _questions = [..._questions, ...result.questions]..sort((a, b) => a.page.compareTo(b.page));
         _dropped += result.dropped;
+        _usedPageImages = _usedPageImages || result.usedPageImages;
       }
       _failed = result.failedBatches;
       _errors = result.errors;
@@ -364,7 +370,9 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
           else
             Text(
               '$requests KI-Anfrage${requests == 1 ? '' : 'n'} an dein Vision-Modell (je bis zu '
-              '${PdfQuestionImportService.defaultPagesPerRequest} Seiten).',
+              '${PdfQuestionImportService.defaultPagesPerRequest} Seiten). Die KI sieht jede Seite als Bild, '
+              'übernimmt die Aufgabenform (Ankreuzen, Lücken, Zuordnen, Tabellen, Beschriften) und hängt '
+              'nötige Abbildungen als Ausschnitt an.',
               style: TextStyle(fontSize: 12, color: c.inkMuted),
             ),
           const SizedBox(height: 12),
@@ -431,6 +439,12 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
               if (_dropped > 0)
                 Text('$_dropped unvollständige Einträge der KI wurden verworfen.',
                     style: TextStyle(fontSize: 12, color: c.inkMuted)),
+              if (!_usedPageImages && _questions.isNotEmpty)
+                Text(
+                  'Die Seiten ließen sich auf diesem Gerät nicht als Bild darstellen – Abbildungen sind '
+                  'deshalb nur beschrieben statt angehängt.',
+                  style: TextStyle(fontSize: 12, color: c.inkMuted),
+                ),
               if (_failed.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 for (final e in _errors) Text(e, style: TextStyle(fontSize: 12, color: c.danger)),
@@ -519,6 +533,30 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
                 if (q.solutionByAi) _chip(c, 'Lösung von der KI', warn: true),
               ],
             ),
+            if (q.imageBytes case final image?) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(image, fit: BoxFit.contain, gaplessPlayback: true),
+                      ),
+                    ),
+                  ),
+                  if (q.canRemoveImage)
+                    IconButton(
+                      key: ValueKey('import-remove-image-$index'),
+                      tooltip: 'Bild entfernen',
+                      icon: const Icon(Icons.hide_image_outlined, size: 20),
+                      onPressed: () => setState(q.removeImage),
+                    ),
+                ],
+              ),
+            ],
             if (preview.trim().isNotEmpty) ...[
               const SizedBox(height: 4),
               MathText('Lösung: $preview', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),

@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/services/ai_service.dart';
+import 'package:lernen/services/pdf_page_renderer.dart';
 import 'package:lernen/services/pdf_question_import_service.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
@@ -18,6 +20,42 @@ Uint8List pdfWithPages(int pages) {
   final bytes = Uint8List.fromList(document.saveSync());
   document.dispose();
   return bytes;
+}
+
+/// Seitenbild 400×600: links rot, rechts blau.
+Future<Uint8List> _pagePng() async {
+  final recorder = ui.PictureRecorder();
+  ui.Canvas(recorder)
+    ..drawRect(const ui.Rect.fromLTWH(0, 0, 200, 600), ui.Paint()..color = const ui.Color(0xFFFF0000))
+    ..drawRect(const ui.Rect.fromLTWH(200, 0, 200, 600), ui.Paint()..color = const ui.Color(0xFF0000FF));
+  final image = await recorder.endRecording().toImage(400, 600);
+  return (await image.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+}
+
+/// Größe und RGBA-Farbe eines Pixels (relativ 0..1) eines PNG.
+Future<({int width, int height, int rgba})> _probe(String base64Png, double x, double y) async {
+  final image = (await (await ui.instantiateImageCodec(base64Decode(base64Png))).getNextFrame()).image;
+  final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+  final px = (x * (image.width - 1)).round();
+  final py = (y * (image.height - 1)).round();
+  return (width: image.width, height: image.height, rgba: data.getUint32((py * image.width + px) * 4));
+}
+
+class _FakeRenderer implements PageImageRenderer {
+  _FakeRenderer(this.png, {this.missing = const {}});
+  final Uint8List png;
+  final Set<int> missing;
+  final rendered = <int>[];
+  bool closed = false;
+
+  @override
+  Future<Uint8List?> renderPng(int page) async {
+    rendered.add(page);
+    return missing.contains(page) ? null : png;
+  }
+
+  @override
+  Future<void> close() async => closed = true;
 }
 
 http.Response _chat(Object json) => http.Response(
@@ -197,5 +235,129 @@ void main() {
     expect(cards[1].options!.length, 2);
     expect(cards.every((c) => c.priorityIntroduction && c.unitId == 'u1' && c.moduleId == 'm1'), isTrue);
     expect(cards[0].createdAt.isBefore(cards[1].createdAt), isTrue);
+  });
+
+  group('mit Seitenbildern', () {
+    test('KI sieht Bilder und Text, Abbildungen werden ausgeschnitten, Stellen umgerechnet', () async {
+      final png = await _pagePng();
+      final renderer = _FakeRenderer(png);
+      late Map<String, dynamic> body;
+      final client = MockClient((request) async {
+        body = jsonDecode(request.body) as Map<String, dynamic>;
+        return _chat({
+          'questions': [
+            {
+              'page': 1,
+              'type': 'free_text',
+              'front': 'Welche Farbe hat die rechte Hälfte?',
+              'correctText': 'Blau',
+              'imageBox': [0.5, 0.0, 1.0, 0.5],
+              'imageCovers': [
+                [0.6, 0.1, 0.8, 0.2],
+              ],
+            },
+            {'page': 1, 'type': 'free_text', 'front': 'Ohne Bild?', 'correctText': 'Ja'},
+            {
+              'page': 2,
+              'type': 'diagram_label',
+              'front': 'Beschrifte die Abbildung.',
+              'imageBox': [0.0, 0.0, 0.5, 0.5],
+              'targets': [
+                {'box': [0.1, 0.1, 0.2, 0.2], 'label': 'A'},
+              ],
+            },
+            {
+              'page': 2,
+              'type': 'mark_image',
+              'front': 'Markiere die Mitte.',
+              'targets': [
+                {'box': [0.4, 0.4, 0.6, 0.6]},
+              ],
+            },
+          ],
+        });
+      });
+      final scan = await PdfQuestionImportService(
+        ai: AiService(apiKey: 'k', model: 'vision', client: client),
+        renderer: (_) async => renderer,
+      ).scan(pdfWithPages(2), firstPage: 1, lastPage: 2, contentOnly: false, fillMissingSolutions: true);
+
+      // Anfrage: Seitenbilder statt PDF-Datei, dazu der Seitentext.
+      final content = (body['messages'] as List)[1]['content'] as List;
+      expect(content.where((c) => c['type'] == 'image_url').length, 2);
+      expect(content.where((c) => c['type'] == 'file'), isEmpty);
+      expect(content.map((c) => c['text'] ?? '').join('\n'), contains('Seite 2'));
+      expect((body['messages'] as List)[0]['content'], contains('imageBox'));
+      expect(scan.usedPageImages, isTrue);
+      expect(renderer.rendered, [1, 2]);
+      expect(renderer.closed, isTrue);
+
+      expect(scan.questions.map((q) => q.front), [
+        'Welche Farbe hat die rechte Hälfte?',
+        'Ohne Bild?',
+        'Beschrifte die Abbildung.',
+        'Markiere die Mitte.',
+      ]);
+
+      // Ausschnitt oben rechts (mit etwas Rand), Abdeckung weiß.
+      final figure = scan.questions[0].imageBase64!;
+      final middle = await _probe(figure, 0.5, 0.75);
+      expect(middle.width, closeTo(208, 2));
+      expect(middle.height, closeTo(312, 2));
+      expect(middle.rgba, 0x0000FFFF);
+      expect((await _probe(figure, 0.42, 0.29)).rgba, 0xFFFFFFFF);
+
+      expect(scan.questions[1].imageBase64, isNull);
+
+      // Stelle in Ausschnitt-Koordinaten: 0.15 / 0.52.
+      final label = parseImageTargets(scan.questions[2].data['imageTargets'])!.single;
+      expect(label.label, 'A');
+      expect(label.x, closeTo(0.15 / 0.52, 0.01));
+      expect(label.w, closeTo(0.1 / 0.52, 0.01));
+
+      // Bildfrage ohne Bereich: ganze Seite.
+      final mark = parseImageTargets(scan.questions[3].data['imageTargets'])!.single;
+      expect(mark.x, closeTo(0.5, 0.01));
+      expect((await _probe(scan.questions[3].imageBase64!, 0.5, 0.5)).width, 400);
+
+      final cards = PdfQuestionImportService.toFlashcards(scan.questions, moduleId: 'm1', now: DateTime(2026, 9, 27));
+      expect(cards[0].imageBase64, figure);
+      expect(cards[2].type, QuestionType.diagramLabel);
+      expect(cards[2].imageTargets!.single.label, 'A');
+      expect(cards[1].imageBase64, isNull);
+    });
+
+    test('fehlt ein Seitenbild, geht das Paket als PDF an die KI; Bildfragen ohne Bild fallen weg', () async {
+      final png = await _pagePng();
+      final types = <String>[];
+      final client = MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        types.addAll([for (final c in (body['messages'] as List)[1]['content'] as List) c['type'] as String]);
+        return _chat({
+          'questions': [
+            {'page': 1, 'type': 'free_text', 'front': 'Frage?', 'correctText': 'x', 'imageBox': [0, 0, 1, 1]},
+            {
+              'page': 1,
+              'type': 'mark_image',
+              'front': 'Markiere.',
+              'targets': [
+                {'box': [0.4, 0.4, 0.6, 0.6]},
+              ],
+            },
+          ],
+        });
+      });
+      final scan = await PdfQuestionImportService(
+        ai: AiService(apiKey: 'k', model: 'vision', client: client),
+        renderer: (_) async => _FakeRenderer(png, missing: {2}),
+      ).scan(pdfWithPages(2), firstPage: 1, lastPage: 2, contentOnly: false, fillMissingSolutions: true);
+
+      expect(types, contains('file'));
+      expect(types, isNot(contains('image_url')));
+      expect(scan.usedPageImages, isFalse);
+      expect(scan.questions.map((q) => q.front), ['Frage?']);
+      expect(scan.questions.single.imageBase64, isNull);
+      expect(scan.dropped, 1);
+    });
   });
 }

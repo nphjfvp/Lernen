@@ -341,13 +341,29 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   Probeklausur). `RelativeImage` zeigt Bilder im echten Seitenverhältnis mit
   Ebenen an relativen Koordinaten (Quiz + Editor).
 - **„Fragen aus PDF importieren“** (`PdfQuestionImportScreen` +
-  `PdfQuestionImportService`): Seiten paketweise (3) per
-  `PdfService.extractPages` als PDF an `AiService.scanPdfPagesForQuestions`
-  (Vision-Modell), 3 Pakete parallel, `contentOnly`/`fillMissingSolutions`
-  steuern den Prompt; Ergebnis nach Seite sortiert, fehlgeschlagene Pakete
-  wiederholbar, Import als Karten mit `priorityIntroduction`. Die KI
-  erfindet dort nichts, sie übernimmt vorhandene Fragen (anders als
-  „Frage erstellen“ und der ältere Text-Import im Nachbereiten).
+  `PdfQuestionImportService`): Seiten paketweise (3) an
+  `AiService.scanPdfPagesForQuestions` (Vision-Modell), 3 Pakete parallel,
+  `contentOnly`/`fillMissingSolutions`/`referenceText` steuern den Prompt.
+  Standard: `PdfPageRenderer` (über `PdfViewerPlatform.instance`, also
+  dieselbe Engine wie der Viewer; `PageImageRenderer` als Test-Hook) rendert
+  die Seiten als PNG, `drawEdgeRuler` zeichnet eine Randskala, dazu geht der
+  Seitentext mit. Die KI liefert `imageBox`/`imageCovers`/`targets` in
+  Seitenkoordinaten; `PdfQuestionImportService.attachFigure` schneidet aus,
+  rechnet Stellen auf den Ausschnitt um und zeichnet Abdeckungen ein.
+  Ohne Renderer (Linux, Tests ohne Hook) geht das Paket per
+  `PdfService.extractPages` als PDF-Datei raus. Ergebnis nach Seite
+  sortiert, fehlgeschlagene Pakete wiederholbar, Import als Karten mit
+  `priorityIntroduction`. Der Nachbereiten-Import (`ReviewScreen`,
+  `_importQuestions`) nutzt denselben Dienst für PDFs; nur Nicht-PDFs laufen
+  noch über den Text-Import. Die KI erfindet dort nichts.
+- KI-Einträge laufen vor der Prüfung durch `QuestionParsing.canonicalize`:
+  Typ tolerant (camelCase, Leerzeichen, deutsch, Abkürzungen; fehlend →
+  aus der Struktur abgeleitet), Optionen als Texte mit Lösung als
+  Buchstabe/Index/Text, `correct` statt `isCorrect`, Paare als left/right
+  oder Objekt, Lücken als Text. Vorher fiel jede Abweichung still auf
+  „flashcard“ zurück – daher kamen beim Import fast nur offene Karten an.
+- Übungs-PDFs werden gespeichert (`MaterialFileStore`), auch im
+  Nachbereiten; ältere lassen sich über „Original-PDF hinzufügen“ nachreichen.
 - „Frage erstellen“: `questionCount` 0 = KI entscheidet (bis
   `AiService.maxAutoPageQuestions`). Bilder lassen sich überall wieder
   entfernen (`copyWithImage(clearImage: true)`, beim Lernen über
@@ -366,7 +382,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 563 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 576 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -418,6 +434,10 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
 19. „Fragen aus PDF importieren“ (jede Seite, jede/inhaltliche Fragen,
     fehlende Lösungen ergänzen), Anzahl „KI“ bei „Frage erstellen“, Bilder
     aus Fragen entfernen.
+20. Import 1:1: Seiten als Bild an die KI, Aufgabenform bleibt (auch
+    interaktiv und Bildfragen), Abbildungen als Ausschnitt; tolerantes
+    Einlesen der KI-Antworten (Ursache für „nur Freitext“); Übungs-PDFs
+    ansehbar; Nachbereiten-Import nutzt den seitenweisen Import.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
