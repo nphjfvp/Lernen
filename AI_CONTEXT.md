@@ -386,7 +386,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 610 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 620 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -461,6 +461,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     fehlender Cloud-Wert überschreibt nie die lokale Wahl. Grundlage waren
     drei Hell/Dunkel-Mockup-Paare (Design-Richtungen A/B/C), aus denen der
     Nutzer B ("Klar") als Vorlage bestätigt hat.
+23. Hell/Dunkel-Vorgabe unabhängig von der Systemeinstellung: drei Optionen
+    (System/Hell/Dunkel) unter Einstellungen → Erscheinungsbild.
+    `AppSettings.themeModePreference` (Standard `'system'`) wird über
+    `AppThemeModePreference.themeMode` (`lib/theme/app_theme.dart`) auf
+    `MaterialApp.themeMode` gemappt, reaktiv aus `SettingsRepository` gelesen
+    wie der Farb-Skin, reist ebenso über Sync/Sync-Code mit.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

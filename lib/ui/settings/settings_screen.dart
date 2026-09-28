@@ -20,6 +20,7 @@ import '../../services/reminder_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/update_checker_service.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_theme.dart';
 import '../auth/login_screen.dart';
 import '../widgets/add_password_dialog.dart';
 import '../widgets/update_actions.dart';
@@ -418,8 +419,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _SectionLabel('Erscheinungsbild'),
                   const SizedBox(height: 4),
                   Text(
-                    'Nur die Farben ändern sich – Aufbau und Bedienung bleiben gleich. '
-                    'Hell/Dunkel folgt weiterhin der Systemeinstellung.',
+                    'Nur die Farben ändern sich – Aufbau und Bedienung bleiben gleich.',
                     style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
                   ),
                   const SizedBox(height: 12),
@@ -428,6 +428,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onChanged: (skin) => context
                         .read<SettingsRepository>()
                         .update(settings.copyWith(themeSkin: skin.name)),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Hell/Dunkel',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.ink),
+                  ),
+                  const SizedBox(height: 8),
+                  _ThemeModePicker(
+                    value: themeModePreferenceFromName(settings.themeModePreference),
+                    onChanged: (mode) => context
+                        .read<SettingsRepository>()
+                        .update(settings.copyWith(themeModePreference: mode.name)),
                   ),
                   const SizedBox(height: 26),
                   _SectionLabel('KI (BYOK)'),
@@ -918,6 +930,80 @@ class _ThemeSkinTile extends StatelessWidget {
               skin.label,
               style: TextStyle(
                 fontSize: 12.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? c.accentOnSoft : c.ink,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Hell/Dunkel unabhängig von der Farbpalette: "System" (Standard) folgt dem
+/// Gerät, "Hell"/"Dunkel" erzwingen einen Modus – siehe
+/// AppThemeModePreference.themeMode -> MaterialApp.themeMode in main.dart.
+class _ThemeModePicker extends StatelessWidget {
+  const _ThemeModePicker({required this.value, required this.onChanged});
+
+  final AppThemeModePreference value;
+  final ValueChanged<AppThemeModePreference> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final mode in AppThemeModePreference.values) ...[
+          if (mode != AppThemeModePreference.values.first) const SizedBox(width: 10),
+          Expanded(
+            child: _ThemeModeTile(
+              key: ValueKey('theme-mode-${mode.name}'),
+              mode: mode,
+              selected: mode == value,
+              onTap: () => onChanged(mode),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ThemeModeTile extends StatelessWidget {
+  const _ThemeModeTile({super.key, required this.mode, required this.selected, required this.onTap});
+
+  final AppThemeModePreference mode;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final icon = switch (mode) {
+      AppThemeModePreference.system => Icons.brightness_auto_rounded,
+      AppThemeModePreference.light => Icons.light_mode_rounded,
+      AppThemeModePreference.dark => Icons.dark_mode_rounded,
+    };
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
+        decoration: BoxDecoration(
+          color: selected ? c.accentSoft : c.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? c.accent : c.border, width: selected ? 1.5 : 1),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: selected ? c.accentOnSoft : c.inkMuted),
+            const SizedBox(height: 6),
+            Text(
+              mode.label,
+              style: TextStyle(
+                fontSize: 12,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 color: selected ? c.accentOnSoft : c.ink,
               ),

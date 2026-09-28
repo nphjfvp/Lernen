@@ -143,4 +143,27 @@ void main() {
       expect(updated.dailyReminderEnabled, settings.dailyReminderEnabled);
     });
   });
+
+  group('AppSettings.themeModePreference', () {
+    test('defaultet auf "system"', () {
+      expect(const AppSettings().themeModePreference, 'system');
+    });
+
+    test('Round-Trip erhält die gewählte Vorgabe', () {
+      const settings = AppSettings(themeModePreference: 'dark');
+      expect(AppSettings.fromMap(settings.toMap()).themeModePreference, 'dark');
+    });
+
+    test('ist abwärtskompatibel zu älteren Datensätzen ohne das Feld', () {
+      final map = const AppSettings().toMap()..remove('themeModePreference');
+      expect(AppSettings.fromMap(map).themeModePreference, 'system');
+    });
+
+    test('copyWith ändert nur themeModePreference', () {
+      const settings = AppSettings(themeModePreference: 'light');
+      final updated = settings.copyWith(themeModePreference: 'dark');
+      expect(updated.themeModePreference, 'dark');
+      expect(updated.dailyReminderEnabled, settings.dailyReminderEnabled);
+    });
+  });
 }

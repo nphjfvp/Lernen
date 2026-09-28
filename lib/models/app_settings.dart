@@ -78,12 +78,20 @@ class AppSettings {
   /// `themeSkinFromName` auf den Standard zurück, nie auf einen Absturz.
   final String themeSkin;
 
+  /// Hell/Dunkel-Vorgabe in den Einstellungen, als `name` von
+  /// `AppThemeModePreference` (siehe theme/app_theme.dart) – wie [themeSkin]
+  /// als reiner String, damit dieses Modell ohne Flutter-Import testbar
+  /// bleibt. "system" (Standard) folgt weiterhin der Systemeinstellung, ein
+  /// unbekannter Wert fällt beim Lesen ebenfalls darauf zurück.
+  final String themeModePreference;
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
   static const defaultReminderMinuteOfDay = 18 * 60;
   static const defaultCheckpointQuizPageInterval = 5;
   static const defaultThemeSkin = 'klar';
+  static const defaultThemeModePreference = 'system';
 
   const AppSettings({
     this.openRouterApiKey,
@@ -103,6 +111,7 @@ class AppSettings {
     this.lastSyncedPushId,
     this.pdfStorage = const PdfStorageConfig(),
     this.themeSkin = defaultThemeSkin,
+    this.themeModePreference = defaultThemeModePreference,
   });
 
   bool get hasApiKey =>
@@ -129,6 +138,7 @@ class AppSettings {
     String? lastSyncedPushId,
     PdfStorageConfig? pdfStorage,
     String? themeSkin,
+    String? themeModePreference,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -148,6 +158,7 @@ class AppSettings {
       lastSyncedPushId: lastSyncedPushId ?? this.lastSyncedPushId,
       pdfStorage: pdfStorage ?? this.pdfStorage,
       themeSkin: themeSkin ?? this.themeSkin,
+      themeModePreference: themeModePreference ?? this.themeModePreference,
     );
   }
 
@@ -169,6 +180,7 @@ class AppSettings {
         'lastSyncedPushId': lastSyncedPushId,
         'pdfStorage': pdfStorage.toMap(),
         'themeSkin': themeSkin,
+        'themeModePreference': themeModePreference,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -198,5 +210,6 @@ class AppSettings {
             ? PdfStorageConfig.fromMap(Map<String, dynamic>.from(map['pdfStorage'] as Map))
             : const PdfStorageConfig(),
         themeSkin: map['themeSkin'] as String? ?? defaultThemeSkin,
+        themeModePreference: map['themeModePreference'] as String? ?? defaultThemeModePreference,
       );
 }

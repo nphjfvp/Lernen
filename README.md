@@ -641,6 +641,13 @@ gespeichert, reist über Konto-Sync/Sync-Code mit (ein leerer Cloud-Wert
 überschreibt nie eine lokal getroffene Wahl) und wird beim App-Start in
 `main.dart` reaktiv aus der `SettingsRepository` gelesen.
 
+Unabhängig davon lässt sich unter Einstellungen → Erscheinungsbild auch
+Hell/Dunkel selbst festlegen (drei Kacheln: "System", "Hell", "Dunkel") statt
+nur der Geräte-Einstellung zu folgen – `AppSettings.themeModePreference`
+("system" ist Standard), gemappt über `AppThemeModePreference.themeMode` in
+`lib/theme/app_theme.dart` auf `MaterialApp.themeMode`. Reist wie der
+Farb-Skin über Sync/Sync-Code mit und wirkt sofort ohne Neustart.
+
 ## Setup
 
 ### 1. Flutter

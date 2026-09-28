@@ -3,6 +3,28 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
+/// Hell/Dunkel-Vorgabe in den Einstellungen – unabhängig von der gewählten
+/// Farbpalette ([AppThemeSkin]). [system] (Standard) übernimmt weiterhin die
+/// Systemeinstellung des Geräts, [light]/[dark] erzwingen einen Modus.
+enum AppThemeModePreference { system, light, dark }
+
+extension AppThemeModePreferenceLabel on AppThemeModePreference {
+  String get label => switch (this) {
+        AppThemeModePreference.system => 'System',
+        AppThemeModePreference.light => 'Hell',
+        AppThemeModePreference.dark => 'Dunkel',
+      };
+
+  ThemeMode get themeMode => switch (this) {
+        AppThemeModePreference.system => ThemeMode.system,
+        AppThemeModePreference.light => ThemeMode.light,
+        AppThemeModePreference.dark => ThemeMode.dark,
+      };
+}
+
+AppThemeModePreference themeModePreferenceFromName(String? name) => AppThemeModePreference.values
+    .firstWhere((m) => m.name == name, orElse: () => AppThemeModePreference.system);
+
 /// Baut Light-/Dark-ThemeData aus den [AppColors]-Tokens. Ein Basis-
 /// [ColorScheme] wird mitgeführt, damit unrestylte Standard-Widgets (Dialoge,
 /// SnackBars, …) nicht aus dem Rahmen fallen – die eigentliche Optik der

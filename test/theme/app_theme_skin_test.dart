@@ -65,4 +65,26 @@ void main() {
       expect(AppTheme.forSkin(AppThemeSkin.klar, Brightness.dark).extension<AppColors>(), AppColors.klarDark);
     });
   });
+
+  group('themeModePreferenceFromName', () {
+    test('liest die drei bekannten Namen zurück', () {
+      expect(themeModePreferenceFromName('system'), AppThemeModePreference.system);
+      expect(themeModePreferenceFromName('light'), AppThemeModePreference.light);
+      expect(themeModePreferenceFromName('dark'), AppThemeModePreference.dark);
+    });
+
+    test('ein unbekannter oder fehlender Wert fällt auf "system" (Standard) zurück', () {
+      expect(themeModePreferenceFromName('kaputt'), AppThemeModePreference.system);
+      expect(themeModePreferenceFromName(null), AppThemeModePreference.system);
+      expect(themeModePreferenceFromName(''), AppThemeModePreference.system);
+    });
+  });
+
+  group('AppThemeModePreference.themeMode', () {
+    test('bildet auf das passende Flutter-ThemeMode ab', () {
+      expect(AppThemeModePreference.system.themeMode, ThemeMode.system);
+      expect(AppThemeModePreference.light.themeMode, ThemeMode.light);
+      expect(AppThemeModePreference.dark.themeMode, ThemeMode.dark);
+    });
+  });
 }

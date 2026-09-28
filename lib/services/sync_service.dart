@@ -56,6 +56,7 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'checkpointQuizPageInterval': settings.checkpointQuizPageInterval,
       'bestSprintScore': settings.bestSprintScore,
       'themeSkin': settings.themeSkin,
+      'themeModePreference': settings.themeModePreference,
     };
 
 /// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
@@ -86,6 +87,9 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     checkpointQuizPageInterval: interval != null && interval > 0 ? interval : null,
     bestSprintScore: bestSprint > current.bestSprintScore ? bestSprint : null,
     themeSkin: (synced['themeSkin'] as String?)?.trim().isNotEmpty == true ? synced['themeSkin'] as String : null,
+    themeModePreference: (synced['themeModePreference'] as String?)?.trim().isNotEmpty == true
+        ? synced['themeModePreference'] as String
+        : null,
   );
 }
 

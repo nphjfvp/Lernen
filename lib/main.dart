@@ -84,19 +84,20 @@ class LernenApp extends StatelessWidget {
           create: (ctx) => AutoSyncService(settings: settingsRepository, auth: ctx.read<AuthRepository>())..start(),
         ),
       ],
-      // Builder statt MaterialApp direkt: liest die gewählte Farbpalette
-      // (siehe SettingsScreen "Erscheinungsbild") reaktiv aus den
-      // Einstellungen – ein Wechsel dort baut das Theme sofort neu, ohne
-      // App-Neustart. Hell/Dunkel bleibt weiterhin die Systemeinstellung
-      // (kein explizites `themeMode`, Standard ist `ThemeMode.system`).
+      // Builder statt MaterialApp direkt: liest die gewählte Farbpalette und
+      // Hell/Dunkel-Vorgabe (siehe SettingsScreen "Erscheinungsbild") reaktiv
+      // aus den Einstellungen – ein Wechsel dort baut Theme/ThemeMode sofort
+      // neu, ohne App-Neustart.
       child: Builder(
         builder: (context) {
-          final skin = themeSkinFromName(context.watch<SettingsRepository>().settings.themeSkin);
+          final appSettings = context.watch<SettingsRepository>().settings;
+          final skin = themeSkinFromName(appSettings.themeSkin);
           return MaterialApp(
             title: 'Lernen',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.forSkin(skin, Brightness.light),
             darkTheme: AppTheme.forSkin(skin, Brightness.dark),
+            themeMode: themeModePreferenceFromName(appSettings.themeModePreference).themeMode,
             home: const RootShell(),
           );
         },

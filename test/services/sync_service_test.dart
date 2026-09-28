@@ -149,6 +149,23 @@ void main() {
     });
   });
 
+  group('themeModePreference', () {
+    test('reist mit syncedSettingsOf und wird gemerged', () {
+      const settings = AppSettings(themeModePreference: 'dark');
+      final synced = syncedSettingsOf(settings, includeSecrets: false);
+      expect(synced['themeModePreference'], 'dark');
+      final merged = mergeAiSettings(const AppSettings(), synced);
+      expect(merged.themeModePreference, 'dark');
+    });
+
+    test('ein leerer/fehlender Cloud-Wert lässt die lokal gewählte Vorgabe stehen', () {
+      const current = AppSettings(themeModePreference: 'light');
+      expect(mergeAiSettings(current, {'themeModePreference': null}).themeModePreference, 'light');
+      expect(mergeAiSettings(current, {}).themeModePreference, 'light');
+      expect(mergeAiSettings(current, {'themeModePreference': ''}).themeModePreference, 'light');
+    });
+  });
+
   group('Download-Schutz', () {
     test('Cloud-Stand einer neueren App-Version wird nicht gelesen', () {
       expect(() => checkCloudFormat({'format': SyncService.syncFormat + 1}), throwsA(isA<SyncException>()));
