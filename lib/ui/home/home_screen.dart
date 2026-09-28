@@ -5,17 +5,67 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/flashcard.dart';
 import '../../models/module.dart';
+import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../services/database_service.dart';
+import '../../services/mastery_service.dart';
 import '../../services/module_export_service.dart';
 import '../../theme/app_colors.dart';
 import '../modules/module_detail_screen.dart';
 import '../modules/module_form_screen.dart';
 import '../widgets/exam_countdown_badge.dart';
+import '../widgets/mastery_bar.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, this.isActive = true});
+
+  /// Sichtbarer Tab (siehe RootShell) – beim Zurückwechseln wird die Ampel
+  /// je Fach neu geladen, seither Gelerntes soll sofort sichtbar sein.
+  final bool isActive;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  /// Ampel je Fach (siehe MasteryService.breakdown), null bis geladen.
+  Map<String, Map<MasteryLevel, int>>? _ampelByModule;
+  FlashcardRepository? _flashcards;
+
+  @override
+  void initState() {
+    super.initState();
+    _flashcards = context.read<FlashcardRepository?>()?..addListener(_loadAmpel);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAmpel());
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) _loadAmpel();
+  }
+
+  @override
+  void dispose() {
+    _flashcards?.removeListener(_loadAmpel);
+    super.dispose();
+  }
+
+  Future<void> _loadAmpel() async {
+    final repo = _flashcards;
+    if (repo == null) return;
+    final byModule = <String, List<Flashcard>>{};
+    for (final card in await repo.loadAll()) {
+      byModule.putIfAbsent(card.moduleId, () => []).add(card);
+    }
+    if (!mounted) return;
+    final mastery = MasteryService();
+    setState(() => _ampelByModule = {
+          for (final entry in byModule.entries) entry.key: mastery.breakdown(entry.value),
+        });
+  }
 
   /// Importiert ein zuvor über ModuleDetailScreen exportiertes Fach (siehe
   /// ModuleExportService) aus einer JSON-Datei – vergibt dabei frische IDs
@@ -110,7 +160,10 @@ class HomeScreen extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(24, 14, 24, 160),
                       itemCount: modules.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (context, i) => _ModuleTile(module: modules[i]),
+                      itemBuilder: (context, i) => _ModuleTile(
+                        module: modules[i],
+                        ampel: _ampelByModule == null ? null : (_ampelByModule![modules[i].id] ?? const {}),
+                      ),
                     ),
             ),
           ],
@@ -161,8 +214,11 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ModuleTile extends StatelessWidget {
-  const _ModuleTile({required this.module});
+  const _ModuleTile({required this.module, required this.ampel});
   final Module module;
+
+  /// Ampel des Fachs, null solange noch nicht geladen.
+  final Map<MasteryLevel, int>? ampel;
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +260,10 @@ class _ModuleTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 7),
                     ExamCountdownBadge(daysUntilExam: module.daysUntilExam),
+                    if (ampel != null) ...[
+                      const SizedBox(height: 10),
+                      MasteryBar(key: ValueKey('ampel-${module.id}'), breakdown: ampel!),
+                    ],
                   ],
                 ),
               ),

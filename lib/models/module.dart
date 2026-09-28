@@ -76,6 +76,14 @@ class Module {
   final DateTime createdAt;
   final List<LectureSlot>? lectureSlots;
 
+  /// Wie stark dieses Fach insgesamt gewichtet ist (Standard 1.0): wirkt
+  /// multiplikativ mit dem Gewicht jeder einzelnen Karte (siehe
+  /// Flashcard.weight) auf deren Wiederholungsintervall – ein höher
+  /// gewichtetes Fach kommt dadurch bei ALLEN seinen Fragen öfter dran – und
+  /// skaliert zusätzlich, wie viele neue Karten es pro Tag ins Daily Quiz
+  /// bringt (siehe DailySchedulerService.buildPlan).
+  final double weight;
+
   const Module({
     required this.id,
     required this.name,
@@ -84,7 +92,12 @@ class Module {
     required this.examDate,
     required this.createdAt,
     this.lectureSlots,
+    this.weight = 1.0,
   });
+
+  /// Erlaubter Bereich für [weight] (siehe dort), wie bei Flashcard.
+  static const double minWeight = 0.25;
+  static const double maxWeight = 4.0;
 
   Color get color => Color(colorValue);
 
@@ -115,6 +128,7 @@ class Module {
     bool clearExamDate = false,
     List<LectureSlot>? lectureSlots,
     bool clearLectureSlots = false,
+    double? weight,
   }) {
     return Module(
       id: id,
@@ -124,7 +138,13 @@ class Module {
       examDate: clearExamDate ? null : (examDate ?? this.examDate),
       createdAt: createdAt,
       lectureSlots: clearLectureSlots ? null : (lectureSlots ?? this.lectureSlots),
+      weight: weight == null ? this.weight : _sanitizeWeight(weight),
     );
+  }
+
+  static double _sanitizeWeight(double? value) {
+    if (value == null || value.isNaN) return 1.0;
+    return value.clamp(minWeight, maxWeight).toDouble();
   }
 
   Map<String, dynamic> toMap() => {
@@ -135,6 +155,7 @@ class Module {
         'examDate': examDate?.toIso8601String(),
         'createdAt': createdAt.toIso8601String(),
         'lectureSlots': lectureSlots?.map((s) => s.toMap()).toList(),
+        'weight': weight,
       };
 
   factory Module.fromMap(Map<String, dynamic> map) => Module(
@@ -147,5 +168,7 @@ class Module {
         lectureSlots: (map['lectureSlots'] as List?)
             ?.map((e) => LectureSlot.fromMap(Map<String, dynamic>.from(e as Map)))
             .toList(),
+        // Ältere Datensätze ohne Gewicht zählen einfach (1.0).
+        weight: _sanitizeWeight((map['weight'] as num?)?.toDouble()),
       );
 }

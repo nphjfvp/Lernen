@@ -129,4 +129,24 @@ void main() {
       expect(cleared.lectureSlots, isNull);
     });
   });
+
+  group('Module.weight – Fach-Gewichtung', () {
+    test('defaultet auf 1.0, copyWith ändert sie, Round-Trip erhält sie', () {
+      final module = _module();
+      expect(module.weight, 1.0);
+      final heavy = module.copyWith(weight: 2.0);
+      expect(heavy.weight, 2.0);
+      expect(heavy.name, module.name);
+      expect(Module.fromMap(heavy.toMap()).weight, 2.0);
+      // Andere Änderungen lassen das Gewicht stehen.
+      expect(heavy.copyWith(name: 'Neu').weight, 2.0);
+    });
+
+    test('ältere Datensätze ohne Feld zählen einfach, Extremwerte werden begrenzt', () {
+      final legacy = _module().toMap()..remove('weight');
+      expect(Module.fromMap(legacy).weight, 1.0);
+      expect(Module.fromMap({..._module().toMap(), 'weight': -1}).weight, Module.minWeight);
+      expect(_module().copyWith(weight: 50).weight, Module.maxWeight);
+    });
+  });
 }

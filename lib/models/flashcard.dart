@@ -356,12 +356,12 @@ class Flashcard {
   /// die KI erneut zu bemühen.
   final List<VariantSnapshot>? pendingVariants;
 
-  /// Anzahl FALSCHER Antworten in Folge auf der aktuellen Eskalationsstufe
-  /// (jede richtige Antwort setzt ihn auf 0 zurück) – getrennt von
-  /// [variantBox] geführt, damit "Box ist gerade frisch auf 0, weil eben
-  /// befördert wurde" nicht mit "zwei Fehlversuche in Folge" verwechselt
-  /// wird. Erreicht er [demotionMissStreakThreshold], stuft
-  /// [copyWithBoxUpdate] automatisch zurück.
+  /// Anzahl FALSCHER Antworten in Folge auf der aktuellen Stufe (jede
+  /// richtige Antwort setzt ihn auf 0 zurück) – für ALLE Karten, nicht nur
+  /// Stufenketten. Steuert die Fehler-Leiter: ab [hintMissStreak] eine
+  /// KI-Hilfestellung, ab [secondHintMissStreak] eine zweite, ab
+  /// [fallbackMissStreak] zurück zur leichteren Stufe (siehe
+  /// [copyWithBoxUpdate] bzw. StageGate.reactivateEasier).
   final int variantMissStreak;
 
   /// Generischer Leitner-Zähler für die Wissensstand-Ampel (siehe
@@ -425,6 +425,33 @@ class Flashcard {
   /// Mal sofort da ist und mit synchronisiert.
   final String? miniLesson;
 
+  /// Wie oft diese Karte im Vergleich zu anderen drankommen soll: skaliert
+  /// das von FsrsService.review() berechnete Wiederholungsintervall (höheres
+  /// Gewicht -> kürzeres Intervall -> die Karte wird häufiger fällig). Neu
+  /// erzeugte Karten bekommen automatisch einen sinnvollen Standardwert nach
+  /// ihrer Quelle (siehe `defaultFlashcardWeightFor` in material_item.dart:
+  /// Folien-Fragen 1.0, Übungsaufgaben aus Übungsblättern 1.5), lässt sich
+  /// aber jederzeit von Hand in der Kartenliste anpassen (siehe
+  /// [copyWithWeight]). Wirkt zusammen mit [Module.weight] multiplikativ
+  /// (siehe CardReviewMixin.recordReview).
+  final double weight;
+
+  /// Schwierigkeitsstufe innerhalb der Gruppe (0 = leicht, 1 = mittel,
+  /// 2 = schwer), gesetzt beim Erstellen, per KI-Zuordnung oder von Hand.
+  /// Null = aus dem Fragetyp abgeleitet (siehe StageGate.levelOf).
+  final int? stageLevel;
+
+  /// Welche Karten Leicht/Mittel/Schwer DERSELBEN Frage bzw. desselben Themas
+  /// sind (siehe StageGate): gesetzt per KI-Zuordnung oder von Hand. Null =
+  /// das Konzept der Karte ([conceptId]); ohne beides steht die Karte allein.
+  final String? stageGroup;
+
+  /// KI-Hilfestellungen für die aktuelle Stufe, erzeugt nach wiederholten
+  /// Fehlern (siehe [hintMissStreak]) und gespeichert, damit sie beim
+  /// nächsten Mal sofort (auch offline) da sind. Bei einem Stufenwechsel
+  /// verworfen – sie gehören zu genau dieser Fragestellung.
+  final List<String>? aiHints;
+
   const Flashcard({
     required this.id,
     required this.moduleId,
@@ -461,6 +488,10 @@ class Flashcard {
     this.sourceMaterialId,
     this.sourcePage,
     this.miniLesson,
+    this.weight = 1.0,
+    this.stageLevel,
+    this.stageGroup,
+    this.aiHints,
   });
 
   /// Kanonische Antwort-Darstellung, unabhängig vom Fragetyp - Grundlage,
@@ -538,6 +569,10 @@ class Flashcard {
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       miniLesson: miniLesson,
+      weight: weight,
+      stageLevel: stageLevel,
+      stageGroup: stageGroup,
+      aiHints: aiHints,
     );
   }
 
@@ -613,6 +648,10 @@ class Flashcard {
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       miniLesson: miniLesson,
+      weight: weight,
+      stageLevel: stageLevel,
+      stageGroup: stageGroup,
+      aiHints: aiHints,
     );
   }
 
@@ -628,45 +667,96 @@ class Flashcard {
     return Flashcard.fromMap(map);
   }
 
-  /// Ab wie vielen FALSCHEN Antworten in Folge auf derselben Eskalationsstufe
-  /// [copyWithBoxUpdate] automatisch zurückstuft (siehe [variantMissStreak]).
-  /// Gilt für alle Stufen AUSSER der schwersten (siehe
-  /// [demotionMissStreakThresholdOnLastStage]).
-  static const int demotionMissStreakThreshold = 2;
+  /// Gewichtung von Hand ändern (siehe [weight], Kartenliste) – Inhalt,
+  /// Lernstand und Stufenkette bleiben unverändert. Wird auf
+  /// [minWeight]..[maxWeight] begrenzt.
+  Flashcard copyWithWeight(double weight) => Flashcard.fromMap({...toMap(), 'weight': weight});
 
-  /// Ab wie vielen FALSCHEN Antworten in Folge auf der SCHWERSTEN Stufe der
-  /// Kette automatisch zurückgestuft wird – bewusst deutlich höher als
-  /// [demotionMissStreakThreshold]: diese Stufe gilt als bereits nachgewiesen
-  /// gut gelernt (die Ampel stand hier grün, siehe MasteryService) und wird
-  /// durch normale Spaced-Repetition ohnehin nur noch selten wiederholt – ein
-  /// einzelner Ausrutscher soll sie nicht sofort zurückwerfen, erst
-  /// mehrfaches Vergessen in Folge.
-  static const int demotionMissStreakThresholdOnLastStage = 5;
+  /// Stufe/Gruppe setzen (siehe [stageLevel], [stageGroup]) – beim
+  /// Erstellen, per KI-Zuordnung oder von Hand. [clearLevel]/[clearGroup]
+  /// gehen zurück auf "aus dem Fragetyp" bzw. "Konzept der Karte".
+  Flashcard copyWithStage({int? level, String? group, bool clearLevel = false, bool clearGroup = false}) {
+    final map = toMap();
+    if (clearLevel) {
+      map['stageLevel'] = null;
+    } else if (level != null) {
+      map['stageLevel'] = level;
+    }
+    if (clearGroup) {
+      map['stageGroup'] = null;
+    } else if (group != null) {
+      map['stageGroup'] = group;
+    }
+    return Flashcard.fromMap(map);
+  }
 
-  /// Nach einer Antwort: Eskalationsstufe fortschreiben – in BEIDE
-  /// Richtungen. Ist die aktuelle Stufe grün ([masteryBox] am Cap) und eine
-  /// nächste Stufe in [variantChain] vorhanden, wird befördert: liegt ihr Inhalt
-  /// bereits fertig in [pendingVariants] vor (siehe dort), passiert das
-  /// SOFORT, ohne KI-Aufruf ([needsGeneration] = false). Andernfalls wird nur
-  /// die Box zurückgesetzt und die Ziel-Stufe über [nextType] signalisiert
-  /// ([needsGeneration] = true) – das eigentliche Umwandeln (KI-Aufruf)
-  /// übernimmt dann der Aufrufer, damit dieses Modell frei von I/O bleibt.
-  /// Umgekehrt: erreicht [variantMissStreak] (Fehlversuche IN FOLGE auf
-  /// dieser Stufe) die passende Schwelle ([demotionMissStreakThreshold] bzw.
-  /// [demotionMissStreakThresholdOnLastStage] auf der schwersten Stufe), wird
-  /// sofort zur vorherigen, leichteren Stufe zurückgestuft (siehe
-  /// [copyWithDemotedVariant]) – dafür ist KEIN weiterer KI-Aufruf nötig, der
-  /// alte Wortlaut liegt bereits in [variantHistory].
-  ({Flashcard card, QuestionType? nextType, bool needsGeneration}) copyWithBoxUpdate({required bool isCorrect}) {
+  /// Einer Vorlesungseinheit zuordnen (null = keine), z.B. per
+  /// Sammel-Bearbeiten in der Kartenliste. Lernstand bleibt.
+  Flashcard copyWithUnit(String? unitId) => Flashcard.fromMap({...toMap(), 'unitId': unitId});
+
+  /// Gespeicherte KI-Hilfestellungen ersetzen (siehe [aiHints]).
+  Flashcard copyWithHints(List<String> hints) => Flashcard.fromMap({...toMap(), 'aiHints': hints});
+
+  /// Fehler-Leiter neu setzen (siehe [variantMissStreak]), z.B. nach einem
+  /// Rückfall auf die leichteren Karten der Gruppe.
+  Flashcard copyWithMissStreak(int streak) => Flashcard.fromMap({...toMap(), 'variantMissStreak': streak});
+
+  /// Holt eine ruhende, leichtere Stufe zurück in den Plan (siehe
+  /// StageGate.reactivateEasier): knapp unter grün, spätestens [dueBy]
+  /// fällig, Fehler-Leiter von vorn. Senkt nie einen ohnehin niedrigeren
+  /// Stand und schiebt keine frühere Fälligkeit nach hinten.
+  Flashcard copyWithStageReopened({required DateTime dueBy}) => Flashcard.fromMap({
+        ...toMap(),
+        'masteryBox': masteryBox < masteryBoxCap - 1 ? masteryBox : masteryBoxCap - 1,
+        'due': (due.isAfter(dueBy) ? dueBy : due).toIso8601String(),
+        'variantMissStreak': 0,
+      });
+
+  /// Fehler-Leiter (siehe [variantMissStreak]): ab so vielen falschen
+  /// Antworten in Folge erscheint vor dem Antworten eine KI-Hilfestellung …
+  static const int hintMissStreak = 2;
+
+  /// … ab so vielen eine zweite, deutlichere …
+  static const int secondHintMissStreak = 3;
+
+  /// … und ab so vielen kommt die leichtere Stufe zurück: bei einer
+  /// Stufenkette die vorige Stufe ([copyWithDemotedVariant]), bei getrennten
+  /// Karten die leichteren Karten der Gruppe (StageGate.reactivateEasier).
+  static const int fallbackMissStreak = 4;
+
+  /// Wie viele der gespeicherten [aiHints] bei [missStreak] Fehlern in Folge
+  /// vor dem Antworten gezeigt werden sollen (0, 1 oder 2).
+  static int hintsDueFor(int missStreak) => missStreak >= secondHintMissStreak
+      ? 2
+      : missStreak >= hintMissStreak
+          ? 1
+          : 0;
+
+  /// Nach einer Antwort: Fehler-Leiter und Stufenkette fortschreiben – in
+  /// BEIDE Richtungen. Ist die aktuelle Stufe grün ([masteryBox] am Cap), die
+  /// Antwort ohne Hilfe gewusst ([promotable]) und eine nächste Stufe in
+  /// [variantChain] vorhanden, wird befördert: liegt ihr Inhalt bereits
+  /// fertig in [pendingVariants] vor, SOFORT ohne KI-Aufruf
+  /// ([needsGeneration] = false); sonst wird nur die Ziel-Stufe über
+  /// [nextType] signalisiert ([needsGeneration] = true) – die KI ruft der
+  /// Aufrufer, damit dieses Modell frei von I/O bleibt. Umgekehrt: erreicht
+  /// [variantMissStreak] [fallbackMissStreak], geht eine Stufenkette sofort
+  /// eine Stufe zurück ([copyWithDemotedVariant], alter Wortlaut liegt in
+  /// [variantHistory]).
+  ({Flashcard card, QuestionType? nextType, bool needsGeneration}) copyWithBoxUpdate({
+    required bool isCorrect,
+    bool promotable = true,
+  }) {
     final chain = variantChain;
     // Befördert wird, sobald die aktuelle Stufe grün ist: masteryBox am Cap
     // heißt an [masteryBoxCap] verschiedenen Tagen richtig beantwortet
-    // (siehe FsrsService.review) – "3 richtig in Folge" war dagegen in einer
-    // einzigen Übungsrunde erreichbar. Aufrufer wenden FsrsService.review
-    // VOR dieser Methode an, masteryBox enthält die aktuelle Antwort also
-    // schon.
-    final canPromote =
-        chain != null && variantLevel < chain.length - 1 && masteryBox >= Flashcard.masteryBoxCap && isCorrect;
+    // (siehe FsrsService.review). Aufrufer wenden FsrsService.review VOR
+    // dieser Methode an, masteryBox enthält die aktuelle Antwort also schon.
+    final canPromote = chain != null &&
+        variantLevel < chain.length - 1 &&
+        masteryBox >= Flashcard.masteryBoxCap &&
+        isCorrect &&
+        promotable;
     if (canPromote) {
       final pending = pendingVariants;
       if (pending != null && pending.isNotEmpty) {
@@ -709,17 +799,19 @@ class Flashcard {
         sourceMaterialId: sourceMaterialId,
         sourcePage: sourcePage,
         miniLesson: miniLesson,
+        weight: weight,
+        stageLevel: stageLevel,
+        stageGroup: stageGroup,
+        aiHints: aiHints,
       );
       return (card: updated, nextType: chain[variantLevel + 1], needsGeneration: true);
     }
 
     final missStreak = isCorrect ? 0 : variantMissStreak + 1;
     final isOnLastStage = chain != null && variantLevel >= chain.length - 1;
-    final effectiveDemotionThreshold =
-        isOnLastStage ? demotionMissStreakThresholdOnLastStage : demotionMissStreakThreshold;
     final canDemote = !isCorrect &&
         variantLevel > 0 &&
-        missStreak >= effectiveDemotionThreshold &&
+        missStreak >= fallbackMissStreak &&
         (variantHistory?.isNotEmpty ?? false);
     if (canDemote) {
       final demoted = copyWithDemotedVariant(
@@ -768,6 +860,10 @@ class Flashcard {
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       miniLesson: miniLesson,
+      weight: weight,
+      stageLevel: stageLevel,
+      stageGroup: stageGroup,
+      aiHints: aiHints,
     );
     return (card: updated, nextType: null, needsGeneration: false);
   }
@@ -838,6 +934,9 @@ class Flashcard {
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       miniLesson: miniLesson,
+      weight: weight,
+      stageLevel: stageLevel,
+      stageGroup: stageGroup,
     );
   }
 
@@ -931,6 +1030,9 @@ class Flashcard {
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       miniLesson: miniLesson,
+      weight: weight,
+      stageLevel: stageLevel,
+      stageGroup: stageGroup,
     );
   }
 
@@ -975,6 +1077,10 @@ class Flashcard {
         'sourceMaterialId': sourceMaterialId,
         'sourcePage': sourcePage,
         'miniLesson': miniLesson,
+        'weight': weight,
+        'stageLevel': stageLevel,
+        'stageGroup': stageGroup,
+        'aiHints': aiHints,
       };
 
   factory Flashcard.fromMap(Map<String, dynamic> map) => Flashcard(
@@ -1024,5 +1130,24 @@ class Flashcard {
         sourceMaterialId: map['sourceMaterialId'] as String?,
         sourcePage: (map['sourcePage'] as num?)?.toInt(),
         miniLesson: map['miniLesson'] as String?,
+        // Ältere Datensätze ohne Gewicht zählen einfach (1.0); ein kaputter
+        // Wert (0, negativ) würde die Intervall-Skalierung aushebeln.
+        weight: _sanitizeWeight((map['weight'] as num?)?.toDouble()),
+        stageLevel: _sanitizeStageLevel((map['stageLevel'] as num?)?.toInt()),
+        stageGroup: (map['stageGroup'] as String?)?.trim().isEmpty ?? true ? null : (map['stageGroup'] as String).trim(),
+        aiHints: (map['aiHints'] as List?)?.map((h) => h.toString()).where((h) => h.trim().isNotEmpty).toList(),
       );
+
+  static int? _sanitizeStageLevel(int? value) => value == null || value < 0 || value > 2 ? null : value;
+
+  /// Erlaubter Bereich für [weight] (siehe dort) – schützt die Intervall-
+  /// Skalierung in FsrsService.review() vor Division durch 0/negative Werte
+  /// und vor absurden Extremen aus manuell bearbeiteten/importierten Daten.
+  static const double minWeight = 0.25;
+  static const double maxWeight = 4.0;
+
+  static double _sanitizeWeight(double? value) {
+    if (value == null || value.isNaN) return 1.0;
+    return value.clamp(minWeight, maxWeight).toDouble();
+  }
 }

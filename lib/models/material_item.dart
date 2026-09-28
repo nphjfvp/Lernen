@@ -1,5 +1,11 @@
 enum MaterialKind { slide, exercise, practiceExam }
 
+/// Standard-Gewichtung (siehe Flashcard.weight) für eine neu erzeugte Karte
+/// je nach Art ihrer Quelle: Übungsaufgaben aus Übungsblättern kommen öfter
+/// dran (1.5) als Fragen aus Vorlesungsfolien (1.0), weil sie der Klausur
+/// näher sind. Ohne bekannte Quelle: 1.0.
+double defaultFlashcardWeightFor(MaterialKind? kind) => kind == MaterialKind.exercise ? 1.5 : 1.0;
+
 /// Unbekannte Werte (z.B. aus einer neueren App-Version) werden zu Folien,
 /// statt den ganzen Download/Import abbrechen zu lassen.
 MaterialKind materialKindFromString(String? value) =>

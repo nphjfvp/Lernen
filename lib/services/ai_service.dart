@@ -358,15 +358,6 @@ Auswahl-, Lücken-, Zuordnungs- und (wo sinnvoll) interaktive Fragen.
 Übungsaufgaben mit fester Aufgabenform (Ankreuzen, Lücken, Zuordnen,
 Tabelle) behalten diese Form. Wähle pro Frage den zum Inhalt passenden Typ:
    - "single_choice": klares Faktenwissen mit genau einer richtigen Antwort.
-     Setze zusätzlich "escalate": true – das System steigert den
-     Schwierigkeitsgrad solcher Fragen automatisch in mehreren Stufen
-     (Single-Choice -> Lückentext -> Freitext), sobald sie zuverlässig
-     richtig beantwortet werden, und stuft bei wiederholten Fehlversuchen
-     wieder zurück. WICHTIG: erzeuge zu JEDEM Konzept, sofern das Thema
-     dafür überhaupt geeignetes Faktenwissen hergibt, MINDESTENS eine
-     "single_choice"-Frage mit "escalate": true (nicht nur gelegentlich bei
-     zufällig passenden Fragen) – dieses Stufensystem soll für den Lernenden
-     tatsächlich regelmäßig zum Einsatz kommen, nicht nur in Ausnahmefällen.
    - "multiple_choice": wenn mehrere Aussagen gleichzeitig zutreffen können.
    - "fill_blank": Lückentext – markiere jede Lücke im "front"-Text mit genau
      drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
@@ -409,6 +400,22 @@ JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
 enthalten (siehe Beispiele unten) – ein Eintrag mit nur "front" und sonst
 nichts ist ungültig und wird verworfen.
 
+SCHWIERIGKEITSSTUFEN: Frage jeden wichtigen Sachverhalt in bis zu drei
+Stufen ab – die App fragt erst "leicht" ab, erst wenn das sitzt "mittel",
+dann "schwer" (vorher kommen die schwereren nicht dran):
+   - "leicht": Wiedererkennen (meist single_choice/multiple_choice),
+   - "mittel": Ergänzen oder Zuordnen (meist fill_blank/drag_drop/
+     drag_category),
+   - "schwer": selbst formulieren bzw. anwenden, so wie in der Klausur
+     (meist free_text, bei Übungsaufgaben mit fester Form auch deren Form).
+Gib JEDER Karte "level": "leicht" | "mittel" | "schwer" und "group": einen
+kurzen Schlüssel für den Sachverhalt (z.B. "Stücklisten-Arten"), der für
+alle Stufen DESSELBEN Sachverhalts Zeichen für Zeichen gleich ist und sich
+von anderen Sachverhalten unterscheidet. Lass eine Stufe weg, wenn sie für
+den Sachverhalt keinen Sinn ergibt (z.B. keine sinnvolle Auswahlfrage) –
+dann rückt die nächste Stufe nach. Übungsaufgaben, die 1:1 übernommen
+werden, sind "schwer".
+
 Trägt eine Karteikarte inhaltlich zu einem der oben erstellten Konzepte bei,
 ergänze zusätzlich "conceptTitle" mit EXAKT demselben Titel wie im
 "concepts"-Array (Zeichen für Zeichen identisch, damit die Zuordnung
@@ -426,12 +433,15 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
     {"title": "Konzeptname", "explanation": "Ausführliche Erklärung mit Bezug zu den Übungsaufgaben"}
   ],
   "flashcards": [
-    {"type": "single_choice", "front": "Frage", "escalate": true, "conceptTitle": "Konzeptname",
+    {"type": "single_choice", "front": "Frage", "level": "leicht", "group": "Sachverhalt A",
+     "conceptTitle": "Konzeptname",
      "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
-    {"type": "multiple_choice", "front": "Frage",
+    {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"],
+     "level": "mittel", "group": "Sachverhalt A", "conceptTitle": "Konzeptname"},
+    {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative",
+     "level": "schwer", "group": "Sachverhalt A", "conceptTitle": "Konzeptname"},
+    {"type": "multiple_choice", "front": "Frage", "level": "leicht", "group": "Sachverhalt B",
      "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
-    {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]},
-    {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative"},
     {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]},
     {"type": "drag_category", "front": "Sortiere ein", "dragPairs": [{"source": "A", "target": "Kategorie 1"}]},
     {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"},
@@ -1641,11 +1651,23 @@ Antworte in normalem Fließtext (kein JSON, keine Codefences), in der
 Sprache der Frage.
 ''';
 
-  /// Denkanstoß VOR dem Antworten, ohne die Lösung zu verraten.
-  Future<String> generateHint({required String question, required String correctAnswer}) async {
+  /// Denkanstoß VOR dem Antworten, ohne die Lösung zu verraten. Mit
+  /// [previousHints] (Fehler-Leiter: die Frage ging trotz Tipp wieder
+  /// schief) wird der neue Tipp deutlicher und konkreter als die bisherigen,
+  /// verrät die Lösung aber weiterhin nicht.
+  Future<String> generateHint({
+    required String question,
+    required String correctAnswer,
+    List<String> previousHints = const [],
+  }) async {
+    final previous = previousHints.isEmpty
+        ? ''
+        : '\nBisherige Tipps (haben nicht gereicht – gib jetzt einen DEUTLICHEREN, konkreteren '
+            'Hinweis, der einen Schritt weiter führt, ohne sie zu wiederholen und weiterhin ohne '
+            'die Lösung zu nennen):\n${previousHints.map((h) => '- $h').join('\n')}';
     final raw = await _complete(
       _hintSystemPrompt,
-      'Frage: $question\nLösung (NICHT verraten, nur als Hintergrund für den Tipp): $correctAnswer',
+      'Frage: $question\nLösung (NICHT verraten, nur als Hintergrund für den Tipp): $correctAnswer$previous',
     );
     return raw.trim();
   }
@@ -2130,6 +2152,49 @@ Antworte in der Sprache der Vorlage.
     return (parsed['highlights'] as List? ?? const [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
+  }
+
+  static const _assignStagesSystemPrompt = '''
+Du ordnest bereits vorhandene Lernfragen EINES Fachs nach Sachverhalten und
+Schwierigkeit. Du bekommst eine nummerierte Liste (Nummer, Typ, Frage,
+Lösung). Fasse Fragen, die DENSELBEN Sachverhalt abfragen (nur verschieden
+schwer), zu einer Gruppe zusammen und gib jeder Frage eine Stufe:
+- "leicht": Wiedererkennen (z.B. Auswahlfrage),
+- "mittel": Ergänzen oder Zuordnen (z.B. Lückentext, Zuordnen),
+- "schwer": selbst formulieren oder anwenden (z.B. Freitext, Rechen- oder
+  Übungsaufgabe).
+Entscheide nach dem tatsächlichen Anspruch der Frage, nicht nur nach dem
+Typ. Verschiedene Sachverhalte gehören in verschiedene Gruppen; eine Frage
+ohne passende Partner bekommt eine eigene Gruppe. Gruppennamen sind kurz
+und für alle Fragen derselben Gruppe Zeichen für Zeichen gleich.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
+{"cards": [{"n": 1, "level": "leicht", "group": "Kurzer Sachverhalt"}]}
+''';
+
+  /// Nummer (wie in der Anfrage) → Stufe (0–2) und Gruppe aus der Antwort
+  /// von [assignStages]. Einträge ohne gültige Nummer fallen weg.
+  static Map<int, ({int? level, String? group})> parseStageAssignments(Map<String, dynamic> json) => {
+        for (final entry in _mapsIn(json['cards']))
+          if (entry['n'] is num)
+            (entry['n'] as num).toInt(): (
+              level: QuestionParsing.parseStageLevel(entry['level']),
+              group: QuestionParsing.parseStageGroup(entry['group']),
+            ),
+      };
+
+  /// Ordnet bestehende Fragen per KI Gruppen (gleicher Sachverhalt) und
+  /// Stufen (Leicht/Mittel/Schwer) zu – für Karten, die vor der
+  /// Stufen-Aufteilung ohne diese Angaben erstellt wurden. [cards] ist
+  /// nummeriert (siehe [parseStageAssignments]).
+  Future<Map<int, ({int? level, String? group})>> assignStages(
+    List<({int n, String type, String front, String answer})> cards,
+  ) async {
+    final buffer = StringBuffer();
+    for (final c in cards) {
+      buffer.writeln('${c.n}. [${c.type}] ${_cap(c.front, 400)} — Lösung: ${_cap(c.answer, 200)}');
+    }
+    final raw = await _complete(_assignStagesSystemPrompt, buffer.toString());
+    return parseStageAssignments(_parseJsonObject(raw));
   }
 
   /// Die Objekte einer JSON-Liste – ein einzelner kaputter Eintrag (Text

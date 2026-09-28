@@ -1,5 +1,6 @@
 import '../models/flashcard.dart';
 import 'fsrs_service.dart';
+import 'stage_gate_service.dart';
 
 /// Ampel-Einstufung einer Karte: macht den ohnehin vorhandenen FSRS-Zustand
 /// (Stabilität/Retrievability) auf einen Blick sichtbar, statt nur intern
@@ -36,7 +37,13 @@ class MasteryService {
   /// "mittel" (gelb); darüber als "gut" (grün).
   static const double yellowThreshold = 0.9;
 
-  MasteryLevel levelFor(Flashcard card, {DateTime? now}) {
+  /// [stage]: Stand der Karte im Stufen-Ablauf ihrer Gruppe (siehe
+  /// StageGate). Eine geschaffte, ruhende Stufe zählt als grün (sie wird
+  /// nicht mehr wiederholt, ihre Behaltensrate sinkt nur rechnerisch); eine
+  /// wartende als noch nicht dran ("neu").
+  MasteryLevel levelFor(Flashcard card, {DateTime? now, StageStatus stage = StageStatus.active}) {
+    if (stage == StageStatus.done) return MasteryLevel.green;
+    if (stage == StageStatus.locked) return MasteryLevel.neu;
     if (card.reps == 0) return MasteryLevel.neu;
     // masteryBox ist die PRIMÄRE Grundlage, nicht die momentane
     // Retrievability: die ist direkt nach JEDER Wiederholung (egal ob
@@ -66,10 +73,13 @@ class MasteryService {
 
   /// Anzahl Karten je Ampel-Stufe – Grundlage für Übersichten (Modul-Detail,
   /// Statistik), ohne dass die UI selbst FSRS-Berechnungen anstellen muss.
+  /// Der Stufen-Ablauf (siehe [levelFor]) wird über [cards] selbst bestimmt –
+  /// also komplette Fächer übergeben.
   Map<MasteryLevel, int> breakdown(List<Flashcard> cards, {DateTime? now}) {
     final counts = {for (final l in MasteryLevel.values) l: 0};
+    final stages = StageGate.statuses(cards);
     for (final card in cards) {
-      final level = levelFor(card, now: now);
+      final level = levelFor(card, now: now, stage: StageGate.statusOf(stages, card));
       counts[level] = counts[level]! + 1;
     }
     return counts;

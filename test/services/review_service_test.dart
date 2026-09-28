@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/flashcard.dart';
+import 'package:lernen/models/module.dart';
 import 'package:lernen/services/fsrs_service.dart';
 import 'package:lernen/services/review_service.dart';
 
@@ -58,15 +59,87 @@ void main() {
       expect(service.evaluate(base, selfGrade: Grade.hard, now: now).wasWrong, isFalse);
     });
 
-    test('Selbstbewertung fasst die Eskalationskette nicht an', () {
+    test('Selbstbewertung befördert nur, wenn die Stufe grün ist', () {
       final card = _card(
         type: QuestionType.flashcard,
         variantChain: const [QuestionType.flashcard, QuestionType.freeText],
         variantBox: 2,
       );
       final outcome = service.evaluate(card, selfGrade: Grade.good, now: now);
-      expect(outcome.card.variantBox, 2);
       expect(outcome.levelChange, LevelChange.none);
+      expect(outcome.card.variantLevel, 0);
+    });
+
+    test('Selbstbewertung "Nochmal" zählt für die Fehler-Leiter', () {
+      final outcome = service.evaluate(_card(type: QuestionType.flashcard), selfGrade: Grade.again, now: now);
+      expect(outcome.card.variantMissStreak, 1);
+    });
+  });
+
+  group('Fehler-Leiter', () {
+    test('jede falsche Antwort zählt (auch am selben Tag), eine richtige setzt zurück', () {
+      var card = _card();
+      for (var i = 1; i <= 3; i++) {
+        card = service.evaluate(card, isCorrect: false, now: now.add(Duration(minutes: i))).card;
+        expect(card.variantMissStreak, i);
+      }
+      card = service.evaluate(card, isCorrect: true, now: now.add(const Duration(minutes: 5))).card;
+      expect(card.variantMissStreak, 0);
+    });
+
+    test('richtig mit Tipp ("Schwer") zählt nicht als Fehler', () {
+      final card = _card(reps: 2, lastReview: DateTime(2026, 3, 1));
+      final outcome = service.evaluate(card, isCorrect: true, selfGrade: Grade.hard, now: now);
+      expect(outcome.wasWrong, isFalse);
+      expect(outcome.card.variantMissStreak, 0);
+    });
+
+    test('Karte ohne Stufenkette: beim ${Flashcard.fallbackMissStreak}. Fehler wird der Rückfall angefordert', () {
+      var outcome = service.evaluate(_card(), isCorrect: false, now: now);
+      for (var i = 2; i < Flashcard.fallbackMissStreak; i++) {
+        outcome = service.evaluate(outcome.card, isCorrect: false, now: now.add(Duration(minutes: i)));
+        expect(outcome.fallbackRequested, isFalse);
+      }
+      outcome = service.evaluate(outcome.card, isCorrect: false, now: now.add(const Duration(minutes: 9)));
+      expect(outcome.fallbackRequested, isTrue);
+    });
+
+    test('Stufenkette auf der ersten Stufe fordert keinen Gruppen-Rückfall an', () {
+      var card = _card(variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank]);
+      late ReviewOutcome outcome;
+      for (var i = 0; i < Flashcard.fallbackMissStreak; i++) {
+        outcome = service.evaluate(card, isCorrect: false, now: now.add(Duration(minutes: i)));
+        card = outcome.card;
+      }
+      expect(outcome.fallbackRequested, isFalse);
+      expect(outcome.levelChange, LevelChange.none);
+    });
+  });
+
+  group('Gewichtung beim Verbuchen', () {
+    Module module(double weight) => Module(
+          id: 'm1',
+          name: 'Technik',
+          colorValue: 0,
+          icon: '⚙️',
+          examDate: null,
+          createdAt: DateTime(2026, 1, 1),
+          weight: weight,
+        );
+
+    test('effectiveWeight = Karten-Gewicht × Fach-Gewicht, ohne Fach nur die Karte', () {
+      final card = _card().copyWithWeight(1.5);
+      expect(effectiveWeight(card, null), 1.5);
+      expect(effectiveWeight(card, module(2.0)), 3.0);
+      expect(effectiveWeight(_card(), module(1.0)), 1.0);
+    });
+
+    test('evaluate gibt das Gewicht ans Intervall weiter: höher gewichtet = früher wieder fällig', () {
+      final card = _card(reps: 4, lastReview: DateTime(2026, 2, 20));
+      final normal = service.evaluate(card, isCorrect: true, now: now);
+      final heavy = service.evaluate(card, isCorrect: true, now: now, weight: 2.0);
+      expect(heavy.card.scheduledDays, lessThanOrEqualTo(normal.card.scheduledDays));
+      expect(heavy.card.scheduledDays, FsrsService.weightedIntervalDays(normal.card.scheduledDays, 2.0));
     });
   });
 
@@ -134,22 +207,8 @@ void main() {
       expect(card.masteryBox, 1);
     });
 
-    test('Rückstufung nach wiederholten Fehlern wird gemeldet', () {
-      final promoted = _card(
-        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
-        reps: 3,
-        lastReview: DateTime(2026, 3, 5),
-      ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Lücke ___', blanks: const ['x']);
-      final first = service.evaluate(promoted, isCorrect: false, now: now);
-      expect(first.levelChange, LevelChange.none);
-      // Fehlversuch an einem weiteren Tag: jetzt wird zurückgestuft.
-      final second = service.evaluate(first.card, isCorrect: false, now: now.add(const Duration(days: 1)));
-      expect(second.levelChange, LevelChange.demoted);
-      expect(second.targetType, QuestionType.singleChoice);
-      expect(second.levelChangeMessage, contains('Zurück'));
-    });
-
-    test('ein erneuter Fehlversuch am selben Tag stuft nicht zurück (Wiederholungsrunde)', () {
+    test('Rückstufung erst beim ${Flashcard.fallbackMissStreak}. Fehler in Folge (auch in der Wiederholungsrunde)',
+        () {
       final promoted = _card(
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
         reps: 3,
@@ -157,13 +216,16 @@ void main() {
         lastReview: DateTime(2026, 3, 5),
       ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Lücke ___', blanks: const ['x']);
       var outcome = service.evaluate(promoted, isCorrect: false, now: now);
-      for (var i = 1; i <= 3; i++) {
+      for (var i = 2; i < Flashcard.fallbackMissStreak; i++) {
         outcome = service.evaluate(outcome.card, isCorrect: false, now: now.add(Duration(minutes: i)));
         expect(outcome.levelChange, LevelChange.none);
-        expect(outcome.wasWrong, isTrue);
+        expect(outcome.card.type, QuestionType.fillBlank);
       }
-      expect(outcome.card.type, QuestionType.fillBlank);
-      expect(outcome.card.variantMissStreak, 1);
+      outcome = service.evaluate(outcome.card, isCorrect: false, now: now.add(const Duration(minutes: 9)));
+      expect(outcome.levelChange, LevelChange.demoted);
+      expect(outcome.targetType, QuestionType.singleChoice);
+      expect(outcome.levelChangeMessage, contains('Zurück'));
+      expect(outcome.fallbackRequested, isFalse);
     });
   });
 

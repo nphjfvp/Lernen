@@ -192,6 +192,16 @@ Lapse, keine Stabilitäts-/Schwierigkeitsänderung, masteryBox bleibt. Karten au
 mittleren Stufe einer Eskalationskette (nicht der letzten) bekommen höchstens
 `transitStageMaxIntervalDays` = 7 Tage Abstand.
 
+**Gewichtung**: `FsrsService.review(..., weight:)` teilt das FSRS-Intervall
+durch das effektive Gewicht (`weightedIntervalDays`, min. 1 Tag; der
+7-Tage-Deckel greift danach). Effektives Gewicht = `Flashcard.weight` ×
+`Module.weight` (`effectiveWeight` in `review_service.dart`), ermittelt in
+`CardReviewMixin.recordReview` – gilt also für Daily Quiz, Üben, Sprint und
+Probeklausur. Stabilität/Schwierigkeit/Ampel bleiben unberührt: Gewichtung
+heißt nur „öfter dran“. Standard: Übungsblatt-Karten 1,5, alles andere 1,0
+(`defaultFlashcardWeightFor(MaterialKind)` an jeder Erzeugungsstelle).
+Modellgrenzen 0,25–4 (`_sanitizeWeight`), UI-Regler 0,5–3 in 0,25-Schritten.
+
 ### 5.4 masteryBox (in `FsrsService.review`)
 - `good`/`easy` → +1, gedeckelt bei 4 – **aber nur einmal pro Kalendertag**
   (war `lastReview` heute, bleibt der Wert).
@@ -211,8 +221,21 @@ mittleren Stufe einer Eskalationskette (nicht der letzten) bekommen höchstens
 Folge: Grün braucht mindestens 4 richtige Antworten an 4 verschiedenen Tagen.
 
 ### 5.6 Schwierigkeits-Eskalation (`Flashcard.copyWithBoxUpdate`)
-Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
-`FsrsService.review` läuft VORHER (masteryBox enthält die aktuelle Antwort).
+Läuft für JEDE Karte (Fehler-Leiter), befördert aber nur Karten mit
+`variantChain` und nur bei einer ohne Hilfe gewussten Antwort (Grade good/easy,
+`promotable`). `FsrsService.review` läuft VORHER (masteryBox enthält die
+aktuelle Antwort).
+- **Fehler-Leiter** (`variantMissStreak`, jede falsche Antwort zählt – auch in
+  der Wiederholungsrunde, jede richtige setzt auf 0): ab 2
+  (`Flashcard.hintMissStreak`) zeigt `QuestionAnswerView` vor dem Antworten
+  automatisch eine KI-Hilfestellung, ab 3 eine zweite, deutlichere
+  (`AiService.generateHint(previousHints:)`, gespeichert in `Flashcard.aiHints`
+  per `FlashcardRepository.updateHints`, bei Stufenwechsel verworfen); richtig
+  mit Hilfestellung zählt wie „mit Tipp“ (Grade hard). Ab 4
+  (`fallbackMissStreak`) Rückfall: Stufenkette → vorige Stufe; getrennte
+  Karte → `ReviewOutcome.fallbackRequested`, `CardReviewMixin` holt die
+  nächstleichtere Stufe der Gruppe zurück (`StageGate.reactivateEasier`:
+  masteryBox höchstens 3, heute fällig) und setzt die Leiter der Karte auf 0.
 - richtig UND Stufe grün (`masteryBox >= 4`, d.h. an 4 verschiedenen Tagen
   richtig) UND es gibt eine nächste Stufe → Beförderung. `variantBox` (richtig
   in Folge) ist nur noch informativ. Liegt die nächste Stufe in
@@ -223,13 +246,34 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   grün auf ihrer Stufe und der nächste richtige Versuch probiert es erneut).
 - Die neue Stufe startet neu (`FsrsService.restartForNewStage`): morgen fällig,
   Anfangs-Stabilität wie nach erstem „Gut“, `masteryBox = 1` (gelb).
-- falsch: `variantMissStreak+1` (ein erneuter Fehlversuch am selben Tag
-  zählt nicht, `ReviewService.evaluate` lässt die Kette dann in Ruhe); ab 2 in
-  Folge (auf der schwersten Stufe ab 5) Rückstufung auf die letzte Stufe aus `variantHistory`; die verlassene Stufe
-  wandert zurück in `pendingVariants`. Rückstufung von der schwersten Stufe
-  setzt `masteryBox = 3` (gelb statt rot).
+- Rückstufung (Leiter bei 4) auf die letzte Stufe aus `variantHistory`; die
+  verlassene Stufe wandert zurück in `pendingVariants`. Rückstufung von der
+  schwersten Stufe setzt `masteryBox = 3` (gelb statt rot).
 - Die Karte ist immer EIN Datensatz, der seinen Typ wechselt – nie mehrere
   Stufen gleichzeitig im Pool.
+
+### 5.6b Stufen über getrennte Karten (`StageGate`, `stage_gate_service.dart`)
+Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
+- Gruppe: `Flashcard.stageGroup` (KI/von Hand) sonst `conceptId`, je Fach;
+  Karten mit Stufenkette (>1 Stufe) gehören keiner Gruppe an. Stufe:
+  `Flashcard.stageLevel` (0–2) sonst aus dem Typ (`StageGate.levelOfType`:
+  Auswahl/markImage leicht, Lücke/Zuordnen/diagramLabel/flashcard mittel,
+  Freitext/html schwer).
+- Aktive Stufe einer Gruppe = leichteste, in der noch eine Karte nicht
+  `masteryBox >= 4` hat (bewusst ohne Retrievability, sonst lebten ruhende
+  Karten durch Verfall von selbst wieder auf); sitzen alle, die schwerste.
+  Darunter `done` (ruht), darüber `locked` (wartet). Fehlende Stufen rücken
+  nach; eine einzelne Stufe läuft normal.
+- Angewendet in `DailySchedulerService._eligible` (Plan + Extra-Charge),
+  Üben, Sprint, Fehlertagebuch (`StageGate.learnable`) – NICHT in der
+  Probeklausur. Ampel: `done` zählt grün, `locked` als neu
+  (`MasteryService.levelFor(stage:)`/`breakdown`).
+- Neue Karten aus Nachbereiten bringen `level`/`group` von der KI mit
+  (`QuestionParsing.parseStageLevel`/`parseStageGroup`, Gruppe je
+  Speichervorgang eindeutig gemacht). Bestehende Karten: Kartenliste →
+  „Stufen per KI zuordnen“ (`AiService.assignStages`, Portionen à 60,
+  `StageGate.applyAssignments`), sonst Konzept + Typ. Von Hand: „Stufe“ je
+  Karte, Sammel-Bearbeiten (Stufe, zusammenfassen, einzeln lernen).
 
 ### 5.7 Daily Quiz / Scheduler (`DailySchedulerService.buildPlan`)
 - Nur Karten **bestehender Fächer** (`_eligible`; `FlashcardRepository.loadAll`
@@ -240,11 +284,14 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
   „Behandelt“ liefert `LectureUnitRepository.loadAllCoveredById` bereits
   effektiv (abgehakt ODER `scheduledDate` erreicht). Häkchen entfernen bei
   erreichtem Termin entfernt auch den Termin.
+- **Stufen-Gate** (5.6b): nur die aktive Stufe je Gruppe, wartende und
+  ruhende Karten sind weder fällig noch neu.
 - **Fällig**: `reps>0 && due < morgen`, sortiert nach `due`, unbegrenzt.
 - **Neu** (`reps==0`) pro Fach budgetiert: Pacing über Tage bis zur Klausur
   (abzüglich 3 Tage Wiederholungspuffer, ohne Klausur 14 Tage Horizont),
-  gebremst durch schwachen Wissensstand (50–100 %), Mindestboden 10, Maximum
-  15; in den letzten 3 Tagen vor der Klausur 0. Davon abgezogen: heute im
+  gebremst durch schwachen Wissensstand (50–100 %), Mindestboden 10, dann ×
+  `Module.weight` (Fach-Gewichtung), Maximum 15; in den letzten 3 Tagen vor
+  der Klausur 0. Davon abgezogen: heute im
   Daily Quiz schon eingeführte neue Karten (`introducedTodayByModule` aus
   `DailySessionState`) – kein zweites Budget durch „Aktualisieren“/Neustart.
   `priorityIntroduction`-Karten kommen immer (auch über das Budget hinaus),
@@ -386,7 +433,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 627 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 674 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -486,6 +533,21 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Prompts (`ai_service.dart`) wurden zusätzlich verschärft: die KI soll vor
     der Typwahl selbst prüfen, ob sie ihn wirklich vollständig ausfüllen
     kann, statt einen Typ zu behaupten, den sie nur halb befüllt.
+26. Gewichtung von Karten und Fächern (`Flashcard.weight`, `Module.weight`,
+    Standard 1,0; Karten aus Übungsblättern 1,5): höher gewichtet = kürzere
+    Abstände (FSRS-Intervall ÷ Gewicht), beim Fach zusätzlich mehr neue
+    Karten pro Tag. Einstellbar im Fach-Formular („Gewichtung“) und je Karte
+    in der Kartenliste (Knopf „Gewichtung“, Statuszeile zeigt „1,5×
+    gewichtet“). Export/Import und „Lernstand zurücksetzen“ behalten die
+    Gewichte; CSV-Import legt 1,0 an.
+27. Stufen-Fix (Nutzer-Befund: „alle erstellten Fragen werden abgefragt“):
+    getrennte Karten desselben Konzepts liefen bisher unabhängig. Jetzt
+    Leicht → Mittel → Schwer je Gruppe (5.6b), Fehler-Leiter mit zwei
+    KI-Hilfestellungen und Rückfall (5.6), Nachbereiten liefert Stufe/Gruppe
+    gleich mit, KI-Knopf ordnet Altbestand ein. Dazu: Ampel-Balken je Fach
+    auf der Startseite (`MasteryBar`, wie im Design-Entwurf), sichtbarer
+    „Auswählen“-Modus in der Kartenliste mit Sammel-Bearbeiten (Gewichtung,
+    Stufe, zusammenfassen/einzeln, Einheit, Lernstand zurücksetzen, Löschen).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

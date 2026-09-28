@@ -8,6 +8,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
+import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import '../daily/card_review_mixin.dart';
 import '../daily/question_answer_view.dart';
@@ -58,7 +59,8 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
 
   Future<void> _loadPool() async {
     setState(() => _phase = _Phase.loading);
-    final cards = await context.read<FlashcardRepository>().loadAll();
+    // Nur die gerade freigeschaltete Stufe je Gruppe (siehe StageGate).
+    final cards = StageGate.learnable(await context.read<FlashcardRepository>().loadAll());
     final mastery = MasteryService();
     var pool = cards.where((c) => mastery.levelFor(c) == MasteryLevel.red).toList();
     var usedFallback = false;

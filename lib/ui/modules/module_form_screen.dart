@@ -8,6 +8,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../services/home_widget_service.dart';
+import '../widgets/weight_slider.dart';
 
 const _kModuleColors = [
   0xFF3D5AFE, // Indigo
@@ -57,6 +58,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
   late String _icon;
   DateTime? _examDate;
   late List<LectureSlot> _lectureSlots;
+  late double _weight;
 
   /// Einmal vergeben: ein zweites "Fach anlegen" (Doppeltippen, solange das
   /// Speichern samt Widget-Aktualisierung noch läuft) legte sonst ein
@@ -73,6 +75,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
     _icon = existing?.icon ?? _kModuleIcons.first;
     _examDate = existing?.examDate;
     _lectureSlots = List.of(existing?.lectureSlots ?? const []);
+    _weight = existing?.weight ?? 1.0;
   }
 
   @override
@@ -167,6 +170,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
       examDate: _examDate,
       createdAt: existing?.createdAt ?? DateTime.now(),
       lectureSlots: _lectureSlots.isEmpty ? null : _lectureSlots,
+      weight: _weight,
     );
     await repo.save(module);
     if (!mounted) return;
@@ -288,6 +292,19 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
             onPressed: _addLectureSlot,
             icon: const Icon(Icons.add),
             label: const Text('Termin hinzufügen'),
+          ),
+          const SizedBox(height: 24),
+          const Text('Gewichtung', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(
+            'Wie stark dieses Fach im Daily Quiz zählt: höher gewichtet kommen alle '
+            'seine Fragen öfter dran und es bringt mehr neue Karten pro Tag.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          WeightSlider(
+            key: const ValueKey('module-weight-slider'),
+            value: _weight,
+            onChanged: (w) => setState(() => _weight = w),
           ),
           const SizedBox(height: 32),
           FilledButton(

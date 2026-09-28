@@ -9,6 +9,7 @@ Flashcard _base({
   int masteryBox = 0,
   List<VariantSnapshot>? pendingVariants,
   String? unitId,
+  int variantMissStreak = 0,
 }) {
   return Flashcard(
     id: 'f1',
@@ -24,6 +25,7 @@ Flashcard _base({
     masteryBox: masteryBox,
     pendingVariants: pendingVariants,
     unitId: unitId,
+    variantMissStreak: variantMissStreak,
   );
 }
 
@@ -424,10 +426,8 @@ void main() {
   });
 
   group('Flashcard.copyWithBoxUpdate – Rückstufung', () {
-    test('zwei Fehlversuche in Folge auf einer beförderten Stufe (NICHT die letzte) stufen zurück', () {
-      // Bewusst eine 3-stufige Kette und Beförderung nur bis zur MITTLEREN
-      // Stufe: die schwerste Stufe hat eine höhere Schwelle
-      // (demotionMissStreakThresholdOnLastStage, siehe eigene Tests unten).
+    test('Fehler-Leiter: erst nach ${Flashcard.fallbackMissStreak} Fehlern in Folge zurück, alter Inhalt kommt wieder',
+        () {
       final promoted = _base(
         type: QuestionType.singleChoice,
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
@@ -439,49 +439,59 @@ void main() {
         blanks: const ['Lösung'],
       );
       expect(promoted.variantLevel, 1);
-      expect(promoted.variantBox, 0);
 
-      // Erster Fehlversuch auf der neuen Stufe: Box bleibt bei 0, noch keine Rückstufung.
-      final firstMiss = promoted.copyWithBoxUpdate(isCorrect: false);
-      expect(firstMiss.card.variantLevel, 1);
-      expect(firstMiss.card.variantBox, 0);
-
-      // Zweiter Fehlversuch in Folge: Rückstufung, alter Inhalt kommt zurück.
-      final secondMiss = firstMiss.card.copyWithBoxUpdate(isCorrect: false);
-      expect(secondMiss.card.variantLevel, 0);
-      expect(secondMiss.card.type, QuestionType.singleChoice);
-      expect(secondMiss.card.variantHistory, isEmpty);
-      expect(secondMiss.nextType, isNull);
+      var current = promoted;
+      for (var i = 1; i < Flashcard.fallbackMissStreak; i++) {
+        final result = current.copyWithBoxUpdate(isCorrect: false);
+        expect(result.card.variantLevel, 1, reason: 'nach $i Fehler(n) noch keine Rückstufung');
+        expect(result.card.variantMissStreak, i);
+        current = result.card;
+      }
+      final fallback = current.copyWithBoxUpdate(isCorrect: false);
+      expect(fallback.card.variantLevel, 0);
+      expect(fallback.card.type, QuestionType.singleChoice);
+      expect(fallback.card.variantHistory, isEmpty);
+      expect(fallback.card.variantMissStreak, 0);
+      expect(fallback.nextType, isNull);
     });
 
-    test(
-        'auf der schwersten Stufe braucht eine Rückstufung '
-        '${Flashcard.demotionMissStreakThresholdOnLastStage} statt '
-        '${Flashcard.demotionMissStreakThreshold} Fehlversuche in Folge, '
-        'und die Ampel startet danach bei Gelb statt Null', () {
+    test('auch von der schwersten Stufe nach derselben Leiter zurück, Ampel dann gelb statt null', () {
       final promoted = _base(
         type: QuestionType.singleChoice,
         variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
         variantLevel: 0,
         masteryBox: Flashcard.masteryBoxCap,
-      ).copyWithPromotedVariant(
-        newType: QuestionType.fillBlank,
-        front: 'Frage mit ___ Lücke',
-        blanks: const ['Lösung'],
-      );
-      expect(promoted.variantLevel, 1); // letzte Stufe der Kette
-
+      ).copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'Frage mit ___ Lücke', blanks: const ['L']);
       var current = promoted;
-      for (var i = 0; i < Flashcard.demotionMissStreakThresholdOnLastStage - 1; i++) {
-        final result = current.copyWithBoxUpdate(isCorrect: false);
-        expect(result.card.variantLevel, 1, reason: 'nach ${i + 1} Fehlversuch(en) noch keine Rückstufung');
-        current = result.card;
+      for (var i = 1; i < Flashcard.fallbackMissStreak; i++) {
+        current = current.copyWithBoxUpdate(isCorrect: false).card;
       }
+      final fallback = current.copyWithBoxUpdate(isCorrect: false);
+      expect(fallback.card.variantLevel, 0);
+      expect(fallback.card.masteryBox, Flashcard.masteryBoxCap - 1);
+    });
 
-      final finalMiss = current.copyWithBoxUpdate(isCorrect: false);
-      expect(finalMiss.card.variantLevel, 0);
-      expect(finalMiss.card.type, QuestionType.singleChoice);
-      expect(finalMiss.card.masteryBox, Flashcard.masteryBoxCap - 1);
+    test('eine richtige Antwort setzt die Leiter zurück', () {
+      final card = _base(variantMissStreak: 3);
+      expect(card.copyWithBoxUpdate(isCorrect: true).card.variantMissStreak, 0);
+    });
+
+    test('mit Hilfe gewusst (nicht beförderbar) befördert nicht, obwohl grün', () {
+      final card = _base(
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
+        masteryBox: Flashcard.masteryBoxCap,
+      );
+      final result = card.copyWithBoxUpdate(isCorrect: true, promotable: false);
+      expect(result.nextType, isNull);
+      expect(result.card.variantLevel, 0);
+    });
+
+    test('hintsDueFor: ab 2 Fehlern ein Tipp, ab 3 zwei', () {
+      expect(Flashcard.hintsDueFor(0), 0);
+      expect(Flashcard.hintsDueFor(1), 0);
+      expect(Flashcard.hintsDueFor(2), 1);
+      expect(Flashcard.hintsDueFor(3), 2);
+      expect(Flashcard.hintsDueFor(7), 2);
     });
 
     test('ohne Historie (Level 0) keine Rückstufung möglich', () {
@@ -620,6 +630,143 @@ void main() {
       final withLesson = withSource.copyWithStudyAids(miniLesson: 'Lektion');
       expect(withLesson.miniLesson, 'Lektion');
       expect(withLesson.sourcePage, 4);
+    });
+  });
+
+  group('Flashcard – Stufe, Gruppe, KI-Hilfestellungen', () {
+    test('Round-Trip, ältere Datensätze ohne Felder, kaputte Werte', () {
+      final card = _base().copyWithStage(level: 2, group: 'Stücklisten').copyWithHints(const ['Tipp 1']);
+      final restored = Flashcard.fromMap(card.toMap());
+      expect(restored.stageLevel, 2);
+      expect(restored.stageGroup, 'Stücklisten');
+      expect(restored.aiHints, ['Tipp 1']);
+
+      final legacy = _base().toMap()
+        ..remove('stageLevel')
+        ..remove('stageGroup')
+        ..remove('aiHints');
+      final fromLegacy = Flashcard.fromMap(legacy);
+      expect(fromLegacy.stageLevel, isNull);
+      expect(fromLegacy.stageGroup, isNull);
+      expect(fromLegacy.aiHints, isNull);
+
+      final broken = Flashcard.fromMap({..._base().toMap(), 'stageLevel': 7, 'stageGroup': '  '});
+      expect(broken.stageLevel, isNull);
+      expect(broken.stageGroup, isNull);
+    });
+
+    test('copyWithStage setzt und löscht einzeln', () {
+      final card = _base().copyWithStage(level: 1, group: 'G');
+      expect(card.copyWithStage(clearLevel: true).stageLevel, isNull);
+      expect(card.copyWithStage(clearLevel: true).stageGroup, 'G');
+      expect(card.copyWithStage(clearGroup: true).stageGroup, isNull);
+      expect(card.copyWithStage(level: 0).stageLevel, 0);
+    });
+
+    test('Stufe/Gruppe bleiben über Antworten und Stufenwechsel, Tipps nur bis zum Stufenwechsel', () {
+      final card = _base(
+        type: QuestionType.singleChoice,
+        variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank],
+        masteryBox: Flashcard.masteryBoxCap,
+      ).copyWithStage(level: 0, group: 'G').copyWithHints(const ['Tipp']);
+      final answered = card.copyWithBoxUpdate(isCorrect: false).card;
+      expect(answered.stageGroup, 'G');
+      expect(answered.aiHints, ['Tipp']);
+      final promoted = card.copyWithPromotedVariant(newType: QuestionType.fillBlank, front: 'x ___', blanks: const ['y']);
+      expect(promoted.stageGroup, 'G');
+      expect(promoted.aiHints, isNull);
+    });
+
+    test('copyWithStageReopened: knapp unter grün, spätestens heute fällig, Leiter von vorn', () {
+      final today = DateTime(2026, 3, 10);
+      final green = Flashcard(
+        id: 'g',
+        moduleId: 'm1',
+        front: 'F',
+        back: 'B',
+        createdAt: DateTime(2026, 1, 1),
+        due: DateTime(2026, 5, 1),
+        masteryBox: Flashcard.masteryBoxCap,
+        variantMissStreak: 2,
+      );
+      final reopened = green.copyWithStageReopened(dueBy: today);
+      expect(reopened.masteryBox, Flashcard.masteryBoxCap - 1);
+      expect(reopened.due, today);
+      expect(reopened.variantMissStreak, 0);
+
+      // Ein niedrigerer Stand und eine frühere Fälligkeit bleiben.
+      final weak = _base(masteryBox: 1);
+      final kept = weak.copyWithStageReopened(dueBy: today);
+      expect(kept.masteryBox, 1);
+      expect(kept.due, weak.due);
+    });
+  });
+
+  group('Flashcard.weight – Gewichtung', () {
+    Flashcard weighted(double weight) => Flashcard(
+          id: 'w1',
+          moduleId: 'm1',
+          front: 'F',
+          back: 'B',
+          createdAt: DateTime(2026, 9, 1),
+          due: DateTime(2026, 9, 1),
+          variantChain: const [QuestionType.singleChoice, QuestionType.freeText],
+          weight: weight,
+        );
+
+    test('defaultet auf 1.0 und übersteht den Round-Trip', () {
+      expect(_base().weight, 1.0);
+      expect(Flashcard.fromMap(weighted(1.5).toMap()).weight, 1.5);
+    });
+
+    test('ältere Datensätze ohne Feld zählen einfach, kaputte Werte werden begrenzt', () {
+      final legacy = weighted(1.5).toMap()..remove('weight');
+      expect(Flashcard.fromMap(legacy).weight, 1.0);
+      expect(Flashcard.fromMap({...weighted(1).toMap(), 'weight': 0}).weight, Flashcard.minWeight);
+      expect(Flashcard.fromMap({...weighted(1).toMap(), 'weight': 99}).weight, Flashcard.maxWeight);
+    });
+
+    test('copyWithWeight ändert nur das Gewicht, Lernstand bleibt', () {
+      final base = weighted(1.0).copyWithReview(
+        due: DateTime(2026, 9, 5),
+        stability: 4,
+        difficulty: 5,
+        elapsedDays: 0,
+        scheduledDays: 4,
+        reps: 2,
+        lapses: 0,
+        state: 'review',
+        lastReview: DateTime(2026, 9, 1),
+      );
+      final changed = base.copyWithWeight(2.0);
+      expect(changed.weight, 2.0);
+      expect(changed.reps, 2);
+      expect(changed.due, DateTime(2026, 9, 5));
+      expect(changed.front, 'F');
+    });
+
+    test('bleibt beim Lernen, Bearbeiten und Stufenwechsel erhalten', () {
+      final card = weighted(1.5);
+      final reviewed = card.copyWithReview(
+        due: DateTime(2026, 9, 3),
+        stability: 2,
+        difficulty: 5,
+        elapsedDays: 0,
+        scheduledDays: 2,
+        reps: 1,
+        lapses: 0,
+        state: 'review',
+        lastReview: DateTime(2026, 9, 1),
+      );
+      final edited = reviewed.copyWithContent(front: 'F2');
+      final boxed = edited.copyWithBoxUpdate(isCorrect: false).card;
+      final promoted = edited.copyWithPromotedVariant(newType: QuestionType.freeText, front: 'F3');
+      final demoted = promoted.copyWithDemotedVariant();
+      final withImage = edited.copyWithImage(clearImage: true);
+      final withAids = edited.copyWithStudyAids(miniLesson: 'x');
+      for (final c in [reviewed, edited, boxed, promoted, demoted, withImage, withAids]) {
+        expect(c.weight, 1.5);
+      }
     });
   });
 }

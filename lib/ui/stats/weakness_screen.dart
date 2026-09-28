@@ -6,6 +6,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/stage_gate_service.dart';
 import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
 import '../practice/practice_screen.dart';
@@ -41,7 +42,9 @@ class _WeaknessScreenState extends State<WeaknessScreen> {
   }
 
   Future<void> _load() async {
-    final cards = await context.read<FlashcardRepository>().loadAll();
+    // Nur die gerade freigeschaltete Stufe je Gruppe (siehe StageGate):
+    // wartende oder ruhende Karten sind nicht "gerade schwach".
+    final cards = StageGate.learnable(await context.read<FlashcardRepository>().loadAll());
     if (!mounted) return;
     setState(() => _all = WeaknessService().rank(cards));
   }

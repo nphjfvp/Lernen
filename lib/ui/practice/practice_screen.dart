@@ -5,6 +5,7 @@ import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
+import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import '../daily/card_review_mixin.dart';
 import '../daily/question_answer_view.dart';
@@ -81,9 +82,9 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
   }
 
   void _start(_Filter filter) {
-    final cards = context
-        .read<FlashcardRepository>()
-        .forModule(widget.moduleId)
+    // Nur die gerade freigeschaltete Stufe je Gruppe (Leicht → Mittel →
+    // Schwer, siehe StageGate) – wie im Daily Quiz.
+    final cards = StageGate.learnable(context.read<FlashcardRepository>().forModule(widget.moduleId))
         .where((c) => _matches(c, filter))
         .toList()
       ..shuffle();
@@ -114,7 +115,7 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
       body: SafeArea(
         child: queue == null
             ? _FilterPicker(
-                cards: context.watch<FlashcardRepository>().forModule(widget.moduleId),
+                cards: StageGate.learnable(context.watch<FlashcardRepository>().forModule(widget.moduleId)),
                 mastery: _mastery,
                 onStart: _start,
               )

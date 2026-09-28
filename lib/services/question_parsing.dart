@@ -190,6 +190,8 @@ class QuestionParsing {
       'front': front,
       'back': fallbackAnswer,
       if (raw['conceptTitle'] != null) 'conceptTitle': raw['conceptTitle'].toString(),
+      if (raw['level'] != null) 'level': raw['level'],
+      if (raw['group'] != null) 'group': raw['group'],
       // Die KI wollte hier einen präziseren Typ (single_choice/free_text/
       // html/…), aber die Antwort war unvollständig – markiert, damit der
       // Import das nicht stumm verschluckt, sondern anzeigt/nachfragt statt
@@ -395,6 +397,29 @@ class QuestionParsing {
     if ((parseDragPairs(entry['dragPairs']) ?? const []).isNotEmpty) return QuestionType.dragDrop;
     if ((raw['correctText'] ?? '').toString().trim().isNotEmpty) return QuestionType.freeText;
     return QuestionType.flashcard;
+  }
+
+  /// Schwierigkeitsstufe aus der KI-Antwort ("level": "leicht"/"mittel"/
+  /// "schwer", auch englisch oder 1–3) als Flashcard.stageLevel (0–2), sonst
+  /// null (dann gilt die Stufe des Fragetyps).
+  static int? parseStageLevel(Object? raw) {
+    if (raw is num) {
+      final i = raw.toInt();
+      return i >= 1 && i <= 3 ? i - 1 : null;
+    }
+    return switch (raw?.toString().trim().toLowerCase()) {
+      'leicht' || 'einfach' || 'easy' || '1' => 0,
+      'mittel' || 'medium' || '2' => 1,
+      'schwer' || 'hard' || 'difficult' || '3' => 2,
+      _ => null,
+    };
+  }
+
+  /// Gruppenschlüssel aus der KI-Antwort ("group") – Leicht/Mittel/Schwer
+  /// desselben Sachverhalts (siehe Flashcard.stageGroup), leer = null.
+  static String? parseStageGroup(Object? raw) {
+    final value = raw?.toString().trim();
+    return value == null || value.isEmpty ? null : value;
   }
 
   /// Aufrufer lesen diese Felder per `as String?` – eine Zahl oder ein Bool

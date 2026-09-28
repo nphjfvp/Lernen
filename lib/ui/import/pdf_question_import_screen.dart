@@ -278,6 +278,7 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       moduleId: widget.moduleId,
       unitId: material?.unitId,
       sourceMaterialId: material?.id,
+      sourceKind: material?.kind ?? MaterialKind.exercise,
       now: DateTime.now(),
     );
     await context.read<FlashcardRepository>().saveAll(cards);

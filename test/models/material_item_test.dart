@@ -2,6 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/material_item.dart';
 
 void main() {
+  test('defaultFlashcardWeightFor: Übungsblätter 1.5, Folien und Unbekanntes 1.0', () {
+    expect(defaultFlashcardWeightFor(MaterialKind.exercise), 1.5);
+    expect(defaultFlashcardWeightFor(MaterialKind.slide), 1.0);
+    expect(defaultFlashcardWeightFor(MaterialKind.practiceExam), 1.0);
+    expect(defaultFlashcardWeightFor(null), 1.0);
+  });
+
   group('MaterialItem – covered-Feld', () {
     test('defaultet auf false, wenn nicht angegeben', () {
       final material = MaterialItem(

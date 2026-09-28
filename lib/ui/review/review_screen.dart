@@ -99,6 +99,11 @@ class ReviewScreen extends StatefulWidget {
   State<ReviewScreen> createState() => _ReviewScreenState();
 }
 
+/// Gruppenschlüssel der KI (siehe Flashcard.stageGroup), eindeutig für
+/// diesen Speichervorgang gemacht.
+String? _batchGroup(String? group, DateTime savedAt) =>
+    group == null ? null : '$group#${savedAt.millisecondsSinceEpoch}';
+
 class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScreen> {
   _Step _step = _Step.pick;
   _GenerateMode _mode = _GenerateMode.create;
@@ -732,8 +737,17 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         imageBase64: f['imageBase64'] as String?,
         imageTargets: parseImageTargets(f['imageTargets']),
         variantChain: escalate ? QuestionParsing.escalationChain : null,
+        // Leicht/Mittel/Schwer desselben Sachverhalts (siehe StageGate) –
+        // pro Speichervorgang eindeutig, damit gleich benannte Gruppen aus
+        // einer späteren Generierung nicht mit diesen verschmelzen.
+        stageLevel: QuestionParsing.parseStageLevel(f['level']),
+        stageGroup: _batchGroup(QuestionParsing.parseStageGroup(f['group']), now),
         sourceMaterialId: sourceMaterialId,
         sourcePage: sourceMaterialId == null ? null : (f['sourcePage'] as num?)?.toInt(),
+        // Importierte Übungsaufgaben kommen öfter dran als aus Folien
+        // erzeugte Fragen (siehe defaultFlashcardWeightFor).
+        weight: defaultFlashcardWeightFor(
+            _mode == _GenerateMode.import ? MaterialKind.exercise : MaterialKind.slide),
       );
     }).toList();
 

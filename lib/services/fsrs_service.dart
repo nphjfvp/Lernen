@@ -132,6 +132,13 @@ class FsrsService {
     );
   }
 
+  /// Intervall [days] geteilt durch das Gewicht einer Karte (siehe [review]),
+  /// mindestens 1 Tag. Ein ungültiges Gewicht (<= 0) lässt es unverändert.
+  static int weightedIntervalDays(int days, double weight) {
+    if (weight <= 0 || weight.isNaN || weight == 1.0) return days;
+    return max(1, (days / weight).round());
+  }
+
   /// Intervall in Tagen, nach dem die Karte bei [stability] auf
   /// [requestRetention] abgesunken ist. Wird auf mindestens 1 Tag begrenzt.
   int intervalDays(double stability) {
@@ -143,7 +150,12 @@ class FsrsService {
 
   /// Wendet eine Bewertung auf eine Karteikarte an und liefert den Datensatz
   /// mit aktualisiertem Spaced-Repetition-Zustand zurück.
-  Flashcard review(Flashcard card, Grade grade, {DateTime? now}) {
+  ///
+  /// [weight] (Karten- mal Fach-Gewicht, siehe Flashcard.weight/Module.weight)
+  /// teilt das berechnete Intervall: bei 1.5 kommt die Karte entsprechend
+  /// öfter dran, bei 0.5 seltener. Stabilität und Schwierigkeit – das
+  /// eigentliche Gedächtnismodell – bleiben davon unberührt.
+  Flashcard review(Flashcard card, Grade grade, {DateTime? now, double weight = 1.0}) {
     final reviewedAt = now ?? DateTime.now();
     final isNew = card.reps == 0;
     final repeatFailure = isRepeatFailureToday(card, grade, reviewedAt);
@@ -176,7 +188,7 @@ class FsrsService {
     // ein Monat, die schwere Stufe käme dann erst nach dem Semester dran.
     final chain = card.variantChain;
     final isTransitStage = chain != null && card.variantLevel < chain.length - 1;
-    final rawInterval = intervalDays(stability);
+    final rawInterval = weightedIntervalDays(intervalDays(stability), weight);
     final scheduled = isTransitStage ? min(rawInterval, transitStageMaxIntervalDays) : rawInterval;
     final due = _startOfDayPlus(reviewedAt, scheduled);
 

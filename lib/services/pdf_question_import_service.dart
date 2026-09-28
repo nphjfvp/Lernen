@@ -6,6 +6,7 @@ import 'dart:ui' show Rect;
 import 'package:uuid/uuid.dart';
 
 import '../models/flashcard.dart';
+import '../models/material_item.dart';
 import 'ai_service.dart';
 import 'image_crop.dart';
 import 'image_edit.dart';
@@ -357,11 +358,15 @@ class PdfQuestionImportService {
   /// Die ausgewählten Fragen als neue Karten eines Fachs – in
   /// Dokument-Reihenfolge und sofort für das Daily Quiz vorgesehen
   /// (bewusst importiert, siehe Flashcard.priorityIntroduction).
+  /// [sourceKind] bestimmt das Standard-Gewicht (siehe
+  /// defaultFlashcardWeightFor): eine neu hochgeladene PDF landet als Übung,
+  /// Fragen von Folien eines schon vorhandenen Skripts zählen wie Folien.
   static List<Flashcard> toFlashcards(
     Iterable<ScannedQuestion> questions, {
     required String moduleId,
     String? unitId,
     String? sourceMaterialId,
+    MaterialKind sourceKind = MaterialKind.exercise,
     required DateTime now,
   }) {
     final result = <Flashcard>[];
@@ -387,6 +392,7 @@ class PdfQuestionImportService {
         imageTargets: parseImageTargets(f['imageTargets']),
         sourceMaterialId: sourceMaterialId,
         sourcePage: sourceMaterialId == null ? null : q.page,
+        weight: defaultFlashcardWeightFor(sourceKind),
       ));
     }
     return result;

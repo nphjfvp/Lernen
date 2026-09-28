@@ -1,7 +1,15 @@
 import '../models/flashcard.dart';
+import '../models/module.dart';
 import 'ai_service.dart';
 import 'fsrs_service.dart';
 import 'question_parsing.dart';
+
+/// Effektives Gewicht einer Karte beim Verbuchen einer Antwort: Karten-
+/// Gewicht × Fach-Gewicht (siehe Flashcard.weight/Module.weight) – so wirkt
+/// ein höher gewichtetes Fach auf alle seine Fragen, ohne das Verhältnis
+/// zwischen Folien- und Übungsfragen darin zu verändern. Ohne bekanntes Fach
+/// zählt nur die Karte.
+double effectiveWeight(Flashcard card, Module? module) => card.weight * (module?.weight ?? 1.0);
 
 /// Was eine Antwort an der Schwierigkeits-Eskalationskette einer Karte
 /// verändert hat (siehe [Flashcard.copyWithBoxUpdate]).
@@ -31,7 +39,19 @@ class ReviewOutcome {
     this.levelChange = LevelChange.none,
     this.targetType,
     this.cardDeleted = false,
+    this.fallbackRequested = false,
+    this.movedToEasierStage = false,
   });
+
+  /// Der Rückfall ist passiert: die leichteren Karten der Gruppe sind wieder
+  /// dran, diese Karte wartet – sie gehört in keine Wiederholungsrunde mehr.
+  final bool movedToEasierStage;
+
+  /// Die Fehler-Leiter hat [Flashcard.fallbackMissStreak] erreicht, die Karte
+  /// hat aber keine eigene leichtere Stufe (keine Stufenkette): der Aufrufer
+  /// holt die leichteren Karten ihrer Gruppe zurück (siehe
+  /// StageGate.reactivateEasier) – gibt es keine, bleibt alles, wie es ist.
+  final bool fallbackRequested;
 
   /// Der fertig fortgeschriebene Datensatz – so zu speichern.
   final Flashcard card;
@@ -77,42 +97,39 @@ class ReviewService {
   /// [selfGrade] für eine offene Karteikarte (selbst bewertet), [isCorrect]
   /// für einen automatisch geprüften Fragetyp. Beides zusammen heißt: richtig,
   /// aber nur mit Tipp (siehe QuestionAnswerView) – die Bewertung folgt dann
-  /// [selfGrade], und die Eskalationskette bleibt unberührt (mit Hilfe
-  /// gelöst ist weder ein Grund zum Aufsteigen noch zum Absteigen).
+  /// [selfGrade]; das zählt nicht als Fehler, befördert aber auch nicht.
   ///
-  /// [allowLevelChange] false lässt die Eskalationskette ebenfalls in Ruhe –
-  /// für eine Antwort auf eine Stufe, die inzwischen nicht mehr gespeichert
-  /// ist (die Karte wurde währenddessen befördert oder zurückgestuft).
+  /// Fehler-Leiter (für jede Karte, jede falsche Antwort zählt – auch in der
+  /// Wiederholungsrunde): 2 in Folge → KI-Hilfestellung, 3 → zweite,
+  /// 4 → leichtere Stufe zurück (siehe [Flashcard.fallbackMissStreak]).
+  ///
+  /// [allowLevelChange] false lässt Leiter und Stufen in Ruhe – für eine
+  /// Antwort auf eine Stufe, die inzwischen nicht mehr gespeichert ist (die
+  /// Karte wurde währenddessen befördert oder zurückgestuft).
+  ///
+  /// [weight]: effektives Gewicht (Karte × Fach), siehe FsrsService.review.
   ReviewOutcome evaluate(
     Flashcard card, {
     Grade? selfGrade,
     bool? isCorrect,
     DateTime? now,
     bool allowLevelChange = true,
+    double weight = 1.0,
   }) {
     assert(selfGrade != null || isCorrect != null, 'selfGrade oder isCorrect muss gesetzt sein');
     final at = now ?? DateTime.now();
     final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
     final wasWrong = isCorrect == false || selfGrade == Grade.again;
-    // Ein erneuter Fehlversuch am selben Tag (Wiederholungsrunde, Üben)
-    // zählt auch für die Rückstufung nicht noch einmal – sonst stufen zwei
-    // Fehler innerhalb weniger Minuten zurück, während der Aufstieg vier
-    // verschiedene Lerntage braucht (siehe FsrsService.isRepeatFailureToday).
-    final repeatFailure = FsrsService.isRepeatFailureToday(card, grade, at);
-    var updated = _fsrs.review(card, grade, now: at);
-
-    // Die Eskalationskette gibt es nur bei automatisch geprüften Typen, und
-    // nur für Antworten ohne Hilfe.
-    if (isCorrect == null ||
-        selfGrade != null ||
-        updated.variantChain == null ||
-        !allowLevelChange ||
-        repeatFailure) {
-      return ReviewOutcome(card: updated, wasWrong: wasWrong);
-    }
+    var updated = _fsrs.review(card, grade, now: at, weight: weight);
+    if (!allowLevelChange) return ReviewOutcome(card: updated, wasWrong: wasWrong);
 
     final beforeLevel = updated.variantLevel;
-    final boxResult = updated.copyWithBoxUpdate(isCorrect: isCorrect);
+    final boxResult = updated.copyWithBoxUpdate(
+      isCorrect: !wasWrong,
+      // Aufsteigen nur mit einer ohne Hilfe gewussten Antwort ("Schwer" bzw.
+      // mit Tipp richtig zählt nicht).
+      promotable: grade == Grade.good || grade == Grade.easy,
+    );
     updated = boxResult.card;
     final nextType = boxResult.nextType;
     final LevelChange change;
@@ -127,7 +144,18 @@ class ReviewService {
     } else {
       change = LevelChange.none;
     }
-    return ReviewOutcome(card: updated, wasWrong: wasWrong, levelChange: change, targetType: target);
+    final chain = updated.variantChain;
+    final fallback = change == LevelChange.none &&
+        wasWrong &&
+        updated.variantMissStreak >= Flashcard.fallbackMissStreak &&
+        (chain == null || chain.length < 2);
+    return ReviewOutcome(
+      card: updated,
+      wasWrong: wasWrong,
+      levelChange: change,
+      targetType: target,
+      fallbackRequested: fallback,
+    );
   }
 
   /// Holt per KI den Inhalt der nächsten (schwereren) Stufe. Wirft bei

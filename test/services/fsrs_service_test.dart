@@ -73,6 +73,54 @@ void main() {
     });
   });
 
+  group('FsrsService – Gewichtung (wie oft eine Karte drankommt)', () {
+    test('weightedIntervalDays teilt das Intervall durch das Gewicht, mindestens 1 Tag', () {
+      expect(FsrsService.weightedIntervalDays(30, 1.0), 30);
+      expect(FsrsService.weightedIntervalDays(30, 1.5), 20);
+      expect(FsrsService.weightedIntervalDays(30, 2.0), 15);
+      expect(FsrsService.weightedIntervalDays(30, 0.5), 60);
+      expect(FsrsService.weightedIntervalDays(1, 3.0), 1);
+    });
+
+    test('ein ungültiges Gewicht lässt das Intervall unverändert', () {
+      expect(FsrsService.weightedIntervalDays(30, 0), 30);
+      expect(FsrsService.weightedIntervalDays(30, -2), 30);
+      expect(FsrsService.weightedIntervalDays(30, double.nan), 30);
+    });
+
+    test('höher gewichtete Karte kommt früher wieder dran, das Gedächtnismodell bleibt gleich', () {
+      // Erst ein paar Wiederholungen, damit das Intervall deutlich über 1 Tag liegt.
+      var card = _newCard();
+      var now = DateTime(2026, 1, 1);
+      for (var i = 0; i < 3; i++) {
+        card = fsrs.review(card, Grade.good, now: now);
+        now = card.due;
+      }
+      final normal = fsrs.review(card, Grade.good, now: now);
+      final weighted = fsrs.review(card, Grade.good, now: now, weight: 1.5);
+
+      expect(normal.scheduledDays, greaterThan(2));
+      expect(weighted.scheduledDays, lessThan(normal.scheduledDays));
+      expect(weighted.scheduledDays, (normal.scheduledDays / 1.5).round());
+      expect(weighted.due.isBefore(normal.due), isTrue);
+      // Stabilität/Schwierigkeit hängen nur von der Antwort ab, nicht vom Gewicht.
+      expect(weighted.stability, normal.stability);
+      expect(weighted.difficulty, normal.difficulty);
+    });
+
+    test('niedrigeres Gewicht streckt das Intervall', () {
+      var card = _newCard();
+      var now = DateTime(2026, 1, 1);
+      for (var i = 0; i < 3; i++) {
+        card = fsrs.review(card, Grade.good, now: now);
+        now = card.due;
+      }
+      final normal = fsrs.review(card, Grade.good, now: now);
+      final light = fsrs.review(card, Grade.good, now: now, weight: 0.5);
+      expect(light.scheduledDays, greaterThan(normal.scheduledDays));
+    });
+  });
+
   test('currentRetrievability sinkt mit der Zeit', () {
     final now = DateTime(2026, 1, 1);
     final card = fsrs.review(_newCard(), Grade.good, now: now);

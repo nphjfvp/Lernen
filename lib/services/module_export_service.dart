@@ -189,6 +189,9 @@ class ModuleExportService {
       sourceMaterialId: f.sourceMaterialId,
       sourcePage: f.sourcePage,
       miniLesson: f.miniLesson,
+      weight: f.weight,
+      stageLevel: f.stageLevel,
+      stageGroup: f.stageGroup,
     );
   }
 
@@ -223,6 +226,7 @@ class ModuleExportService {
       examDate: oldModule.examDate,
       createdAt: oldModule.createdAt,
       lectureSlots: oldModule.lectureSlots,
+      weight: oldModule.weight,
     );
 
     final unitIdMap = <String, String>{};
@@ -337,6 +341,12 @@ class ModuleExportService {
               sourceMaterialId: f.sourceMaterialId == null ? null : materialIdMap[f.sourceMaterialId],
               sourcePage: f.sourceMaterialId == null || materialIdMap[f.sourceMaterialId] == null ? null : f.sourcePage,
               miniLesson: f.miniLesson,
+              weight: f.weight,
+              stageLevel: f.stageLevel,
+              // Konzept-IDs werden oben neu vergeben – eine Gruppe, die nur
+              // aus dem Konzept kam, folgt dem neuen Konzept automatisch.
+              stageGroup: f.stageGroup,
+              aiHints: f.aiHints,
             ))
         .toList();
 

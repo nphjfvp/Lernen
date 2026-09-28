@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/flashcard.dart';
+import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/answer_checker.dart';
@@ -180,6 +181,13 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   // -- KI-Hilfe: Tipp vor dem Antworten, Erklärung danach -----------------
   String? _hint;
   bool _hintLoading = false;
+
+  /// Fehler-Leiter (siehe Flashcard.hintsDueFor): nach wiederholten Fehlern
+  /// automatisch gezeigte, an der Karte gespeicherte KI-Hilfestellungen.
+  List<String> _ladderHints = const [];
+  bool _ladderHintsLoading = false;
+
+  bool get _helpShown => _hint != null || _ladderHints.isNotEmpty;
   String? _explanation;
   bool _explanationLoading = false;
   bool _explainedSimpler = false;
@@ -219,6 +227,39 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     _labelPool = List.generate(_labelTargets.length, (i) => i)..shuffle();
     _labelInputs = List.generate(_labelTargets.length, (_) => TextEditingController());
     if (widget.card.type == QuestionType.html) _setupWebView();
+    if (!widget.examMode && Flashcard.hintsDueFor(widget.card.variantMissStreak) > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadLadderHints());
+    }
+  }
+
+  /// Zeigt die fälligen Hilfestellungen der Fehler-Leiter: gespeicherte
+  /// sofort, fehlende per KI erzeugen (die zweite baut auf der ersten auf)
+  /// und an der Karte speichern – beim nächsten Mal sind sie direkt da.
+  Future<void> _loadLadderHints() async {
+    final card = widget.card;
+    final due = Flashcard.hintsDueFor(card.variantMissStreak);
+    final hints = [...?card.aiHints];
+    if (hints.length >= due) {
+      if (mounted) setState(() => _ladderHints = hints.take(due).toList());
+      return;
+    }
+    if (mounted) setState(() => _ladderHints = List.of(hints));
+    final ai = _aiOrNull();
+    if (ai == null) return;
+    final repo = context.read<FlashcardRepository?>();
+    final answer = _correctAnswerText;
+    setState(() => _ladderHintsLoading = true);
+    try {
+      while (hints.length < due) {
+        hints.add(await ai.generateHint(question: card.front, correctAnswer: answer, previousHints: hints));
+        if (mounted) setState(() => _ladderHints = List.of(hints));
+      }
+      await repo?.updateHints(card.id, hints, type: card.type, front: card.front);
+    } catch (e) {
+      if (mounted) setState(() => _aiHelpError = e is AiServiceException ? e.message : 'Hilfestellung fehlgeschlagen: $e');
+    } finally {
+      if (mounted) setState(() => _ladderHintsLoading = false);
+    }
   }
 
   void _setupWebView() {
@@ -647,6 +688,33 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_ladderHints.isNotEmpty || _ladderHintsLoading)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                key: const ValueKey('ladder-hints'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Diese Frage ging zuletzt ${widget.card.variantMissStreak}× in Folge schief – '
+                    'deshalb eine Hilfestellung:',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted),
+                  ),
+                  for (var i = 0; i < _ladderHints.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: _AiHelpBox(
+                        icon: i == 0 ? Icons.lightbulb_outline : Icons.tips_and_updates_outlined,
+                        text: _ladderHints.length > 1 ? 'Hilfestellung ${i + 1}: ${_ladderHints[i]}' : _ladderHints[i],
+                        color: c.warn,
+                        background: c.warnSoft,
+                      ),
+                    ),
+                  if (_ladderHintsLoading)
+                    Padding(padding: const EdgeInsets.only(top: 6), child: _smallSpinner()),
+                ],
+              ),
+            ),
           Wrap(
             spacing: 4,
             runSpacing: 4,
@@ -1034,7 +1102,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               isCorrect: _result!.isCorrect,
               // Mit Tipp richtig: zählt, aber nur als "Schwer" – die Ampel
               // steigt dadurch nicht.
-              selfGrade: _hint != null && _result!.isCorrect ? Grade.hard : null,
+              selfGrade: _helpShown && _result!.isCorrect ? Grade.hard : null,
             ),
             child: const Text('Weiter'),
           )

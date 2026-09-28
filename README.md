@@ -985,6 +985,70 @@ normalizeGeneratedFlashcard` markiert solche Einträge (`typeDowngraded` +
 sollte … sein"), und vor dem Speichern wird gefragt, wie damit verfahren
 werden soll: trotzdem als Karteikarte speichern oder weglassen.
 
+### 5g. Gewichtung: wichtige Aufgaben und Fächer öfter üben
+
+Jede Karte und jedes Fach hat eine **Gewichtung** (Standard 1×). Sie bestimmt,
+wie oft eine Frage drankommt: der Abstand bis zur nächsten Wiederholung wird
+durch das Gewicht geteilt – eine 2×-Karte kommt also etwa doppelt so oft
+wie eine 1×-Karte mit demselben Wissensstand. Der Wissensstand (Ampel) selbst
+bleibt davon unberührt.
+
+- **Standard beim Erstellen**: Fragen aus Vorlesungsfolien 1×, Aufgaben aus
+  Übungsblättern 1,5× (PDF-Fragen-Import, Import-Modus in Nachbereiten,
+  "Frage erstellen" und Zwischen-Check auf einem Übungsblatt).
+- **Je Karte ändern**: Kartenliste → Karte aufklappen → "Gewichtung"
+  (0,5× bis 3×). Abweichende Gewichte stehen in der Statuszeile
+  ("1,5× gewichtet").
+- **Je Fach**: Fach bearbeiten → "Gewichtung". Ein höher gewichtetes Fach
+  (z.B. Technik 2×) wirkt auf ALLE seine Karten (Karten- × Fach-Gewicht) und
+  bringt im Daily Quiz zusätzlich mehr neue Karten pro Tag (höchstens 15, in
+  den letzten 3 Tagen vor der Klausur weiterhin keine neuen).
+
+Die Gewichtung gilt überall, wo Antworten verbucht werden (Daily Quiz, Üben,
+Sprint, Probeklausur), und bleibt bei Export/Import und "Lernstand
+zurücksetzen" erhalten.
+
+### 5h. Leicht → Mittel → Schwer: erst die leichte Stufe, dann die nächste
+
+Fragen zum selben Sachverhalt kommen nicht mehr alle gleichzeitig dran:
+
+- **Nur die aktuelle Stufe wird gelernt.** Solange eine leichte Frage noch
+  nicht grün ist (an 4 verschiedenen Tagen richtig), warten Mittel und Schwer.
+  Sitzt Leicht, ruht sie und Mittel kommt dran, danach Schwer. Ist auch Schwer
+  grün, bleibt nur sie in der Wiederholung (Spaced Repetition), die leichteren
+  zählen in der Ampel als grün.
+- **Fehlt eine Stufe**, rückt die nächste nach (z.B. direkt Schwer, wenn es
+  kein Leicht gibt); gibt es kein Schwer, bleibt Mittel dauerhaft in der
+  Wiederholung. Eine Frage ohne andere Stufen läuft ganz normal.
+- **Welche Fragen zusammengehören**: neue Fragen aus Nachbereiten bekommen
+  Stufe und Sachverhalt direkt von der KI; "Frage erstellen" mit
+  Leicht/Mittel/Schwer war schon immer eine Stufenkette. Für bereits
+  vorhandene Karten gilt automatisch: gleiches Konzept = eine Gruppe, die
+  Stufe folgt aus dem Fragetyp (Auswahl leicht, Lückentext/Zuordnen mittel,
+  Freitext/interaktiv schwer). Genauer: Kartenliste → Menü → "Stufen per KI
+  zuordnen". Von Hand: "Stufe" an einer Karte oder mehrere auswählen →
+  "Stufe setzen", "Zu einer Frage zusammenfassen" bzw. "Einzeln lernen".
+- Gilt im Daily Quiz, in Üben, Sprint und im Fehlertagebuch – nicht in der
+  Probeklausur (die simuliert die echte Klausur mit allen Fragen).
+
+**Fehler-Leiter**: Geht eine Frage 2× in Folge schief, erscheint vor dem
+Antworten automatisch eine KI-Hilfestellung; nach dem 3. Fehler eine zweite,
+deutlichere. Beim 4. Fehler in Folge kommt die leichtere Stufe zurück in den
+Plan (bei einer Stufenkette die vorige Stufe, sonst die leichteren Fragen
+desselben Sachverhalts), bis sie wieder sitzt. Die Hilfestellungen werden an
+der Karte gespeichert (auch offline wieder da). Richtig mit Hilfestellung
+zählt, lässt die Ampel aber nicht steigen.
+
+### 5i. Ampel je Fach und mehrere Karten auf einmal bearbeiten
+
+- Auf der Startseite zeigt jedes Fach einen Balken mit den Anteilen gut
+  (grün), mittel (gelb) und schwach (rot) seiner gelernten Karten, darunter
+  die Prozente und wie viele noch neu sind.
+- Kartenliste → Knopf "Mehrere auswählen" (oder lange auf eine Karte
+  drücken): Karten ankreuzen, dann über das Bearbeiten-Menü Gewichtung,
+  Stufe, Gruppe oder Einheit für alle setzen, den Lernstand zurücksetzen oder
+  alle löschen.
+
 ### 6. Ausführen
 
 **Am einfachsten zum Ausprobieren: im Browser**, kein Visual Studio/Android

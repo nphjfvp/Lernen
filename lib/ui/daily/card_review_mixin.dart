@@ -7,11 +7,13 @@ import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/study_log_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/review_service.dart';
+import '../../services/stage_gate_service.dart';
 
 /// Gemeinsame Antwort-Verbuchung für alle Lernmodi (Daily Quiz, Üben,
 /// Sprint): wendet [ReviewService.evaluate] an, speichert, protokolliert
@@ -40,15 +42,18 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
     // wurde.
     final repo = context.read<FlashcardRepository>();
     final settings = context.read<SettingsRepository>().settings;
+    final modules = context.read<ModuleRepository?>();
     final stored = await repo.loadById(card.id);
     // Wurde die Karte währenddessen befördert/zurückgestuft, galt die
     // Antwort einer anderen Stufe – dann zählt sie nur für FSRS/Ampel.
     final sameStage = stored != null && stored.variantLevel == card.variantLevel && stored.type == card.type;
+    final current = stored ?? card;
     final outcome = _reviewService.evaluate(
-      stored ?? card,
+      current,
       selfGrade: selfGrade,
       isCorrect: isCorrect,
       allowLevelChange: sameStage,
+      weight: effectiveWeight(current, modules?.byId(current.moduleId)),
     );
     final saved = stored != null && await repo.update(outcome.card);
     if (!saved) return ReviewOutcome(card: outcome.card, wasWrong: outcome.wasWrong, cardDeleted: true);
@@ -61,13 +66,33 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
     }
     // Ohne API-Key kann die nächste Stufe nie erzeugt werden – dann auch
     // nicht "nächstes Mal: …" versprechen.
-    final message = outcome.needsGeneration && !settings.hasApiKey ? null : outcome.levelChangeMessage;
+    var message = outcome.needsGeneration && !settings.hasApiKey ? null : outcome.levelChangeMessage;
+    var result = outcome;
+    if (outcome.fallbackRequested) {
+      final easier = await _fallBackToEasierStage(repo, outcome.card);
+      if (easier != null) {
+        message = '⬇️ Zurück zu ${easier.label}: erst die leichteren Fragen dazu wieder sicher, dann geht es hier weiter.';
+        result = ReviewOutcome(card: outcome.card, wasWrong: outcome.wasWrong, movedToEasierStage: true);
+      }
+    }
     if (message != null && showLevelFeedback && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+        SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
       );
     }
-    return outcome;
+    return result;
+  }
+
+  /// Rückfall bei getrennten Karten (siehe StageGate.reactivateEasier): holt
+  /// die nächstleichtere Stufe der Gruppe zurück und startet die Fehler-
+  /// Leiter dieser Karte neu – sie wartet jetzt, bis die leichtere wieder
+  /// sitzt. Liefert die zurückgeholte Stufe, oder null, wenn es keine gibt.
+  Future<StageLevel?> _fallBackToEasierStage(FlashcardRepository repo, Flashcard card) async {
+    final moduleCards = await repo.loadModuleCards(card.moduleId);
+    final reopened = StageGate.reactivateEasier(moduleCards, card);
+    if (reopened.isEmpty) return null;
+    await repo.updateAll([...reopened, card.copyWithMissStreak(0)]);
+    return StageGate.levelOf(reopened.first);
   }
 
   /// Speichert ein beim Lernen bearbeitetes Bild (z.B. eine verräterische

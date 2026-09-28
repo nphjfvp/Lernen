@@ -3,13 +3,14 @@ import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/module.dart';
 import 'package:lernen/services/daily_scheduler_service.dart';
 
-Module _module(String id, {DateTime? examDate}) => Module(
+Module _module(String id, {DateTime? examDate, double weight = 1.0}) => Module(
       id: id,
       name: id,
       colorValue: 0xFF000000,
       icon: '📘',
       examDate: examDate,
       createdAt: DateTime(2026, 1, 1),
+      weight: weight,
     );
 
 Flashcard _newFlashcard(
@@ -85,6 +86,51 @@ void main() {
 
     expect(plan.newCardBudgetByModule['m1'], DailySchedulerService.minDailyNewCardsPerModule);
     expect(plan.newCards.length, DailySchedulerService.minDailyNewCardsPerModule);
+  });
+
+  group('Fach-Gewichtung (Module.weight) im Neu-Karten-Budget', () {
+    test('ein höher gewichtetes Fach bringt entsprechend mehr neue Karten pro Tag', () {
+      // Beide Fächer gleich: 28 neue Karten -> Mindestboden 10. Mit Gewicht
+      // 1.5 werden daraus 15 (gedeckelt aufs Tagesmaximum).
+      final normal = _module('m1');
+      final heavy = _module('m2', weight: 1.5);
+      final cards = [
+        ...List.generate(28, (i) => _newFlashcard('a$i', 'm1')),
+        ...List.generate(28, (i) => _newFlashcard('b$i', 'm2')),
+      ];
+
+      final plan = scheduler.buildPlan(modules: [normal, heavy], allCards: cards, now: now);
+
+      expect(plan.newCardBudgetByModule['m1'], DailySchedulerService.minDailyNewCardsPerModule);
+      expect(plan.newCardBudgetByModule['m2'], 15);
+      expect(plan.newCards.where((c) => c.moduleId == 'm2').length,
+          greaterThan(plan.newCards.where((c) => c.moduleId == 'm1').length));
+    });
+
+    test('ein niedriger gewichtetes Fach bringt weniger neue Karten', () {
+      final light = _module('m1', weight: 0.5);
+      final cards = List.generate(28, (i) => _newFlashcard('n$i', 'm1'));
+
+      final plan = scheduler.buildPlan(modules: [light], allCards: cards, now: now);
+
+      expect(plan.newCardBudgetByModule['m1'], 5);
+    });
+
+    test('nie mehr Budget, als noch Karten offen sind, und nie über das Tagesmaximum', () {
+      final heavy = _module('m1', weight: 4.0);
+      final few = List.generate(3, (i) => _newFlashcard('n$i', 'm1'));
+      expect(scheduler.buildPlan(modules: [heavy], allCards: few, now: now).newCardBudgetByModule['m1'], 3);
+
+      final many = List.generate(200, (i) => _newFlashcard('n$i', 'm1'));
+      expect(scheduler.buildPlan(modules: [heavy], allCards: many, now: now).newCardBudgetByModule['m1'],
+          DailySchedulerService.maxNewCardsPerModulePerDay);
+    });
+
+    test('kurz vor der Klausur bleibt es auch bei hohem Gewicht beim reinen Wiederholen', () {
+      final heavy = _module('m1', examDate: now.add(const Duration(days: 2)), weight: 3.0);
+      final cards = List.generate(10, (i) => _newFlashcard('n$i', 'm1'));
+      expect(scheduler.buildPlan(modules: [heavy], allCards: cards, now: now).newCardBudgetByModule['m1'], 0);
+    });
   });
 
   test('kurz vor der Klausur werden keine neuen Karten mehr eingeführt', () {

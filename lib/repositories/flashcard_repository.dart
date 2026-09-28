@@ -36,6 +36,33 @@ class FlashcardRepository extends ChangeNotifier {
         .toList();
   }
 
+  /// Alle gespeicherten Karten eines Fachs, ohne den Anzeige-Stand
+  /// ([forModule]) anzufassen.
+  Future<List<Flashcard>> loadModuleCards(String moduleId) async {
+    final db = await DatabaseService.instance.database;
+    final records = await DatabaseService.flashcards.find(
+      db,
+      finder: Finder(filter: Filter.equals('moduleId', moduleId)),
+    );
+    return records.map((r) => Flashcard.fromMap(r.value)).toList();
+  }
+
+  /// Wie [update] für mehrere Karten in EINER Transaktion – inzwischen
+  /// gelöschte bleiben weg.
+  Future<void> updateAll(List<Flashcard> cards) async {
+    if (cards.isEmpty) return;
+    final db = await DatabaseService.instance.database;
+    await db.transaction((txn) async {
+      for (final card in cards) {
+        final ref = DatabaseService.flashcards.record(card.id);
+        if (await ref.get(txn) != null) await ref.put(txn, card.toMap());
+      }
+    });
+    for (final moduleId in {for (final c in cards) c.moduleId}) {
+      if (_byModule.containsKey(moduleId)) await loadForModule(moduleId);
+    }
+  }
+
   /// Aktueller gespeicherter Stand einer Karte, oder null, wenn gelöscht.
   Future<Flashcard?> loadById(String id) async {
     final db = await DatabaseService.instance.database;
@@ -94,6 +121,26 @@ class FlashcardRepository extends ChangeNotifier {
       await loadForModule(updated.moduleId);
     }
     return updated;
+  }
+
+  /// KI-Hilfestellungen am GESPEICHERTEN Stand ablegen (siehe
+  /// Flashcard.aiHints) – nur, solange die Karte noch dieselbe Frage
+  /// ([type]/[front]) zeigt; nach einem Stufenwechsel passen sie nicht mehr.
+  Future<void> updateHints(String id, List<String> hints, {required QuestionType type, required String front}) async {
+    final db = await DatabaseService.instance.database;
+    final updated = await db.transaction((txn) async {
+      final ref = DatabaseService.flashcards.record(id);
+      final stored = await ref.get(txn);
+      if (stored == null) return null;
+      final card = Flashcard.fromMap(stored);
+      if (card.type != type || card.front != front) return null;
+      final withHints = card.copyWithHints(hints);
+      await ref.put(txn, withHints.toMap());
+      return withHints;
+    });
+    if (updated != null && _byModule.containsKey(updated.moduleId)) {
+      await loadForModule(updated.moduleId);
+    }
   }
 
   Future<void> delete(String id, String moduleId) async {

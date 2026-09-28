@@ -55,7 +55,7 @@ class _RootShellState extends State<RootShell> {
   /// Daily Quiz/Fortschritt, wann sie sichtbar werden, damit sie dann
   /// seither neu angelegte Karten/Bewertungen nachladen.
   List<Widget> get _screens => [
-        const HomeScreen(),
+        HomeScreen(isActive: _index == 0),
         DailyQuizScreen(isActive: _index == 1),
         const CalendarScreen(),
         StatsScreen(isActive: _index == 3),

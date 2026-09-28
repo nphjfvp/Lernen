@@ -440,6 +440,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
         // führt dorthin zurück.
         sourceMaterialId: widget.material.id,
         sourcePage: fromPage,
+        weight: defaultFlashcardWeightFor(widget.material.kind),
       ));
     }
     return cards;

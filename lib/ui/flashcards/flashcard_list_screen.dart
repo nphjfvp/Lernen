@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -7,14 +8,21 @@ import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../repositories/lecture_unit_repository.dart';
+import '../../repositories/settings_repository.dart';
+import '../../services/ai_service.dart';
 import '../../services/answer_checker.dart';
 import '../../services/card_csv_service.dart';
 import '../../services/mastery_service.dart';
+import '../../services/module_export_service.dart';
+import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/mastery_dot.dart';
 import '../widgets/math_text.dart';
+import '../widgets/stage_picker.dart';
+import '../widgets/weight_slider.dart';
 import 'card_edit_screen.dart';
 
 /// Listet alle Karteikarten eines Fachs auf – zum gezielten Bearbeiten oder
@@ -48,9 +56,74 @@ bool flashcardMatchesQuery(Flashcard card, String query) {
 }
 
 class _FlashcardListScreenState extends State<FlashcardListScreen> {
+  /// So viele Fragen sieht die KI beim Zuordnen der Stufen auf einmal.
+  static const _stageBatchSize = 60;
+
   final Set<String> _selected = {};
   final _searchController = TextEditingController();
   String _query = '';
+
+  /// Fortschritt von [_assignStagesWithAi] (0..1), null wenn nicht aktiv.
+  double? _assignProgress;
+
+  /// Ordnet bestehende Fragen per KI Sachverhalten und Stufen zu (siehe
+  /// StageGate) – für Karten, die vor der Stufen-Aufteilung entstanden sind.
+  /// Bereits fertige Portionen bleiben auch bei einem späteren Fehler
+  /// gespeichert.
+  Future<void> _assignStagesWithAi(List<Flashcard> allCards) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final settings = context.read<SettingsRepository>().settings;
+    final repo = context.read<FlashcardRepository>();
+    if (!settings.hasApiKey) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Dafür wird ein OpenRouter-API-Key gebraucht (Einstellungen).'),
+      ));
+      return;
+    }
+    final cards = StageGate.assignable(allCards);
+    if (cards.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Stufen per KI zuordnen?'),
+        content: Text('Die KI ordnet ${cards.length} Fragen nach Sachverhalt und Schwierigkeit '
+            '(Leicht/Mittel/Schwer). Danach kommt je Sachverhalt erst Leicht dran, dann Mittel, '
+            'dann Schwer – jeweils erst, wenn die Stufe davor sitzt.\n\n'
+            'Inhalt und Lernstand bleiben unverändert; einzelne Stufen lassen sich danach per '
+            '„Stufe“ ändern. Ohne diesen Schritt gilt: gleiches Konzept = eine Gruppe, die Stufe '
+            'folgt aus dem Fragetyp.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Zuordnen')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _assignProgress = 0);
+    final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+    final runTag = DateTime.now().millisecondsSinceEpoch.toString();
+    var changed = 0;
+    try {
+      for (var start = 0; start < cards.length; start += _stageBatchSize) {
+        final batch = cards.sublist(start, min(start + _stageBatchSize, cards.length));
+        final results = await ai.assignStages([
+          for (var i = 0; i < batch.length; i++)
+            (n: i + 1, type: batch[i].type.label, front: batch[i].front, answer: batch[i].answerSummary),
+        ]);
+        final updated = StageGate.applyAssignments(batch, results, runTag: runTag);
+        await repo.updateAll(updated);
+        changed += updated.length;
+        if (mounted) setState(() => _assignProgress = (start + batch.length) / cards.length);
+      }
+      messenger.showSnackBar(SnackBar(content: Text('$changed von ${cards.length} Fragen eingeordnet.')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Zuordnung abgebrochen ($changed eingeordnet): ${e is AiServiceException ? e.message : e}'),
+      ));
+    } finally {
+      if (mounted) setState(() => _assignProgress = null);
+    }
+  }
 
   @override
   void dispose() {
@@ -58,12 +131,114 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     super.dispose();
   }
 
-  bool get _selecting => _selected.isNotEmpty;
+  /// Auswahlmodus per Knopf (auch ohne schon ausgewählte Karte) – zusätzlich
+  /// zum langen Drücken auf eine Karte.
+  bool _selectMode = false;
+
+  bool get _selecting => _selectMode || _selected.isNotEmpty;
 
   void _toggle(String id) {
     setState(() {
       if (!_selected.remove(id)) _selected.add(id);
     });
+  }
+
+  void _endSelection() => setState(() {
+        _selected.clear();
+        _selectMode = false;
+      });
+
+  /// Wendet [change] auf den GESPEICHERTEN Stand aller ausgewählten Karten an
+  /// (zwischenzeitlich verbuchter Lernfortschritt bleibt) und beendet die
+  /// Auswahl.
+  Future<void> _applyToSelected(Flashcard Function(Flashcard) change, String doneMessage) async {
+    final repo = context.read<FlashcardRepository>();
+    final messenger = ScaffoldMessenger.of(context);
+    final ids = _selected.toSet();
+    final stored = (await repo.loadModuleCards(widget.moduleId)).where((c) => ids.contains(c.id));
+    await repo.updateAll([for (final c in stored) change(c)]);
+    if (!mounted) return;
+    _endSelection();
+    messenger.showSnackBar(SnackBar(content: Text(doneMessage)));
+  }
+
+  /// Sammel-Bearbeiten der ausgewählten Karten.
+  Future<void> _bulkAction(String action, List<Flashcard> allCards) async {
+    final count = _selected.length;
+    if (count == 0) return;
+    final label = '$count ${count == 1 ? 'Karte' : 'Karten'}';
+    final selected = [for (final c in allCards) if (_selected.contains(c.id)) c];
+    switch (action) {
+      case 'weight':
+        final weights = selected.map((c) => c.weight).toSet();
+        final picked = await showDialog<double>(
+          context: context,
+          builder: (_) => _WeightDialog(initial: weights.length == 1 ? weights.single : 1.0),
+        );
+        if (picked == null) return;
+        await _applyToSelected((c) => c.copyWithWeight(picked), '$label: ${formatWeight(picked)}× gewichtet');
+      case 'stage':
+        final levels = selected.map((c) => c.stageLevel).toSet();
+        final picked = await pickStageLevel(
+          context,
+          current: levels.length == 1 ? levels.single : null,
+          title: 'Stufe für $label',
+        );
+        if (picked == null) return;
+        await _applyToSelected(
+          (c) => picked == stageLevelAuto ? c.copyWithStage(clearLevel: true) : c.copyWithStage(level: picked),
+          picked == stageLevelAuto
+              ? '$label: Stufe wieder aus dem Fragetyp'
+              : '$label: Stufe ${StageLevel.values[picked].label}',
+        );
+      case 'group':
+        final key = 'manuell-${DateTime.now().millisecondsSinceEpoch}';
+        await _applyToSelected(
+          (c) => c.copyWithStage(group: key),
+          '$label zu einer Frage zusammengefasst: erst Leicht, dann Mittel, dann Schwer',
+        );
+      case 'ungroup':
+        await _applyToSelected(
+          (c) => c.copyWithStage(group: 'einzeln-${c.id}'),
+          '$label laufen jetzt einzeln, unabhängig von anderen Stufen',
+        );
+      case 'unit':
+        final units = context.read<LectureUnitRepository?>();
+        await units?.loadForModule(widget.moduleId);
+        if (!mounted) return;
+        final options = units?.forModule(widget.moduleId) ?? const [];
+        if (options.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('In diesem Fach sind noch keine Einheiten angelegt.')),
+          );
+          return;
+        }
+        final picked = await showDialog<String>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: Text('Einheit für $label'),
+            children: [
+              for (final u in options)
+                SimpleDialogOption(onPressed: () => Navigator.of(ctx).pop(u.id), child: Text(u.title)),
+              SimpleDialogOption(onPressed: () => Navigator.of(ctx).pop(''), child: const Text('Keine Einheit')),
+            ],
+          ),
+        );
+        if (picked == null) return;
+        await _applyToSelected(
+          (c) => c.copyWithUnit(picked.isEmpty ? null : picked),
+          picked.isEmpty ? '$label ohne Einheit' : '$label der Einheit zugeordnet',
+        );
+      case 'reset':
+        final ok = await confirmDelete(
+          context,
+          title: 'Lernstand von $label zurücksetzen?',
+          message: 'Die Karten gelten danach wieder als neu (Ampel leer, Stufenketten wieder auf der '
+              'leichtesten Stufe). Inhalt, Stufe und Gewichtung bleiben.',
+        );
+        if (!ok) return;
+        await _applyToSelected(ModuleExportService.resetLearningState, 'Lernstand von $label zurückgesetzt');
+    }
   }
 
   Future<void> _deleteSelected(List<Flashcard> cards) async {
@@ -76,7 +251,7 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     if (!ok || !mounted) return;
     await context.read<FlashcardRepository>().deleteMany(_selected.toList(), widget.moduleId);
     if (!mounted) return;
-    setState(() => _selected.clear());
+    _endSelection();
   }
 
   /// Backup bzw. Weitergabe an Tabellenkalkulation/Anki (siehe CardCsvService).
@@ -140,16 +315,19 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     final c = context.colors;
     final allCards = context.watch<FlashcardRepository>().forModule(widget.moduleId);
     final cards = [for (final card in allCards) if (flashcardMatchesQuery(card, _query)) card];
+    final stages = StageGate.statuses(allCards);
 
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
-        title: Text(_selecting ? '${_selected.length} ausgewählt' : 'Karteikarten · ${widget.moduleName}'),
+        title: Text(_selecting
+            ? (_selected.isEmpty ? 'Karten auswählen' : '${_selected.length} ausgewählt')
+            : 'Karteikarten · ${widget.moduleName}'),
         leading: _selecting
             ? IconButton(
                 icon: const Icon(Icons.close),
-                tooltip: 'Auswahl aufheben',
-                onPressed: () => setState(_selected.clear),
+                tooltip: 'Auswahl beenden',
+                onPressed: _endSelection,
               )
             : null,
         actions: _selecting
@@ -159,23 +337,57 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                   tooltip: 'Alle auswählen',
                   onPressed: () => setState(() => _selected.addAll(cards.map((c) => c.id))),
                 ),
+                PopupMenuButton<String>(
+                  key: const ValueKey('bulk-edit'),
+                  tooltip: 'Ausgewählte bearbeiten',
+                  icon: const Icon(Icons.edit_note),
+                  enabled: _selected.isNotEmpty,
+                  onSelected: (action) => _bulkAction(action, allCards),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'weight', child: Text('Gewichtung setzen')),
+                    PopupMenuItem(value: 'stage', child: Text('Stufe setzen (Leicht/Mittel/Schwer)')),
+                    PopupMenuItem(value: 'group', child: Text('Zu einer Frage zusammenfassen')),
+                    PopupMenuItem(value: 'ungroup', child: Text('Einzeln lernen (aus Gruppe lösen)')),
+                    PopupMenuItem(value: 'unit', child: Text('Einheit zuordnen')),
+                    PopupMenuItem(value: 'reset', child: Text('Lernstand zurücksetzen')),
+                  ],
+                ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: 'Ausgewählte löschen',
-                  onPressed: () => _deleteSelected(cards),
+                  onPressed: _selected.isEmpty ? null : () => _deleteSelected(cards),
                 ),
               ]
             : [
+                if (allCards.isNotEmpty)
+                  IconButton(
+                    key: const ValueKey('select-mode'),
+                    icon: const Icon(Icons.checklist),
+                    tooltip: 'Mehrere auswählen',
+                    onPressed: () => setState(() => _selectMode = true),
+                  ),
                 PopupMenuButton<String>(
-                  tooltip: 'Export/Import',
-                  onSelected: (value) => value == 'export' ? _exportCsv(allCards) : _importCsv(),
+                  tooltip: 'Weitere Aktionen',
+                  onSelected: (value) => switch (value) {
+                    'export' => _exportCsv(allCards),
+                    'stages' => _assignStagesWithAi(allCards),
+                    _ => _importCsv(),
+                  },
                   itemBuilder: (_) => [
+                    if (allCards.isNotEmpty && _assignProgress == null)
+                      const PopupMenuItem(value: 'stages', child: Text('Stufen per KI zuordnen')),
                     if (allCards.isNotEmpty)
                       const PopupMenuItem(value: 'export', child: Text('Als CSV exportieren')),
                     const PopupMenuItem(value: 'import', child: Text('CSV importieren (Vorder-/Rückseite)')),
                   ],
                 ),
               ],
+        bottom: _assignProgress == null
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(4),
+                child: LinearProgressIndicator(value: _assignProgress),
+              ),
       ),
       body: allCards.isEmpty
           ? Center(child: Text('Noch keine Karteikarten.', style: TextStyle(color: c.inkMuted)))
@@ -216,6 +428,7 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                               padding: const EdgeInsets.only(bottom: 10),
                               child: _FlashcardTile(
                                 card: card,
+                                stage: StageGate.statusOf(stages, card),
                                 selecting: _selecting,
                                 selected: _selected.contains(card.id),
                                 onToggleSelected: () => _toggle(card.id),
@@ -233,11 +446,13 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
 class _FlashcardTile extends StatelessWidget {
   const _FlashcardTile({
     required this.card,
+    required this.stage,
     required this.selecting,
     required this.selected,
     required this.onToggleSelected,
   });
   final Flashcard card;
+  final StageStatus stage;
   final bool selecting;
   final bool selected;
   final VoidCallback onToggleSelected;
@@ -304,6 +519,32 @@ class _FlashcardTile extends StatelessWidget {
     await repo.update(stored.copyWithImage(clearImage: true));
   }
 
+  /// Gewichtung ändern – wie oft die Karte im Vergleich drankommt (siehe
+  /// Flashcard.weight). Auf den gespeicherten Stand angewendet.
+  Future<void> _editWeight(BuildContext context) async {
+    final repo = context.read<FlashcardRepository>();
+    final picked = await showDialog<double>(
+      context: context,
+      builder: (_) => _WeightDialog(initial: card.weight),
+    );
+    if (picked == null) return;
+    final stored = await repo.loadById(card.id);
+    if (stored == null) return;
+    await repo.update(stored.copyWithWeight(picked));
+  }
+
+  /// Schwierigkeitsstufe von Hand setzen (siehe Flashcard.stageLevel) –
+  /// oder zurück auf "aus dem Fragetyp".
+  Future<void> _editStage(BuildContext context) async {
+    final repo = context.read<FlashcardRepository>();
+    final picked = await pickStageLevel(context, current: card.stageLevel);
+    if (picked == null) return;
+    final stored = await repo.loadById(card.id);
+    if (stored == null) return;
+    await repo.update(
+        picked == stageLevelAuto ? stored.copyWithStage(clearLevel: true) : stored.copyWithStage(level: picked));
+  }
+
   Future<void> _delete(BuildContext context) async {
     final ok = await confirmDelete(
       context,
@@ -318,11 +559,17 @@ class _FlashcardTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final level = MasteryService().levelFor(card);
+    final level = MasteryService().levelFor(card, stage: stage);
+    final chain = card.variantChain;
     final statusParts = [
       card.type.label,
-      card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
-      if (card.variantChain != null) 'Stufe ${card.variantLevel + 1}/${card.variantChain!.length}',
+      if (chain != null && chain.length > 1)
+        'Stufe ${card.variantLevel + 1}/${chain.length}'
+      else
+        StageGate.levelOf(card).label,
+      if (stage != StageStatus.active) stage.label,
+      if (stage == StageStatus.active) card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
+      if (card.weight != 1.0) '${formatWeight(card.weight)}× gewichtet',
     ];
     // Material statt DecoratedBox: ListTile/ExpansionTile malen Hintergrund
     // und Tipp-Effekt auf das nächste Material (sonst Debug-Assertion und
@@ -397,6 +644,19 @@ class _FlashcardTile extends StatelessWidget {
                           _ => 'Bild',
                         }),
                       ),
+                    if (chain == null || chain.length < 2)
+                      TextButton.icon(
+                        key: ValueKey('card-stage-${card.id}'),
+                        onPressed: () => _editStage(context),
+                        icon: const Icon(Icons.stairs_outlined, size: 16),
+                        label: const Text('Stufe'),
+                      ),
+                    TextButton.icon(
+                      key: ValueKey('card-weight-${card.id}'),
+                      onPressed: () => _editWeight(context),
+                      icon: const Icon(Icons.fitness_center_outlined, size: 16),
+                      label: const Text('Gewichtung'),
+                    ),
                     TextButton.icon(
                       onPressed: () => _edit(context),
                       icon: const Icon(Icons.edit_outlined, size: 16),
@@ -418,6 +678,47 @@ class _FlashcardTile extends StatelessWidget {
   }
 
   String _formatDate(DateTime d) => '${d.day}.${d.month}.${d.year}';
+}
+
+/// Dialog zum Ändern der Gewichtung einer Karte (siehe Flashcard.weight).
+class _WeightDialog extends StatefulWidget {
+  const _WeightDialog({required this.initial});
+  final double initial;
+
+  @override
+  State<_WeightDialog> createState() => _WeightDialogState();
+}
+
+class _WeightDialogState extends State<_WeightDialog> {
+  late double _value = widget.initial;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Gewichtung'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Wie oft diese Frage im Vergleich drankommt: 1× ist normal (Folien-Fragen), '
+            'Übungsaufgaben starten mit 1,5×. Wirkt zusammen mit der Gewichtung des Fachs.',
+            style: TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          WeightSlider(
+            key: const ValueKey('card-weight-slider'),
+            value: _value,
+            onChanged: (w) => setState(() => _value = w),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Abbrechen')),
+        FilledButton(onPressed: () => Navigator.of(context).pop(_value), child: const Text('Speichern')),
+      ],
+    );
+  }
 }
 
 /// Zeigt die vollständige Antwort-Struktur einer Karte passend zu ihrem

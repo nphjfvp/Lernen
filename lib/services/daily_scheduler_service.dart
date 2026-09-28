@@ -2,6 +2,7 @@ import 'calendar_days.dart';
 import '../models/flashcard.dart';
 import '../models/module.dart';
 import 'fsrs_service.dart';
+import 'stage_gate_service.dart';
 
 /// Der Tagesplan für das Daily Quiz: fällige Wiederholungen + eine
 /// modulweise dosierte Menge neuer Karten.
@@ -93,16 +94,18 @@ class DailySchedulerService {
   /// Karten, die überhaupt eingeplant werden dürfen: nur Karten eines
   /// bestehenden Fachs – verwaiste Karten (z.B. durch eine früher beim
   /// Beantworten wieder angelegte, eigentlich gelöschte Karte) kämen sonst
-  /// täglich ohne Fach dran und ließen sich nirgends löschen – und nur aus
-  /// behandelten Einheiten (siehe [buildPlan]).
+  /// täglich ohne Fach dran und ließen sich nirgends löschen –, nur die
+  /// gerade freigeschaltete Stufe ihrer Gruppe (Leicht → Mittel → Schwer,
+  /// siehe StageGate) und nur aus behandelten Einheiten (siehe [buildPlan]).
   static List<Flashcard> _eligible(
     List<Module> modules,
     List<Flashcard> allCards,
     Map<String, bool> unitCoveredById,
   ) {
     final moduleIds = {for (final m in modules) m.id};
+    final stages = StageGate.statuses(allCards.where((c) => moduleIds.contains(c.moduleId)));
     bool isEligible(Flashcard c) {
-      if (!moduleIds.contains(c.moduleId)) return false;
+      if (!moduleIds.contains(c.moduleId) || stages.containsKey(c.id)) return false;
       final unitId = c.unitId;
       if (unitId == null || c.priorityIntroduction) return true;
       return unitCoveredById[unitId] ?? true;
@@ -207,7 +210,13 @@ class DailySchedulerService {
         // (z.B. Semesterbeginn) würde die Formel sonst auf ~1 Karte/Tag
         // einfrieren, obwohl reichlich Rückstand vorhanden ist.
         final floor = notIntroduced.length.clamp(0, minDailyNewCardsPerModule);
-        budget = (paced < floor ? floor : paced).clamp(0, maxNewCardsPerModulePerDay);
+        final base = paced < floor ? floor : paced;
+        // Fach-Gewicht (siehe Module.weight): ein höher gewichtetes Fach
+        // bringt entsprechend mehr neue Karten pro Tag, ein niedriger
+        // gewichtetes weniger – nie mehr, als noch offen sind, und nie über
+        // das Tages-Maximum hinaus.
+        final weighted = (base * module.weight).round();
+        budget = weighted.clamp(0, notIntroduced.length).clamp(0, maxNewCardsPerModulePerDay);
       }
 
       newCardBudget[module.id] = budget;

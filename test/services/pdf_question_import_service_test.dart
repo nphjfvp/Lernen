@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lernen/models/flashcard.dart';
+import 'package:lernen/models/material_item.dart';
 import 'package:lernen/services/ai_service.dart';
 import 'package:lernen/services/pdf_page_renderer.dart';
 import 'package:lernen/services/pdf_question_import_service.dart';
@@ -235,6 +236,18 @@ void main() {
     expect(cards[1].options!.length, 2);
     expect(cards.every((c) => c.priorityIntroduction && c.unitId == 'u1' && c.moduleId == 'm1'), isTrue);
     expect(cards[0].createdAt.isBefore(cards[1].createdAt), isTrue);
+    // Standard: Übungsblatt-Import -> Übungsaufgaben-Gewicht 1.5.
+    expect(cards.every((c) => c.weight == 1.5), isTrue);
+  });
+
+  test('Import von Folien-Fragen bekommt das Folien-Gewicht 1.0', () {
+    final cards = PdfQuestionImportService.toFlashcards(
+      [ScannedQuestion(page: 1, data: {'type': 'free_text', 'front': 'Eins?', 'correctText': '1'}, solutionByAi: false)],
+      moduleId: 'm1',
+      sourceKind: MaterialKind.slide,
+      now: DateTime(2026, 9, 27),
+    );
+    expect(cards.single.weight, 1.0);
   });
 
   group('mit Seitenbildern', () {
