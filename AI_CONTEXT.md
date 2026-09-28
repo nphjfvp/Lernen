@@ -272,9 +272,19 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 - Neue Karten aus Nachbereiten bringen `level`/`group` von der KI mit
   (`QuestionParsing.parseStageLevel`/`parseStageGroup`, Gruppe je
   Speichervorgang eindeutig gemacht). Bestehende Karten: Kartenliste →
-  „Stufen per KI zuordnen“ (`AiService.assignStages`, Portionen à 60,
-  `StageGate.applyAssignments`), sonst Konzept + Typ. Von Hand: „Stufe“ je
-  Karte, Sammel-Bearbeiten (Stufe, zusammenfassen, einzeln lernen).
+  „Per KI in Ordner sortieren“ (`AiService.assignStages`, Portionen à 80,
+  `knownGroups` = Ordnernamen der vorigen Portionen, damit gleiche Namen
+  über Portionen zusammenfinden; `StageGate.applyAssignments` hängt
+  `#runTag` an), sonst Konzept + Typ. Prompt: nur DASSELBE Wissen in einen
+  Ordner (sonst ruht eine leichte Frage mit anderem Inhalt zu früh).
+- Anzeige: `StageGate.listEntries` bildet aus der Kartenliste Ordner
+  (`StageFolder`, Gruppen ab 2 Karten, Name über `StageGate.groupName`:
+  KI-/Handname ohne `#…`, sonst Konzepttitel; `manuell-…`/`einzeln-…` ohne
+  Namen → schwerste Frage als Titel). `byConceptOnly` → Hinweis „Per KI
+  sortieren“. Von Hand: „Stufe“ je Karte, Ordner umbenennen/auflösen,
+  Sammel-Bearbeiten „In Ordner legen“ (vorhandener Ordner = dessen
+  `stageGroup ?? conceptId`) / „Aus Ordner nehmen“ (`einzeln-<id>`).
+  Stufenketten-Karten zeigen ihre Stufen in `_ChainStages`.
 
 ### 5.7 Daily Quiz / Scheduler (`DailySchedulerService.buildPlan`)
 - Nur Karten **bestehender Fächer** (`_eligible`; `FlashcardRepository.loadAll`
@@ -434,7 +444,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 694 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 703 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -559,6 +569,11 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Stufe schwer. Editor in `card_edit_screen.dart` (Schloss je Zelle),
     Anzeige in Listen über `TablePreview`. Klasse heißt bewusst nicht
     `TableCell` (Kollision mit Flutters Widget).
+29. Ordner in der Kartenliste (Nutzer: „weiß die KI, was zusammengehört?
+    Das soll sichtbar sein“): zusammengehörige Fragen als zugeklappter
+    Ordner mit Name, schwerster Frage und Stufenstand, aufgeklappt nach
+    Leicht/Mittel/Schwer; KI-Sortierung über das ganze Fach mit
+    portionsübergreifenden Ordnernamen und strengerer Regel (5.6b).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

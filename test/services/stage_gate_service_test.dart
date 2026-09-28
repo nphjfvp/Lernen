@@ -224,4 +224,60 @@ void main() {
       expect(StageGate.groupOf(updated[0]), StageGate.groupOf(updated[1]));
     });
   });
+
+  group('Ordner in der Kartenliste', () {
+    test('groupName: KI-Name ohne Laufkennung, Konzepttitel, sonst null', () {
+      expect(StageGate.groupName(_card('a', stageGroup: 'Ohmsches Gesetz#123')), 'Ohmsches Gesetz');
+      expect(StageGate.groupName(_card('a', stageGroup: 'manuell-99')), isNull);
+      expect(StageGate.groupName(_card('a', stageGroup: 'einzeln-a')), isNull);
+      expect(StageGate.groupName(_card('a'), conceptTitles: {'k1': 'Spannung'}), 'Spannung');
+      expect(StageGate.groupName(_card('a')), isNull);
+    });
+
+    test('Gruppen ab zwei Karten werden ein Ordner an der Stelle der ersten Karte, Rest bleibt einzeln', () {
+      final cards = [
+        _card('solo', conceptId: 'k9'),
+        _card('schwer', type: QuestionType.freeText, stageGroup: 'Ohm#1'),
+        _card('einzeln', stageGroup: 'einzeln-x', conceptId: 'k1'),
+        _card('leicht', type: QuestionType.singleChoice, stageGroup: 'Ohm#1'),
+        _card('mittel', type: QuestionType.fillBlank, stageGroup: 'Ohm#1'),
+      ];
+      final entries = StageGate.listEntries(cards, cards);
+      expect(entries.length, 3);
+      expect(entries[0].card?.id, 'solo');
+      final folder = entries[1].folder!;
+      expect(folder.name, 'Ohm');
+      expect(folder.cards.map((c) => c.id), ['leicht', 'mittel', 'schwer']);
+      expect(folder.hardest.id, 'schwer');
+      expect(folder.byConceptOnly, isFalse);
+      expect(entries[2].card?.id, 'einzeln');
+    });
+
+    test('Ordner nach Konzept tragen den Konzepttitel und gelten als ungeprüft', () {
+      final cards = [
+        _card('a', type: QuestionType.singleChoice),
+        _card('b', type: QuestionType.freeText),
+      ];
+      final folder = StageGate.listEntries(cards, cards, conceptTitles: {'k1': 'Spannung'}).single.folder!;
+      expect(folder.name, 'Spannung');
+      expect(folder.byConceptOnly, isTrue);
+    });
+
+    test('bei einer Suche enthält der Ordner nur die passenden Karten', () {
+      final cards = [
+        _card('a', type: QuestionType.singleChoice, stageGroup: 'G#1'),
+        _card('b', type: QuestionType.freeText, stageGroup: 'G#1'),
+      ];
+      final entries = StageGate.listEntries(cards, [cards[1]]);
+      expect(entries.single.folder!.cards.map((c) => c.id), ['b']);
+    });
+
+    test('Karten mit eigener Stufenkette bilden keinen Ordner', () {
+      final cards = [
+        _card('a', variantChain: const [QuestionType.singleChoice, QuestionType.freeText]),
+        _card('b', variantChain: const [QuestionType.singleChoice, QuestionType.freeText]),
+      ];
+      expect(StageGate.listEntries(cards, cards).every((e) => e.card != null), isTrue);
+    });
+  });
 }

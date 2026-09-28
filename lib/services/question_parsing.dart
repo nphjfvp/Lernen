@@ -433,7 +433,9 @@ class QuestionParsing {
   /// Gruppenschlüssel aus der KI-Antwort ("group") – Leicht/Mittel/Schwer
   /// desselben Sachverhalts (siehe Flashcard.stageGroup), leer = null.
   static String? parseStageGroup(Object? raw) {
-    final value = raw?.toString().trim();
+    // Mehrfache Leerzeichen zusammenfassen: gleich benannte Gruppen aus
+    // verschiedenen KI-Portionen sollen zusammenfinden.
+    final value = raw?.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
     return value == null || value.isEmpty ? null : value;
   }
 

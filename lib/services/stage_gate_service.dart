@@ -36,6 +36,32 @@ extension StageStatusLabel on StageStatus {
       };
 }
 
+/// Ein Ordner der Kartenliste: alle Karten einer Stufen-Gruppe (mindestens
+/// zwei), sortiert von Leicht nach Schwer.
+class StageFolder {
+  const StageFolder({required this.key, required this.cards, this.name});
+
+  /// Gruppenschlüssel (siehe [StageGate.groupOf]).
+  final String key;
+
+  /// Die Karten, leichteste Stufe zuerst.
+  final List<Flashcard> cards;
+
+  /// Anzeigename der Gruppe (Sachverhalt bzw. Konzept) oder null – dann
+  /// zeigt die Liste die schwerste Frage als Titel.
+  final String? name;
+
+  /// Die schwerste Frage – sie steht für den ganzen Ordner.
+  Flashcard get hardest => cards.last;
+
+  /// Nur nach Konzept zusammengefasst (niemand hat geprüft, ob die Fragen
+  /// wirklich dasselbe abfragen).
+  bool get byConceptOnly => cards.every((c) => (c.stageGroup ?? '').trim().isEmpty);
+}
+
+/// Ein Eintrag der Kartenliste: eine einzelne Karte oder ein Ordner.
+typedef StageListEntry = ({Flashcard? card, StageFolder? folder});
+
 /// Leicht → Mittel → Schwer über mehrere GETRENNTE Karten derselben Gruppe
 /// (Konzept bzw. [Flashcard.stageGroup]): nur die leichteste Stufe, die noch
 /// nicht grün ist, wird gelernt; schwerere warten, leichtere ruhen. Sitzen
@@ -156,6 +182,76 @@ class StageGate {
       updated.add(cards[i].copyWithStage(level: result.level, group: group == null ? null : '$group#$runTag'));
     }
     return updated;
+  }
+
+  /// Lesbarer Name der Gruppe einer Karte: der von der KI bzw. von Hand
+  /// vergebene Name (ohne angehängte Laufkennung) oder – bei der Gruppe aus
+  /// dem Konzept – dessen Titel aus [conceptTitles]. Null für unbenannte
+  /// Gruppen.
+  static String? groupName(Flashcard card, {Map<String, String> conceptTitles = const {}}) {
+    final stored = card.stageGroup?.trim() ?? '';
+    if (stored.isEmpty) {
+      final title = conceptTitles[card.conceptId]?.trim();
+      return title == null || title.isEmpty ? null : title;
+    }
+    if (stored.startsWith('manuell-') || stored.startsWith('einzeln-')) return null;
+    final hash = stored.lastIndexOf('#');
+    final name = (hash > 0 ? stored.substring(0, hash) : stored).trim();
+    return name.isEmpty ? null : name;
+  }
+
+  /// Karten sortiert von Leicht nach Schwer (bei gleicher Stufe nach
+  /// Erstellung).
+  static List<Flashcard> byLevel(Iterable<Flashcard> cards) => cards.toList()
+    ..sort((a, b) {
+      final byLevel = levelOf(a).index.compareTo(levelOf(b).index);
+      return byLevel != 0 ? byLevel : a.createdAt.compareTo(b.createdAt);
+    });
+
+  /// Die Kartenliste als Ordner: Karten einer Gruppe mit mindestens zwei
+  /// Karten (gezählt in [allCards], also dem ganzen Fach) landen gemeinsam
+  /// in einem Ordner an der Stelle ihrer ersten Karte; alle anderen bleiben
+  /// einzeln. [visible] ist die (ggf. per Suche gefilterte) Auswahl – ein
+  /// Ordner enthält nur die sichtbaren Karten.
+  static List<StageListEntry> listEntries(
+    List<Flashcard> allCards,
+    List<Flashcard> visible, {
+    Map<String, String> conceptTitles = const {},
+  }) {
+    final sizes = <String, int>{};
+    for (final c in allCards) {
+      final key = groupOf(c);
+      if (key != null) sizes[key] = (sizes[key] ?? 0) + 1;
+    }
+    final members = <String, List<Flashcard>>{};
+    final order = <Object>[];
+    for (final c in visible) {
+      final key = groupOf(c);
+      if (key == null || (sizes[key] ?? 0) < 2) {
+        order.add(c);
+        continue;
+      }
+      if (!members.containsKey(key)) order.add(key);
+      members.putIfAbsent(key, () => []).add(c);
+    }
+    return [
+      for (final item in order)
+        if (item is Flashcard)
+          (card: item, folder: null)
+        else
+          (
+            card: null,
+            folder: () {
+              final cards = byLevel(members[item]!);
+              String? name;
+              for (final c in cards.reversed) {
+                name = groupName(c, conceptTitles: conceptTitles);
+                if (name != null) break;
+              }
+              return StageFolder(key: item as String, cards: cards, name: name);
+            }(),
+          ),
+    ];
   }
 
   /// Rückfall nach wiederholten Fehlern auf [card]: die nächstleichtere

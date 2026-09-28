@@ -1028,14 +1028,27 @@ Fragen zum selben Sachverhalt kommen nicht mehr alle gleichzeitig dran:
 - **Fehlt eine Stufe**, rückt die nächste nach (z.B. direkt Schwer, wenn es
   kein Leicht gibt); gibt es kein Schwer, bleibt Mittel dauerhaft in der
   Wiederholung. Eine Frage ohne andere Stufen läuft ganz normal.
-- **Welche Fragen zusammengehören**: neue Fragen aus Nachbereiten bekommen
-  Stufe und Sachverhalt direkt von der KI; "Frage erstellen" mit
-  Leicht/Mittel/Schwer war schon immer eine Stufenkette. Für bereits
-  vorhandene Karten gilt automatisch: gleiches Konzept = eine Gruppe, die
-  Stufe folgt aus dem Fragetyp (Auswahl leicht, Lückentext/Zuordnen mittel,
-  Freitext/interaktiv/Tabelle schwer). Genauer: Kartenliste → Menü → "Stufen per KI
-  zuordnen". Von Hand: "Stufe" an einer Karte oder mehrere auswählen →
-  "Stufe setzen", "Zu einer Frage zusammenfassen" bzw. "Einzeln lernen".
+- **Welche Fragen zusammengehören – als Ordner sichtbar**: In der
+  Kartenliste liegen zusammengehörige Fragen in einem zugeklappten Ordner.
+  Darauf stehen der Name (was die Fragen abfragen), die schwerste Frage und
+  der Stufenstand (✓ geschafft, ▶ gerade dran, 🔒 wartet). Aufgeklappt
+  stehen die Fragen nach Leicht / Mittel / Schwer sortiert darunter. Über ⋮
+  lässt sich ein Ordner umbenennen oder auflösen.
+- **Woher die Ordner kommen**: neue Fragen aus Nachbereiten bekommen Ordner
+  und Stufe direkt von der KI; "Frage erstellen" mit Leicht/Mittel/Schwer
+  ist eine einzige Karte mit Stufen (aufgeklappt unter "Stufen dieser
+  Frage" zu sehen). Für bereits vorhandene Karten gilt zunächst: gleiches
+  Konzept = ein Ordner, Stufe aus dem Fragetyp (Auswahl leicht,
+  Lückentext/Zuordnen mittel, Freitext/interaktiv/Tabelle schwer) – die
+  Liste weist darauf hin, dass das ungeprüft ist. **"Per KI in Ordner
+  sortieren"** (Menü der Kartenliste) geht alle Fragen des Fachs durch: in
+  einen Ordner kommen nur Fragen, die wirklich dasselbe Wissen verschieden
+  schwer abfragen – sonst würde eine leichte Frage zu früh aus dem Plan
+  genommen. Die KI arbeitet in Portionen zu 80 Fragen und bekommt die
+  Ordnernamen der vorigen Portionen mit, damit Zusammengehöriges auch
+  portionsübergreifend in einem Ordner landet.
+- Von Hand: "Stufe" an einer Karte; mehrere auswählen → "In Ordner legen"
+  (vorhandener oder neuer Ordner) bzw. "Aus Ordner nehmen".
 - Gilt im Daily Quiz, in Üben, Sprint und im Fehlertagebuch – nicht in der
   Probeklausur (die simuliert die echte Klausur mit allen Fragen).
 
@@ -1053,9 +1066,9 @@ zählt, lässt die Ampel aber nicht steigen.
   (grün), mittel (gelb) und schwach (rot) seiner gelernten Karten, darunter
   die Prozente und wie viele noch neu sind.
 - Kartenliste → Knopf "Mehrere auswählen" (oder lange auf eine Karte
-  drücken): Karten ankreuzen, dann über das Bearbeiten-Menü Gewichtung,
-  Stufe, Gruppe oder Einheit für alle setzen, den Lernstand zurücksetzen oder
-  alle löschen.
+  drücken): Karten ankreuzen (das Häkchen an einem Ordner wählt alle seine
+  Fragen), dann über das Bearbeiten-Menü Gewichtung, Stufe, Ordner oder
+  Einheit für alle setzen, den Lernstand zurücksetzen oder alle löschen.
 
 ### 5j. Fragetyp Tabelle: Tabellen direkt in der App ausfüllen
 

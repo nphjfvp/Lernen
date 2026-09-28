@@ -2185,20 +2185,30 @@ Antworte in der Sprache der Vorlage.
   }
 
   static const _assignStagesSystemPrompt = '''
-Du ordnest bereits vorhandene Lernfragen EINES Fachs nach Sachverhalten und
-Schwierigkeit. Du bekommst eine nummerierte Liste (Nummer, Typ, Frage,
-Lösung). Fasse Fragen, die DENSELBEN Sachverhalt abfragen (nur verschieden
-schwer), zu einer Gruppe zusammen und gib jeder Frage eine Stufe:
-- "leicht": Wiedererkennen (z.B. Auswahlfrage),
-- "mittel": Ergänzen oder Zuordnen (z.B. Lückentext, Zuordnen),
-- "schwer": selbst formulieren oder anwenden (z.B. Freitext, Rechen- oder
-  Übungsaufgabe).
-Entscheide nach dem tatsächlichen Anspruch der Frage, nicht nur nach dem
-Typ. Verschiedene Sachverhalte gehören in verschiedene Gruppen; eine Frage
-ohne passende Partner bekommt eine eigene Gruppe. Gruppennamen sind kurz
-und für alle Fragen derselben Gruppe Zeichen für Zeichen gleich.
+Du ordnest bereits vorhandene Lernfragen EINES Fachs in Ordner. Ein Ordner
+enthält dieselbe Frage in verschiedenen Schwierigkeitsstufen – beim Lernen
+kommt zuerst die leichte, erst wenn sie sitzt die mittlere, dann die
+schwere. Sobald die schwerere Stufe dran ist, wird die leichtere NICHT mehr
+abgefragt. Du bekommst eine nummerierte Liste (Nummer, Typ, Frage, Lösung).
+
+Regeln:
+- In einen Ordner gehören nur Fragen, die DASSELBE Wissen prüfen (dieselbe
+  Aussage, dieselbe Definition, dieselbe Rechnung) – nur verschieden
+  schwer. Wer die schwere Frage sicher kann, muss damit auch die leichte
+  können. Nur dasselbe Oberthema reicht NICHT: zwei Fragen zu verschiedenen
+  Fakten desselben Kapitels gehören in verschiedene Ordner.
+- Eine Frage ohne solchen Partner bekommt einen eigenen Ordner.
+- Stufe je Frage nach ihrem tatsächlichen Anspruch, nicht nur nach dem Typ:
+  "leicht" = wiedererkennen (z.B. Auswahlfrage), "mittel" = ergänzen oder
+  zuordnen (z.B. Lückentext, Zuordnen), "schwer" = selbst formulieren,
+  herleiten oder anwenden (z.B. Freitext, Rechen-/Übungsaufgabe, Tabelle).
+- Ordnername: kurz (2–6 Wörter), beschreibt das geprüfte Wissen, für alle
+  Fragen desselben Ordners Zeichen für Zeichen gleich.
+- Werden "Bereits vorhandene Ordner" genannt und prüft eine Frage genau
+  deren Wissen, übernimm diesen Namen exakt statt einen neuen zu erfinden.
+- Jede Nummer aus der Liste kommt genau einmal vor.
 Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
-{"cards": [{"n": 1, "level": "leicht", "group": "Kurzer Sachverhalt"}]}
+{"cards": [{"n": 1, "level": "leicht", "group": "Kurzer Ordnername"}]}
 ''';
 
   /// Nummer (wie in der Anfrage) → Stufe (0–2) und Gruppe aus der Antwort
@@ -2212,14 +2222,25 @@ Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
             ),
       };
 
-  /// Ordnet bestehende Fragen per KI Gruppen (gleicher Sachverhalt) und
-  /// Stufen (Leicht/Mittel/Schwer) zu – für Karten, die vor der
-  /// Stufen-Aufteilung ohne diese Angaben erstellt wurden. [cards] ist
-  /// nummeriert (siehe [parseStageAssignments]).
+  /// Ordnet bestehende Fragen per KI Ordnern (dasselbe Wissen, verschieden
+  /// schwer) und Stufen (Leicht/Mittel/Schwer) zu. [cards] ist nummeriert
+  /// (siehe [parseStageAssignments]); [knownGroups] sind die Ordnernamen aus
+  /// früheren Portionen desselben Laufs – die KI übernimmt sie, damit
+  /// Zusammengehöriges auch über Portionsgrenzen hinweg in EINEM Ordner
+  /// landet.
   Future<Map<int, ({int? level, String? group})>> assignStages(
-    List<({int n, String type, String front, String answer})> cards,
-  ) async {
+    List<({int n, String type, String front, String answer})> cards, {
+    List<String> knownGroups = const [],
+  }) async {
     final buffer = StringBuffer();
+    if (knownGroups.isNotEmpty) {
+      buffer.writeln('Bereits vorhandene Ordner:');
+      for (final g in knownGroups) {
+        buffer.writeln('- $g');
+      }
+      buffer.writeln();
+      buffer.writeln('Fragen:');
+    }
     for (final c in cards) {
       buffer.writeln('${c.n}. [${c.type}] ${_cap(c.front, 400)} — Lösung: ${_cap(c.answer, 200)}');
     }

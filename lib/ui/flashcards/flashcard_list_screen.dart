@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
+import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/settings_repository.dart';
@@ -57,8 +58,24 @@ bool flashcardMatchesQuery(Flashcard card, String query) {
 }
 
 class _FlashcardListScreenState extends State<FlashcardListScreen> {
-  /// So viele Fragen sieht die KI beim Zuordnen der Stufen auf einmal.
-  static const _stageBatchSize = 60;
+  /// So viele Fragen sieht die KI beim Zuordnen der Stufen auf einmal. Die
+  /// Ordnernamen früherer Portionen bekommt sie jeweils mit, damit
+  /// Zusammengehöriges auch über Portionsgrenzen in einem Ordner landet.
+  static const _stageBatchSize = 80;
+
+  /// Aufgeklappte Ordner (Gruppenschlüssel, siehe StageGate.groupOf).
+  final Set<String> _openFolders = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // Konzepttitel für die Ordnernamen (Gruppe = Konzept, solange nichts
+    // anderes zugeordnet ist).
+    final concepts = context.read<ConceptRepository?>();
+    if (concepts != null && concepts.forModule(widget.moduleId).isEmpty) {
+      concepts.loadForModule(widget.moduleId).catchError((_) {});
+    }
+  }
 
   final Set<String> _selected = {};
   final _searchController = TextEditingController();
@@ -86,16 +103,16 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Stufen per KI zuordnen?'),
-        content: Text('Die KI ordnet ${cards.length} Fragen nach Sachverhalt und Schwierigkeit '
-            '(Leicht/Mittel/Schwer). Danach kommt je Sachverhalt erst Leicht dran, dann Mittel, '
-            'dann Schwer – jeweils erst, wenn die Stufe davor sitzt.\n\n'
-            'Inhalt und Lernstand bleiben unverändert; einzelne Stufen lassen sich danach per '
-            '„Stufe“ ändern. Ohne diesen Schritt gilt: gleiches Konzept = eine Gruppe, die Stufe '
-            'folgt aus dem Fragetyp.'),
+        title: const Text('Fragen per KI in Ordner sortieren?'),
+        content: Text('Die KI geht alle ${cards.length} Fragen dieses Fachs durch und legt Fragen, die '
+            'dasselbe Wissen verschieden schwer abfragen, in einen gemeinsamen Ordner '
+            '(Leicht/Mittel/Schwer). Beim Lernen kommt je Ordner erst Leicht dran, dann Mittel, dann '
+            'Schwer – jeweils erst, wenn die Stufe davor sitzt. Fragen ohne Partner bleiben einzeln.\n\n'
+            'Die bisherige Einteilung wird dabei neu gemacht. Inhalt und Lernstand bleiben; das '
+            'Ergebnis siehst du danach als Ordner in dieser Liste und kannst es dort ändern.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Zuordnen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Sortieren')),
         ],
       ),
     );
@@ -103,27 +120,103 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     setState(() => _assignProgress = 0);
     final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
     final runTag = DateTime.now().millisecondsSinceEpoch.toString();
-    var changed = 0;
+    final assigned = <Flashcard>[];
+    final knownGroups = <String>[];
     try {
       for (var start = 0; start < cards.length; start += _stageBatchSize) {
         final batch = cards.sublist(start, min(start + _stageBatchSize, cards.length));
         final results = await ai.assignStages([
           for (var i = 0; i < batch.length; i++)
             (n: i + 1, type: batch[i].type.label, front: batch[i].front, answer: batch[i].answerSummary),
-        ]);
+        ], knownGroups: knownGroups);
         final updated = StageGate.applyAssignments(batch, results, runTag: runTag);
         await repo.updateAll(updated);
-        changed += updated.length;
+        assigned.addAll(updated);
+        for (final r in results.values) {
+          final g = r.group;
+          if (g != null && !knownGroups.any((k) => k.toLowerCase() == g.toLowerCase())) knownGroups.add(g);
+        }
         if (mounted) setState(() => _assignProgress = (start + batch.length) / cards.length);
       }
-      messenger.showSnackBar(SnackBar(content: Text('$changed von ${cards.length} Fragen eingeordnet.')));
+      final sizes = <String, int>{};
+      for (final c in assigned) {
+        final key = StageGate.groupOf(c);
+        if (key != null) sizes[key] = (sizes[key] ?? 0) + 1;
+      }
+      final folders = sizes.values.where((n) => n >= 2).length;
+      final inFolders = sizes.values.where((n) => n >= 2).fold<int>(0, (a, n) => a + n);
+      messenger.showSnackBar(SnackBar(
+        content: Text('${assigned.length} von ${cards.length} Fragen einsortiert: $inFolders in $folders '
+            '${folders == 1 ? 'Ordner' : 'Ordnern'}, ${assigned.length - inFolders} einzeln.'),
+      ));
     } catch (e) {
       messenger.showSnackBar(SnackBar(
-        content: Text('Zuordnung abgebrochen ($changed eingeordnet): ${e is AiServiceException ? e.message : e}'),
+        content: Text('Sortieren abgebrochen (${assigned.length} einsortiert): '
+            '${e is AiServiceException ? e.message : e}'),
       ));
     } finally {
       if (mounted) setState(() => _assignProgress = null);
     }
+  }
+
+  /// Gespeicherter Gruppenwert eines Ordners (siehe Flashcard.stageGroup) –
+  /// bei der Gruppe aus dem Konzept die Konzept-ID.
+  static String? _storedGroupOf(Flashcard card) => card.stageGroup ?? card.conceptId;
+
+  /// Fragt einen Ordnernamen ab (null = abgebrochen).
+  Future<String?> _askFolderName({String initial = '', required String title}) async {
+    final controller = TextEditingController(text: initial);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          key: const ValueKey('folder-name'),
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name (was die Fragen abfragen)'),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(controller.text), child: const Text('Speichern')),
+        ],
+      ),
+    );
+    controller.dispose();
+    return name?.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  /// Neuer Gruppenwert für einen Ordner mit [name].
+  static String _folderGroup(String name) =>
+      name.isEmpty ? 'manuell-${DateTime.now().millisecondsSinceEpoch}' : '$name#${DateTime.now().millisecondsSinceEpoch}';
+
+  /// Wendet [change] auf den gespeicherten Stand aller Karten des Ordners an.
+  Future<void> _applyToFolder(StageFolder folder, Flashcard Function(Flashcard) change, String doneMessage) async {
+    final repo = context.read<FlashcardRepository>();
+    final messenger = ScaffoldMessenger.of(context);
+    final stored = (await repo.loadModuleCards(widget.moduleId)).where((c) => StageGate.groupOf(c) == folder.key);
+    await repo.updateAll([for (final c in stored) change(c)]);
+    messenger.showSnackBar(SnackBar(content: Text(doneMessage)));
+  }
+
+  Future<void> _renameFolder(StageFolder folder) async {
+    final name = await _askFolderName(initial: folder.name ?? '', title: 'Ordner umbenennen');
+    if (name == null || !mounted) return;
+    final group = _folderGroup(name);
+    await _applyToFolder(folder, (c) => c.copyWithStage(group: group), 'Ordner umbenannt');
+  }
+
+  Future<void> _dissolveFolder(StageFolder folder, int size) async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Ordner auflösen?',
+      message: 'Die $size Fragen laufen danach einzeln: jede wird unabhängig von den anderen Stufen '
+          'abgefragt. Gelöscht wird nichts.',
+      confirmLabel: 'Auflösen',
+    );
+    if (!ok || !mounted) return;
+    await _applyToFolder(folder, (c) => c.copyWithStage(group: 'einzeln-${c.id}'), 'Ordner aufgelöst');
   }
 
   @override
@@ -193,10 +286,41 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
               : '$label: Stufe ${StageLevel.values[picked].label}',
         );
       case 'group':
-        final key = 'manuell-${DateTime.now().millisecondsSinceEpoch}';
+        final concepts = context.read<ConceptRepository?>()?.forModule(widget.moduleId) ?? const [];
+        final folders = [
+          for (final e in StageGate.listEntries(allCards, allCards,
+              conceptTitles: {for (final k in concepts) k.id: k.title}))
+            if (e.folder != null) e.folder!,
+        ];
+        const newFolder = '\u0000neu';
+        final picked = await showDialog<String>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: Text('$label in Ordner legen'),
+            children: [
+              SimpleDialogOption(
+                key: const ValueKey('folder-new'),
+                onPressed: () => Navigator.of(ctx).pop(newFolder),
+                child: const Text('Neuer Ordner …', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              for (final f in folders)
+                SimpleDialogOption(
+                  onPressed: () => Navigator.of(ctx).pop(_storedGroupOf(f.hardest)),
+                  child: Text(f.name ?? f.hardest.front, maxLines: 2, overflow: TextOverflow.ellipsis),
+                ),
+            ],
+          ),
+        );
+        if (picked == null || !mounted) return;
+        var group = picked;
+        if (picked == newFolder) {
+          final name = await _askFolderName(title: 'Neuer Ordner');
+          if (name == null || !mounted) return;
+          group = _folderGroup(name);
+        }
         await _applyToSelected(
-          (c) => c.copyWithStage(group: key),
-          '$label zu einer Frage zusammengefasst: erst Leicht, dann Mittel, dann Schwer',
+          (c) => c.copyWithStage(group: group),
+          '$label im Ordner: erst Leicht, dann Mittel, dann Schwer',
         );
       case 'ungroup':
         await _applyToSelected(
@@ -317,6 +441,20 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     final allCards = context.watch<FlashcardRepository>().forModule(widget.moduleId);
     final cards = [for (final card in allCards) if (flashcardMatchesQuery(card, _query)) card];
     final stages = StageGate.statuses(allCards);
+    final concepts = context.watch<ConceptRepository?>()?.forModule(widget.moduleId) ?? const [];
+    final entries = StageGate.listEntries(
+      allCards,
+      cards,
+      conceptTitles: {for (final k in concepts) k.id: k.title},
+    );
+    // Komplette Gruppen (für Stufenstand und Größe eines Ordners, auch wenn
+    // die Suche nur einen Teil zeigt).
+    final groups = <String, List<Flashcard>>{};
+    for (final card in allCards) {
+      final key = StageGate.groupOf(card);
+      if (key != null) groups.putIfAbsent(key, () => []).add(card);
+    }
+    final conceptOnly = _query.isEmpty && entries.any((e) => e.folder?.byConceptOnly ?? false);
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -347,8 +485,8 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'weight', child: Text('Gewichtung setzen')),
                     PopupMenuItem(value: 'stage', child: Text('Stufe setzen (Leicht/Mittel/Schwer)')),
-                    PopupMenuItem(value: 'group', child: Text('Zu einer Frage zusammenfassen')),
-                    PopupMenuItem(value: 'ungroup', child: Text('Einzeln lernen (aus Gruppe lösen)')),
+                    PopupMenuItem(value: 'group', child: Text('In Ordner legen (Leicht → Schwer)')),
+                    PopupMenuItem(value: 'ungroup', child: Text('Aus Ordner nehmen (einzeln lernen)')),
                     PopupMenuItem(value: 'unit', child: Text('Einheit zuordnen')),
                     PopupMenuItem(value: 'reset', child: Text('Lernstand zurücksetzen')),
                   ],
@@ -376,7 +514,7 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                   },
                   itemBuilder: (_) => [
                     if (allCards.isNotEmpty && _assignProgress == null)
-                      const PopupMenuItem(value: 'stages', child: Text('Stufen per KI zuordnen')),
+                      const PopupMenuItem(value: 'stages', child: Text('Per KI in Ordner sortieren')),
                     if (allCards.isNotEmpty)
                       const PopupMenuItem(value: 'export', child: Text('Als CSV exportieren')),
                     const PopupMenuItem(value: 'import', child: Text('CSV importieren (Vorder-/Rückseite)')),
@@ -422,9 +560,39 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                       ? Center(child: Text('Keine Karte passt zur Suche.', style: TextStyle(color: c.inkMuted)))
                       : ListView.builder(
                           padding: const EdgeInsets.all(16),
-                          itemCount: cards.length,
+                          itemCount: entries.length + (conceptOnly ? 1 : 0),
                           itemBuilder: (ctx, i) {
-                            final card = cards[i];
+                            if (conceptOnly && i == 0) {
+                              return _ConceptFolderHint(
+                                onSort: _assignProgress == null ? () => _assignStagesWithAi(allCards) : null,
+                              );
+                            }
+                            final entry = entries[i - (conceptOnly ? 1 : 0)];
+                            final folder = entry.folder;
+                            if (folder != null) {
+                              final open = _query.isNotEmpty || _openFolders.contains(folder.key);
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _StageFolderTile(
+                                  folder: folder,
+                                  group: groups[folder.key] ?? folder.cards,
+                                  stages: stages,
+                                  open: open,
+                                  onToggleOpen: () => setState(() {
+                                    if (!_openFolders.remove(folder.key)) _openFolders.add(folder.key);
+                                  }),
+                                  selecting: _selecting,
+                                  selected: _selected,
+                                  onToggleSelected: _toggle,
+                                  onSelectAll: (ids, select) => setState(() {
+                                    select ? _selected.addAll(ids) : _selected.removeAll(ids);
+                                  }),
+                                  onRename: () => _renameFolder(folder),
+                                  onDissolve: () => _dissolveFolder(folder, (groups[folder.key] ?? folder.cards).length),
+                                ),
+                              );
+                            }
+                            final card = entry.card!;
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: _FlashcardTile(
@@ -440,6 +608,230 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Hinweis, solange Ordner nur nach Konzept gebildet sind – ob die Fragen
+/// darin wirklich dasselbe abfragen, hat dann niemand geprüft.
+class _ConceptFolderHint extends StatelessWidget {
+  const _ConceptFolderHint({required this.onSort});
+  final VoidCallback? onSort;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+      decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(14)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Einige Ordner sind nur nach Konzept gebildet. Ob die Fragen darin wirklich dasselbe Wissen '
+            'abfragen (sonst würde eine leichte Frage zu früh aus dem Plan genommen), prüft die KI beim '
+            'Sortieren.',
+            style: TextStyle(fontSize: 12.5, color: c.ink),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: const ValueKey('concept-hint-sort'),
+              onPressed: onSort,
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('Per KI sortieren'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ein Ordner der Kartenliste: dieselbe Frage in Leicht/Mittel/Schwer.
+/// Zugeklappt stehen Name, schwerste Frage und der Stufenstand darauf,
+/// aufgeklappt die Karten je Stufe.
+class _StageFolderTile extends StatelessWidget {
+  const _StageFolderTile({
+    required this.folder,
+    required this.group,
+    required this.stages,
+    required this.open,
+    required this.onToggleOpen,
+    required this.selecting,
+    required this.selected,
+    required this.onToggleSelected,
+    required this.onSelectAll,
+    required this.onRename,
+    required this.onDissolve,
+  });
+
+  /// Die sichtbaren Karten des Ordners (bei einer Suche ggf. nur ein Teil).
+  final StageFolder folder;
+
+  /// Die komplette Gruppe – für Stufenstand und Anzahl.
+  final List<Flashcard> group;
+  final Map<String, StageStatus> stages;
+  final bool open;
+  final VoidCallback onToggleOpen;
+  final bool selecting;
+  final Set<String> selected;
+  final void Function(String id) onToggleSelected;
+  final void Function(List<String> ids, bool select) onSelectAll;
+  final VoidCallback onRename;
+  final VoidCallback onDissolve;
+
+  static String _levelState(StageLevel level, StageLevel active, bool allMastered) {
+    if (level.index < active.index) return 'geschafft – ruht';
+    if (level.index > active.index) return 'wartet';
+    return allMastered ? 'sitzt – nur noch Wiederholung' : 'gerade dran';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final active = StageGate.activeLevel(group) ?? StageLevel.leicht;
+    final allMastered = group.every(StageGate.isMastered);
+    final levels = {for (final card in group) StageGate.levelOf(card)}.toList()
+      ..sort((a, b) => a.index.compareTo(b.index));
+    final ids = [for (final card in folder.cards) card.id];
+    final chosen = ids.where(selected.contains).length;
+    final hardest = StageGate.byLevel(group).last;
+    final title = folder.name ?? hardest.front;
+
+    Widget chip(StageLevel level) {
+      final count = group.where((card) => StageGate.levelOf(card) == level).length;
+      final (fg, bg, icon) = level.index < active.index || (allMastered && level == active)
+          ? (c.good, c.goodSoft, Icons.check)
+          : level == active
+              ? (c.accent, c.accentSoft, Icons.play_arrow_rounded)
+              : (c.inkMuted, c.surfaceAlt, Icons.lock_outline);
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: fg),
+            const SizedBox(width: 3),
+            Text(count > 1 ? '${level.label} ($count)' : level.label,
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: fg)),
+          ],
+        ),
+      );
+    }
+
+    final header = InkWell(
+      key: ValueKey('folder-${folder.key}'),
+      onTap: onToggleOpen,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 10, 4, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (selecting)
+              Checkbox(
+                tristate: true,
+                value: chosen == 0 ? false : (chosen == ids.length ? true : null),
+                onChanged: (_) => onSelectAll(ids, chosen < ids.length),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 2, 12, 0),
+                child: Icon(open ? Icons.folder_open_outlined : Icons.folder_outlined, color: c.accent),
+              ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+                  if (folder.name != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        hardest.front,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+                      ),
+                    ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final level in levels) chip(level),
+                      Text('${group.length} Fragen${folder.byConceptOnly ? ' · nach Konzept' : ''}',
+                          style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (!selecting)
+              PopupMenuButton<String>(
+                tooltip: 'Ordner bearbeiten',
+                icon: Icon(Icons.more_vert, color: c.inkMuted, size: 20),
+                onSelected: (v) => v == 'rename' ? onRename() : onDissolve(),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'rename', child: Text('Umbenennen')),
+                  PopupMenuItem(value: 'dissolve', child: Text('Auflösen (alle einzeln lernen)')),
+                ],
+              ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, right: 8),
+              child: Icon(open ? Icons.expand_less : Icons.expand_more, color: c.inkMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return Material(
+      color: c.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: chosen > 0 ? c.accent : c.border, width: 1.2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          if (open)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final level in levels)
+                    if (folder.cards.any((card) => StageGate.levelOf(card) == level)) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+                        child: Text(
+                          '${level.label} · ${_levelState(level, active, allMastered)}',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted),
+                        ),
+                      ),
+                      for (final card in folder.cards.where((card) => StageGate.levelOf(card) == level))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _FlashcardTile(
+                            card: card,
+                            stage: StageGate.statusOf(stages, card),
+                            selecting: selecting,
+                            selected: selected.contains(card.id),
+                            onToggleSelected: () => onToggleSelected(card.id),
+                          ),
+                        ),
+                    ],
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -623,6 +1015,11 @@ class _FlashcardTile extends StatelessWidget {
                   child: _AnswerDetail(card: card),
                 ),
               ),
+              if (chain != null && chain.length > 1)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: _ChainStages(card: card),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 child: Row(
@@ -680,6 +1077,73 @@ class _FlashcardTile extends StatelessWidget {
   }
 
   String _formatDate(DateTime d) => '${d.day}.${d.month}.${d.year}';
+}
+
+/// Die Stufen einer Karte mit eigener Stufenkette (z.B. aus "Frage
+/// erstellen" mit Leicht/Mittel/Schwer): welche geschafft ist, welche gerade
+/// dran ist und welche noch kommt – mit der Frage, soweit schon bekannt.
+class _ChainStages extends StatelessWidget {
+  const _ChainStages({required this.card});
+  final Flashcard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final chain = card.variantChain!;
+    final history = card.variantHistory ?? const <VariantSnapshot>[];
+    final pending = card.pendingVariants ?? const <VariantSnapshot>[];
+    String? frontAt(int i) {
+      if (i == card.variantLevel) return card.front;
+      if (i < card.variantLevel) {
+        final h = history.length - (card.variantLevel - i);
+        return h >= 0 && h < history.length ? history[h].front : null;
+      }
+      final p = i - card.variantLevel - 1;
+      return p < pending.length ? pending[p].front : null;
+    }
+
+    String name(int i) => chain.length == 3 ? StageLevel.values[i].label : 'Stufe ${i + 1}';
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Stufen dieser Frage', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted)),
+          for (var i = 0; i < chain.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    i < card.variantLevel
+                        ? Icons.check
+                        : i == card.variantLevel
+                            ? Icons.play_arrow_rounded
+                            : Icons.lock_outline,
+                    size: 15,
+                    color: i < card.variantLevel ? c.good : (i == card.variantLevel ? c.accent : c.inkMuted),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${name(i)} · ${chain[i].label}'
+                      '${i == card.variantLevel ? ' (gerade dran)' : ''}: '
+                      '${frontAt(i) ?? 'wird beim Erreichen von der KI erstellt'}',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12.5, color: i == card.variantLevel ? c.ink : c.inkMuted),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Dialog zum Ändern der Gewichtung einer Karte (siehe Flashcard.weight).

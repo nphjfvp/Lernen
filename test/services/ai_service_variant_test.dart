@@ -78,4 +78,33 @@ void main() {
       );
     });
   });
+
+  group('AiService.assignStages', () {
+    test('gibt bekannte Ordnernamen mit und liest Stufe und Ordner je Nummer', () async {
+      late String sent;
+      final client = MockClient((request) async {
+        sent = request.body;
+        return _chatResponse(jsonEncode({
+          'cards': [
+            {'n': 1, 'level': 'leicht', 'group': 'Ohmsches  Gesetz'},
+            {'n': 2, 'level': 'schwer', 'group': 'Ohmsches Gesetz'},
+            {'n': 'x', 'level': 'mittel'},
+          ],
+        }));
+      });
+      final ai = AiService(apiKey: 'key', model: 'test-model', client: client);
+      final result = await ai.assignStages([
+        (n: 1, type: 'Single-Choice', front: 'Was gilt für U?', answer: 'U = R · I'),
+        (n: 2, type: 'Freitext', front: 'Leite I her.', answer: 'I = U / R'),
+      ], knownGroups: const ['Kirchhoffsche Regeln']);
+
+      expect(sent, contains('Bereits vorhandene Ordner'));
+      expect(sent, contains('Kirchhoffsche Regeln'));
+      expect(result.length, 2);
+      expect(result[1]!.level, 0);
+      expect(result[2]!.level, 2);
+      // Doppelte Leerzeichen zählen nicht: beide landen im selben Ordner.
+      expect(result[1]!.group, result[2]!.group);
+    });
+  });
 }
