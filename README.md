@@ -1007,13 +1007,22 @@ veröffentlichen zusätzlich ein `version.json`
 Release-URL wie die APK/das ZIP. `UpdateCheckerService` vergleicht das beim
 App-Start (und über "Nach Updates suchen" in den Einstellungen) mit der
 Build-Nummer der laufenden App (`package_info_plus`) – findet es eine
-neuere, gibt es eine SnackBar bzw. einen Button. Android öffnet die `.apk`
-im Browser zum Herunterladen/Installieren. Windows installiert selbst
-("Jetzt installieren", `lib/services/update_installer_io.dart`): lädt
-`Lernen-Setup.exe` ins Temp-Verzeichnis, prüft, dass wirklich ein Programm
-ankam, startet es still (`/SILENT`) und beendet sich; das Setup ersetzt die
-Dateien und startet die App danach neu. Klappt das nicht, öffnet sich der
-Download im Browser.
+neuere, gibt es eine SnackBar bzw. einen Button **"Jetzt installieren"**
+(`lib/services/update_installer_io.dart`, `lib/ui/widgets/update_actions.dart`):
+
+- **Windows** lädt `Lernen-Setup.exe` ins Temp-Verzeichnis, prüft, dass
+  wirklich ein Programm ankam, startet es still (`/SILENT`) und beendet
+  sich; das Setup ersetzt die Dateien und startet die App danach neu.
+- **Android** lädt die APK in den Cache und übergibt sie über einen
+  FileProvider an den System-Installer (`MainActivity.installApk`, Kanal
+  `lernen/update`, Berechtigung `REQUEST_INSTALL_PACKAGES`). Man bestätigt
+  nur noch "Aktualisieren" – ganz still geht das bei Apps außerhalb des
+  Play Stores nicht. Beim allerersten Mal fragt Android, ob Lernen Apps
+  installieren darf. Weil jede APK mit demselben Schlüssel signiert ist
+  (`android/app/debug.keystore`), installiert sie über die alte App; Daten
+  bleiben erhalten, nichts muss vorher gelöscht werden.
+
+Klappt das nicht, öffnet sich der Download im Browser.
 
 ## Tests
 

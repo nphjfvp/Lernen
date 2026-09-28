@@ -37,7 +37,8 @@ gewünschtes Verhalten.
   (iOS möglich). CI: `.github/workflows/android-apk.yml`, `windows-app.yml`
   (Windows: `Lernen-Setup.exe` per Inno Setup aus `windows/installer/lernen.iss`
   plus ZIP; das In-App-Update lädt unter Windows das Setup und installiert
-  still, siehe `update_installer_io.dart`).
+  still, unter Android die APK und öffnet den System-Installer über
+  `MainActivity` + FileProvider, siehe `update_installer_io.dart`).
 - **State**: `provider` (`ChangeNotifier`-Repositories, in `main.dart`
   registriert). `ModuleRepository` und `SettingsRepository` werden VOR `runApp`
   geladen.

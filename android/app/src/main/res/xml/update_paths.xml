@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Heruntergeladene Updates (siehe lib/services/update_installer_io.dart)
+     liegen in cache/updates und werden dem System-Installer über den
+     FileProvider freigegeben. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

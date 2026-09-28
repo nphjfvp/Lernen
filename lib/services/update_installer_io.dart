@@ -1,58 +1,110 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
-/// Windows: das Setup (Lernen-Setup.exe) lässt sich direkt aus der App
-/// herunterladen und still installieren.
-bool get canInstallUpdateInApp => Platform.isWindows;
+import 'update_install_result.dart';
 
-/// Lädt das Setup ins Temp-Verzeichnis und startet es still
-/// (Fortschrittsfenster, keine Fragen). Die App beendet sich danach selbst,
-/// damit ihre Dateien ersetzt werden können; das Setup startet sie nach der
-/// Installation wieder (siehe windows/installer/lernen.iss). `false`, wenn
-/// Download oder Start scheitern – dann bleibt die App offen.
-Future<bool> installUpdate(String setupUrl, {http.Client? client, void Function(double progress)? onProgress}) async {
-  if (!Platform.isWindows) return false;
-  final File setup;
-  try {
-    final dir = await Directory.systemTemp.createTemp('lernen-update-');
-    setup = await downloadSetup(setupUrl, dir, client: client, onProgress: onProgress);
-  } catch (_) {
-    return false;
-  }
-  try {
-    await Process.start(
-      setup.path,
-      const ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
-      mode: ProcessStartMode.detached,
-    );
-  } catch (_) {
-    return false;
-  }
-  exit(0);
-}
+/// Windows (Setup, siehe windows/installer/lernen.iss) und Android (APK)
+/// lassen sich direkt aus der App aktualisieren.
+bool get canInstallUpdateInApp => Platform.isWindows || Platform.isAndroid;
 
-/// Lädt das Setup nach [dir] und prüft grob, dass wirklich ein Programm
-/// ankam (Windows-Programme beginnen mit "MZ") und keine Fehlerseite.
-Future<File> downloadSetup(
-  String url,
-  Directory dir, {
+const _androidChannel = MethodChannel('lernen/update');
+
+/// Lädt das Update herunter und installiert es:
+/// - Windows: Setup still starten und die App beenden, damit ihre Dateien
+///   ersetzt werden können; das Setup startet sie danach wieder.
+/// - Android: APK an den System-Installer übergeben ("Aktualisieren?"). Die
+///   APK ist immer mit demselben Schlüssel signiert (android/app/
+///   debug.keystore), deshalb installiert sie über die alte App, die Daten
+///   bleiben.
+Future<UpdateInstallResult> installUpdate(
+  String url, {
+  int? buildNumber,
   http.Client? client,
   void Function(double progress)? onProgress,
 }) async {
-  final http0 = client ?? http.Client();
-  final response = await http0.send(http.Request('GET', Uri.parse(url)));
+  if (Platform.isWindows) {
+    final File setup;
+    try {
+      final dir = await Directory.systemTemp.createTemp('lernen-update-');
+      setup = await downloadUpdateFile(url, dir,
+          fileName: 'Lernen-Setup.exe', magic: windowsExeMagic, client: client, onProgress: onProgress);
+    } catch (_) {
+      return UpdateInstallResult.failed;
+    }
+    try {
+      await Process.start(
+        setup.path,
+        const ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
+        mode: ProcessStartMode.detached,
+      );
+    } catch (_) {
+      return UpdateInstallResult.failed;
+    }
+    exit(0);
+  }
+  if (Platform.isAndroid) {
+    try {
+      // Im Cache-Ordner (siehe android/app/src/main/res/xml/update_paths.xml);
+      // derselbe Build wird nicht doppelt geladen, z.B. wenn erst noch die
+      // Erlaubnis zum Installieren fehlte.
+      final dir = Directory('${(await getTemporaryDirectory()).path}/updates');
+      final name = 'Lernen-${buildNumber ?? 'neu'}.apk';
+      final existing = File('${dir.path}/$name');
+      final apk = buildNumber != null && await hasMagic(existing, apkMagic)
+          ? existing
+          : await () async {
+              if (await dir.exists()) await dir.delete(recursive: true);
+              await dir.create(recursive: true);
+              return downloadUpdateFile(url, dir,
+                  fileName: name, magic: apkMagic, client: client, onProgress: onProgress);
+            }();
+      final status = await _androidChannel.invokeMethod<String>('installApk', {'path': apk.path});
+      return switch (status) {
+        'started' => UpdateInstallResult.started,
+        'needsPermission' => UpdateInstallResult.needsPermission,
+        _ => UpdateInstallResult.failed,
+      };
+    } catch (_) {
+      return UpdateInstallResult.failed;
+    }
+  }
+  return UpdateInstallResult.failed;
+}
+
+/// Windows-Programme beginnen mit "MZ", APKs (ZIP) mit "PK".
+const windowsExeMagic = [0x4D, 0x5A];
+const apkMagic = [0x50, 0x4B];
+
+Future<bool> hasMagic(File file, List<int> magic) async {
+  if (!await file.exists()) return false;
+  final head = await file.openRead(0, magic.length).expand((b) => b).toList();
+  return head.length == magic.length && [for (var i = 0; i < magic.length; i++) head[i] == magic[i]].every((b) => b);
+}
+
+/// Lädt [url] als [fileName] nach [dir] und prüft über die ersten Bytes
+/// ([magic]), dass wirklich die erwartete Datei ankam und keine Fehlerseite.
+Future<File> downloadUpdateFile(
+  String url,
+  Directory dir, {
+  required String fileName,
+  required List<int> magic,
+  http.Client? client,
+  void Function(double progress)? onProgress,
+}) async {
+  final httpClient = client ?? http.Client();
+  final response = await httpClient.send(http.Request('GET', Uri.parse(url)));
   if (response.statusCode != 200) {
     throw HttpException('Download fehlgeschlagen (${response.statusCode})', uri: Uri.parse(url));
   }
-  final file = File('${dir.path}${Platform.pathSeparator}Lernen-Setup.exe');
+  final file = File('${dir.path}${Platform.pathSeparator}$fileName');
   final sink = file.openWrite();
   final total = response.contentLength ?? 0;
   var received = 0;
-  final head = <int>[];
   try {
     await for (final chunk in response.stream) {
-      if (head.length < 2) head.addAll(chunk.take(2 - head.length));
       sink.add(chunk);
       received += chunk.length;
       if (total > 0) onProgress?.call(received / total);
@@ -60,9 +112,9 @@ Future<File> downloadSetup(
   } finally {
     await sink.close();
   }
-  if (head.length < 2 || head[0] != 0x4D || head[1] != 0x5A) {
+  if (!await hasMagic(file, magic)) {
     await file.delete();
-    throw const FormatException('Die heruntergeladene Datei ist kein Windows-Programm.');
+    throw const FormatException('Die heruntergeladene Datei ist nicht das erwartete Update.');
   }
   return file;
 }
