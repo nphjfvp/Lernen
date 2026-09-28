@@ -50,4 +50,10 @@ class AppTheme {
 
   static final light = _build(AppColors.light, Brightness.light);
   static final dark = _build(AppColors.dark, Brightness.dark);
+
+  /// Theme für eine in den Einstellungen wählbare Farbpalette (siehe
+  /// [AppThemeSkin]) – Grundlage für `MaterialApp.theme`/`.darkTheme` in
+  /// main.dart, das je nach [AppSettings.themeSkin] neu gebaut wird.
+  static ThemeData forSkin(AppThemeSkin skin, Brightness brightness) =>
+      _build(AppColors.of(skin, brightness), brightness);
 }

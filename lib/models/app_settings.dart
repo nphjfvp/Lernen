@@ -70,11 +70,20 @@ class AppSettings {
   /// Zugangsdaten bleibt der PDF-Sync aus.
   final PdfStorageConfig pdfStorage;
 
+  /// Gewählte Farbpalette in den Einstellungen, als `name` von
+  /// `AppThemeSkin` (siehe theme/app_colors.dart) – als reiner String
+  /// statt des Enums selbst, damit dieses Modell ohne Flutter-Import
+  /// testbar bleibt (wie [dailyReminderMinuteOfDay]). Ein unbekannter Wert
+  /// (älterer Datensatz, kaputter Sync) fällt beim Lesen über
+  /// `themeSkinFromName` auf den Standard zurück, nie auf einen Absturz.
+  final String themeSkin;
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
   static const defaultReminderMinuteOfDay = 18 * 60;
   static const defaultCheckpointQuizPageInterval = 5;
+  static const defaultThemeSkin = 'klar';
 
   const AppSettings({
     this.openRouterApiKey,
@@ -93,6 +102,7 @@ class AppSettings {
     this.deviceId,
     this.lastSyncedPushId,
     this.pdfStorage = const PdfStorageConfig(),
+    this.themeSkin = defaultThemeSkin,
   });
 
   bool get hasApiKey =>
@@ -118,6 +128,7 @@ class AppSettings {
     String? deviceId,
     String? lastSyncedPushId,
     PdfStorageConfig? pdfStorage,
+    String? themeSkin,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -136,6 +147,7 @@ class AppSettings {
       deviceId: deviceId ?? this.deviceId,
       lastSyncedPushId: lastSyncedPushId ?? this.lastSyncedPushId,
       pdfStorage: pdfStorage ?? this.pdfStorage,
+      themeSkin: themeSkin ?? this.themeSkin,
     );
   }
 
@@ -156,6 +168,7 @@ class AppSettings {
         'deviceId': deviceId,
         'lastSyncedPushId': lastSyncedPushId,
         'pdfStorage': pdfStorage.toMap(),
+        'themeSkin': themeSkin,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -184,5 +197,6 @@ class AppSettings {
         pdfStorage: map['pdfStorage'] is Map
             ? PdfStorageConfig.fromMap(Map<String, dynamic>.from(map['pdfStorage'] as Map))
             : const PdfStorageConfig(),
+        themeSkin: map['themeSkin'] as String? ?? defaultThemeSkin,
       );
 }

@@ -120,4 +120,27 @@ void main() {
       expect(AppSettings.fromMap(map).checkpointQuizPageInterval, 5);
     });
   });
+
+  group('AppSettings.themeSkin', () {
+    test('defaultet auf "klar"', () {
+      expect(const AppSettings().themeSkin, 'klar');
+    });
+
+    test('Round-Trip erhält den gewählten Skin', () {
+      const settings = AppSettings(themeSkin: 'lebendig');
+      expect(AppSettings.fromMap(settings.toMap()).themeSkin, 'lebendig');
+    });
+
+    test('ist abwärtskompatibel zu älteren Datensätzen ohne das Feld', () {
+      final map = const AppSettings().toMap()..remove('themeSkin');
+      expect(AppSettings.fromMap(map).themeSkin, 'klar');
+    });
+
+    test('copyWith ändert nur themeSkin', () {
+      const settings = AppSettings(themeSkin: 'ruhig');
+      final updated = settings.copyWith(themeSkin: 'lebendig');
+      expect(updated.themeSkin, 'lebendig');
+      expect(updated.dailyReminderEnabled, settings.dailyReminderEnabled);
+    });
+  });
 }

@@ -17,6 +17,7 @@ import 'repositories/settings_repository.dart';
 import 'repositories/summary_repository.dart';
 import 'services/auto_sync_service.dart';
 import 'services/reminder_service.dart';
+import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'ui/root_shell.dart';
 
@@ -83,12 +84,22 @@ class LernenApp extends StatelessWidget {
           create: (ctx) => AutoSyncService(settings: settingsRepository, auth: ctx.read<AuthRepository>())..start(),
         ),
       ],
-      child: MaterialApp(
-        title: 'Lernen',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
-        home: const RootShell(),
+      // Builder statt MaterialApp direkt: liest die gewählte Farbpalette
+      // (siehe SettingsScreen "Erscheinungsbild") reaktiv aus den
+      // Einstellungen – ein Wechsel dort baut das Theme sofort neu, ohne
+      // App-Neustart. Hell/Dunkel bleibt weiterhin die Systemeinstellung
+      // (kein explizites `themeMode`, Standard ist `ThemeMode.system`).
+      child: Builder(
+        builder: (context) {
+          final skin = themeSkinFromName(context.watch<SettingsRepository>().settings.themeSkin);
+          return MaterialApp(
+            title: 'Lernen',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.forSkin(skin, Brightness.light),
+            darkTheme: AppTheme.forSkin(skin, Brightness.dark),
+            home: const RootShell(),
+          );
+        },
       ),
     );
   }

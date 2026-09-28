@@ -386,7 +386,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 593 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 610 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -449,6 +449,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Cloud-Speicher), „Kurze Lerneinheit“ (`miniLesson`, per
     `FlashcardRepository.updateStudyAids` am gespeicherten Stand), Sokrates-
     Dialog bei oft falschen Karten und im Fehlertagebuch.
+22. Drei Farb-Skins ("Ruhig", "Klar", "Lebendig") unter Einstellungen →
+    Erscheinungsbild, "Klar" als neuer Standard, jederzeit ohne Neustart
+    umschaltbar. Bewusst nur Farben (Nutzer-Entscheidung) – Layout, Formen
+    und Typografie bleiben in allen drei Skins identisch. Jeder Skin ist ein
+    eigenes, vollständiges `AppColors`-Set für Hell/Dunkel
+    (`AppColors.of(AppThemeSkin, Brightness)`), `AppTheme.forSkin(...)` baut
+    das passende `ThemeData`; `main.dart` liest den gewählten Skin reaktiv aus
+    `SettingsRepository` (kein Neustart nötig). `AppSettings.themeSkin`
+    (Standard `'klar'`) reist über Konto-Sync/Sync-Code mit, ein leerer/
+    fehlender Cloud-Wert überschreibt nie die lokale Wahl. Grundlage waren
+    drei Hell/Dunkel-Mockup-Paare (Design-Richtungen A/B/C), aus denen der
+    Nutzer B ("Klar") als Vorlage bestätigt hat.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

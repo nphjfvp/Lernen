@@ -625,6 +625,22 @@ usw.) – Screens greifen darauf zu statt Farben zu hardcoden. Ursprung ist
 eine Design-Grundlage (Light/Dark-Mockups) für Fächer-Liste, Modul-Detail,
 Daily Quiz und Einstellungen, die 1:1 in echten App-Code übernommen wurde.
 
+#### Farb-Skins (Einstellungen → Erscheinungsbild)
+
+Neben dem oben beschriebenen Standard-Look ("Ruhig") gibt es zwei weitere,
+komplett eigenständige Farbpaletten – **"Klar"** (kühles Blau/Grau, Standard)
+und **"Lebendig"** (warmes Terrakotta) –, zwischen denen jederzeit unter
+Einstellungen → Erscheinungsbild gewechselt werden kann, ohne die App neu zu
+starten. Nur die Farben ändern sich; Layout, Formen und Typografie bleiben in
+allen drei Skins identisch. Jeder Skin definiert einen eigenen, in sich
+stimmigen Satz aller 17 `AppColors`-Rollen für Hell- und Dunkelmodus
+(`AppColors.of(skin, brightness)` in `lib/theme/app_colors.dart`), wobei
+Status-/Ampelfarben (Erfolg/Warnung/Fehler) und die Akzentfarbe je Skin immer
+klar unterscheidbar bleiben. Die Wahl wird in `AppSettings.themeSkin`
+gespeichert, reist über Konto-Sync/Sync-Code mit (ein leerer Cloud-Wert
+überschreibt nie eine lokal getroffene Wahl) und wird beim App-Start in
+`main.dart` reaktiv aus der `SettingsRepository` gelesen.
+
 ## Setup
 
 ### 1. Flutter

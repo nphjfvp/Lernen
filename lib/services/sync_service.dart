@@ -55,6 +55,7 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'rollingContextEnabled': settings.rollingContextEnabled,
       'checkpointQuizPageInterval': settings.checkpointQuizPageInterval,
       'bestSprintScore': settings.bestSprintScore,
+      'themeSkin': settings.themeSkin,
     };
 
 /// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
@@ -84,6 +85,7 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     rollingContextEnabled: synced['rollingContextEnabled'] as bool?,
     checkpointQuizPageInterval: interval != null && interval > 0 ? interval : null,
     bestSprintScore: bestSprint > current.bestSprintScore ? bestSprint : null,
+    themeSkin: (synced['themeSkin'] as String?)?.trim().isNotEmpty == true ? synced['themeSkin'] as String : null,
   );
 }
 

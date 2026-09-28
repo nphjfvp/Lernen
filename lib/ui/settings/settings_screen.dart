@@ -415,6 +415,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(24, 14, 24, 160),
                 children: [
+                  _SectionLabel('Erscheinungsbild'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Nur die Farben ändern sich – Aufbau und Bedienung bleiben gleich. '
+                    'Hell/Dunkel folgt weiterhin der Systemeinstellung.',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                  ),
+                  const SizedBox(height: 12),
+                  _ThemeSkinPicker(
+                    value: themeSkinFromName(settings.themeSkin),
+                    onChanged: (skin) => context
+                        .read<SettingsRepository>()
+                        .update(settings.copyWith(themeSkin: skin.name)),
+                  ),
+                  const SizedBox(height: 26),
                   _SectionLabel('KI (BYOK)'),
                   const SizedBox(height: 4),
                   Text(
@@ -830,6 +845,85 @@ class _SectionLabel extends StatelessWidget {
       child: Text(
         text.toUpperCase(),
         style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, letterSpacing: 0.04, color: c.inkMuted),
+      ),
+    );
+  }
+}
+
+/// Drei Farbpaletten zur Auswahl (siehe theme/app_colors.dart) – jede als
+/// Kachel mit Farbpunkt + Name, ausgewählte Kachel mit Rahmen/Häkchen.
+/// Ändert Form/Layout der App NICHT, nur die Tönung.
+class _ThemeSkinPicker extends StatelessWidget {
+  const _ThemeSkinPicker({required this.value, required this.onChanged});
+
+  final AppThemeSkin value;
+  final ValueChanged<AppThemeSkin> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final skin in AppThemeSkin.values) ...[
+          if (skin != AppThemeSkin.values.first) const SizedBox(width: 10),
+          Expanded(
+            child: _ThemeSkinTile(
+              key: ValueKey('theme-skin-${skin.name}'),
+              skin: skin,
+              selected: skin == value,
+              onTap: () => onChanged(skin),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ThemeSkinTile extends StatelessWidget {
+  const _ThemeSkinTile({super.key, required this.skin, required this.selected, required this.onTap});
+
+  final AppThemeSkin skin;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+        decoration: BoxDecoration(
+          color: selected ? c.accentSoft : c.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: selected ? c.accent : c.border, width: selected ? 1.5 : 1),
+        ),
+        child: Column(
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(color: skin.previewSolid, shape: BoxShape.circle),
+                ),
+                if (selected)
+                  const Icon(Icons.check_rounded, size: 16, color: Colors.white),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              skin.label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? c.accentOnSoft : c.ink,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

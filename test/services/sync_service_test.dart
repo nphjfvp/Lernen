@@ -132,6 +132,23 @@ void main() {
     });
   });
 
+  group('themeSkin', () {
+    test('reist mit syncedSettingsOf und wird gemerged', () {
+      const settings = AppSettings(themeSkin: 'lebendig');
+      final synced = syncedSettingsOf(settings, includeSecrets: false);
+      expect(synced['themeSkin'], 'lebendig');
+      final merged = mergeAiSettings(const AppSettings(), synced);
+      expect(merged.themeSkin, 'lebendig');
+    });
+
+    test('ein leerer/fehlender Cloud-Wert lässt den lokal gewählten Skin stehen', () {
+      const current = AppSettings(themeSkin: 'ruhig');
+      expect(mergeAiSettings(current, {'themeSkin': null}).themeSkin, 'ruhig');
+      expect(mergeAiSettings(current, {}).themeSkin, 'ruhig');
+      expect(mergeAiSettings(current, {'themeSkin': ''}).themeSkin, 'ruhig');
+    });
+  });
+
   group('Download-Schutz', () {
     test('Cloud-Stand einer neueren App-Version wird nicht gelesen', () {
       expect(() => checkCloudFormat({'format': SyncService.syncFormat + 1}), throwsA(isA<SyncException>()));
