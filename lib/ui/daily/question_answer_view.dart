@@ -636,25 +636,37 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   static Widget _smallSpinner() =>
       const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2));
 
-  /// "Tipp" vor dem Antworten – ein Denkanstoß ohne Lösung. Eine danach
-  /// richtige Antwort zählt nur als "Schwer" (siehe [QuestionAnswerView.onComplete]).
+  /// "Im Skript" (jederzeit, auch ohne KI) + "Tipp" vor dem Antworten – ein
+  /// Denkanstoß ohne Lösung. Eine danach richtige Antwort zählt nur als
+  /// "Schwer" (siehe [QuestionAnswerView.onComplete]).
   Widget _buildHintArea(AppColors c) {
-    if (widget.examMode || !_aiHelpAvailable) return const SizedBox.shrink();
+    if (widget.examMode) return const SizedBox.shrink();
     final hint = _hint;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (hint == null)
-            TextButton.icon(
-              onPressed: _hintLoading ? null : _loadHint,
-              icon: _hintLoading ? _smallSpinner() : const Icon(Icons.lightbulb_outline, size: 18),
-              label: const Text('Tipp'),
-            )
-          else
-            _AiHelpBox(icon: Icons.lightbulb_outline, text: hint, color: c.warn, background: c.warnSoft),
-          if (_aiHelpError != null)
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SourceLinkButton(card: widget.card),
+              if (_aiHelpAvailable && hint == null)
+                TextButton.icon(
+                  onPressed: _hintLoading ? null : _loadHint,
+                  icon: _hintLoading ? _smallSpinner() : const Icon(Icons.lightbulb_outline, size: 18),
+                  label: const Text('Tipp'),
+                ),
+            ],
+          ),
+          if (_aiHelpAvailable && hint != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _AiHelpBox(icon: Icons.lightbulb_outline, text: hint, color: c.warn, background: c.warnSoft),
+            ),
+          if (_aiHelpAvailable && _aiHelpError != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(_aiHelpError!, style: TextStyle(fontSize: 12, color: c.danger)),
@@ -745,6 +757,11 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     if (!_webViewAvailable) return _buildFlashcard(c);
     return Column(
       children: [
+        if (!_checked && !widget.examMode)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Align(alignment: Alignment.centerLeft, child: SourceLinkButton(card: widget.card)),
+          ),
         if (_webViewLoading) const LinearProgressIndicator(minHeight: 2),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
         if (_checked)

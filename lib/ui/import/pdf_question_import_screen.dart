@@ -22,6 +22,8 @@ import '../widgets/safe_set_state.dart';
 
 enum _Step { pick, scanning, preview }
 
+enum _UncertainDecision { keep, skip }
+
 /// "Fragen aus PDF importieren": die KI sucht jede Seite einer PDF nach den
 /// dort vorhandenen Fragen und Aufgaben ab (Altklausur, Übungsblatt, Fragen
 /// auf Folien) und übernimmt sie – vorher wählt man, ob wirklich jede Frage
@@ -225,9 +227,49 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     });
   }
 
+  /// Fragen, bei denen die KI eine präzisere Struktur wollte (z.B.
+  /// single_choice/free_text/html), ihre Antwort dafür aber unvollständig
+  /// war, landen NICHT stumm als schlichte Karteikarte: am Ende des Imports
+  /// wird gefragt, wie damit verfahren werden soll – trotzdem als Karteikarte
+  /// speichern oder weglassen (in der Vorschau bleiben sie ausgewählt, damit
+  /// man sie vor dem Import auch selbst noch abwählen oder als html-Frage
+  /// nachbauen kann).
+  Future<_UncertainDecision?> _resolveUncertainQuestions(int count) => showDialog<_UncertainDecision>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('$count ${count == 1 ? 'Frage' : 'Fragen'} unsicher erkannt'),
+          content: Text(
+            'Bei $count ${count == 1 ? 'Frage konnte' : 'Fragen konnten'} die KI die eigentlich passende '
+            'Struktur (z.B. Auswahl, Freitext oder eine interaktive Aufgabe) nicht sauber umsetzen – sie '
+            'wurden stattdessen als einfache Karteikarte vorbereitet. Trotzdem so speichern (später in der '
+            'Kartenliste bearbeitbar) oder weglassen?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+            OutlinedButton(
+              onPressed: () => Navigator.of(ctx).pop(_UncertainDecision.skip),
+              child: const Text('Weglassen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(_UncertainDecision.keep),
+              child: const Text('Als Karteikarte speichern'),
+            ),
+          ],
+        ),
+      );
+
   Future<void> _import() async {
-    final selected = _questions.where((q) => q.selected).toList();
+    var selected = _questions.where((q) => q.selected).toList();
     if (selected.isEmpty) return;
+    final uncertain = selected.where((q) => q.typeDowngraded).toList();
+    if (uncertain.isNotEmpty) {
+      final decision = await _resolveUncertainQuestions(uncertain.length);
+      if (!mounted || decision == null) return;
+      if (decision == _UncertainDecision.skip) {
+        selected = selected.where((q) => !q.typeDowngraded).toList();
+        if (selected.isEmpty) return;
+      }
+    }
     setState(() => _saving = true);
     final material = _material ?? await _saveUploadedPdf();
     if (!mounted) return;
@@ -245,6 +287,18 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       _questions = [];
       _step = _Step.pick;
     });
+    if (material == null) {
+      // Das Arbeitsblatt konnte nicht gespeichert werden (z.B. kein
+      // Speicherplatz) – die Karten sind trotzdem da, nur "Im Skript" findet
+      // dafür keine exakte Seite mehr (nur noch die Textsuche über andere
+      // Materialien des Fachs, falls vorhanden).
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'Das Arbeitsblatt konnte nicht gespeichert werden – die Fragen sind trotzdem importiert, '
+            '„Im Skript“ findet dafür aber keine genaue Seite.'),
+        duration: Duration(seconds: 5),
+      ));
+    }
     final practice = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -566,6 +620,8 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
               children: [
                 _chip(c, q.type.label),
                 if (q.solutionByAi) _chip(c, 'Lösung von der KI', warn: true),
+                if (q.typeDowngraded)
+                  _chip(c, 'Unsicher: sollte ${q.requestedType?.label ?? 'ein anderer Typ'} sein', warn: true),
               ],
             ),
             if (q.imageBytes case final image?) ...[

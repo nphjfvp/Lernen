@@ -35,6 +35,14 @@ class ScannedQuestion {
   QuestionType get type => QuestionParsing.parseType(data['type'] as String?);
   String get front => (data['front'] ?? '').toString();
 
+  /// Die KI wollte einen präziseren Typ (single_choice/free_text/html/…),
+  /// aber ihre Antwort war unvollständig – normalizeGeneratedFlashcard hat
+  /// deshalb auf eine einfache Karteikarte zurückgestuft (siehe dort). Die
+  /// Vorschau zeigt das an statt es stumm zu verschlucken.
+  bool get typeDowngraded => data['typeDowngraded'] == true;
+  QuestionType? get requestedType =>
+      data['requestedType'] == null ? null : QuestionParsing.parseType(data['requestedType'] as String?);
+
   /// Aus der Seite ausgeschnittene Abbildung (PNG, Base64), falls die Frage
   /// eine braucht.
   String? get imageBase64 => data['imageBase64'] as String?;

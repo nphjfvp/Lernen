@@ -630,6 +630,14 @@ anderen Typ passt – bevor du "free_text" wählst, prüfe der Reihe nach:
 Enthält das Dokument KEINE erkennbare Musterlösung zu einer Frage, überspringe
 diese Frage (keine Karte ohne bekannte Antwort erzeugen).
 
+Prüfe VOR der Wahl, ob du den gewählten Typ wirklich vollständig ausfüllen
+kannst (single_choice/multiple_choice: mindestens 2 Optionen, genau die
+richtige(n) markiert; html: der exakte postMessage-Aufruf ist enthalten;
+free_text: "correctText" ist nicht leer) – bist du dir nicht sicher, wähle
+lieber den nächstpassenden Typ, den du sicher vollständig befüllen kannst,
+statt einen Typ zu behaupten, den du nur halb ausfüllst: eine unvollständige
+Angabe wird sonst automatisch auf eine einfache Karteikarte zurückgestuft.
+
 Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 \$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
 (z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
@@ -708,6 +716,13 @@ Auffangtyp für alles; prüfe der Reihe nach:
    "correctText": "..." (mehrere akzeptierte Varianten mit ";").
 7. Längere Erklär-, Herleitungs- oder Diskussionsaufgabe ohne kurze
    Antwort -> "flashcard": "back": Musterlösung, knapp und vollständig.
+Prüfe VOR der Wahl, ob du den Typ wirklich vollständig ausfüllen kannst
+(single_choice/multiple_choice: mindestens 2 Optionen, genau die richtige(n)
+markiert; html: der exakte postMessage-Aufruf ist enthalten; free_text:
+"correctText" ist nicht leer) – bist du dir nicht sicher, wähle lieber den
+nächstpassenden Typ, den du sicher vollständig befüllen kannst, statt einen
+Typ zu behaupten, den du nur halb ausfüllst: eine unvollständige Angabe wird
+sonst automatisch auf eine einfache Karteikarte zurückgestuft.
 
 HTML: "htmlContent" enthält NUR den <body>-Inhalt (kein
 <html>/<head>/<style>-Rahmen) als eigenständige, interaktive Seite: reines

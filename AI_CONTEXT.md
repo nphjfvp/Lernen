@@ -386,7 +386,7 @@ Nur für Karten mit `variantChain`, nur bei `isCorrect != null` und ohne Tipp.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 620 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 627 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -467,6 +467,25 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `AppThemeModePreference.themeMode` (`lib/theme/app_theme.dart`) auf
     `MaterialApp.themeMode` gemappt, reaktiv aus `SettingsRepository` gelesen
     wie der Farb-Skin, reist ebenso über Sync/Sync-Code mit.
+24. "Im Skript" beim Lernen jetzt schon VOR dem Antworten sichtbar (neuer
+    `SourceLinkButton`, `lib/ui/study/study_aids.dart`), nicht mehr erst nach
+    dem Beantworten/Umdrehen – zusätzlich auch in der Durchsicht nach einer
+    Probeklausur. Weiterhin ausgenommen: die laufende Probeklausur selbst
+    (`examMode`). `PdfQuestionImportScreen` meldet zusätzlich sichtbar, wenn
+    das hochgeladene Arbeitsblatt selbst nicht gespeichert werden konnte
+    (statt die Karten stillschweigend ohne funktionierende Quellseite zu
+    importieren).
+25. Import-Fragetyp-Fallback nicht mehr stumm: `QuestionParsing.
+    normalizeGeneratedFlashcard` markiert einen Eintrag, dessen erklärter Typ
+    (single_choice/free_text/html/…) unvollständig war und deshalb auf
+    `flashcard` zurückgestuft wurde (`typeDowngraded`/`requestedType`).
+    `PdfQuestionImportScreen` und `ReviewScreen` zeigen das in der Vorschau
+    als Warnhinweis und fragen vor dem Speichern, wie damit verfahren werden
+    soll (trotzdem speichern oder weglassen) – vorher landeten solche Karten
+    ohne jeden Hinweis als einfache Karteikarte in der App. Die Import-
+    Prompts (`ai_service.dart`) wurden zusätzlich verschärft: die KI soll vor
+    der Typwahl selbst prüfen, ob sie ihn wirklich vollständig ausfüllen
+    kann, statt einen Typ zu behaupten, den sie nur halb befüllt.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

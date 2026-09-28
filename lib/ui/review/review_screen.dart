@@ -51,6 +51,8 @@ enum _Step { pick, generating, preview }
 /// hinterlegten OpenRouter-Key.
 enum _GenerateMode { create, import, pasteJson }
 
+enum _UncertainDecision { keep, skip }
+
 class _PickedFile {
   _PickedFile({
     required this.fileName,
@@ -561,8 +563,49 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
   /// sonst Materialien, Konzepte und Karten doppelt an.
   bool _saving = false;
 
+  /// Fragen, bei denen die KI eine präzisere Struktur wollte (single_choice/
+  /// free_text/html/…), ihre Antwort dafür aber unvollständig war, landen
+  /// NICHT stumm als schlichte Karteikarte: vor dem Speichern wird gefragt,
+  /// wie damit verfahren werden soll (siehe QuestionParsing.
+  /// normalizeGeneratedFlashcard, dieselbe Markierung wie im PDF-Import).
+  Future<_UncertainDecision?> _resolveUncertainFlashcards(int count) => showDialog<_UncertainDecision>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('$count ${count == 1 ? 'Karte' : 'Karten'} unsicher erkannt'),
+          content: Text(
+            'Bei $count ${count == 1 ? 'Frage konnte' : 'Fragen konnten'} die KI die eigentlich passende '
+            'Struktur (z.B. Auswahl, Freitext oder eine interaktive Aufgabe) nicht sauber umsetzen – sie '
+            'wurden stattdessen als einfache Karteikarte vorbereitet. Trotzdem so speichern (später in der '
+            'Kartenliste bearbeitbar) oder weglassen?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+            OutlinedButton(
+              onPressed: () => Navigator.of(ctx).pop(_UncertainDecision.skip),
+              child: const Text('Weglassen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(_UncertainDecision.keep),
+              child: const Text('Als Karteikarte speichern'),
+            ),
+          ],
+        ),
+      );
+
   Future<void> _save() async {
     if (_saving) return;
+    final flashcards = (_result?['flashcards'] as List?) ?? const [];
+    final uncertain = flashcards.where((raw) => raw is Map && raw['typeDowngraded'] == true).toList();
+    if (uncertain.isNotEmpty) {
+      final decision = await _resolveUncertainFlashcards(uncertain.length);
+      if (!mounted || decision == null) return;
+      if (decision == _UncertainDecision.skip) {
+        setState(() {
+          _result!['flashcards'] =
+              flashcards.where((raw) => !(raw is Map && raw['typeDowngraded'] == true)).toList();
+        });
+      }
+    }
     setState(() => _saving = true);
     try {
       await _saveResult();
@@ -1244,11 +1287,25 @@ class _PreviewView extends StatelessWidget {
                 final f = Map<String, dynamic>.from(raw as Map);
                 final type = QuestionParsing.parseType(f['type'] as String?);
                 final image = f['imageBase64'];
+                final downgraded = f['typeDowngraded'] == true;
+                final requestedType =
+                    f['requestedType'] == null ? null : QuestionParsing.parseType(f['requestedType'] as String?);
                 return Card(
                   child: ListTile(
                     leading: Icon(_iconFor(type)),
                     title: Text((f['front'] ?? '').toString()),
-                    subtitle: Text('${type.label} · ${_answerPreview(f, type)}'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${type.label} · ${_answerPreview(f, type)}'),
+                        if (downgraded)
+                          Text(
+                            '⚠️ Unsicher: sollte ${requestedType?.label ?? 'ein anderer Typ'} sein, '
+                            'die KI-Antwort war dafür unvollständig.',
+                            style: const TextStyle(color: Colors.orange, fontSize: 11.5),
+                          ),
+                      ],
+                    ),
                     trailing: image is String ? _Base64Thumbnail(image) : null,
                   ),
                 );

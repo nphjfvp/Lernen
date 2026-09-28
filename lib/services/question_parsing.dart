@@ -190,6 +190,13 @@ class QuestionParsing {
       'front': front,
       'back': fallbackAnswer,
       if (raw['conceptTitle'] != null) 'conceptTitle': raw['conceptTitle'].toString(),
+      // Die KI wollte hier einen präziseren Typ (single_choice/free_text/
+      // html/…), aber die Antwort war unvollständig – markiert, damit der
+      // Import das nicht stumm verschluckt, sondern anzeigt/nachfragt statt
+      // einfach eine schlichte Karteikarte zu speichern (siehe
+      // PdfQuestionImportScreen/ReviewScreen).
+      if (type != QuestionType.flashcard) 'typeDowngraded': true,
+      if (type != QuestionType.flashcard) 'requestedType': type.name,
     };
   }
 

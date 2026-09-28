@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/flashcard.dart';
+import 'package:lernen/models/material_item.dart';
 import 'package:lernen/repositories/flashcard_repository.dart';
 import 'package:lernen/repositories/lecture_unit_repository.dart';
+import 'package:lernen/repositories/material_repository.dart';
 import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/theme/app_colors.dart';
 import 'package:lernen/ui/exam/mock_exam_screen.dart';
@@ -20,7 +22,7 @@ class _FakePathProviderPlatform extends PathProviderPlatform with MockPlatformIn
   Future<String?> getApplicationSupportPath() async => path;
 }
 
-Flashcard _choice(String id, {required bool firstIsCorrect}) => Flashcard(
+Flashcard _choice(String id, {required bool firstIsCorrect, String? sourceMaterialId}) => Flashcard(
       id: id,
       moduleId: 'exam-m1',
       front: 'Frage $id',
@@ -32,6 +34,8 @@ Flashcard _choice(String id, {required bool firstIsCorrect}) => Flashcard(
         QuizOption(text: 'Option A $id', isCorrect: firstIsCorrect),
         QuizOption(text: 'Option B $id', isCorrect: !firstIsCorrect),
       ],
+      sourceMaterialId: sourceMaterialId,
+      sourcePage: sourceMaterialId != null ? 1 : null,
     );
 
 void main() {
@@ -85,5 +89,66 @@ void main() {
 
     expect(find.text('2 von 2 richtig (100 %)'), findsOneWidget);
     expect(find.text('1,0'), findsOneWidget);
+  });
+
+  testWidgets('Durchsicht nach der Probeklausur bietet "Im Skript" pro Frage an', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('lernen_exam_review_test_');
+    PathProviderPlatform.instance = _FakePathProviderPlatform(dir.path);
+
+    final flashcards = FlashcardRepository();
+    final materials = MaterialRepository();
+    await tester.runAsync(() async {
+      await flashcards.saveAll([
+        _choice('q1', firstIsCorrect: true, sourceMaterialId: 'skript-exam'),
+        _choice('q2', firstIsCorrect: true),
+      ]);
+      await materials.save(MaterialItem(
+        id: 'skript-exam',
+        moduleId: 'exam-m1',
+        fileName: 'Uebungsblatt.pdf',
+        kind: MaterialKind.exercise,
+        extractedText: 'x',
+        createdAt: DateTime(2026, 1, 1),
+      ));
+    });
+
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: flashcards),
+        ChangeNotifierProvider.value(value: materials),
+        ChangeNotifierProvider(create: (_) => LectureUnitRepository()),
+        ChangeNotifierProvider(create: (_) => SettingsRepository()),
+      ],
+      child: MaterialApp(
+        theme: ThemeData(extensions: const [AppColors.light]),
+        home: const MockExamScreen(moduleId: 'exam-m1', moduleName: 'Testfach'),
+      ),
+    ));
+
+    Future<void> settle() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    await settle();
+    await tester.tap(find.text('Ohne'));
+    await tester.pump();
+    await tester.tap(find.text('Probeklausur starten'));
+    await tester.pump();
+
+    for (var i = 0; i < 2; i++) {
+      await tester.tap(find.textContaining('Option A'));
+      await tester.pump();
+      await tester.tap(find.text('Antwort abgeben'));
+      await settle();
+    }
+
+    expect(find.text('2 von 2 richtig (100 %)'), findsOneWidget);
+    await tester.tap(find.text('Frage q1'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('aid-source-early')), findsOneWidget);
+    expect(find.text('Im Skript'), findsOneWidget);
   });
 }

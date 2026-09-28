@@ -954,6 +954,37 @@ Nachbereiten-Modus zu wechseln.
   einem großen Altbestand noch nicht eingeführter Bulk-generierter Karten
   verschwinden und tagelang nicht im Daily Quiz auftauchen.
 
+### 5e. "Im Skript" schon während der Aufgabe, nicht erst danach
+
+Beim Lernen (Daily Quiz, Üben, Sprint, html-Fragen, Probeklausur-Durchsicht)
+lässt sich das Original-Arbeitsblatt/Skript jetzt schon SEHEN, WÄHREND man an
+der Aufgabe sitzt – nicht erst nach dem Antworten. Gerade bei aus einem
+Übungsblatt importierten Fragen transkribiert die KI die Aufgabenstellung
+nicht immer perfekt; der Button "Im Skript" (`SourceLinkButton` in
+`lib/ui/study/study_aids.dart`) springt über `SourceLocator`/`openMaterialAt`
+zur passenden Seite (exakt über `Flashcard.sourceMaterialId`/`sourcePage`,
+sonst über eine Textsuche als Vermutung) und ist jetzt zusätzlich schon VOR
+dem Beantworten sichtbar, sowie in der Durchsicht nach einer Probeklausur.
+Bewusst ausgenommen bleibt die laufende Probeklausur selbst (`examMode`) –
+wie in einer echten Klausur gibt es dort keine Hilfen während der Bearbeitung.
+
+### 5f. Unsichere Fragen beim Import: Fragetyp-Fallback sichtbar statt stumm
+
+Beim Import aus einer PDF (Altklausur/Übungsblatt, "Fragen aus PDF
+importieren" und der Import-Modus in Vorbereiten/Nachbereiten) prüft die KI
+je Frage der Reihe nach, ob sie sich sinngemäß in einen der bestehenden
+Fragetypen (Auswahl, Lückentext, Zuordnen, Freitext) übernehmen lässt, sonst
+ob sie sich als eigenständige interaktive **html**-Aufgabe nachbauen lässt,
+und wählt erst als letzten Ausweg eine schlichte Karteikarte
+(`_scanPdfQuestionsSystemPrompt`/`_importQuestionsSystemPrompt` in
+`lib/services/ai_service.dart`). Ist die Antwort der KI für den gewählten
+Typ unvollständig (z.B. eine Auswahlfrage ohne Optionen), wird das nicht mehr
+still auf eine Karteikarte heruntergestuft: `QuestionParsing.
+normalizeGeneratedFlashcard` markiert solche Einträge (`typeDowngraded` +
+`requestedType`), die Vorschau zeigt sie mit einem Warnhinweis ("Unsicher:
+sollte … sein"), und vor dem Speichern wird gefragt, wie damit verfahren
+werden soll: trotzdem als Karteikarte speichern oder weglassen.
+
 ### 6. Ausführen
 
 **Am einfachsten zum Ausprobieren: im Browser**, kein Visual Studio/Android

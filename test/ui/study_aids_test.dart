@@ -101,6 +101,49 @@ void main() {
     PathProviderPlatform.instance = _FakePathProviderPlatform(dir.path);
   });
 
+  group('"Im Skript" schon vor dem Antworten (nicht erst danach)', () {
+    Future<void> pump(WidgetTester tester, Flashcard card, {bool withMaterials = true, bool examMode = false}) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsRepository>(create: (_) => SettingsRepository()),
+          if (withMaterials) ChangeNotifierProvider(create: (_) => MaterialRepository()),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: QuestionAnswerView(
+              key: ValueKey(card.id),
+              card: card,
+              isNew: false,
+              examMode: examMode,
+              onComplete: ({selfGrade, isCorrect}) {},
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+    }
+
+    testWidgets('mit Material-Repository sichtbar, bevor "Prüfen" getippt wurde', (tester) async {
+      await pump(tester, _choice());
+      expect(find.byKey(const ValueKey('aid-source-early')), findsOneWidget);
+      expect(find.text('Im Skript'), findsOneWidget);
+    });
+
+    testWidgets('ohne Material-Repository nicht sichtbar', (tester) async {
+      await pump(tester, _choice(), withMaterials: false);
+      expect(find.byKey(const ValueKey('aid-source-early')), findsNothing);
+    });
+
+    testWidgets('in der Probeklausur (examMode) nicht sichtbar', (tester) async {
+      await pump(tester, _choice(), examMode: true);
+      expect(find.byKey(const ValueKey('aid-source-early')), findsNothing);
+    });
+  });
+
   group('Lernhilfen nach der Antwort', () {
     testWidgets('erstmals falsch: Lerneinheit ja, Sokrates noch nicht; ohne Material kein "Im Skript"', (tester) async {
       await _answerWrong(tester, _choice());

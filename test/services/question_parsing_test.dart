@@ -112,9 +112,11 @@ void main() {
       expect(fixed, isNotNull);
       expect(fixed!['type'], 'flashcard');
       expect(fixed['back'], 'Eigentliche Antwort');
+      // War schon als flashcard gemeint -> keine "Downgrade"-Markierung.
+      expect(fixed.containsKey('typeDowngraded'), isFalse);
     });
 
-    test('rettet eine single_choice ohne "options" über die Blanks-Lösung', () {
+    test('rettet eine single_choice ohne "options" über die Blanks-Lösung – markiert als unsicher/downgraded', () {
       final raw = {
         'type': 'single_choice',
         'front': 'Frage?',
@@ -124,6 +126,11 @@ void main() {
       expect(fixed, isNotNull);
       expect(fixed!['type'], 'flashcard');
       expect(fixed['back'], 'Die richtige Lösung');
+      // Die KI wollte single_choice, das ließ sich nicht validieren -> die
+      // Vorschau (PdfQuestionImportScreen/ReviewScreen) soll das anzeigen
+      // statt es stumm als Karteikarte zu verschlucken.
+      expect(fixed['typeDowngraded'], isTrue);
+      expect(fixed['requestedType'], 'singleChoice');
     });
 
     test('rettet über die als richtig markierten Optionen, wenn nur die fehlen', () {
@@ -135,8 +142,10 @@ void main() {
           {'text': 'Falsch', 'isCorrect': false},
         ],
       };
-      // Vollständig -> bleibt unverändert (kein Rettungsfall).
-      expect(QuestionParsing.normalizeGeneratedFlashcard(raw)!['options'], isNotNull);
+      // Vollständig -> bleibt unverändert (kein Rettungsfall, keine Markierung).
+      final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw)!;
+      expect(fixed['options'], isNotNull);
+      expect(fixed.containsKey('typeDowngraded'), isFalse);
     });
 
     test('gibt null zurück, wenn nirgends eine Antwort zu finden ist', () {
@@ -149,7 +158,7 @@ void main() {
       expect(QuestionParsing.normalizeGeneratedFlashcard(raw), isNull);
     });
 
-    test('fill_blank ohne nicht-leere Lücken wird über "back" gerettet', () {
+    test('fill_blank ohne nicht-leere Lücken wird über "back" gerettet – markiert als unsicher/downgraded', () {
       final raw = {
         'type': 'fill_blank',
         'front': 'Text mit ___ Lücke',
@@ -160,6 +169,8 @@ void main() {
       expect(fixed, isNotNull);
       expect(fixed!['type'], 'flashcard');
       expect(fixed['back'], 'Lösung');
+      expect(fixed['typeDowngraded'], isTrue);
+      expect(fixed['requestedType'], 'fillBlank');
     });
 
     test('drag_drop ohne dragPairs wird nicht gerettet, wenn keine Antwort auffindbar ist', () {
@@ -258,6 +269,9 @@ void main() {
       expect(fixed!['type'], 'free_text');
       expect(fixed['correctText'], 'Paris');
       expect(fixed.containsKey('blanks'), isFalse);
+      // Legitime Typ-Umwandlung (fill_blank -> free_text bleibt spezifisch),
+      // kein Rückfall auf die schlichte Karteikarte -> keine Markierung.
+      expect(fixed.containsKey('typeDowngraded'), isFalse);
     });
 
     test('Freitext mit nur leeren Alternativen ist unvollständig', () {
@@ -298,6 +312,10 @@ void main() {
       expect(fixed, isNotNull);
       expect(fixed!['type'], 'flashcard');
       expect(fixed['back'], 'Kurzfassung der Lösung');
+      // Genau der Fall aus der Nutzer-Rückmeldung: html sollte es sein, die
+      // KI-Antwort war unvollständig -> markiert statt stumm verschluckt.
+      expect(fixed['typeDowngraded'], isTrue);
+      expect(fixed['requestedType'], 'html');
     });
 
     test('gibt null zurück, wenn html ohne Rückkanal-Aufruf UND ohne jeden Fallback-Inhalt ist', () {

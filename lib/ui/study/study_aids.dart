@@ -95,6 +95,30 @@ Future<void> openSocratic(BuildContext context, Flashcard card, {String? wrongAn
   ));
 }
 
+/// "Im Skript" als eigenständiger, jederzeit sichtbarer Button – anders als
+/// [StudyAidsBar] nicht ans Beantworten gekoppelt: beim Durcharbeiten
+/// importierter Übungsaufgaben soll das Original-Arbeitsblatt schon VOR der
+/// Antwort nachlesbar sein (die KI transkribiert die Aufgabe beim Import oft
+/// nicht perfekt), nicht erst danach. Zeigt sich selbst nur, wenn überhaupt
+/// ein Material-Repository verfügbar ist.
+class SourceLinkButton extends StatelessWidget {
+  const SourceLinkButton({super.key, required this.card});
+
+  final Flashcard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasMaterials = context.read<MaterialRepository?>() != null;
+    if (!hasMaterials) return const SizedBox.shrink();
+    return TextButton.icon(
+      key: const ValueKey('aid-source-early'),
+      onPressed: () => openCardSource(context, card),
+      icon: const Icon(Icons.menu_book_outlined, size: 18),
+      label: const Text('Im Skript'),
+    );
+  }
+}
+
 /// Lernhilfen nach dem Beantworten: "Im Skript", "Kurze Lerneinheit" und –
 /// bei Karten, die öfter schiefgehen ([suggestSocratic]) oder im
 /// Fehlertagebuch ([showSocratic]) – "Sokratisch erarbeiten".
