@@ -34,7 +34,10 @@ gewünschtes Verhalten.
 ## 2. Tech-Stack
 
 - **Flutter / Dart 3** (SDK `^3.13.3`), Zielplattformen Android, Windows, Web
-  (iOS möglich). CI: `.github/workflows/android-apk.yml`, `windows-app.yml`.
+  (iOS möglich). CI: `.github/workflows/android-apk.yml`, `windows-app.yml`
+  (Windows: `Lernen-Setup.exe` per Inno Setup aus `windows/installer/lernen.iss`
+  plus ZIP; das In-App-Update lädt unter Windows das Setup und installiert
+  still, siehe `update_installer_io.dart`).
 - **State**: `provider` (`ChangeNotifier`-Repositories, in `main.dart`
   registriert). `ModuleRepository` und `SettingsRepository` werden VOR `runApp`
   geladen.

@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/ai_model_info.dart';
 import '../../models/app_settings.dart';
@@ -23,6 +22,7 @@ import '../../services/update_checker_service.dart';
 import '../../theme/app_colors.dart';
 import '../auth/login_screen.dart';
 import '../widgets/add_password_dialog.dart';
+import '../widgets/update_actions.dart';
 import 'model_picker_sheet.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -802,8 +802,8 @@ class _UpdateSectionState extends State<_UpdateSection> {
           const SizedBox(height: 8),
           _SoftButton(
             icon: Icons.download_outlined,
-            label: 'Herunterladen',
-            onTap: () => launchUrl(Uri.parse(_update!.downloadUrl), mode: LaunchMode.externalApplication),
+            label: updateActionLabel,
+            onTap: () => applyUpdate(context, _update!),
           ),
         ] else
           OutlinedButton.icon(

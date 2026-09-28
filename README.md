@@ -977,9 +977,25 @@ Play-Store-Eintrag nötig), das ist für den Eigengebrauch aber
 unproblematisch.
 
 `.github/workflows/windows-app.yml` baut analog eine native Windows-App
-(`flutter build windows`), gepackt als ZIP unter Release **"Windows-App
-(aktueller Stand)"** (Tag `windows-latest`) – entpacken, `lernen.exe`
-starten, keine Installation nötig.
+(`flutter build windows`) und veröffentlicht sie unter Release
+**"Windows-App (aktueller Stand)"** (Tag `windows-latest`) auf zwei Arten:
+
+- **`Lernen-Setup.exe`** (empfohlen) – eine einzige Datei. Sie installiert
+  die App nur für den eigenen Benutzer (keine Admin-Rechte) nach
+  `%LOCALAPPDATA%\Programs\Lernen`, legt eine Startmenü- und auf Wunsch
+  eine Desktop-Verknüpfung an und lässt sich unter "Apps" wieder
+  deinstallieren. Gebaut mit Inno Setup aus `windows/installer/lernen.iss`.
+  Beim ersten Start einer ungesignierten Datei zeigt Windows SmartScreen
+  eine Warnung ("Weitere Informationen" → "Trotzdem ausführen").
+- **`lernen-windows.zip`** – dieselbe App zum Entpacken (portable), die
+  `lernen.exe` muss dann im Ordner neben ihren DLLs und dem `data`-Ordner
+  bleiben.
+
+Eine einzelne `.exe` ganz ohne Begleitdateien gibt es bei Flutter nicht –
+die Engine (`flutter_windows.dll`), die Plugin-DLLs und `data/` werden zur
+Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
+liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
+Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
 ### In-App-Update-Hinweis
 
@@ -991,12 +1007,13 @@ veröffentlichen zusätzlich ein `version.json`
 Release-URL wie die APK/das ZIP. `UpdateCheckerService` vergleicht das beim
 App-Start (und über "Nach Updates suchen" in den Einstellungen) mit der
 Build-Nummer der laufenden App (`package_info_plus`) – findet es eine
-neuere, gibt es eine SnackBar bzw. einen Button mit direktem Download-Link.
-Rein informativ (kein Auto-Install): Android öffnet die `.apk` im Browser
-zum Herunterladen/Installieren, Windows lädt das ZIP zum manuellen
-Entpacken – für echte automatische Updates bräuchte es Play Store (Android)
-bzw. ein MSIX-Paket mit App-Installer-Manifest (Windows), beides mit
-deutlich mehr Einrichtungsaufwand.
+neuere, gibt es eine SnackBar bzw. einen Button. Android öffnet die `.apk`
+im Browser zum Herunterladen/Installieren. Windows installiert selbst
+("Jetzt installieren", `lib/services/update_installer_io.dart`): lädt
+`Lernen-Setup.exe` ins Temp-Verzeichnis, prüft, dass wirklich ein Programm
+ankam, startet es still (`/SILENT`) und beendet sich; das Setup ersetzt die
+Dateien und startet die App danach neu. Klappt das nicht, öffnet sich der
+Download im Browser.
 
 ## Tests
 

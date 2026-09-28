@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/update_checker_service.dart';
 import '../theme/app_colors.dart';
@@ -10,6 +9,7 @@ import 'modules/module_form_screen.dart';
 import 'settings/settings_screen.dart';
 import 'stats/stats_screen.dart';
 import 'widgets/floating_nav_bar.dart';
+import 'widgets/update_actions.dart';
 
 /// Schwebende Pillen-Navigation über die drei Hauptbereiche der App (siehe
 /// Design-Grundlage "Ruhig & Fokussiert") statt einer randlosen Standard-
@@ -44,8 +44,8 @@ class _RootShellState extends State<RootShell> {
         duration: const Duration(seconds: 12),
         content: Text('Update verfügbar (Build ${update.buildNumber}).'),
         action: SnackBarAction(
-          label: 'Herunterladen',
-          onPressed: () => launchUrl(Uri.parse(update.downloadUrl), mode: LaunchMode.externalApplication),
+          label: updateActionLabel,
+          onPressed: () => applyUpdate(context, update),
         ),
       ),
     );

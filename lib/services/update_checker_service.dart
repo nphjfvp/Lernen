@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// Ergebnis eines gefundenen Updates: die neue Build-Nummer + wo man sie
-/// herunterladen kann (direkter Download-Link zur APK bzw. zum ZIP).
+/// herunterladen kann (direkter Download-Link zur APK bzw. zum Windows-Setup).
 class UpdateInfo {
   const UpdateInfo({required this.buildNumber, required this.sha, required this.downloadUrl});
 
@@ -35,8 +35,10 @@ class UpdateCheckerService {
       'https://github.com/nphjfvp/Lernen/releases/download/android-latest/app-release.apk';
   static const _windowsVersionUrl =
       'https://github.com/nphjfvp/Lernen/releases/download/windows-latest/version.json';
-  static const _windowsZipUrl =
-      'https://github.com/nphjfvp/Lernen/releases/download/windows-latest/lernen-windows.zip';
+  /// Das Setup statt des ZIPs: installiert (bzw. aktualisiert) die App als
+  /// eine Datei, siehe windows/installer/lernen.iss.
+  static const _windowsSetupUrl =
+      'https://github.com/nphjfvp/Lernen/releases/download/windows-latest/Lernen-Setup.exe';
 
   /// Reine Vergleichslogik ohne Netzwerk-/Plattform-Zugriff (daher direkt
   /// testbar): liefert [UpdateInfo], wenn [remoteJson] eine höhere
@@ -69,7 +71,7 @@ class UpdateCheckerService {
         downloadUrl = _androidApkUrl;
       case TargetPlatform.windows:
         versionUrl = _windowsVersionUrl;
-        downloadUrl = _windowsZipUrl;
+        downloadUrl = _windowsSetupUrl;
       default:
         return null;
     }
