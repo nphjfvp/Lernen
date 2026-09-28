@@ -53,6 +53,43 @@ class MaterialViewerScreen extends StatefulWidget {
 class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSetState<MaterialViewerScreen> {
   final _pdfController = PdfViewerController();
   final _pdfViewerKey = GlobalKey<SfPdfViewerState>();
+
+  /// Ein-/ausgeklappte Leisten – für die laufende App-Sitzung gemerkt, damit
+  /// beim nächsten Öffnen einer PDF nicht wieder alles aufgeklappt ist.
+  static bool _markToolsOpen = true;
+  static bool _bottomPanelOpen = false;
+
+  /// Zoom wie in Word, 10–800 %. 100 % = Seitenbreite. Darunter wird der
+  /// Viewer schmaler (Syncfusion zoomt nicht unter die Seitenbreite),
+  /// darüber zoomt der Viewer selbst.
+  double _zoom = 1.0;
+  static const double minZoom = 0.1;
+  static const double maxZoom = 8.0;
+  static const zoomSteps = [0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0];
+
+  double get _viewerWidthFactor => _zoom < 1 ? _zoom : 1.0;
+
+  void _setZoom(double zoom) {
+    final z = zoom.clamp(minZoom, maxZoom).toDouble();
+    setState(() => _zoom = z);
+    _pdfController.zoomLevel = z > 1 ? z : 1.0;
+  }
+
+  void _stepZoom(int direction) {
+    final next = direction > 0
+        ? zoomSteps.firstWhere((s) => s > _zoom + 0.001, orElse: () => maxZoom)
+        : zoomSteps.lastWhere((s) => s < _zoom - 0.001, orElse: () => minZoom);
+    _setZoom(next);
+  }
+
+  /// Zoomen per Geste/Mausrad im Viewer – die Anzeige folgt. Eigene
+  /// Änderungen über [_setZoom] kommen hier ebenfalls an und werden
+  /// erkannt (dann passt der Viewer-Zoom bereits).
+  void _handleViewerZoom(PdfZoomDetails details) {
+    final expected = _zoom > 1 ? _zoom : 1.0;
+    if ((details.newZoomLevel - expected).abs() < 0.01 || !mounted) return;
+    setState(() => _zoom = details.newZoomLevel.clamp(1.0, maxZoom).toDouble());
+  }
   final _pdfBoundaryKey = GlobalKey();
   late List<MaterialHighlight> _highlights;
   late final TextEditingController _notesController;
@@ -274,7 +311,9 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
     try {
       final boundary = _pdfBoundaryKey.currentContext?.findRenderObject();
       if (boundary is! RenderRepaintBoundary) return null;
-      final image = await boundary.toImage(pixelRatio: 2.0);
+      // Bei verkleinerter Ansicht höher auflösen, damit die KI die Seite
+      // trotzdem lesen kann.
+      final image = await boundary.toImage(pixelRatio: (2.0 / _viewerWidthFactor).clamp(2.0, 6.0));
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       return byteData?.buffer.asUint8List();
     } catch (_) {
@@ -641,62 +680,166 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
                           padding: const EdgeInsets.all(10),
                           child: Text(_suggestError!, style: TextStyle(color: c.danger, fontSize: 12.5)),
                         ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        child: Row(
-                          children: [
-                            Text('Auswahl markieren:',
-                                style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
-                            const SizedBox(width: 10),
-                            Opacity(
-                              opacity: _hasSelection ? 1 : 0.45,
-                              child: Row(
-                                children: [
-                                  _ColorButton(
-                                      label: 'Frage',
-                                      color: c.danger,
-                                      onTap: () => _addManualHighlight(HighlightColor.red)),
-                                  const SizedBox(width: 6),
-                                  _ColorButton(
-                                      label: 'Antwort',
-                                      color: c.good,
-                                      onTap: () => _addManualHighlight(HighlightColor.green)),
-                                  const SizedBox(width: 6),
-                                  _ColorButton(
-                                      label: 'Relevant',
-                                      color: c.warn,
-                                      onTap: () => _addManualHighlight(HighlightColor.yellow)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                      _ViewerToolbar(
+                        markToolsOpen: _markToolsOpen,
+                        onToggleMarkTools: () => setState(() => _markToolsOpen = !_markToolsOpen),
+                        hasSelection: _hasSelection,
+                        onMark: _addManualHighlight,
+                        zoom: _zoom,
+                        onZoom: _setZoom,
+                        onStepZoom: _stepZoom,
+                        panelOpen: _bottomPanelOpen,
+                        highlightCount: _highlights.length,
+                        onTogglePanel: () => setState(() => _bottomPanelOpen = !_bottomPanelOpen),
                       ),
                       Expanded(
-                        child: RepaintBoundary(
-                          key: _pdfBoundaryKey,
-                          child: SfPdfViewer.memory(
-                            _bytes!,
-                            key: _pdfViewerKey,
-                            controller: _pdfController,
-                            initialPageNumber: widget.initialPage ?? 1,
-                            onTextSelectionChanged: (details) {
-                              setState(
-                                  () => _hasSelection = (details.selectedText ?? '').trim().isNotEmpty);
-                            },
-                            onPageChanged: (details) => _handlePageChanged(details.newPageNumber),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) => Center(
+                            child: SizedBox(
+                              width: constraints.maxWidth * _viewerWidthFactor,
+                              child: RepaintBoundary(
+                                key: _pdfBoundaryKey,
+                                child: SfPdfViewer.memory(
+                                  _bytes!,
+                                  key: _pdfViewerKey,
+                                  controller: _pdfController,
+                                  initialPageNumber: widget.initialPage ?? 1,
+                                  maxZoomLevel: maxZoom,
+                                  onZoomLevelChanged: _handleViewerZoom,
+                                  onTextSelectionChanged: (details) {
+                                    setState(() =>
+                                        _hasSelection = (details.selectedText ?? '').trim().isNotEmpty);
+                                  },
+                                  onPageChanged: (details) => _handlePageChanged(details.newPageNumber),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                      _BottomPanel(
-                        highlights: _highlights,
-                        colorFor: _colorFor,
-                        onRemove: _removeHighlight,
-                        notesController: _notesController,
-                        onNotesChanged: () => setState(() => _dirty = true),
-                      ),
+                      if (_bottomPanelOpen)
+                        _BottomPanel(
+                          highlights: _highlights,
+                          colorFor: _colorFor,
+                          onRemove: _removeHighlight,
+                          notesController: _notesController,
+                          onNotesChanged: () => setState(() => _dirty = true),
+                        ),
                     ],
                   ),
+      ),
+    );
+  }
+}
+
+/// Schmale Werkzeugzeile über der PDF: Markieren-Farben (einklappbar), Zoom
+/// 10–800 % und der Schalter für "Meine Markierungen/Notiz" unten.
+class _ViewerToolbar extends StatelessWidget {
+  const _ViewerToolbar({
+    required this.markToolsOpen,
+    required this.onToggleMarkTools,
+    required this.hasSelection,
+    required this.onMark,
+    required this.zoom,
+    required this.onZoom,
+    required this.onStepZoom,
+    required this.panelOpen,
+    required this.highlightCount,
+    required this.onTogglePanel,
+  });
+
+  final bool markToolsOpen;
+  final VoidCallback onToggleMarkTools;
+  final bool hasSelection;
+  final ValueChanged<HighlightColor> onMark;
+  final double zoom;
+  final ValueChanged<double> onZoom;
+  final ValueChanged<int> onStepZoom;
+  final bool panelOpen;
+  final int highlightCount;
+  final VoidCallback onTogglePanel;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final percent = '${(zoom * 100).round()} %';
+    return DecoratedBox(
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.border))),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          children: [
+            IconButton(
+              key: const ValueKey('toggle-mark-tools'),
+              tooltip: markToolsOpen ? 'Markieren ausblenden' : 'Auswahl markieren',
+              isSelected: markToolsOpen,
+              icon: const Icon(Icons.border_color_outlined, size: 20),
+              onPressed: onToggleMarkTools,
+            ),
+            Expanded(
+              child: markToolsOpen
+                  ? SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Opacity(
+                        opacity: hasSelection ? 1 : 0.45,
+                        child: Row(
+                          children: [
+                            _ColorButton(label: 'Frage', color: c.danger, onTap: () => onMark(HighlightColor.red)),
+                            const SizedBox(width: 6),
+                            _ColorButton(label: 'Antwort', color: c.good, onTap: () => onMark(HighlightColor.green)),
+                            const SizedBox(width: 6),
+                            _ColorButton(
+                                label: 'Relevant', color: c.warn, onTap: () => onMark(HighlightColor.yellow)),
+                          ],
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            IconButton(
+              tooltip: 'Verkleinern',
+              icon: const Icon(Icons.zoom_out, size: 20),
+              onPressed: zoom <= _MaterialViewerScreenState.minZoom + 0.001 ? null : () => onStepZoom(-1),
+            ),
+            PopupMenuButton<double>(
+              key: const ValueKey('zoom-menu'),
+              tooltip: 'Zoom',
+              onSelected: onZoom,
+              itemBuilder: (_) => [
+                for (final step in _MaterialViewerScreenState.zoomSteps)
+                  PopupMenuItem(
+                    value: step,
+                    child: Text(step == 1.0 ? '100 % (Seitenbreite)' : '${(step * 100).round()} %'),
+                  ),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                child: Text(percent, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Vergrößern',
+              icon: const Icon(Icons.zoom_in, size: 20),
+              onPressed: zoom >= _MaterialViewerScreenState.maxZoom - 0.001 ? null : () => onStepZoom(1),
+            ),
+            const SizedBox(width: 4),
+            if (MediaQuery.sizeOf(context).width > 600)
+              TextButton.icon(
+                key: const ValueKey('toggle-bottom-panel'),
+                onPressed: onTogglePanel,
+                icon: Icon(panelOpen ? Icons.expand_more : Icons.expand_less, size: 18),
+                label: Text('Markierungen & Notiz ($highlightCount)', style: const TextStyle(fontSize: 12.5)),
+              )
+            else
+              IconButton(
+                key: const ValueKey('toggle-bottom-panel'),
+                tooltip: panelOpen ? 'Markierungen & Notiz ausblenden' : 'Markierungen & Notiz ($highlightCount)',
+                isSelected: panelOpen,
+                icon: const Icon(Icons.sticky_note_2_outlined, size: 20),
+                onPressed: onTogglePanel,
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -812,6 +812,14 @@ PDF-Folien verfügbar (Original-Bytes werden dafür beim Upload zusätzlich
 gespeichert, siehe `MaterialFileStore`); andere Formate/Übungsaufgaben
 funktionieren weiterhin rein textbasiert.
 
+Platz für die Folie: eine schmale Werkzeugzeile über der PDF. Links blendet
+der Stift die Markier-Farben ein und aus, rechts öffnet "Markierungen &
+Notiz" den unteren Bereich (standardmäßig zu). Beides merkt sich die App bis
+zum Neustart. Dazwischen der Zoom wie in Word: − / + in Stufen oder direkt
+10 %, 25 %, 50 %, 75 %, 100 % (Seitenbreite) bis 800 %; Zoomen per Geste oder
+Mausrad wird übernommen. Unter 100 % wird die Seite verkleinert und
+zentriert (der PDF-Viewer selbst zoomt nicht unter die Seitenbreite).
+
 Diese Original-Bytes werden bei JEDEM Upload-Weg gespeichert – nicht nur
 beim direkten "Material hochladen" in `ModuleDetailScreen`, sondern
 genauso beim Foliten-Upload in `PrepareScreen` (Kurz **und** Ausführlich)
