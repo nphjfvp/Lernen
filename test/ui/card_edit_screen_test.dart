@@ -104,6 +104,62 @@ void main() {
     expect(result()!.blanks, ['Mitochondrie; Mitochondrium', 'Zellkern']);
   });
 
+  testWidgets('Tabelle: Zelle umschalten, Lösung eintragen, Zeile anhängen', (tester) async {
+    final card = Flashcard(
+      id: 't1',
+      moduleId: 'm1',
+      front: 'Einheiten ergänzen',
+      back: '',
+      createdAt: DateTime(2026, 9, 27),
+      due: DateTime(2026, 9, 27),
+      type: QuestionType.table,
+      tableRows: const [
+        [QuestionTableCell(text: 'Größe'), QuestionTableCell(text: 'Einheit')],
+        [QuestionTableCell(text: 'Kraft'), QuestionTableCell(text: 'N', given: false)],
+      ],
+    );
+    final result = await _open(tester, card);
+
+    await tester.enterText(find.byKey(const ValueKey('card-edit-table-1-1')), 'Newton; N');
+    await tester.tap(find.widgetWithText(TextButton, 'Zeile').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('card-edit-table-2-0')), 'Masse');
+    await tester.enterText(find.byKey(const ValueKey('card-edit-table-2-1')), 'kg');
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+
+    final rows = result()!.tableRows!;
+    expect(rows.length, 3);
+    expect(rows[1][1].text, 'Newton; N');
+    expect(rows[1][1].given, isFalse);
+    expect(rows[2].map((c) => c.text), ['Masse', 'kg']);
+    // Neue Zeilen: erste Spalte vorgegeben, der Rest zum Ausfüllen.
+    expect(rows[2].map((c) => c.given), [true, false]);
+  });
+
+  testWidgets('Tabelle ohne auszufüllende Zelle wird nicht gespeichert', (tester) async {
+    final card = Flashcard(
+      id: 't1',
+      moduleId: 'm1',
+      front: 'Tabelle',
+      back: '',
+      createdAt: DateTime(2026, 9, 27),
+      due: DateTime(2026, 9, 27),
+      type: QuestionType.table,
+      tableRows: const [
+        [QuestionTableCell(text: 'a'), QuestionTableCell(text: 'b', given: false)],
+      ],
+    );
+    final result = await _open(tester, card);
+
+    await tester.tap(find.byKey(const ValueKey('card-edit-table-toggle-0-1')));
+    await tester.pump();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mindestens eine Zelle zum Ausfüllen (mit Lösung) anlegen.'), findsOneWidget);
+    expect(result(), isNull);
+  });
+
   group('Kartensuche', () {
     final card = Flashcard(
       id: 'c1',

@@ -164,6 +164,19 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// schon lokal passte oder die KI nicht gefragt wurde).
   List<String?>? _blankNotes;
 
+  // -- Tabelle ------------------------------------------------------------
+  /// Die auszufüllenden Zellen (siehe AnswerChecker.tableBlanks) und je Zelle
+  /// ein Eingabefeld, nach dem Prüfen Treffer/KI-Begründung je Zelle.
+  late final List<({int row, int col, String solution})> _tableBlanks = AnswerChecker.tableBlanks(widget.card);
+  late final List<TextEditingController> _tableControllers;
+  List<bool>? _tableHits;
+  List<String?>? _tableNotes;
+
+  /// Mindestens [AnswerChecker.tablePartialShare] der Zellen richtig, aber
+  /// nicht alle: zählt als "Schwer" (kein Fehler, Ampel steigt nicht).
+  bool _tablePartial = false;
+  int _tableRight = 0;
+
   /// Wie die Antwort geprüft wurde – unter dem Ergebnis angezeigt, damit
   /// sichtbar ist, ob die KI nachgeprüft hat oder (z.B. offline) nicht.
   String? _checkInfo;
@@ -226,6 +239,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     _pool = List.generate(_pairs.length, (i) => i)..shuffle();
     _labelPool = List.generate(_labelTargets.length, (i) => i)..shuffle();
     _labelInputs = List.generate(_labelTargets.length, (_) => TextEditingController());
+    _tableControllers = List.generate(_tableBlanks.length, (_) => TextEditingController());
     if (widget.card.type == QuestionType.html) _setupWebView();
     if (!widget.examMode && Flashcard.hintsDueFor(widget.card.variantMissStreak) > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadLadderHints());
@@ -323,7 +337,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   @override
   void dispose() {
     _freeTextController.dispose();
-    for (final c in [..._blankControllers, ..._labelInputs]) {
+    for (final c in [..._blankControllers, ..._labelInputs, ..._tableControllers]) {
       c.dispose();
     }
     super.dispose();
@@ -388,6 +402,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         return _labelTyping ? _labelInputs.every((c) => c.text.trim().isNotEmpty) : _labelPool.isEmpty;
       case QuestionType.markImage:
         return _markTap != null;
+      case QuestionType.table:
+        return _tableControllers.any((c) => c.text.trim().isNotEmpty);
     }
   }
 
@@ -427,10 +443,62 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         return _checkDiagramLabelAnswer();
       case QuestionType.markImage:
         return AnswerChecker.checkMarkImage(card, _markTap?.dx, _markTap?.dy);
+      case QuestionType.table:
+        return _checkTableAnswer();
       case QuestionType.flashcard:
       case QuestionType.html:
         return null; // eigene build()-Zweige.
     }
+  }
+
+  /// Tabelle, zweistufig wie der Lückentext: zuerst lokal je Zelle, lehnt das
+  /// Zellen ab, prüft die KI diese nach (die Tabelle als Text mit "___" an
+  /// den fraglichen Stellen) – sie kann nur nachträglich als richtig werten.
+  /// Danach Teilpunkte: alle richtig = richtig, ab 80 % "Schwer".
+  Future<AnswerCheckResult> _checkTableAnswer() async {
+    final card = widget.card;
+    final answers = _tableControllers.map((c) => c.text).toList();
+    var hits = AnswerChecker.tableHits(card, answers);
+    final wrong = [for (var i = 0; i < hits.length; i++) if (!hits[i] && answers[i].trim().isNotEmpty) i];
+    final ai = wrong.isEmpty ? null : _aiOrNull();
+    final notes = List<String?>.filled(hits.length, null);
+    if (ai != null) {
+      setState(() => _aiChecking = true);
+      try {
+        final wrongCells = {for (final i in wrong) (_tableBlanks[i].row, _tableBlanks[i].col)};
+        final rows = card.tableRows ?? const <List<QuestionTableCell>>[];
+        final text = [
+          card.front,
+          for (var r = 0; r < rows.length; r++)
+            [
+              for (var col = 0; col < rows[r].length; col++)
+                wrongCells.contains((r, col)) ? '___' : rows[r][col].text,
+            ].join(' | '),
+        ].join('\n');
+        final verdicts = await ai.checkFillBlankAnswers(
+          text: text,
+          solutions: [for (final i in wrong) _tableBlanks[i].solution],
+          answers: [for (final i in wrong) answers[i]],
+        );
+        for (final (k, i) in wrong.indexed) {
+          final verdict = verdicts.elementAtOrNull(k);
+          if (verdict == null) continue;
+          notes[i] = verdict.note;
+          if (verdict.correct) hits = [...hits]..[i] = true;
+        }
+        _checkInfo = 'Von der KI nachgeprüft.';
+      } catch (e) {
+        _checkInfo = _aiFailedInfo(e);
+      } finally {
+        if (mounted) setState(() => _aiChecking = false);
+      }
+    }
+    final result = AnswerChecker.tableResult(card, hits);
+    _tableHits = hits;
+    _tableNotes = notes;
+    _tablePartial = result.partial;
+    _tableRight = hits.where((h) => h).length;
+    return result.result;
   }
 
   /// Zweistufige Freitext-Prüfung: zuerst der schnelle, rein lokale
@@ -622,6 +690,15 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         return tap == null
             ? null
             : 'angetippte Stelle bei ${(tap.dx * 100).round()} % Breite, ${(tap.dy * 100).round()} % Höhe';
+      case QuestionType.table:
+        final rows = card.tableRows ?? const <List<QuestionTableCell>>[];
+        String header(int col) => rows.isNotEmpty && col < rows.first.length ? rows.first[col].text : '';
+        return [
+          for (var i = 0; i < _tableBlanks.length; i++)
+            if (_tableControllers[i].text.trim().isNotEmpty)
+              '${[rows[_tableBlanks[i].row].first.text, header(_tableBlanks[i].col)].where((s) => s.isNotEmpty).join(' / ')}: '
+                  '${_tableControllers[i].text.trim()}',
+        ].join('; ');
       case QuestionType.flashcard:
       case QuestionType.html:
         return null;
@@ -1099,10 +1176,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         if (_checked)
           FilledButton(
             onPressed: () => _submit(
-              isCorrect: _result!.isCorrect,
-              // Mit Tipp richtig: zählt, aber nur als "Schwer" – die Ampel
-              // steigt dadurch nicht.
-              selfGrade: _helpShown && _result!.isCorrect ? Grade.hard : null,
+              isCorrect: _result!.isCorrect || _tablePartial,
+              // Mit Tipp richtig bzw. Tabelle fast richtig: zählt, aber nur
+              // als "Schwer" – die Ampel steigt dadurch nicht.
+              selfGrade: _tablePartial || (_helpShown && _result!.isCorrect) ? Grade.hard : null,
             ),
             child: const Text('Weiter'),
           )
@@ -1151,7 +1228,89 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         return _buildDiagramLabel(c);
       case QuestionType.markImage:
         return _buildMarkImage(c);
+      case QuestionType.table:
+        return _buildTable(c);
     }
+  }
+
+  /// Tabelle zum Ausfüllen: vorgegebene Zellen als Text, die übrigen als
+  /// Eingabefelder; nach dem Prüfen je Zelle grün/rot und bei Bedarf die
+  /// Lösung darunter. Breite Tabellen lassen sich seitlich scrollen.
+  Widget _buildTable(AppColors c) {
+    final rows = widget.card.tableRows ?? const <List<QuestionTableCell>>[];
+    final columns = rows.fold<int>(0, (n, r) => max(n, r.length));
+    final blankIndex = {for (var i = 0; i < _tableBlanks.length; i++) (_tableBlanks[i].row, _tableBlanks[i].col): i};
+
+    Widget cell(int r, int col) {
+      final data = col < rows[r].length ? rows[r][col] : const QuestionTableCell(text: '');
+      final i = blankIndex[(r, col)];
+      if (i == null) {
+        return Padding(
+          padding: const EdgeInsets.all(8),
+          child: MathText(
+            data.given ? data.text : '',
+            style: TextStyle(fontSize: 13.5, fontWeight: r == 0 ? FontWeight.w700 : FontWeight.w500),
+          ),
+        );
+      }
+      final hit = _checked ? _tableHits?.elementAtOrNull(i) : null;
+      final solution = _tableBlanks[i].solution;
+      final showSolution = hit != null && !(hit && AnswerChecker.answerExactlyMatches(_tableControllers[i].text, solution));
+      final note = _checked ? _tableNotes?.elementAtOrNull(i) : null;
+      return Container(
+        color: hit == null ? null : (hit ? c.goodSoft : c.dangerSoft),
+        padding: const EdgeInsets.all(4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: ValueKey('table-cell-$r-$col'),
+              controller: _tableControllers[i],
+              enabled: !_checked && !_aiChecking,
+              minLines: 1,
+              maxLines: 3,
+              style: const TextStyle(fontSize: 13.5),
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: c.surfaceAlt,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (showSolution)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: MathText('Lösung: ${AnswerChecker.solutionLabel(solution)}',
+                    style: TextStyle(fontSize: 11.5, color: c.ink)),
+              ),
+            if (note != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text('KI: $note', style: TextStyle(fontSize: 11, color: c.inkMuted)),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Table(
+        defaultColumnWidth: const FixedColumnWidth(170),
+        defaultVerticalAlignment: TableCellVerticalAlignment.top,
+        border: TableBorder.all(color: c.border, borderRadius: BorderRadius.circular(8)),
+        children: [
+          for (var r = 0; r < rows.length; r++)
+            TableRow(
+              decoration: r == 0 ? BoxDecoration(color: c.surfaceAlt) : null,
+              children: [for (var col = 0; col < columns; col++) cell(r, col)],
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildChoiceOptions(AppColors c, {required bool multiple}) {
@@ -1752,25 +1911,32 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
   Widget _buildFeedback(AppColors c) {
     final result = _result!;
+    final isTable = widget.card.type == QuestionType.table;
+    final fg = result.isCorrect ? c.good : (_tablePartial ? c.warn : c.danger);
+    final title = result.isCorrect
+        ? 'Richtig!'
+        : isTable
+            ? '$_tableRight von ${_tableBlanks.length} Zellen richtig'
+                '${_tablePartial ? ' – fast, zählt als "Schwer".' : '.'}'
+            : 'Nicht ganz.';
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: result.isCorrect ? c.goodSoft : c.dangerSoft,
+        color: result.isCorrect ? c.goodSoft : (_tablePartial ? c.warnSoft : c.dangerSoft),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(result.isCorrect ? Icons.check_circle_outline : Icons.cancel_outlined,
-              color: result.isCorrect ? c.good : c.danger, size: 20),
+          Icon(result.isCorrect ? Icons.check_circle_outline : Icons.cancel_outlined, color: fg, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(result.isCorrect ? 'Richtig!' : 'Nicht ganz.',
-                    style: TextStyle(fontWeight: FontWeight.w700, color: result.isCorrect ? c.good : c.danger)),
-                if (!result.isCorrect && result.correctAnswerLabel.isNotEmpty) ...[
+                Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: fg)),
+                // Bei Tabellen stehen die Lösungen direkt in den Zellen.
+                if (!result.isCorrect && !isTable && result.correctAnswerLabel.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   MathText('Richtige Antwort: ${result.correctAnswerLabel}', style: TextStyle(fontSize: 13, color: c.ink)),
                 ],

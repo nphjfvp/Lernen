@@ -206,6 +206,7 @@ class ReviewService {
       correctText: fixed['correctText'] as String?,
       blanks: QuestionParsing.parseBlanks(fixed['blanks']),
       dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
+      tableRows: parseTableRows(fixed['tableRows']),
       imageBase64: card.imageBase64,
     );
     return FsrsService().restartForNewStage(promoted, now: now);

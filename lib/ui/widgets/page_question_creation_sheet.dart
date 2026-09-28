@@ -158,6 +158,7 @@ List<List<Flashcard>> buildPageQuestionCards(
         htmlContent: fixed['htmlContent'] as String?,
         imageBase64: isImageType || entry['needsImage'] == true ? attachImageBase64 : null,
         imageTargets: targets,
+        tableRows: parseTableRows(fixed['tableRows']),
         sourceMaterialId: sourceMaterialId,
         sourcePage: sourcePage,
         weight: weight,
@@ -204,6 +205,7 @@ Flashcard mergeTiersIntoChain(List<Flashcard> tiers) {
             htmlContent: t.htmlContent,
             imageBase64: t.imageBase64,
             imageTargets: t.imageTargets,
+            tableRows: t.tableRows,
           ))
       .toList();
   return Flashcard(
@@ -222,6 +224,7 @@ Flashcard mergeTiersIntoChain(List<Flashcard> tiers) {
     htmlContent: base.htmlContent,
     imageBase64: base.imageBase64,
     imageTargets: base.imageTargets,
+    tableRows: base.tableRows,
     variantChain: tiers.map((t) => t.type).toList(),
     pendingVariants: pending,
     unitId: base.unitId,

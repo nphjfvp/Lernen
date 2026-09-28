@@ -1033,7 +1033,7 @@ Fragen zum selben Sachverhalt kommen nicht mehr alle gleichzeitig dran:
   Leicht/Mittel/Schwer war schon immer eine Stufenkette. Für bereits
   vorhandene Karten gilt automatisch: gleiches Konzept = eine Gruppe, die
   Stufe folgt aus dem Fragetyp (Auswahl leicht, Lückentext/Zuordnen mittel,
-  Freitext/interaktiv schwer). Genauer: Kartenliste → Menü → "Stufen per KI
+  Freitext/interaktiv/Tabelle schwer). Genauer: Kartenliste → Menü → "Stufen per KI
   zuordnen". Von Hand: "Stufe" an einer Karte oder mehrere auswählen →
   "Stufe setzen", "Zu einer Frage zusammenfassen" bzw. "Einzeln lernen".
 - Gilt im Daily Quiz, in Üben, Sprint und im Fehlertagebuch – nicht in der
@@ -1056,6 +1056,27 @@ zählt, lässt die Ampel aber nicht steigen.
   drücken): Karten ankreuzen, dann über das Bearbeiten-Menü Gewichtung,
   Stufe, Gruppe oder Einheit für alle setzen, den Lernstand zurücksetzen oder
   alle löschen.
+
+### 5j. Fragetyp Tabelle: Tabellen direkt in der App ausfüllen
+
+- Enthält ein Übungsblatt oder eine Folie eine auszufüllende Tabelle, legt
+  die KI beim Import/Nachbereiten/"Frage erstellen" eine **Tabellen-Frage**
+  an: vorgegebene Zellen werden angezeigt, die auszufüllenden sind
+  Eingabefelder (die Lösung – mit Varianten, per `;` getrennt – ist
+  hinterlegt). Breite Tabellen lassen sich seitlich scrollen.
+- Prüfen je Zelle mit Tippfehler-Toleranz; lehnt der Abgleich eine Zelle ab,
+  prüft die KI (mit API-Key) nach, ob sie trotzdem stimmt. Danach
+  **Teilpunkte**: alle Zellen richtig = richtig, ab 80 % = "fast richtig"
+  (zählt als *Schwer*, die Ampel steigt nicht), darunter = falsch. Falsche
+  Zellen zeigen ihre Lösung.
+- Tabellen zählen zur Stufe *Schwer*. In der Probeklausur zählt nur die
+  komplett richtige Tabelle.
+- Bearbeiten in der Kartenliste: jede Zelle ist ein Textfeld, das Schloss
+  schaltet zwischen *vorgegeben* und *auszufüllen*; Zeilen/Spalten lassen
+  sich anhängen und entfernen.
+- KI-Format (auch für "JSON einfügen"): `"type": "table", "table": [["Kopf",
+  "Kopf"], ["gegeben", {"answer": "Lösung; Variante"}]]` – statt des Objekts
+  geht auch `"[[Lösung]]"`.
 
 ### 6. Ausführen
 

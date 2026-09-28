@@ -67,6 +67,7 @@ class QuestionParsing {
     'html': QuestionType.html,
     'diagram_label': QuestionType.diagramLabel,
     'mark_image': QuestionType.markImage,
+    'table': QuestionType.table,
   };
 
   /// Wandelt den von der KI gelieferten "type"-String (snake_case, siehe
@@ -134,6 +135,11 @@ class QuestionParsing {
     'bild_markieren': 'mark_image',
     'markimage': 'mark_image',
     'hotspot': 'mark_image',
+    'tabelle': 'table',
+    'table_fill': 'table',
+    'fill_table': 'table',
+    'tabelle_ausfuellen': 'table',
+    'tabelle_ausfüllen': 'table',
   };
 
   static QuestionType? _parseTypeOrNull(String? value) {
@@ -382,9 +388,18 @@ class QuestionParsing {
     }
   }
 
+  /// Die Zeilen einer Tabellen-Frage, egal unter welchem Namen die KI sie
+  /// liefert.
+  static List<List<QuestionTableCell>>? tableRowsIn(Map<String, dynamic> raw) =>
+      parseTableRows(raw['tableRows']) ?? parseTableRows(raw['table']) ?? parseTableRows(raw['tabelle']);
+
+  static bool _hasFillableCell(List<List<QuestionTableCell>>? rows) =>
+      rows != null && rows.any((r) => r.any((c) => !c.given && c.text.trim().isNotEmpty));
+
   /// Typ aus dem, was der Eintrag enthält, wenn "type" fehlt oder unbekannt ist.
   static QuestionType _inferType(Map<String, dynamic> entry, Map<String, dynamic> raw) {
     if ((entry['htmlContent'] ?? '').toString().contains(htmlAnswerChannelName)) return QuestionType.html;
+    if (_hasFillableCell(tableRowsIn(raw))) return QuestionType.table;
     final targets = imageTargetsIn(raw);
     if (targets != null && targets.isNotEmpty) {
       return targets.any((t) => t.label.isNotEmpty) ? QuestionType.diagramLabel : QuestionType.markImage;
@@ -488,6 +503,14 @@ class QuestionParsing {
           ],
           if (covers.isNotEmpty) 'imageCovers': [for (final c in covers) c.toMap()],
         };
+      case QuestionType.table:
+        // Einheitlich unter "tableRows" im gespeicherten Zellformat ablegen.
+        return {
+          ...entry,
+          'tableRows': [
+            for (final row in tableRowsIn(entry) ?? const <List<QuestionTableCell>>[]) [for (final c in row) c.toMap()],
+          ],
+        };
       case QuestionType.flashcard:
       case QuestionType.freeText:
       case QuestionType.html:
@@ -540,6 +563,8 @@ class QuestionParsing {
         return (imageTargetsIn(raw) ?? const []).any((t) => t.label.isNotEmpty);
       case QuestionType.markImage:
         return (imageTargetsIn(raw) ?? const []).isNotEmpty;
+      case QuestionType.table:
+        return _hasFillableCell(tableRowsIn(raw));
       case QuestionType.html:
         final html = (raw['htmlContent'] ?? '').toString();
         // Grobe Vertragsprüfung: die Seite muss den JS-Rückkanal tatsächlich

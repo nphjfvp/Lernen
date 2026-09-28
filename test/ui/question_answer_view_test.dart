@@ -543,6 +543,79 @@ void main() {
     });
   });
 
+  group('QuestionAnswerView – Tabelle', () {
+    Flashcard tableCard() => Flashcard(
+          id: 't1',
+          moduleId: 'm1',
+          front: 'Ordne die Symbole zu.',
+          back: '',
+          createdAt: DateTime(2026, 1, 1),
+          due: DateTime(2026, 1, 1),
+          type: QuestionType.table,
+          tableRows: const [
+            [QuestionTableCell(text: 'Element'), QuestionTableCell(text: 'Symbol')],
+            [QuestionTableCell(text: 'Wasserstoff'), QuestionTableCell(text: 'H', given: false)],
+            [QuestionTableCell(text: 'Helium'), QuestionTableCell(text: 'He', given: false)],
+            [QuestionTableCell(text: 'Lithium'), QuestionTableCell(text: 'Li', given: false)],
+            [QuestionTableCell(text: 'Kohlenstoff'), QuestionTableCell(text: 'C', given: false)],
+            [QuestionTableCell(text: 'Natrium'), QuestionTableCell(text: 'Na', given: false)],
+          ],
+        );
+
+    Future<({Grade? grade, bool? correct})> answer(WidgetTester tester, List<String> answers) async {
+      Grade? grade;
+      bool? correct;
+      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect}) {
+        grade = selfGrade;
+        correct = isCorrect;
+      }));
+      expect(find.text('Wasserstoff'), findsOneWidget);
+      for (var i = 0; i < answers.length; i++) {
+        await tester.enterText(find.byKey(ValueKey('table-cell-${i + 1}-1')), answers[i]);
+      }
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Weiter'));
+      await tester.pumpAndSettle();
+      return (grade: grade, correct: correct);
+    }
+
+    testWidgets('alle Zellen richtig: richtig ohne Abwertung', (tester) async {
+      final r = await answer(tester, ['H', 'He', 'Li', 'C', 'Na']);
+      expect(r.correct, isTrue);
+      expect(r.grade, isNull);
+    });
+
+    testWidgets('4 von 5 Zellen: fast richtig, zählt als Schwer', (tester) async {
+      final r = await answer(tester, ['H', 'He', 'Li', 'C', 'K']);
+      expect(find.textContaining('4 von 5 Zellen richtig'), findsOneWidget);
+      expect(r.correct, isTrue);
+      expect(r.grade, Grade.hard);
+    });
+
+    testWidgets('3 von 5 Zellen: falsch, Lösung wird angezeigt', (tester) async {
+      Grade? grade;
+      bool? correct;
+      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect}) {
+        grade = selfGrade;
+        correct = isCorrect;
+      }));
+      for (final (i, a) in ['H', 'He', 'Li', 'O', 'K'].indexed) {
+        await tester.enterText(find.byKey(ValueKey('table-cell-${i + 1}-1')), a);
+      }
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('3 von 5 Zellen richtig'), findsOneWidget);
+      expect(find.text('Lösung: Na'), findsOneWidget);
+      await tester.tap(find.text('Weiter'));
+      await tester.pumpAndSettle();
+      expect(correct, isFalse);
+      expect(grade, isNull);
+    });
+  });
+
   group('QuestionAnswerView – robuste Anzeige', () {
     testWidgets('Single-Choice ohne richtige Option wird zur Karteikarte', (tester) async {
       Grade? reported;

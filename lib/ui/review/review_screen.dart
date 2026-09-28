@@ -19,6 +19,7 @@ import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/answer_checker.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
 import '../../services/material_file_store.dart';
@@ -736,6 +737,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         htmlContent: f['htmlContent'] as String?,
         imageBase64: f['imageBase64'] as String?,
         imageTargets: parseImageTargets(f['imageTargets']),
+        tableRows: parseTableRows(f['tableRows']),
         variantChain: escalate ? QuestionParsing.escalationChain : null,
         // Leicht/Mittel/Schwer desselben Sachverhalts (siehe StageGate) –
         // pro Speichervorgang eindeutig, damit gleich benannte Gruppen aus
@@ -1445,6 +1447,7 @@ class _PreviewView extends StatelessWidget {
         QuestionType.html => Icons.web_outlined,
         QuestionType.diagramLabel => Icons.label_outline,
         QuestionType.markImage => Icons.ads_click,
+        QuestionType.table => Icons.table_chart_outlined,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
@@ -1473,6 +1476,12 @@ class _PreviewView extends StatelessWidget {
         final targets = QuestionParsing.imageTargetsIn(f) ?? const [];
         final labels = targets.map((t) => t.label).where((l) => l.isNotEmpty);
         return labels.isNotEmpty ? labels.join(', ') : (f['back'] ?? '(Stelle im Bild)').toString();
+      case QuestionType.table:
+        final rows = QuestionParsing.tableRowsIn(f) ?? const <List<QuestionTableCell>>[];
+        return [
+          for (final row in rows)
+            row.map((cell) => cell.given ? cell.text : '[${AnswerChecker.solutionLabel(cell.text)}]').join(' | '),
+        ].join('\n');
     }
   }
 }

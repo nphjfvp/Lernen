@@ -20,6 +20,10 @@ enum QuestionType {
   /// Bild markieren: die richtige Stelle im Bild antippen (Vorgänger-App:
   /// `mark_image`).
   markImage,
+
+  /// Tabelle ausfüllen: vorgegebene Zellen stehen fest, die übrigen werden
+  /// eingetippt (siehe [QuestionTableCell], [Flashcard.tableRows]).
+  table,
 }
 
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
@@ -39,6 +43,7 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.html => 'Interaktiv',
         QuestionType.diagramLabel => 'Bild beschriften',
         QuestionType.markImage => 'Bild markieren',
+        QuestionType.table => 'Tabelle',
       };
 }
 
@@ -197,6 +202,50 @@ class DragPair {
       );
 }
 
+/// Eine Zelle einer Tabellen-Frage ([QuestionType.table]): vorgegeben
+/// ([given], wird angezeigt) oder auszufüllen – dann ist [text] die Lösung,
+/// mehrere akzeptierte Schreibweisen durch ";" getrennt.
+class QuestionTableCell {
+  const QuestionTableCell({required this.text, this.given = true});
+
+  final String text;
+  final bool given;
+
+  Map<String, dynamic> toMap() => {'t': text, if (!given) 'fill': true};
+
+  /// Tolerant für gespeicherte Daten und KI-Antworten: ein Text ist
+  /// vorgegeben, "[[Lösung]]" auszufüllen; als Objekt zählt `fill: true`,
+  /// `given: false` oder ein Feld `answer`/`solution` als auszufüllen.
+  factory QuestionTableCell.parse(Object? raw) {
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      final answer = map['answer'] ?? map['solution'] ?? map['loesung'] ?? map['lösung'];
+      final text = (answer ?? map['t'] ?? map['text'] ?? map['value'] ?? '').toString().trim();
+      final fill = answer != null || map['fill'] == true || map['given'] == false || map['blank'] == true;
+      return QuestionTableCell(text: text, given: !fill);
+    }
+    final text = (raw ?? '').toString().trim();
+    final marked = RegExp(r'^\[\[(.*)\]\]$', dotAll: true).firstMatch(text);
+    if (marked != null) return QuestionTableCell(text: marked.group(1)!.trim(), given: false);
+    return QuestionTableCell(text: text);
+  }
+}
+
+/// Liest die Zeilen einer Tabellen-Frage tolerant; leere Zeilen fallen weg,
+/// `null`, wenn keine Zeile übrig bleibt. Zeilen dürfen verschieden lang
+/// sein (die Anzeige füllt auf).
+List<List<QuestionTableCell>>? parseTableRows(Object? raw) {
+  if (raw is! List) return null;
+  final rows = [
+    for (final row in raw)
+      if (row is List && row.isNotEmpty) [for (final cell in row) QuestionTableCell.parse(cell)],
+  ];
+  return rows.isEmpty ? null : rows;
+}
+
+List<List<Map<String, dynamic>>>? _tableRowsToMap(List<List<QuestionTableCell>>? rows) =>
+    rows?.map((r) => r.map((c) => c.toMap()).toList()).toList();
+
 /// Momentaufnahme des Karten-Inhalts EINER Eskalationsstufe, angelegt kurz
 /// bevor [Flashcard.copyWithPromotedVariant] ihn durch die nächste
 /// (schwerere) Stufe überschreibt. Grundlage für
@@ -215,6 +264,7 @@ class VariantSnapshot {
     this.htmlContent,
     this.imageBase64,
     this.imageTargets,
+    this.tableRows,
   });
 
   final QuestionType type;
@@ -227,6 +277,7 @@ class VariantSnapshot {
   final String? htmlContent;
   final String? imageBase64;
   final List<ImageTarget>? imageTargets;
+  final List<List<QuestionTableCell>>? tableRows;
 
   Map<String, dynamic> toMap() => {
         'type': type.name,
@@ -239,6 +290,7 @@ class VariantSnapshot {
         'htmlContent': htmlContent,
         'imageBase64': imageBase64,
         'imageTargets': imageTargets?.map((t) => t.toMap()).toList(),
+        'tableRows': _tableRowsToMap(tableRows),
       };
 
   factory VariantSnapshot.fromMap(Map<String, dynamic> map) => VariantSnapshot(
@@ -256,6 +308,7 @@ class VariantSnapshot {
         htmlContent: map['htmlContent'] as String?,
         imageBase64: map['imageBase64'] as String?,
         imageTargets: parseImageTargets(map['imageTargets']),
+        tableRows: parseTableRows(map['tableRows']),
       );
 }
 
@@ -324,6 +377,10 @@ class Flashcard {
   /// Ziele auf [imageBase64] für die Bildfragen ([QuestionType.diagramLabel]:
   /// Beschriftungen mit Position, [QuestionType.markImage]: Bereiche).
   final List<ImageTarget>? imageTargets;
+
+  /// Zeilen einer Tabellen-Frage ([QuestionType.table]); die erste Zeile ist
+  /// meist die Kopfzeile (lauter vorgegebene Zellen).
+  final List<List<QuestionTableCell>>? tableRows;
 
   final List<QuestionType>? variantChain;
   final int variantLevel;
@@ -468,6 +525,7 @@ class Flashcard {
     this.htmlContent,
     this.imageBase64,
     this.imageTargets,
+    this.tableRows,
     this.variantChain,
     this.variantLevel = 0,
     this.variantBox = 0,
@@ -519,6 +577,12 @@ class Flashcard {
         QuestionType.diagramLabel =>
           (imageTargets ?? const []).map((t) => t.label).where((l) => l.isNotEmpty).join(', '),
         QuestionType.markImage => back.trim().isNotEmpty ? back : 'die markierte Stelle im Bild',
+        QuestionType.table => [
+            for (final row in tableRows ?? const <List<QuestionTableCell>>[])
+              for (final cell in row)
+                if (!cell.given && cell.text.trim().isNotEmpty)
+                  cell.text.split(';').map((s) => s.trim()).where((s) => s.isNotEmpty).join(' / '),
+          ].join('; '),
       };
 
   Flashcard copyWithReview({
@@ -549,6 +613,7 @@ class Flashcard {
       htmlContent: htmlContent,
       imageBase64: imageBase64,
       imageTargets: imageTargets,
+      tableRows: tableRows,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -611,6 +676,7 @@ class Flashcard {
     String? imageBase64,
     bool clearImage = false,
     List<ImageTarget>? imageTargets,
+    List<List<QuestionTableCell>>? tableRows,
   }) {
     return Flashcard(
       id: id,
@@ -628,6 +694,7 @@ class Flashcard {
       htmlContent: htmlContent,
       imageBase64: clearImage ? null : (imageBase64 ?? this.imageBase64),
       imageTargets: imageTargets ?? this.imageTargets,
+      tableRows: tableRows ?? this.tableRows,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -779,6 +846,7 @@ class Flashcard {
         htmlContent: htmlContent,
         imageBase64: imageBase64,
         imageTargets: imageTargets,
+        tableRows: tableRows,
         variantChain: chain,
         variantLevel: variantLevel,
         variantBox: 0,
@@ -840,6 +908,7 @@ class Flashcard {
       htmlContent: htmlContent,
       imageBase64: imageBase64,
       imageTargets: imageTargets,
+      tableRows: tableRows,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: newBox,
@@ -884,6 +953,7 @@ class Flashcard {
     String? htmlContent,
     String? imageBase64,
     List<ImageTarget>? imageTargets,
+    List<List<QuestionTableCell>>? tableRows,
     List<VariantSnapshot>? pendingVariants,
   }) {
     final snapshot = VariantSnapshot(
@@ -897,6 +967,7 @@ class Flashcard {
       htmlContent: this.htmlContent,
       imageBase64: this.imageBase64,
       imageTargets: this.imageTargets,
+      tableRows: this.tableRows,
     );
     return Flashcard(
       id: id,
@@ -914,6 +985,7 @@ class Flashcard {
       htmlContent: htmlContent,
       imageBase64: imageBase64,
       imageTargets: imageTargets,
+      tableRows: tableRows,
       variantChain: variantChain,
       variantLevel: variantLevel + 1,
       variantBox: 0,
@@ -962,6 +1034,7 @@ class Flashcard {
       htmlContent: next.htmlContent,
       imageBase64: next.imageBase64,
       imageTargets: next.imageTargets,
+      tableRows: next.tableRows,
       pendingVariants: remaining,
     );
   }
@@ -993,6 +1066,7 @@ class Flashcard {
       htmlContent: htmlContent,
       imageBase64: imageBase64,
       imageTargets: imageTargets,
+      tableRows: tableRows,
     );
     return Flashcard(
       id: id,
@@ -1010,6 +1084,7 @@ class Flashcard {
       htmlContent: previous.htmlContent,
       imageBase64: previous.imageBase64,
       imageTargets: previous.imageTargets,
+      tableRows: previous.tableRows,
       variantChain: variantChain,
       variantLevel: variantLevel - 1,
       variantBox: 0,
@@ -1057,6 +1132,7 @@ class Flashcard {
         'htmlContent': htmlContent,
         'imageBase64': imageBase64,
         'imageTargets': imageTargets?.map((t) => t.toMap()).toList(),
+        'tableRows': _tableRowsToMap(tableRows),
         'variantChain': variantChain?.map((t) => t.name).toList(),
         'variantLevel': variantLevel,
         'variantBox': variantBox,
@@ -1103,6 +1179,7 @@ class Flashcard {
         htmlContent: map['htmlContent'] as String?,
         imageBase64: map['imageBase64'] as String?,
         imageTargets: parseImageTargets(map['imageTargets']),
+        tableRows: parseTableRows(map['tableRows']),
         variantChain:
             (map['variantChain'] as List?)?.map((t) => questionTypeFromString(t.toString())).toList(),
         variantLevel: (map['variantLevel'] as num?)?.toInt() ?? 0,

@@ -88,8 +88,9 @@ Befehle (Flutter liegt in dieser Umgebung unter `/home/user/flutter-sdk/flutter/
 **`Flashcard`** (`lib/models/flashcard.dart`) – Frage + eigener SR-Zustand:
 - Inhalt: `front`, `back`, `type` (`QuestionType`: flashcard, singleChoice,
   multipleChoice, freeText, fillBlank, dragDrop, dragCategory, html,
-  diagramLabel, markImage), je nach Typ
-  `options`/`correctText`/`blanks`/`dragPairs`/`htmlContent`/`imageTargets`;
+  diagramLabel, markImage, table), je nach Typ
+  `options`/`correctText`/`blanks`/`dragPairs`/`htmlContent`/`imageTargets`/
+  `tableRows`;
   `imageBase64` (Seiten-Screenshot/Bild, nur wenn für die Frage nötig).
 - Bildfragen: `imageTargets` (`List<ImageTarget>`, Koordinaten relativ zum
   Bild 0..1; `group` = austauschbare Stellen, geprüft über
@@ -124,8 +125,8 @@ Rekonstruktionen (`copyWith*`, Export/Import, Sync, `_mergeIntoChain`,
 `_editConcept` …). Ein neues Feld MUSS überall ergänzt werden – dieser Fehler
 ist in der Historie mehrfach passiert (verlorene `htmlContent`/`masteryBox`/
 Seiten-Links). Nach einem neuen Feld: `grep -rn "Flashcard(" lib`. Zuletzt
-dazugekommen: `imageTargets` (auch in `VariantSnapshot`, Stufenwechsel,
-Export/Import). Bild/Ziele einer gespeicherten Karte ändern:
+dazugekommen: `imageTargets`, `stageLevel`/`stageGroup`, `aiHints`,
+`tableRows` (auch in `VariantSnapshot`, Stufenwechsel, Export/Import). Bild/Ziele einer gespeicherten Karte ändern:
 `Flashcard.copyWithImage` (Lernstand bleibt).
 
 ## 5. Logik-Regeln: Quiz, FSRS und Ampel (exakt)
@@ -433,7 +434,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 674 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 694 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -548,6 +549,16 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     auf der Startseite (`MasteryBar`, wie im Design-Entwurf), sichtbarer
     „Auswählen“-Modus in der Kartenliste mit Sammel-Bearbeiten (Gewichtung,
     Stufe, zusammenfassen/einzeln, Einheit, Lernstand zurücksetzen, Löschen).
+28. Fragetyp Tabelle (`QuestionType.table`, `Flashcard.tableRows` =
+    Zeilen aus `QuestionTableCell {text, given}`; gespeichert als
+    `{'t': …, 'fill': true}`, `QuestionTableCell.parse` liest auch
+    `{"answer": …}` und `"[[Lösung]]"`). Prüfung `AnswerChecker.tableHits`/
+    `tableResult` (lokal + KI über `checkFillBlankAnswers` für abgelehnte
+    Zellen); alle richtig = richtig, ≥ `tablePartialShare` (0,8) = richtig
+    mit `Grade.hard`, sonst falsch; Probeklausur: nur komplett richtig.
+    Stufe schwer. Editor in `card_edit_screen.dart` (Schloss je Zelle),
+    Anzeige in Listen über `TablePreview`. Klasse heißt bewusst nicht
+    `TableCell` (Kollision mit Flutters Widget).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

@@ -91,11 +91,16 @@ Wähle pro Frage den technisch passenden Typ AUSSCHLIESSLICH aus der
 tatsächlichen Struktur der Original-Frage im Dokument – nicht nach dem, was
 am bequemsten zu erzeugen wäre. "free_text" ist NICHT der Standard-
 Auffangtyp für alles, was nicht auf Anhieb offensichtlich in einen anderen
-Typ passt: hat die Frage eine Tabellen-/Matrixstruktur, eine
-Zuordnungsaufgabe, oder verlangt sie erkennbar mehrere separate
-Stichpunkte/Kernaussagen als Antwort, gehört sie zu "html" (siehe unten),
-NICHT zu "free_text" – auch wenn "html" mehr Aufwand bedeutet. Nutze
-NICHT für alles denselben Typ, sondern möglichst den spezifischsten:
+Typ passt: ist eine Tabelle mit kurzen Einträgen auszufüllen, gehört sie
+zu "table"; hat sie eine Matrixstruktur, eine Zuordnungsaufgabe, oder
+verlangt sie erkennbar mehrere separate Stichpunkte/Kernaussagen als
+Antwort, gehört sie zu "html" (siehe unten), NICHT zu "free_text" – auch
+wenn das mehr Aufwand bedeutet. Nutze NICHT für alles denselben Typ,
+sondern möglichst den spezifischsten:
+   - "table": Tabelle ausfüllen. "table" = Liste der Zeilen, jede eine Liste
+     der Zellen; vorgegebene Zellen als Text, auszufüllende als
+     {"answer": "Lösung; Variante"}.
+     {"type": "table", "front": "Vervollständige die Tabelle", "table": [["Begriff", "Merkmal"], ["...", {"answer": "..."}]]}
    - "single_choice": genau eine richtige Antwort unter mehreren Optionen.
      {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
    - "multiple_choice": mehrere Antworten gleichzeitig richtig, gleiches Format.
@@ -357,6 +362,10 @@ höchstens etwa ein Drittel der Karten; der Rest verteilt sich auf
 Auswahl-, Lücken-, Zuordnungs- und (wo sinnvoll) interaktive Fragen.
 Übungsaufgaben mit fester Aufgabenform (Ankreuzen, Lücken, Zuordnen,
 Tabelle) behalten diese Form. Wähle pro Frage den zum Inhalt passenden Typ:
+   - "table": eine Tabelle zum Ausfüllen (auch gut für "schwer": Merkmale
+     mehrerer Begriffe gegenüberstellen). "table" = Liste der Zeilen, jede
+     eine Liste der Zellen; vorgegebene Zellen als Text, auszufüllende als
+     {"answer": "Lösung; Variante"}.
    - "single_choice": klares Faktenwissen mit genau einer richtigen Antwort.
    - "multiple_choice": wenn mehrere Aussagen gleichzeitig zutreffen können.
    - "fill_blank": Lückentext – markiere jede Lücke im "front"-Text mit genau
@@ -442,6 +451,8 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
      "level": "schwer", "group": "Sachverhalt A", "conceptTitle": "Konzeptname"},
     {"type": "multiple_choice", "front": "Frage", "level": "leicht", "group": "Sachverhalt B",
      "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
+    {"type": "table", "front": "Vervollständige die Tabelle", "level": "schwer", "group": "Sachverhalt B",
+     "table": [["Begriff", "Merkmal"], ["...", {"answer": "Lösung; Variante"}]]},
     {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]},
     {"type": "drag_category", "front": "Sortiere ein", "dragPairs": [{"source": "A", "target": "Kategorie 1"}]},
     {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"},
@@ -599,7 +610,12 @@ anderen Typ passt – bevor du "free_text" wählst, prüfe der Reihe nach:
   1. Sind im Original mehrere Antwortoptionen zum Ankreuzen vorgegeben?
      -> "single_choice"/"multiple_choice".
   2. Ist es ein Lückentext? -> "fill_blank".
-  3. Hat die Frage eine Tabellen-/Matrixstruktur (mehrere Kriterien-Zeilen,
+  2b. Ist eine Tabelle mit kurzen Einträgen auszufüllen? -> "table":
+     {"type": "table", "front": "...", "table": [["Kopf A", "Kopf B"],
+     ["vorgegeben", {"answer": "Lösung; Variante"}]]} – vorgegebene Zellen
+     als Text, auszufüllende als {"answer": ...}, Zeilen/Spalten wie im
+     Original.
+  3. Hat die Frage eine Matrixstruktur (mehrere Kriterien-Zeilen,
      pro Zeile eine von mehreren Spalten/Kategorien zuordnen), eine
      Zuordnungsaufgabe (Begriff <-> Begriff/Kategorie per Linie/Pfeil), oder
      verlangt sie erkennbar mehrere separate Stichpunkte/Kernaussagen als
@@ -718,18 +734,25 @@ Auffangtyp für alles; prüfe der Reihe nach:
    (mehrere Begriffe je Kategorie) -> "drag_category" mit denselben
    "dragPairs" (target = Kategorie).
 4. {{LABEL_RULE}}
-5. Tabelle ausfüllen, Wahr/Falsch-Matrix mit mehreren Aussagen, Reihenfolge
-   ordnen, mehrere Eingabefelder (z.B. Rechenweg mit Zwischenergebnissen)
-   oder eine Aufgabe, deren Lösung aus mehreren getrennten Kernpunkten
-   besteht -> "html" (siehe HTML) – NICHT zu free_text vereinfachen.
-6. Kurze Antwort (Begriff, Zahl, Formel, ein Satz) -> "free_text":
+5. Tabelle ausfüllen (Zellen mit kurzen Einträgen) -> "table": "table" =
+   Liste der Zeilen, jede Zeile eine Liste der Zellen; vorgegebene Zellen
+   (Kopfzeile, Zeilentitel, schon ausgefüllte Werte) als Text, auszufüllende
+   als {"answer": "Lösung; Variante"} – genau wie im Original, gleiche Zeilen
+   und Spalten. Beispiel: {"type": "table", "front": "Vervollständige die
+   Tabelle", "table": [["Begriff", "Merkmal"], ["Stückliste", {"answer":
+   "..."}]]}
+6. Wahr/Falsch-Matrix mit mehreren Aussagen, Reihenfolge ordnen, mehrere
+   Eingabefelder (z.B. Rechenweg mit Zwischenergebnissen) oder eine Aufgabe,
+   deren Lösung aus mehreren getrennten Kernpunkten besteht -> "html" (siehe
+   HTML) – NICHT zu free_text vereinfachen.
+7. Kurze Antwort (Begriff, Zahl, Formel, ein Satz) -> "free_text":
    "correctText": "..." (mehrere akzeptierte Varianten mit ";").
-7. Längere Erklär-, Herleitungs- oder Diskussionsaufgabe ohne kurze
+8. Längere Erklär-, Herleitungs- oder Diskussionsaufgabe ohne kurze
    Antwort -> "flashcard": "back": Musterlösung, knapp und vollständig.
 Prüfe VOR der Wahl, ob du den Typ wirklich vollständig ausfüllen kannst
 (single_choice/multiple_choice: mindestens 2 Optionen, genau die richtige(n)
 markiert; html: der exakte postMessage-Aufruf ist enthalten; free_text:
-"correctText" ist nicht leer) – bist du dir nicht sicher, wähle lieber den
+"correctText" ist nicht leer; table: mindestens eine Zelle mit "answer") – bist du dir nicht sicher, wähle lieber den
 nächstpassenden Typ, den du sicher vollständig befüllen kannst, statt einen
 Typ zu behaupten, den du nur halb ausfüllst: eine unvollständige Angabe wird
 sonst automatisch auf eine einfache Karteikarte zurückgestuft.
@@ -1083,6 +1106,7 @@ Sprache der Vorlage.
   /// – deshalb nur auf ausdrücklichen Wunsch statt als KI-Wahl.
   static const selectablePageQuestionTypes = [
     ...pageQuestionTypes,
+    QuestionType.table,
     QuestionType.html,
     QuestionType.diagramLabel,
     QuestionType.markImage,
@@ -1337,7 +1361,7 @@ Antworte in der Sprache der Vorlage.
               '{"front": "...", "back": "..."}',
         QuestionType.html =>
           'Zieltyp "html": derselbe Fakt als eigenständige interaktive Seite '
-              '(z.B. Zuordnungs-Matrix, Tabelle zum Ausfüllen, Klick-Aufgabe). '
+              '(z.B. Zuordnungs-Matrix, Klick-Aufgabe). '
               '"htmlContent" enthält NUR den Inhalt von <body> als EIN String mit '
               'Inline-HTML/CSS/JS – keine externen Skripte/Bilder, kein '
               'Netzwerkzugriff. Die Prüf-Logik steckt als Inline-JavaScript in der '
@@ -1379,6 +1403,12 @@ Antworte in der Sprache der Vorlage.
               'diesen Text an, damit er abgedeckt wird. "back" sagt kurz, was dort '
               'zu sehen ist. Antwortformat: {"front": "Wo ...?", "back": "...", '
               '"targets": [{"box": [0.40, 0.30, 0.60, 0.45]}], "covers": []}',
+        QuestionType.table => 'Zieltyp "table" (Tabelle ausfüllen): "table" ist eine Liste von Zeilen, '
+            'jede Zeile eine Liste von Zellen. Vorgegebene Zellen (Kopfzeile, Zeilentitel, schon '
+            'ausgefüllte Werte) sind einfache Texte; Zellen, die der Lernende ausfüllen soll, sind '
+            'Objekte {"answer": "Lösung; Alternative"}. Kurze, eindeutig prüfbare Zellinhalte. '
+            'Antwortformat: {"front": "Vervollständige die Tabelle ...", "table": [["Begriff", '
+            '"Merkmal"], ["...", {"answer": "..."}]]}',
       };
 
   /// Erster Schritt der Schwierigkeits-Eskalation (siehe

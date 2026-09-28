@@ -58,7 +58,7 @@ class StageGate {
         QuestionType.diagramLabel ||
         QuestionType.flashcard =>
           StageLevel.mittel,
-        QuestionType.freeText || QuestionType.html => StageLevel.schwer,
+        QuestionType.freeText || QuestionType.html || QuestionType.table => StageLevel.schwer,
       };
 
   static StageLevel? levelFromIndex(int? index) =>

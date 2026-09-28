@@ -314,6 +314,46 @@ class AnswerChecker {
     return AnswerCheckResult(isCorrect: hit, correctAnswerLabel: q.answerSummary);
   }
 
+  /// Die auszufüllenden Zellen einer Tabellen-Frage (Zeile, Spalte, Lösung)
+  /// – ohne leere Lösungen, die nie zu treffen wären.
+  static List<({int row, int col, String solution})> tableBlanks(Flashcard q) => [
+        for (var r = 0; r < (q.tableRows ?? const []).length; r++)
+          for (var c = 0; c < q.tableRows![r].length; c++)
+            if (!q.tableRows![r][c].given && q.tableRows![r][c].text.trim().isNotEmpty)
+              (row: r, col: c, solution: q.tableRows![r][c].text),
+      ];
+
+  /// Ab diesem Anteil richtiger Zellen zählt eine Tabelle als "fast
+  /// richtig": kein Fehler, aber die Ampel steigt nicht (wie mit Tipp).
+  static const double tablePartialShare = 0.8;
+
+  /// Je auszufüllender Zelle (Reihenfolge wie [tableBlanks]), ob die Eingabe
+  /// passt – mit Tippfehler-Toleranz und per ";" hinterlegten Varianten.
+  static List<bool> tableHits(Flashcard q, List<String> answers) {
+    final blanks = tableBlanks(q);
+    return [
+      for (var i = 0; i < blanks.length; i++) i < answers.length && answerMatches(answers[i], blanks[i].solution),
+    ];
+  }
+
+  /// Ergebnis einer Tabelle: [isCorrect] nur bei allen Zellen richtig,
+  /// [partial] bei mindestens [tablePartialShare] (dann als "Schwer" zu
+  /// verbuchen), [share] der Anteil richtiger Zellen.
+  static ({AnswerCheckResult result, bool partial, double share}) tableResult(Flashcard q, List<bool> hits) {
+    final blanks = tableBlanks(q);
+    final right = hits.where((h) => h).length;
+    final share = blanks.isEmpty ? 0.0 : right / blanks.length;
+    final all = blanks.isNotEmpty && right == blanks.length;
+    return (
+      result: AnswerCheckResult(
+        isCorrect: all,
+        correctAnswerLabel: blanks.map((b) => solutionLabel(b.solution)).join(' | '),
+      ),
+      partial: !all && share >= tablePartialShare,
+      share: share,
+    );
+  }
+
   /// Ob sich die Frage in ihrem Typ überhaupt beantworten lässt. Karten mit
   /// kaputten Daten (keine richtige Option, leere Lösung, keine Paare …)
   /// zeigt die Oberfläche stattdessen als Karteikarte zum Selbstbewerten, statt
@@ -338,6 +378,8 @@ class AnswerChecker {
         return _hasImage(q) && labelTargets(q).isNotEmpty;
       case QuestionType.markImage:
         return _hasImage(q) && markRegions(q).isNotEmpty;
+      case QuestionType.table:
+        return tableBlanks(q).isNotEmpty;
     }
   }
 

@@ -162,6 +162,7 @@ class ModuleExportService {
       htmlContent: f.htmlContent,
       imageBase64: f.imageBase64,
       imageTargets: f.imageTargets,
+      tableRows: f.tableRows,
     );
     final stages = [...history, current, ...?f.pendingVariants];
     final first = stages.first;
@@ -182,6 +183,7 @@ class ModuleExportService {
       htmlContent: first.htmlContent,
       imageBase64: first.imageBase64,
       imageTargets: first.imageTargets,
+      tableRows: first.tableRows,
       variantChain: f.variantChain,
       pendingVariants: pending.isEmpty ? null : pending,
       unitId: f.unitId,
@@ -321,6 +323,7 @@ class ModuleExportService {
               htmlContent: f.htmlContent,
               imageBase64: f.imageBase64,
               imageTargets: f.imageTargets,
+              tableRows: f.tableRows,
               variantChain: f.variantChain,
               variantLevel: f.variantLevel,
               variantBox: f.variantBox,

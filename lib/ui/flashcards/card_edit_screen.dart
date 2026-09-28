@@ -39,6 +39,14 @@ class _PairRow {
   final TextEditingController target;
 }
 
+class _TableEditCell {
+  _TableEditCell(String text, this.given) : controller = TextEditingController(text: text);
+  final TextEditingController controller;
+
+  /// true = vorgegeben (wird angezeigt), false = auszufüllen (Text ist die Lösung).
+  bool given;
+}
+
 class _CardEditScreenState extends State<CardEditScreen> {
   late final TextEditingController _front;
   late final TextEditingController _back;
@@ -46,6 +54,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   final List<_OptionRow> _options = [];
   final List<_PairRow> _pairs = [];
   final List<TextEditingController> _blanks = [];
+  final List<List<_TableEditCell>> _table = [];
   String? _error;
 
   QuestionType get _type => widget.card.type;
@@ -82,6 +91,30 @@ class _CardEditScreenState extends State<CardEditScreen> {
       _front.addListener(_syncBlankCount);
       _syncBlankCount();
     }
+    if (_type == QuestionType.table) {
+      final rows = card.tableRows ?? const <List<QuestionTableCell>>[];
+      final columns = rows.fold<int>(2, (n, r) => r.length > n ? r.length : n);
+      for (final row in rows) {
+        _table.add([
+          for (var col = 0; col < columns; col++)
+            col < row.length ? _TableEditCell(row[col].text, row[col].given) : _TableEditCell('', true),
+        ]);
+      }
+      while (_table.length < 2) {
+        _addTableRow();
+      }
+    }
+  }
+
+  int get _tableColumns => _table.isEmpty ? 2 : _table.first.length;
+
+  void _addTableRow() =>
+      _table.add([for (var col = 0; col < _tableColumns; col++) _TableEditCell('', _table.isEmpty || col == 0)]);
+
+  void _addTableColumn() {
+    for (final (r, row) in _table.indexed) {
+      row.add(_TableEditCell('', r == 0));
+    }
   }
 
   /// Je "___" im Fragetext ein Lösungsfeld.
@@ -112,6 +145,9 @@ class _CardEditScreenState extends State<CardEditScreen> {
     }
     for (final b in _blanks) {
       b.dispose();
+    }
+    for (final cell in _table.expand((r) => r)) {
+      cell.controller.dispose();
     }
     super.dispose();
   }
@@ -153,6 +189,17 @@ class _CardEditScreenState extends State<CardEditScreen> {
       correctText = _correctText.text.trim();
       if (correctText.isEmpty) return setState(() => _error = 'Eine Musterantwort eintragen.');
     }
+    List<List<QuestionTableCell>>? tableRows;
+    if (_type == QuestionType.table) {
+      tableRows = [
+        for (final row in _table)
+          if (row.any((c) => c.controller.text.trim().isNotEmpty))
+            [for (final c in row) QuestionTableCell(text: c.controller.text.trim(), given: c.given)],
+      ];
+      if (!tableRows.any((r) => r.any((c) => !c.given && c.text.isNotEmpty))) {
+        return setState(() => _error = 'Mindestens eine Zelle zum Ausfüllen (mit Lösung) anlegen.');
+      }
+    }
     Navigator.of(context).pop(widget.card.copyWithContent(
       front: front,
       back: _back.text.trim(),
@@ -160,6 +207,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
       correctText: correctText,
       blanks: blanks,
       dragPairs: pairs,
+      tableRows: tableRows,
     ));
   }
 
@@ -197,6 +245,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
           if (_isChoice) ..._buildOptions(theme),
           if (_isDrag) ..._buildPairs(theme),
           if (_type == QuestionType.fillBlank) ..._buildBlanks(),
+          if (_type == QuestionType.table) ..._buildTable(theme),
           if (_type == QuestionType.freeText) ...[
             TextField(
               key: const ValueKey('card-edit-correct-text'),
@@ -365,5 +414,106 @@ class _CardEditScreenState extends State<CardEditScreen> {
             ),
           ),
         const SizedBox(height: 8),
+      ];
+
+  void _removeTableRow() {
+    if (_table.length <= 2) return;
+    setState(() {
+      for (final cell in _table.removeLast()) {
+        cell.controller.dispose();
+      }
+    });
+  }
+
+  void _removeTableColumn() {
+    if (_tableColumns <= 1) return;
+    setState(() {
+      for (final row in _table) {
+        row.removeLast().controller.dispose();
+      }
+    });
+  }
+
+  /// Raster aus Textfeldern; das Schloss je Zelle schaltet zwischen
+  /// vorgegeben (wird angezeigt) und auszufüllen (Text = Lösung).
+  List<Widget> _buildTable(ThemeData theme) => [
+        Text('Tabelle', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text(
+          'Schloss zu = Zelle wird vorgegeben. Schloss offen = Zelle wird beim Lernen ausgefüllt, '
+          'dort die Lösung eintragen (mehrere richtige Schreibweisen mit ; trennen).',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final (r, row) in _table.indexed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final (col, cell) in row.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: SizedBox(
+                            width: 170,
+                            child: TextField(
+                              key: ValueKey('card-edit-table-$r-$col'),
+                              controller: cell.controller,
+                              maxLines: null,
+                              style: TextStyle(fontWeight: r == 0 && cell.given ? FontWeight.w700 : null),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                filled: !cell.given,
+                                fillColor: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+                                hintText: cell.given ? 'Text' : 'Lösung',
+                                border: const OutlineInputBorder(),
+                                suffixIcon: IconButton(
+                                  key: ValueKey('card-edit-table-toggle-$r-$col'),
+                                  tooltip: cell.given ? 'Zum Ausfüllen machen' : 'Vorgeben',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: Icon(cell.given ? Icons.lock_outline : Icons.edit_note, size: 18),
+                                  onPressed: () => setState(() => cell.given = !cell.given),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Wrap(
+          spacing: 4,
+          children: [
+            TextButton.icon(
+              onPressed: () => setState(_addTableRow),
+              icon: const Icon(Icons.add),
+              label: const Text('Zeile'),
+            ),
+            TextButton.icon(
+              onPressed: () => setState(_addTableColumn),
+              icon: const Icon(Icons.add),
+              label: const Text('Spalte'),
+            ),
+            TextButton.icon(
+              onPressed: _table.length <= 2 ? null : _removeTableRow,
+              icon: const Icon(Icons.remove),
+              label: const Text('Zeile'),
+            ),
+            TextButton.icon(
+              onPressed: _tableColumns <= 1 ? null : _removeTableColumn,
+              icon: const Icon(Icons.remove),
+              label: const Text('Spalte'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
       ];
 }

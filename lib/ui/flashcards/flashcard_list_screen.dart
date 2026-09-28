@@ -22,6 +22,7 @@ import '../widgets/image_editor_screen.dart';
 import '../widgets/mastery_dot.dart';
 import '../widgets/math_text.dart';
 import '../widgets/stage_picker.dart';
+import '../widgets/table_preview.dart';
 import '../widgets/weight_slider.dart';
 import 'card_edit_screen.dart';
 
@@ -473,6 +474,7 @@ class _FlashcardTile extends StatelessWidget {
       correctText: edited.correctText,
       blanks: edited.blanks,
       dragPairs: edited.dragPairs,
+      tableRows: edited.tableRows,
     ));
   }
 
@@ -837,6 +839,8 @@ class _AnswerDetail extends StatelessWidget {
               : '${card.answerSummary} ($regions Bereich${regions == 1 ? '' : 'e'} im Bild)',
           style: TextStyle(color: regions == 0 ? c.danger : c.inkMuted, fontSize: 12.5, height: 1.5),
         );
+      case QuestionType.table:
+        return TablePreview(rows: card.tableRows ?? const []);
     }
   }
 }

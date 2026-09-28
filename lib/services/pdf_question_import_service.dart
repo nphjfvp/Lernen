@@ -390,6 +390,7 @@ class PdfQuestionImportService {
         htmlContent: f['htmlContent'] as String?,
         imageBase64: q.imageBase64,
         imageTargets: parseImageTargets(f['imageTargets']),
+        tableRows: parseTableRows(f['tableRows']),
         sourceMaterialId: sourceMaterialId,
         sourcePage: sourceMaterialId == null ? null : q.page,
         weight: defaultFlashcardWeightFor(sourceKind),
