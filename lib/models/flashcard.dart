@@ -563,6 +563,8 @@ class Flashcard {
   String get promptText => switch (type) {
         QuestionType.singleChoice || QuestionType.multipleChoice when (options ?? const []).isNotEmpty =>
           '$front\nAntwortoptionen: ${options!.map((o) => o.text).join(' | ')}',
+        QuestionType.dragDrop || QuestionType.dragCategory when (dragPairs ?? const []).isNotEmpty =>
+          '$front\nBegriffe: ${dragPairs!.map((p) => p.source).where((s) => s.trim().isNotEmpty).join(' | ')}',
         QuestionType.table when (tableRows ?? const []).isNotEmpty => [
             front,
             for (final row in tableRows!) row.map((c) => c.given ? c.text : '___').join(' | '),

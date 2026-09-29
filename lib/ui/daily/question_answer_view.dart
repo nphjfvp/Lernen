@@ -967,7 +967,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                           _newBadge(c),
                           _buildCardImage(c),
                           MathText(
-                            widget.card.front,
+                            // Ersatzansicht (z.B. Zuordnen mit nur einem
+                            // Ziel): mit den Begriffen/Optionen, sonst wüsste
+                            // man nicht, worum es geht.
+                            widget.card.type == QuestionType.flashcard ? widget.card.front : widget.card.promptText,
                             textAlign: TextAlign.center,
                             style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, height: 1.45),
                           ),
@@ -1040,8 +1043,14 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// Karten mit kaputten Daten die bestmögliche Lösung.
   String get _backText {
     final card = widget.card;
-    if (card.back.trim().isNotEmpty) return card.back;
     final summary = card.answerSummary.trim();
+    final back = card.back.trim();
+    // Bei Ersatzansichten ist die Lösung (z.B. die Zuordnung) wichtiger als
+    // die Erklärung – beides zeigen.
+    if (card.type != QuestionType.flashcard && card.type != QuestionType.html && summary.isNotEmpty) {
+      return back.isEmpty || back == summary ? summary : '$summary\n\n$back';
+    }
+    if (back.isNotEmpty) return card.back;
     return summary.isNotEmpty ? summary : '(Keine Lösung hinterlegt)';
   }
 

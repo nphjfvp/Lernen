@@ -354,6 +354,16 @@ class AnswerChecker {
     );
   }
 
+  /// Eine Zuordnen-/Kategorien-Frage, die man nicht falsch machen kann: nur
+  /// ein Paar oder alle Begriffe gehören zum selben (einzigen) Ziel. Sie wird
+  /// stattdessen als Karteikarte abgefragt (siehe [isAnswerable]) – dann
+  /// muss man die Zuordnung selbst wissen.
+  static bool isTrivialDrag(Flashcard q) {
+    final pairs = usableDragPairs(q);
+    final targets = {for (final p in pairs) p.target.trim().toLowerCase()};
+    return pairs.length < 2 || targets.length < 2;
+  }
+
   /// Ob sich die Frage in ihrem Typ überhaupt beantworten lässt. Karten mit
   /// kaputten Daten (keine richtige Option, leere Lösung, keine Paare …)
   /// zeigt die Oberfläche stattdessen als Karteikarte zum Selbstbewerten, statt
@@ -373,7 +383,7 @@ class AnswerChecker {
         return solvableBlanks(q).isNotEmpty;
       case QuestionType.dragDrop:
       case QuestionType.dragCategory:
-        return usableDragPairs(q).isNotEmpty;
+        return !isTrivialDrag(q);
       case QuestionType.diagramLabel:
         return _hasImage(q) && labelTargets(q).isNotEmpty;
       case QuestionType.markImage:

@@ -77,6 +77,24 @@ class AiService {
   /// dieselbe Feld-/Typ-Beschreibung dupliziert statt geteilt: der Text muss
   /// für sich allein stehen, ohne Bezug auf Dart-Code, das ihn ein Mensch
   /// woanders einfügt.
+  /// Gegen geschenkte Fragen – Teil aller Prompts, die selbst Fragen
+  /// erstellen (Nutzer-Befund: Zuordnen mit nur einem Paar).
+  static const _noGiveawayRule = '''
+KEINE GESCHENKTEN FRAGEN – jede selbst erstellte Frage muss man auch falsch
+beantworten können:
+   - "drag_drop" nur mit mindestens 3 Paaren (verschiedene Ziele),
+     "drag_category" nur mit mindestens 2 Kategorien und 4 Begriffen. Gibt
+     der Stoff das nicht her (z.B. nur EINE Zuordnung), nimm einen anderen
+     Typ (single_choice mit plausiblen falschen Optionen, fill_blank oder
+     free_text).
+   - "single_choice" mit mindestens 3, "multiple_choice" mit mindestens 4
+     Optionen; die falschen Optionen sind plausibel und aus demselben
+     Themengebiet (nicht offensichtlich absurd), bei "multiple_choice" ist
+     mindestens eine Option falsch.
+   - Die Lösung steht nicht schon im Fragetext und lässt sich nicht aus der
+     Formulierung ablesen (z.B. kein Lückenwort, das im selben Satz steht).
+''';
+
   static const externalJsonPromptTemplate = '''
 Du hilfst mir, Lernmaterial für die App "Lernen" aufzubereiten. Ich füge dir
 unten den Text eines Dokuments an (Klausur, Übungsblatt, Folien o.ä.).
@@ -145,6 +163,7 @@ sondern möglichst den spezifischsten:
          Geräten, die keine interaktive Seite anzeigen können (z.B. Windows-
          Desktop statt Android/iOS).
 
+$_noGiveawayRule
 JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
 enthalten (siehe Beispiele oben) – ein Eintrag mit nur "front" und sonst
 nichts ist ungültig und wird von der App verworfen. Enthält das Dokument zu
@@ -405,6 +424,7 @@ Tabelle) behalten diese Form. Wähle pro Frage den zum Inhalt passenden Typ:
      Text-Zusammenfassung der Lösung) an – dient als Fallback-Anzeige auf
      Geräten ohne WebView-Unterstützung (z.B. Windows-Desktop).
 
+$_noGiveawayRule
 JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
 enthalten (siehe Beispiele unten) – ein Eintrag mit nur "front" und sonst
 nichts ist ungültig und wird verworfen.
@@ -548,6 +568,8 @@ denselben): "single_choice" (options mit isCorrect), "fill_blank" (Lücken
 im "front" als "___" markiert, "blanks" mit den Lösungen), "free_text"
 ("correctText" mit der Lösung) oder "flashcard" (offenes front/back, back
 ist Pflicht) – wie im Hauptformat des Nachbereiten-Modus.
+
+$_noGiveawayRule
 
 Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 \$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
@@ -1050,12 +1072,16 @@ Format und Schwierigkeit unterscheiden sich:
 {{TIERS}}
 Ist für eine Stufe kein Typ vorgegeben, wählst du das Format, das zu Inhalt
 und Stufe am besten passt: leichte Stufen eher Wiedererkennen
-(single_choice, multiple_choice, drag_drop), mittlere eher gestütztes
-Erinnern (fill_blank, drag_category), schwere eher freies Erinnern
-(free_text, flashcard). Jede Stufe ist mindestens so anspruchsvoll wie die
-vorherige; eine frei gewählte Stufe hat möglichst einen anderen Typ als die
-übrigen Stufen derselben Frage.
+(single_choice, multiple_choice), mittlere eher gestütztes Erinnern
+(fill_blank), schwere eher freies Erinnern (free_text, flashcard).
+Zuordnen ("drag_drop"/"drag_category") nur, wenn der Fakt selbst aus
+mehreren zusammengehörigen Teilen besteht (z.B. mehrere Aufgaben und ihre
+Abteilungen) – ein einzelner Fakt ergibt keine sinnvolle Zuordnung. Jede
+Stufe ist mindestens so anspruchsvoll wie die vorherige; eine frei gewählte
+Stufe hat möglichst einen anderen Typ als die übrigen Stufen derselben
+Frage.
 
+$_noGiveawayRule
 Formatvorgaben der Fragetypen:
 {{TYPE_RULES}}
 
@@ -1351,12 +1377,14 @@ Antworte in der Sprache der Vorlage.
               'keine Auswahl mehr, nur Erinnerung). Antwortformat: '
               '{"front": "...", "correctText": "Lösung; ggf. Alternative"}',
         QuestionType.dragDrop =>
-          'Zieltyp "drag_drop": als Zuordnungspaare, jedes Ziel genau einmal '
+          'Zieltyp "drag_drop": als Zuordnungspaare – mindestens 3 Paare aus dem '
+              'Stoff rund um diesen Fakt, sonst wäre die Zuordnung geschenkt; jedes Ziel genau einmal '
               '(1:1 – gehören mehrere Begriffe zum selben Ziel, ist es '
               'drag_category). Antwortformat: '
               '{"front": "...", "dragPairs": [{"source": "...", "target": "..."}]}',
         QuestionType.dragCategory =>
-          'Zieltyp "drag_category": Begriffe in Kategorien einsortieren. '
+          'Zieltyp "drag_category": Begriffe in Kategorien einsortieren – mindestens '
+              '2 Kategorien und 4 Begriffe. '
               'Antwortformat: {"front": "...", "dragPairs": '
               '[{"source": "...", "target": "Kategorie"}]}',
         QuestionType.flashcard =>

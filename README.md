@@ -229,6 +229,14 @@ engerem Fokus statt Feature-Fülle.
   trotzdem daneben, wertet **"Als richtig werten"** eine abgelehnte
   Freitext-/Lückentext-/Tabellen-Antwort als richtig (nicht in der
   Probeklausur).
+  **Keine geschenkten Fragen:** Die KI soll Zuordnen nur mit mindestens 3
+  Paaren (Kategorien: mindestens 2 Kategorien, 4 Begriffe) und Auswahlfragen
+  nur mit plausiblen falschen Optionen erstellen; die Lösung darf nicht im
+  Fragetext stehen. Kommt trotzdem eine Zuordnung mit nur einem Ziel an
+  (ein einziges Paar oder alles in dieselbe Kategorie), wird daraus eine
+  Freitextfrage ("… „Begriff“" → Ziel eintippen); schon gespeicherte
+  solche Karten werden als Karteikarte abgefragt (Begriff in der Frage,
+  Zuordnung auf der Rückseite) und in der Kartenliste markiert.
   **Zuordnen/Kategorien** arbeitet mit Positionen statt Texten: gleich
   lautende Begriffe oder Ziele (z.B. zweimal "Metall") belegen nie mehrere
   Felder; kommt ein Ziel mehrfach vor, wird die Frage als Kategorien-Frage

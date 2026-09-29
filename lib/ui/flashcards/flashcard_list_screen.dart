@@ -1002,6 +1002,9 @@ class _FlashcardTile extends StatelessWidget {
       if (stage != StageStatus.active) stage.label,
       if (stage == StageStatus.active) card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
       if (card.weight != 1.0) '${formatWeight(card.weight)}× gewichtet',
+      if ((card.type == QuestionType.dragDrop || card.type == QuestionType.dragCategory) &&
+          AnswerChecker.isTrivialDrag(card))
+        'zu wenig Paare – wird als Karteikarte abgefragt',
     ];
     // Material statt DecoratedBox: ListTile/ExpansionTile malen Hintergrund
     // und Tipp-Effekt auf das nächste Material (sonst Debug-Assertion und

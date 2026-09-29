@@ -444,7 +444,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 713 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 718 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -589,6 +589,16 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     als Gruppe gespeicherte Konzept-ID; Ordnername-Dialog besitzt seinen
     Controller selbst; CSV-Ampel mit Stufen; Startseite lädt die Ampel nur
     sichtbar neu; KI-Sortierung schickt höchstens 200 bekannte Ordnernamen.
+31. Geschenkte Fragen (Nutzer-Befund: Zuordnen mit nur einem Paar aus
+    „Frage erstellen“, Stufe Mittel): `_noGiveawayRule` in allen Prompts,
+    die selbst Fragen erstellen (≥3 Paare, ≥2 Kategorien/4 Begriffe,
+    plausible Ablenker, Lösung nicht im Fragetext); Stufen-Hinweis im
+    Seiten-Prompt empfiehlt Zuordnen nur bei mehrteiligen Fakten.
+    `QuestionParsing._isComplete` verlangt ≥2 Paare mit ≥2 Zielen; eine
+    Zuordnung mit genau einem Ziel wird zu free_text (Begriffe in „…“ an
+    die Frage gehängt, Ziel = correctText). Gespeicherte:
+    `AnswerChecker.isTrivialDrag` → nicht beantwortbar → Karteikarten-
+    Ersatzansicht mit `Flashcard.promptText` (Begriffe) und Lösung zuerst.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

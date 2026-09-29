@@ -212,11 +212,13 @@ void main() {
         'dragPairs': [
           {'source': 'Hund', 'target': 'Tier'},
           {'source': '', 'target': 'Pflanze'},
+          {'source': 'Rose', 'target': 'Blume'},
         ],
       });
       expect(drag!['type'], 'drag_drop');
       expect(drag['dragPairs'], [
         {'source': 'Hund', 'target': 'Tier'},
+        {'source': 'Rose', 'target': 'Blume'},
       ]);
 
       final choice = QuestionParsing.normalizeGeneratedFlashcard({

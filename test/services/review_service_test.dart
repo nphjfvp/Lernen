@@ -299,6 +299,7 @@ void main() {
           'dragPairs': [
             {'source': 'Paris', 'target': 'Frankreich'},
             {'source': 'Lyon', 'target': 'Frankreich'},
+            {'source': 'Rom', 'target': 'Italien'},
           ],
         },
         now: now,

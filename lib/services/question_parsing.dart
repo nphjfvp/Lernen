@@ -189,6 +189,22 @@ class QuestionParsing {
       }
     }
 
+    // Zuordnen mit nur EINEM Ziel (ein Paar bzw. alles in dieselbe
+    // Kategorie) wäre geschenkt – als Freitext fragen, wohin die Begriffe
+    // gehören, dann muss man es wirklich wissen.
+    if (type == QuestionType.dragDrop || type == QuestionType.dragCategory) {
+      final pairs = _usablePairs(raw);
+      final targets = {for (final p in pairs) p.target.trim()};
+      if (pairs.isNotEmpty && targets.length == 1) {
+        return {
+          ..._withStringFields(raw)..remove('dragPairs'),
+          'type': 'free_text',
+          'front': '$front\n${[for (final p in pairs) '„${p.source.trim()}“'].join(', ')}',
+          'correctText': targets.single,
+        };
+      }
+    }
+
     final fallbackAnswer = _bestAvailableAnswer(raw);
     if (fallbackAnswer == null) return null;
     return {
@@ -560,7 +576,10 @@ class QuestionParsing {
         return (raw['correctText'] ?? '').toString().split(';').any((c) => c.trim().isNotEmpty);
       case QuestionType.dragDrop:
       case QuestionType.dragCategory:
-        return _usablePairs(raw).isNotEmpty;
+        // Mindestens zwei Paare mit verschiedenen Zielen – mit nur einem
+        // Ziel kann man nichts falsch zuordnen.
+        final pairs = _usablePairs(raw);
+        return pairs.length >= 2 && {for (final p in pairs) p.target.trim().toLowerCase()}.length >= 2;
       case QuestionType.diagramLabel:
         return (imageTargetsIn(raw) ?? const []).any((t) => t.label.isNotEmpty);
       case QuestionType.markImage:

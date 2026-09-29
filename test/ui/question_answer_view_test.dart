@@ -429,11 +429,12 @@ void main() {
       bool? reportedCorrect;
       final card = _card(
         type: QuestionType.dragDrop,
-        dragPairs: const [DragPair(source: 'Hund', target: 'Tier')],
+        dragPairs: const [DragPair(source: 'Hund', target: 'Tier'), DragPair(source: 'Rose', target: 'Pflanze')],
       );
       await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
 
       await dragTo(tester, find.text('Hund'), find.text('Tier'));
+      await dragTo(tester, find.text('Rose'), find.text('Pflanze'));
 
       await tester.tap(find.text('Prüfen'));
       await tester.pumpAndSettle();
@@ -648,7 +649,7 @@ void main() {
       );
       await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reported = selfGrade));
       expect(find.text('Zum Umdrehen tippen'), findsOneWidget);
-      await tester.tap(find.text('Frage?'));
+      await tester.tap(find.text('Zum Umdrehen tippen'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Nochmal'));
       await tester.pumpAndSettle();
