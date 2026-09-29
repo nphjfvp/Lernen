@@ -79,7 +79,7 @@ class _RootShellState extends State<RootShell> {
           Positioned(
             left: 20,
             right: 20,
-            bottom: 24,
+            bottom: floatingNavBottomMargin,
             child: FloatingNavBar(
               items: _navItems,
               selectedIndex: _index,

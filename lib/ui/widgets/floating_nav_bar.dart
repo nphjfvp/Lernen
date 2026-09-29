@@ -2,6 +2,29 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
 
+/// Abstand der schwebenden Leiste zum unteren Bildschirmrand (siehe RootShell)
+/// und ihre Höhe.
+const double floatingNavBottomMargin = 24;
+const double floatingNavHeight = 68;
+
+/// So viel Platz braucht Inhalt am unteren Rand eines Tabs, damit er
+/// vollständig OBERHALB der schwebenden Leiste bleibt (Leiste plus etwas Luft).
+const double floatingNavClearance = floatingNavBottomMargin + floatingNavHeight + 12;
+
+/// Hält unten [floatingNavClearance] frei. Die Leiste schwebt über dem Tab
+/// statt ihm Platz wegzunehmen – ein Tab, dessen Knöpfe ganz unten sitzen (wie
+/// "Weiter" im Daily Quiz), muss seinen Inhalt damit einrücken, sonst liegen
+/// sie darunter und lassen sich nicht antippen.
+class FloatingNavClearance extends StatelessWidget {
+  const FloatingNavClearance({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      Padding(padding: const EdgeInsets.only(bottom: floatingNavClearance), child: child);
+}
+
 class NavItem {
   const NavItem({required this.icon, required this.label});
   final IconData icon;
@@ -28,7 +51,7 @@ class FloatingNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
-      height: 68,
+      height: floatingNavHeight,
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(34),

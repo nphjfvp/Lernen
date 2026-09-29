@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 826 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 828 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -744,6 +744,15 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Datei nach einem Test mit noch laufendem Speichern (`update`) weitere
     `saveAll` machen, können die Datenbank blockieren – neue Tests in eigene
     Datei (`test/ui/muted_weight_ui_test.dart`).
+40. Daily Quiz unter der schwebenden Navigation (Nutzer-Screenshot: „Weiter“
+    nicht erreichbar): die `FloatingNavBar` schwebt in `RootShell` ÜBER dem Tab
+    (Stack), nimmt ihm also keinen Platz weg. `FloatingNavClearance`
+    (`lib/ui/widgets/floating_nav_bar.dart`, Höhe `floatingNavClearance` =
+    Rand 24 + Leiste 68 + 12) hält unten Platz frei – `DailyQuizScreen` packt
+    seinen Inhalt hinein; die anderen Tabs (Home/Fortschritt/Kalender/
+    Einstellungen) haben dafür festes Bottom-Padding (140–160). Neuer Tab mit
+    Knöpfen ganz unten → `FloatingNavClearance` benutzen. Tests in
+    `test/widget_test.dart`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -7,6 +8,8 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:lernen/main.dart';
 import 'package:lernen/repositories/module_repository.dart';
 import 'package:lernen/repositories/settings_repository.dart';
+import 'package:lernen/theme/app_colors.dart';
+import 'package:lernen/ui/widgets/floating_nav_bar.dart';
 
 /// path_provider hat in Widget-Tests keinen echten Platform-Channel – ohne
 /// dieses Fake würde jeder DB-Zugriff (Sembast öffnet die Datei über
@@ -40,4 +43,65 @@ void main() {
     expect(find.text('Meine Fächer'), findsOneWidget);
     expect(find.text('Erstes Fach anlegen'), findsOneWidget);
   });
+
+  testWidgets('Daily Quiz: unten bleibt Platz für die schwebende Navigationsleiste ("Weiter" nicht verdeckt)',
+      (tester) async {
+    await tester.pumpWidget(LernenApp(
+      settingsRepository: SettingsRepository(),
+      moduleRepository: ModuleRepository(),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Der IndexedStack hält alle Tabs im Baum; genau der Daily-Quiz-Tab hält den Platz frei.
+    final clearance = find.byType(FloatingNavClearance, skipOffstage: false);
+    expect(clearance, findsOneWidget);
+    final padding = tester.widget<Padding>(
+      find.descendant(of: clearance, matching: find.byType(Padding, skipOffstage: false), skipOffstage: false).first,
+    );
+    expect((padding.padding as EdgeInsets).bottom, floatingNavClearance);
+    // Höher als die Leiste samt Rand, sonst läge der unterste Knopf darunter.
+    expect(floatingNavClearance, greaterThan(floatingNavBottomMargin + floatingNavHeight));
+  });
+
+  testWidgets('Der unterste Knopf eines Tabs liegt nach dem Scrollen oberhalb der Leiste', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(extensions: const [AppColors.light]),
+      home: Scaffold(
+        body: Stack(
+          children: [
+            // Wie RootShell/Daily Quiz: Inhalt in FloatingNavClearance, die Leiste schwebt darüber.
+            FloatingNavClearance(
+              child: ListView(
+                children: [
+                  const SizedBox(height: 1600),
+                  FilledButton(key: const ValueKey('weiter'), onPressed: () {}, child: const Text('Weiter')),
+                ],
+              ),
+            ),
+            const Positioned(
+              left: 20,
+              right: 20,
+              bottom: floatingNavBottomMargin,
+              child: FloatingNavBar(
+                items: [NavItem(icon: Icons.folder_rounded, label: 'Fächer')],
+                selectedIndex: 0,
+                onSelect: _ignore,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ));
+    await tester.drag(find.byType(ListView), const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    final button = tester.getRect(find.byKey(const ValueKey('weiter')));
+    final bar = tester.getRect(find.byType(FloatingNavBar));
+    expect(button.bottom, lessThanOrEqualTo(bar.top));
+  });
 }
+
+void _ignore(int _) {}

@@ -15,6 +15,7 @@ import '../../services/fsrs_service.dart';
 import '../../services/home_widget_service.dart';
 import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/floating_nav_bar.dart';
 import 'card_review_mixin.dart';
 import 'question_answer_view.dart';
 
@@ -356,7 +357,10 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         loading: _bonusLoading,
       );
     }
-    return Material(color: c.bg, child: SafeArea(child: body));
+    // Der Daily-Quiz-Tab liegt unter der schwebenden Navigationsleiste (siehe
+    // RootShell): ohne freien Platz darunter verschwänden "Weiter" und die
+    // Antwortknöpfe hinter ihr und ließen sich nicht antippen.
+    return Material(color: c.bg, child: SafeArea(child: FloatingNavClearance(child: body)));
   }
 }
 
