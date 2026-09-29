@@ -23,6 +23,7 @@ import '../../services/ai_service.dart';
 import '../../services/answer_checker.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
+import '../../services/import_reference.dart';
 import '../../services/import_stage_service.dart';
 import '../../services/import_verify_service.dart';
 import '../../services/material_file_store.dart';
@@ -425,31 +426,37 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     if (pdfs.isNotEmpty) {
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: _modelOverride ?? settings.visionModelId);
       final service = ReviewScreen.importServiceFactory?.call(ai) ?? PdfQuestionImportService(ai: ai);
+      // Alle PDFs fortlaufend lesen (siehe PdfQuestionImportService): jede in
+      // überlappenden Abschnitten, mehrere gleichzeitig. Lösungen aus den
+      // anderen Dateien (auch Word/PowerPoint) schlägt der Dienst je Abschnitt
+      // selbst nach.
+      final scans = await service.scanMany(
+        [for (final f in pdfs) ImportSource(name: f.fileName, bytes: f.bytes)],
+        contentOnly: false,
+        fillMissingSolutions: true,
+        extraReference: [
+          for (final o in others)
+            if (o.rawText.trim().isNotEmpty) ...ImportReference.pagesOfText(o.fileName, o.rawText),
+        ],
+        onProgress: (done, total, label) =>
+            setState(() => _progressText = 'Abschnitt $done von $total · $label'),
+      );
       var withoutImages = false;
       for (final (i, file) in pdfs.indexed) {
-        final pageCount = pageCounts[file]!;
-        final reference = [
-          for (final o in _exercisesFiles)
-            if (o != file && o.rawText.trim().isNotEmpty) '=== ${o.fileName} ===\n${o.rawText}',
-        ].join('\n\n');
-        final scan = await service.scan(
-          file.bytes,
-          firstPage: 1,
-          lastPage: pageCount,
-          contentOnly: false,
-          fillMissingSolutions: true,
-          referenceText: reference.isEmpty ? null : reference,
-          onProgress: (done, total) => setState(() => _progressText = pdfs.length == 1
-              ? 'Seitenpaket $done von $total'
-              : '${file.fileName}: Seitenpaket $done von $total (Datei ${i + 1} von ${pdfs.length})'),
-        );
+        final scan = scans[i];
         if (scan.failedBatches.isNotEmpty) {
           if (scan.questions.isEmpty && pdfs.length == 1 && others.isEmpty) {
             throw AiServiceException(scan.errors.isEmpty ? 'Der Import ist fehlgeschlagen.' : scan.errors.first);
           }
-          notes.add('${file.fileName}: ${scan.failedBatches.length} Seitenpaket(e) fehlgeschlagen – '
-              '${scan.errors.join('; ')}');
+          notes.add('${file.fileName}: Seite${scan.failedBatches.expand((b) => b).length == 1 ? '' : 'n'} '
+              '${scan.failedBatches.map((b) => b.length == 1 ? '${b.first}' : '${b.first}–${b.last}').join(', ')} '
+              'fehlgeschlagen – ${scan.errors.join('; ')}');
         }
+        if (scan.revised > 0) {
+          notes.add('${file.fileName}: ${scan.revised} ${scan.revised == 1 ? 'Frage wurde' : 'Fragen wurden'} '
+              'durch die nächste Seite vervollständigt.');
+        }
+        notes.addAll([for (final n in scan.notes) '${file.fileName}: $n']);
         if (!scan.usedPageImages) withoutImages = true;
         // Datei + Seite merken: beim Speichern wird daraus der Verweis auf
         // die Stelle im Material (siehe Flashcard.sourceMaterialId).
@@ -1129,7 +1136,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
               const SizedBox(height: 16),
               Text(switch (_mode) {
                 _GenerateMode.pasteJson => 'JSON wird eingelesen …',
-                _GenerateMode.import => 'KI liest die Aufgaben Seite für Seite …',
+                _GenerateMode.import => 'KI liest die Aufgaben fortlaufend …',
                 _GenerateMode.create => 'KI erstellt Konzepte und Karteikarten …',
               }),
               if (_progressText != null) ...[
@@ -1270,12 +1277,15 @@ class _PickView extends StatelessWidget {
                 'generierten Konzepte/Karteikarten) – die KI erstellt daraus '
                 'gezielte Lernkonzepte und Karteikarten.',
           _GenerateMode.import =>
-            'Lade ein Übungsdokument mit bereits vorhandenen Fragen hoch (z.B. '
-                'eine alte Klausur, gern samt Musterlösung – auch als eigene Datei). '
-                'Die KI liest PDFs Seite für Seite als Bild und übernimmt jede '
-                'Aufgabe 1:1: Ankreuzen, Lücken, Zuordnen, Tabellen (interaktiv) '
-                'und Beschriften – nötige Abbildungen hängen als Ausschnitt an der '
-                'Frage. Fehlt eine Lösung, ergänzt die KI sie.',
+            'Lade beliebig viele Übungsdokumente mit bereits vorhandenen Fragen '
+                'hoch (z.B. alte Klausuren, gern samt Musterlösung – auch als '
+                'eigene Datei; mehrere auf einmal auswählen oder hierher ziehen). '
+                'Die KI liest jede PDF fortlaufend als Bild: immer ein paar Seiten, '
+                'dann die letzte davon noch einmal mit den nächsten – so wird eine '
+                'Aufgabe über einen Seitenumbruch nicht zerrissen. Sie übernimmt '
+                'jede Aufgabe 1:1: Ankreuzen, Lücken, Zuordnen, Tabellen '
+                '(interaktiv) und Beschriften – nötige Abbildungen hängen als '
+                'Ausschnitt an der Frage. Fehlt eine Lösung, ergänzt die KI sie.',
           _GenerateMode.pasteJson =>
             'Für Fragetypen, an denen ein hier hinterlegtes Modell scheitert '
                 '(z.B. Zuordnungs-Matrizen, offene Diskussionsfragen): kopiere '

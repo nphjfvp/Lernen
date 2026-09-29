@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:cross_file/cross_file.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +14,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/import_reference.dart';
 import '../../services/import_stage_service.dart';
 import '../../services/import_verify_service.dart';
 import '../../services/material_file_store.dart';
@@ -32,12 +35,15 @@ enum _Step { pick, scanning, preview }
 
 enum _UncertainDecision { keep, skip }
 
-/// "Fragen aus PDF importieren": die KI sucht jede Seite einer PDF nach den
-/// dort vorhandenen Fragen und Aufgaben ab (Altklausur, Übungsblatt, Fragen
-/// auf Folien) und übernimmt sie – vorher wählt man, ob wirklich jede Frage
-/// oder nur inhaltliche Fragen, und ob fehlende Lösungen ergänzt werden.
-/// Die Treffer lassen sich vor dem Import einzeln abwählen; danach landen sie
-/// als Karten im Fach und lassen sich sofort üben.
+/// "Fragen aus PDF importieren": beliebig viele PDFs auf einmal (aus dem Fach
+/// oder hochgeladen, auch per Drag-and-drop). Die KI liest jede fortlaufend in
+/// überlappenden Abschnitten – ein paar Seiten, dann die letzte davon noch
+/// einmal mit den nächsten, damit eine Aufgabe über den Seitenumbruch nicht
+/// zerrissen wird (siehe PdfQuestionImportService) – und übernimmt jede dort
+/// vorhandene Frage. Vorher wählt man, ob wirklich jede Frage oder nur
+/// inhaltliche, und ob fehlende Lösungen ergänzt werden. Die Treffer lassen
+/// sich vor dem Import einzeln abwählen; danach landen sie als Karten im Fach
+/// und lassen sich sofort üben.
 class PdfQuestionImportScreen extends StatefulWidget {
   const PdfQuestionImportScreen({
     super.key,
@@ -69,17 +75,34 @@ class PdfQuestionImportScreen extends StatefulWidget {
   State<PdfQuestionImportScreen> createState() => _PdfQuestionImportScreenState();
 }
 
+/// Eine für den Import gewählte PDF.
+class _ImportFile {
+  _ImportFile({required this.name, required this.bytes, required this.pageTexts, this.material});
+
+  final String name;
+  final Uint8List bytes;
+
+  /// Text je Seite (Index 0 = Seite 1) – die Zahl der Seiten und die Grundlage
+  /// für Abschnittsplanung und Prüfung.
+  final List<String> pageTexts;
+
+  /// Schon im Fach vorhandenes Material (sonst wird die PDF beim Import als
+  /// Übung abgelegt).
+  final MaterialItem? material;
+  MaterialItem? saved;
+
+  int get pageCount => pageTexts.length;
+}
+
 class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     with SafeSetState<PdfQuestionImportScreen> {
   _Step _step = _Step.pick;
 
-  MaterialItem? _material;
-  String? _fileName;
-  Uint8List? _bytes;
-  int _pageCount = 0;
+  final List<_ImportFile> _files = [];
   final _fromController = TextEditingController(text: '1');
   final _toController = TextEditingController();
   bool _loadingPdf = false;
+  bool _dragOver = false;
 
   bool _contentOnly = true;
   bool _fillMissing = true;
@@ -89,8 +112,9 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
   ImportOptions _options = const ImportOptions();
 
   /// Text der laufenden Nachbearbeitung (Stufen, Prüfung) statt des
-  /// Paket-Zählers; leer = die Seiten werden noch durchsucht.
+  /// Abschnitt-Zählers; leer = die Seiten werden noch gelesen.
   String _phase = '';
+  String _scanLabel = '';
 
   ImportCheckReport? _report;
 
@@ -108,8 +132,11 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
   bool _cancelled = false;
 
   List<ScannedQuestion> _questions = [];
-  List<List<int>> _failed = [];
+
+  /// Nicht gelesene Seiten je Datei (zum erneuten Versuch).
+  Map<String, List<List<int>>> _failed = {};
   List<String> _errors = [];
+  List<String> _notes = [];
   int _dropped = 0;
   bool _saving = false;
 
@@ -132,23 +159,34 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     super.dispose();
   }
 
-  void _setPdf({required Uint8List bytes, required String fileName, MaterialItem? material}) {
-    final int pages;
+  bool get _single => _files.length == 1;
+
+  /// Nimmt eine PDF auf – false, wenn sie schon dabei ist oder sich nicht
+  /// lesen lässt.
+  bool _addFile({required Uint8List bytes, required String name, MaterialItem? material}) {
+    if (_files.any((f) => (material != null && f.material?.id == material.id) || (f.name == name && f.bytes.length == bytes.length))) {
+      return false;
+    }
+    final List<String> texts;
     try {
-      pages = PdfService().pageCount(bytes);
+      texts = PdfService().extractPageTexts(bytes);
     } catch (e) {
-      setState(() => _error = 'Die PDF konnte nicht gelesen werden: $e');
-      return;
+      setState(() => _error = '„$name“ konnte nicht gelesen werden: $e');
+      return false;
+    }
+    if (texts.isEmpty) {
+      setState(() => _error = '„$name“ hat keine Seiten.');
+      return false;
     }
     setState(() {
-      _bytes = bytes;
-      _fileName = fileName;
-      _material = material;
-      _pageCount = pages;
-      _fromController.text = '1';
-      _toController.text = '$pages';
+      _files.add(_ImportFile(name: name, bytes: bytes, pageTexts: texts, material: material));
       _error = null;
+      if (_single) {
+        _fromController.text = '1';
+        _toController.text = '${texts.length}';
+      }
     });
+    return true;
   }
 
   Future<void> _useMaterial(MaterialItem material) async {
@@ -161,34 +199,36 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
           'einmal im Fach (lädt sie aus deinem Speicher) oder lade sie hier hoch.');
       return;
     }
-    _setPdf(bytes: bytes, fileName: material.fileName, material: material);
+    _addFile(bytes: bytes, name: material.fileName, material: material);
+  }
+
+  /// Alle noch nicht gewählten PDFs des Fachs auf einmal.
+  Future<void> _useAllMaterials(List<MaterialItem> materials) async {
+    for (final m in materials) {
+      await _useMaterial(m);
+      if (!mounted) return;
+    }
   }
 
   /// Eine hier hochgeladene PDF landet beim Import als Übung im Fach – so
   /// führen die Fragen später per "Im Skript ansehen" zu ihrer Seite.
-  Future<MaterialItem?> _saveUploadedPdf() async {
-    final bytes = _bytes;
-    if (bytes == null) return null;
+  Future<MaterialItem?> _saveUploadedPdf(_ImportFile file) async {
     final repo = context.read<MaterialRepository>();
     try {
       final id = const Uuid().v4();
-      var text = '';
-      try {
-        text = PdfService().extractText(bytes);
-      } catch (_) {}
-      final (filePath, fileBytesBase64) = await MaterialFileStore.store(id, bytes);
+      final (filePath, fileBytesBase64) = await MaterialFileStore.store(id, file.bytes);
       final material = MaterialItem(
         id: id,
         moduleId: widget.moduleId,
-        fileName: _fileName ?? 'Import.pdf',
+        fileName: file.name,
         kind: MaterialKind.exercise,
-        extractedText: text,
+        extractedText: file.pageTexts.join('\n'),
         createdAt: DateTime.now(),
         filePath: filePath,
         fileBytesBase64: fileBytesBase64,
       );
       await repo.save(material);
-      _material = material;
+      file.saved = material;
       return material;
     } catch (_) {
       return null;
@@ -198,24 +238,54 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
   Future<void> _upload() async {
     final picked = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: const ['pdf']);
     if (picked.isEmpty || !mounted) return;
+    await _addPicked([for (final f in picked) (name: f.name, readBytes: f.readAsBytes)]);
+  }
+
+  Future<void> _handleDrop(List<XFile> files) async {
+    setState(() => _dragOver = false);
+    await _addPicked([
+      for (final f in files)
+        if (f.name.toLowerCase().endsWith('.pdf')) (name: f.name, readBytes: f.readAsBytes),
+    ]);
+  }
+
+  Future<void> _addPicked(List<({String name, Future<Uint8List> Function() readBytes})> files) async {
+    if (files.isEmpty) return;
     setState(() => _loadingPdf = true);
-    final bytes = await picked.first.readAsBytes();
-    if (!mounted) return;
-    setState(() => _loadingPdf = false);
-    _setPdf(bytes: bytes, fileName: picked.first.name);
+    for (final f in files) {
+      final bytes = await f.readBytes();
+      if (!mounted) return;
+      _addFile(bytes: bytes, name: f.name);
+    }
+    if (mounted) setState(() => _loadingPdf = false);
   }
 
   ({int from, int to})? get _range {
+    if (_files.isEmpty) return null;
+    if (!_single) return (from: 1, to: 0);
     final from = int.tryParse(_fromController.text.trim());
     final to = int.tryParse(_toController.text.trim());
-    if (from == null || to == null || from < 1 || to > _pageCount || from > to) return null;
+    if (from == null || to == null || from < 1 || to > _files.single.pageCount || from > to) return null;
     return (from: from, to: to);
   }
 
-  Future<void> _scan({List<List<int>>? retry}) async {
-    final bytes = _bytes;
+  /// Bei mehreren PDFs immer alles, bei einer der gewählte Bereich.
+  List<ImportSource> _sources() {
     final range = _range;
-    if (bytes == null || range == null) return;
+    return [
+      for (final f in _files)
+        ImportSource(
+          name: f.name,
+          bytes: f.bytes,
+          pageTexts: f.pageTexts,
+          firstPage: _single ? range?.from : null,
+          lastPage: _single ? range?.to : null,
+        ),
+    ];
+  }
+
+  Future<void> _scan({bool retry = false}) async {
+    if (_files.isEmpty || _range == null) return;
     final service = _importService();
     if (service == null) {
       setState(() => _error = 'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
@@ -227,44 +297,67 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       _done = 0;
       _total = 0;
       _phase = '';
+      _scanLabel = '';
       _error = null;
     });
-    final result = await service.scan(
-      bytes,
-      firstPage: range.from,
-      lastPage: range.to,
+    final results = await service.scanMany(
+      _sources(),
       contentOnly: _contentOnly,
       fillMissingSolutions: _fillMissing,
-      onlyBatches: retry,
-      onProgress: (done, total) => setState(() {
+      retry: retry ? _failed : null,
+      onProgress: (done, total, label) => setState(() {
         _done = done;
         _total = total;
+        _scanLabel = label;
       }),
       isCancelled: () => _cancelled,
     );
     if (!mounted) return;
+    final fresh = [for (final r in results) ...r.questions];
     setState(() {
-      if (retry == null) {
-        _questions = result.questions;
-        _dropped = result.dropped;
-        _usedPageImages = result.usedPageImages;
+      String tag(String file, String text) => _single ? text : '$file: $text';
+      final failed = <String, List<List<int>>>{};
+      final errors = <String>[];
+      final notes = <String>[];
+      var dropped = 0;
+      var allImages = true;
+      for (final (i, r) in results.indexed) {
+        final name = _files[i].name;
+        if (r.failedBatches.isNotEmpty) failed[name] = r.failedBatches;
+        errors.addAll([for (final e in r.errors) tag(name, e)]);
+        if (r.revised > 0) {
+          notes.add(tag(
+              name,
+              '${r.revised} ${r.revised == 1 ? 'Frage wurde' : 'Fragen wurden'} durch die nächste Seite '
+              'vervollständigt.'));
+        }
+        notes.addAll([for (final n in r.notes) tag(name, n)]);
+        dropped += r.dropped;
+        if (r.windows > 0 && !r.usedPageImages) allImages = false;
+      }
+      if (!retry) {
+        _questions = fresh;
+        _dropped = dropped;
+        _usedPageImages = allImages;
+        _notes = notes;
         _report = null;
         _checked = const [];
         _decisions.clear();
         _busyFindings.clear();
         _stageNote = null;
       } else {
-        _questions = [..._questions, ...result.questions]..sort((a, b) => a.page.compareTo(b.page));
-        _dropped += result.dropped;
-        _usedPageImages = _usedPageImages || result.usedPageImages;
+        _questions = _sortedByFile([..._questions, ...fresh]);
+        _dropped += dropped;
+        _usedPageImages = _usedPageImages && allImages;
+        _notes = [..._notes, ...notes];
       }
-      _failed = result.failedBatches;
-      _errors = result.errors;
+      _failed = failed;
+      _errors = errors;
       // Bei einem Abbruch oder ohne Treffer gibt es nichts nachzubearbeiten.
-      if (_cancelled || result.questions.isEmpty) _step = _Step.preview;
+      if (_cancelled || fresh.isEmpty) _step = _Step.preview;
     });
-    if (_cancelled || result.questions.isEmpty) return;
-    if (_options.expandStages) await _expandStages(result.questions);
+    if (_cancelled || fresh.isEmpty) return;
+    if (_options.expandStages) await _expandStages(fresh);
     if (!mounted) return;
     if (_options.verify) await _runCheck();
     if (!mounted) return;
@@ -272,6 +365,20 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       _phase = '';
       _step = _Step.preview;
     });
+  }
+
+  /// Nach Datei (Reihenfolge der Auswahl) und Seite, sonst in der bisherigen
+  /// Reihenfolge.
+  List<ScannedQuestion> _sortedByFile(List<ScannedQuestion> questions) {
+    int fileIndex(ScannedQuestion q) => _files.indexWhere((f) => f.name == q.sourceFile);
+    final indexed = questions.indexed.toList()
+      ..sort((a, b) {
+        final byFile = fileIndex(a.$2).compareTo(fileIndex(b.$2));
+        if (byFile != 0) return byFile;
+        final byPage = a.$2.page.compareTo(b.$2.page);
+        return byPage != 0 ? byPage : a.$1.compareTo(b.$1);
+      });
+    return [for (final e in indexed) e.$2];
   }
 
   /// Der Import-Dienst mit dem Vision-Modell; null ohne API-Key.
@@ -313,8 +420,7 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       levels: _options.levels.toList(),
       takenGroups: [for (final q in _questions) ?QuestionParsing.parseStageGroup(q.data['group'])],
       tierTypes: {
-        for (final level in AiService.stageLevelNames)
-          level: ?settings.pageTierType(level),
+        for (final level in AiService.stageLevelNames) level: ?settings.pageTierType(level),
       },
       onProgress: (done, total) => setState(() => _phase = 'Schwierigkeitsstufen werden ergänzt … $done von $total'),
     );
@@ -328,7 +434,9 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
         if (r.group != null) q.data['group'] = r.group;
         variants[q] = [
           for (final v in r.variants)
-            ScannedQuestion(page: q.page, data: {...v, 'group': r.group}, solutionByAi: true)..variantOf = q,
+            ScannedQuestion(page: q.page, data: {...v, 'group': r.group}, solutionByAi: true)
+              ..variantOf = q
+              ..sourceFile = q.sourceFile,
         ];
       }
       _questions = [
@@ -342,27 +450,19 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     });
   }
 
-  /// Die zweite KI prüft, ob alle Fragen des Dokuments übernommen wurden
-  /// (siehe ImportVerifyService). Ändert nichts – nur ein Bericht mit
+  /// Die zweite KI prüft, ob alle Fragen der PDFs übernommen wurden (siehe
+  /// ImportVerifyService). Ändert nichts – nur ein Bericht mit
   /// Begründungen, über den der Nutzer entscheidet.
   Future<void> _runCheck() async {
-    final bytes = _bytes;
-    final range = _range;
     final settings = context.read<SettingsRepository>().settings;
     final ai = _aiFor(settings.crosscheckModelId);
-    if (bytes == null || range == null) return;
+    if (_files.isEmpty) return;
     if (ai == null) {
       setState(() => _error = 'Für die Prüfung wird ein OpenRouter-API-Key gebraucht (Einstellungen).');
       return;
     }
-    final List<String> texts;
-    try {
-      texts = PdfService().extractPageTexts(bytes);
-    } catch (e) {
-      setState(() => _error = 'Die Prüfung konnte den Text der PDF nicht lesen: $e');
-      return;
-    }
     final originals = _originals;
+    final range = _range;
     setState(() {
       _checking = true;
       _checkProgress = 'Zweite KI liest das Dokument …';
@@ -371,24 +471,29 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       _busyFindings.clear();
       _phase = 'Zweite KI prüft die Vollständigkeit …';
     });
-    final report = await ImportVerifyService(ai: ai).verify(
-      pageTexts: texts,
-      items: [
-        for (final (i, q) in originals.indexed)
-          ImportedItem(ref: i, page: q.page, front: q.front, answer: _answerOf(q)),
-      ],
-      contentOnly: _contentOnly,
-      fileName: _fileName,
-      firstPage: range.from,
-      lastPage: range.to,
-      onProgress: (done, total) => setState(() {
-        _checkProgress = 'Zweite KI liest das Dokument … $done von $total';
-        _phase = 'Zweite KI prüft die Vollständigkeit … $done von $total';
-      }),
-    );
+    final parts = <({String fileName, ImportCheckReport report})>[];
+    for (final file in _files) {
+      final report = await ImportVerifyService(ai: ai).verify(
+        pageTexts: file.pageTexts,
+        items: [
+          for (final (i, q) in originals.indexed)
+            if ((q.sourceFile ?? _files.first.name) == file.name)
+              ImportedItem(ref: i, page: q.page, front: q.front, answer: _answerOf(q)),
+        ],
+        contentOnly: _contentOnly,
+        fileName: file.name,
+        firstPage: _single ? range?.from ?? 1 : 1,
+        lastPage: _single ? range?.to : null,
+        onProgress: (done, total) => setState(() {
+          _checkProgress = '${file.name}: zweite KI liest das Dokument … $done von $total';
+          _phase = 'Zweite KI prüft die Vollständigkeit … $done von $total';
+        }),
+      );
+      parts.add((fileName: file.name, report: report));
+    }
     if (!mounted) return;
     setState(() {
-      _report = report;
+      _report = ImportCheckReport.merge(parts);
       _checked = originals;
       _checking = false;
       _checkProgress = null;
@@ -414,21 +519,23 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       });
       return;
     }
-    final bytes = _bytes;
+    final file = _files.where((f) => f.name == (finding.fileName ?? _files.first.name)).firstOrNull;
     final service = _importService();
-    if (bytes == null || service == null) return;
+    if (file == null || service == null) return;
     setState(() => _busyFindings.add(index));
     final result = await service.scan(
-      bytes,
+      file.bytes,
       firstPage: finding.page,
       lastPage: finding.page,
       contentOnly: false,
       fillMissingSolutions: _fillMissing,
+      pageTexts: file.pageTexts,
       focus: finding.text,
     );
     if (!mounted) return;
     for (final q in result.questions) {
       q.addedByCheck = true;
+      q.sourceFile = file.name;
     }
     setState(() {
       _busyFindings.remove(index);
@@ -438,7 +545,7 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
         return;
       }
       _error = null;
-      _questions = [..._questions, ...result.questions]..sort((a, b) => a.page.compareTo(b.page));
+      _questions = _sortedByFile([..._questions, ...result.questions]);
       _decisions[index] = FindingDecision.accepted;
     });
     if (_options.expandStages && result.questions.isNotEmpty) await _expandStages(result.questions);
@@ -489,16 +596,29 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       }
     }
     setState(() => _saving = true);
-    final material = _material ?? await _saveUploadedPdf();
-    if (!mounted) return;
-    final cards = PdfQuestionImportService.toFlashcards(
-      selected,
-      moduleId: widget.moduleId,
-      unitId: material?.unitId,
-      sourceMaterialId: material?.id,
-      sourceKind: material?.kind ?? MaterialKind.exercise,
-      now: DateTime.now(),
-    );
+    final base = DateTime.now();
+    final cards = <Flashcard>[];
+    var unsaved = 0;
+    for (final (i, file) in _files.indexed) {
+      final mine = [
+        for (final q in selected)
+          if ((q.sourceFile ?? _files.first.name) == file.name) q,
+      ];
+      if (mine.isEmpty) continue;
+      final material = file.material ?? file.saved ?? await _saveUploadedPdf(file);
+      if (!mounted) return;
+      if (material == null) unsaved++;
+      cards.addAll(PdfQuestionImportService.toFlashcards(
+        mine,
+        moduleId: widget.moduleId,
+        unitId: material?.unitId,
+        sourceMaterialId: material?.id,
+        sourceKind: material?.kind ?? MaterialKind.exercise,
+        // Jede Datei ein eigener Zeitpunkt: die Reihenfolge der Dateien und
+        // ihre Ordner (Stufen) bleiben getrennt.
+        now: base.add(Duration(seconds: i)),
+      ));
+    }
     await context.read<FlashcardRepository>().saveAll(cards);
     if (!mounted) return;
     // Fragen aus einem Arbeitsblatt: Erklärung im Skript suchen.
@@ -508,14 +628,14 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       _questions = [];
       _step = _Step.pick;
     });
-    if (material == null) {
+    if (unsaved > 0) {
       // Das Arbeitsblatt konnte nicht gespeichert werden (z.B. kein
       // Speicherplatz) – die Karten sind trotzdem da, nur "Im Skript" findet
       // dafür keine exakte Seite mehr (nur noch die Textsuche über andere
       // Materialien des Fachs, falls vorhanden).
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text(
-            'Das Arbeitsblatt konnte nicht gespeichert werden – die Fragen sind trotzdem importiert, '
+            'Ein Arbeitsblatt konnte nicht gespeichert werden – die Fragen sind trotzdem importiert, '
             '„Im Skript“ findet dafür aber keine genaue Seite.'),
         duration: Duration(seconds: 5),
       ));
@@ -534,7 +654,10 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     if (!mounted) return;
     if (practice == true) {
       Navigator.of(context).pushReplacement(MaterialPageRoute(
-        builder: (_) => PracticeScreen.cards(title: 'Import · ${_fileName ?? 'PDF'}', cards: cards),
+        builder: (_) => PracticeScreen.cards(
+          title: 'Import · ${_single ? _files.single.name : '${_files.length} PDFs'}',
+          cards: cards,
+        ),
       ));
     } else {
       Navigator.of(context).pop();
@@ -563,87 +686,148 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
 
   Widget _buildPick(BuildContext context) {
     final c = context.colors;
-    final pdfs = context
+    final available = context
         .watch<MaterialRepository>()
         .forModule(widget.moduleId)
-        .where((m) => m.hasViewablePdf && m.fileName.toLowerCase().endsWith('.pdf'))
+        .where((m) =>
+            m.hasViewablePdf &&
+            m.fileName.toLowerCase().endsWith('.pdf') &&
+            !_files.any((f) => f.material?.id == m.id))
         .toList();
     final range = _range;
+    final totalPages = _files.fold<int>(0, (sum, f) => sum + f.pageCount);
     final requests = range == null
         ? 0
-        : PdfQuestionImportService.batches(range.from, range.to, PdfQuestionImportService.defaultPagesPerRequest).length;
+        : _files.fold<int>(0, (sum, f) {
+            final first = _single ? range.from : 1;
+            final last = _single ? range.to : f.pageCount;
+            return sum +
+                planScanWindows(
+                  f.pageTexts,
+                  firstPage: first,
+                  lastPage: last,
+                  maxNewPages: PdfQuestionImportService.defaultPagesPerRequest,
+                  charBudget: PdfQuestionImportService.defaultCharBudget,
+                ).length;
+          });
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Text(
-          'Die KI sucht jede Seite nach Fragen und Aufgaben ab, die dort schon stehen (z.B. Altklausur, '
-          'Übungsblatt, Fragen auf Folien), und übernimmt sie ins Quiz – sie erfindet keine neuen.',
+          'Die KI sucht in deinen PDFs nach Fragen und Aufgaben, die dort schon stehen (z.B. Altklausur, '
+          'Übungsblatt, Fragen auf Folien), und übernimmt sie ins Quiz – sie erfindet keine neuen. Wähle '
+          'beliebig viele PDFs auf einmal.',
           style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
-        Text('PDF', style: Theme.of(context).textTheme.titleSmall),
+        Text('PDFs', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
-        if (_loadingPdf)
-          const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator()))
-        else if (_bytes != null)
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.picture_as_pdf_outlined),
-              title: Text(_fileName ?? 'PDF'),
-              subtitle: Text('$_pageCount Seite${_pageCount == 1 ? '' : 'n'}'),
-              trailing: TextButton(
-                onPressed: () => setState(() {
-                  _bytes = null;
-                  _material = null;
-                }),
-                child: const Text('Ändern'),
-              ),
+        DropTarget(
+          onDragEntered: (_) => setState(() => _dragOver = true),
+          onDragExited: (_) => setState(() => _dragOver = false),
+          onDragDone: (details) => _handleDrop(details.files),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: _dragOver ? Border.all(color: c.accent, width: 2) : null,
+              borderRadius: BorderRadius.circular(12),
             ),
-          )
-        else ...[
-          for (final m in pdfs)
-            Card(
-              child: ListTile(
-                key: ValueKey('import-material-${m.id}'),
-                leading: const Icon(Icons.picture_as_pdf_outlined),
-                title: Text(m.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
-                onTap: () => _useMaterial(m),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final (i, f) in _files.indexed)
+                  Card(
+                    key: ValueKey('import-file-$i'),
+                    child: ListTile(
+                      leading: const Icon(Icons.picture_as_pdf_outlined),
+                      title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${f.pageCount} Seite${f.pageCount == 1 ? '' : 'n'}'),
+                      trailing: IconButton(
+                        key: ValueKey('import-remove-file-$i'),
+                        tooltip: 'Entfernen',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => setState(() {
+                          _files.removeAt(i);
+                          if (_single) {
+                            _fromController.text = '1';
+                            _toController.text = '${_files.single.pageCount}';
+                          }
+                        }),
+                      ),
+                    ),
+                  ),
+                if (_loadingPdf)
+                  const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator())),
+                if (available.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text('Im Fach', style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                        ),
+                        if (available.length > 1)
+                          TextButton(
+                            key: const ValueKey('import-add-all'),
+                            onPressed: () => _useAllMaterials(available),
+                            child: const Text('Alle hinzufügen'),
+                          ),
+                      ],
+                    ),
+                  ),
+                  for (final m in available)
+                    Card(
+                      child: ListTile(
+                        key: ValueKey('import-material-${m.id}'),
+                        leading: const Icon(Icons.picture_as_pdf_outlined),
+                        title: Text(m.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        trailing: const Icon(Icons.add),
+                        onTap: () => _useMaterial(m),
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 4),
+                OutlinedButton.icon(
+                  onPressed: _loadingPdf ? null : _upload,
+                  icon: const Icon(Icons.upload_file),
+                  label: Text(_files.isEmpty ? 'PDFs hochladen oder hierher ziehen' : 'Weitere PDFs hochladen'),
+                ),
+              ],
             ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed: _upload,
-            icon: const Icon(Icons.upload_file),
-            label: const Text('PDF hochladen'),
           ),
-        ],
-        if (_bytes != null) ...[
+        ),
+        if (_files.isNotEmpty) ...[
           const SizedBox(height: 20),
-          Text('Seiten', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const ValueKey('import-from'),
-                  controller: _fromController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'von', border: OutlineInputBorder(), isDense: true),
-                  onChanged: (_) => setState(() {}),
+          if (_single) ...[
+            Text('Seiten', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey('import-from'),
+                    controller: _fromController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'von', border: OutlineInputBorder(), isDense: true),
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  key: const ValueKey('import-to'),
-                  controller: _toController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'bis', border: OutlineInputBorder(), isDense: true),
-                  onChanged: (_) => setState(() {}),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey('import-to'),
+                    controller: _toController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'bis', border: OutlineInputBorder(), isDense: true),
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ] else
+            Text(
+              'Alle $totalPages Seiten aller ${_files.length} PDFs werden gelesen – ohne Begrenzung.',
+              style: TextStyle(fontSize: 13, color: c.inkMuted),
+            ),
           const SizedBox(height: 20),
           Text('Welche Fragen?', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
@@ -670,7 +854,8 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
             onChanged: (v) => setState(() => _fillMissing = v),
             title: const Text('Fehlende Lösungen von der KI ergänzen'),
             subtitle: Text(
-              'Sonst werden Fragen übersprungen, zu denen im Dokument keine Lösung steht.',
+              'Sonst werden Fragen übersprungen, zu denen im Dokument keine Lösung steht. Eine Musterlösung '
+              'in einer anderen der gewählten PDFs wird dafür nachgeschlagen.',
               style: TextStyle(fontSize: 12, color: c.inkMuted),
             ),
           ),
@@ -678,13 +863,15 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
           ImportOptionsCard(options: _options, onChanged: (o) => setState(() => _options = o)),
           const SizedBox(height: 12),
           if (range == null)
-            Text('Bitte einen gültigen Seitenbereich (1–$_pageCount) angeben.', style: TextStyle(color: c.danger))
+            Text('Bitte einen gültigen Seitenbereich (1–${_files.single.pageCount}) angeben.',
+                style: TextStyle(color: c.danger))
           else
             Text(
-              '$requests KI-Anfrage${requests == 1 ? '' : 'n'} an dein Vision-Modell (je bis zu '
-              '${PdfQuestionImportService.defaultPagesPerRequest} Seiten). Die KI sieht jede Seite als Bild, '
-              'übernimmt die Aufgabenform (Ankreuzen, Lücken, Zuordnen, Tabellen, Beschriften) und hängt '
-              'nötige Abbildungen als Ausschnitt an.'
+              '$requests KI-Anfrage${requests == 1 ? '' : 'n'} an dein Vision-Modell. Die KI liest fortlaufend: '
+              'ein paar neue Seiten (bei viel Text weniger) plus die letzte Seite des vorigen Abschnitts – dort '
+              'prüft sie, ob eine begonnene Aufgabe auf den neuen Seiten weitergeht, und ergänzt sie dann. Sie '
+              'sieht jede Seite als Bild, übernimmt die Aufgabenform (Ankreuzen, Lücken, Zuordnen, Tabellen, '
+              'Beschriften) und hängt nötige Abbildungen als Ausschnitt an.'
               '${_options.verify ? ' Danach prüft die zweite KI die Vollständigkeit.' : ''}'
               '${_options.expandStages ? ' Danach ergänzt die KI die gewählten Stufen.' : ''}',
               style: TextStyle(fontSize: 12, color: c.inkMuted),
@@ -720,10 +907,14 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
                   ? 'Wird abgebrochen – laufende Anfragen werden noch beendet …'
                   : _phase.isNotEmpty
                       ? _phase
-                      : 'Seiten werden durchsucht … $_done von $_total Paketen',
+                      : 'Seiten werden fortlaufend gelesen … $_done von $_total Abschnitten',
               textAlign: TextAlign.center,
               style: TextStyle(color: c.inkMuted),
             ),
+            if (!_cancelled && _phase.isEmpty && _scanLabel.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(_scanLabel, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: c.inkMuted)),
+            ],
             const SizedBox(height: 16),
             if (_phase.isEmpty)
               TextButton(
@@ -736,27 +927,32 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     );
   }
 
+  String _headline() {
+    if (_questions.isEmpty) return 'Keine passenden Fragen gefunden.';
+    final originals = _originals;
+    final pages = {for (final q in originals) '${q.sourceFile}#${q.page}'}.length;
+    final files = {for (final q in originals) q.sourceFile}.length;
+    final variants = _questions.length - originals.length;
+    return '${originals.length} Frage${originals.length == 1 ? '' : 'n'} auf $pages '
+        'Seite${pages == 1 ? '' : 'n'}${files > 1 ? ' in $files PDFs' : ''} gefunden'
+        '${variants > 0 ? ' (+ $variants ergänzte ${variants == 1 ? 'Stufe' : 'Stufen'})' : ''}.';
+  }
+
   Widget _buildPreview(BuildContext context) {
     final c = context.colors;
     final selected = _questions.where((q) => q.selected).length;
-    final pages = {for (final q in _questions) q.page}.length;
+    final failedCount = _failed.values.fold<int>(0, (sum, batches) => sum + batches.length);
     return Column(
       children: [
         Expanded(
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Text(
-                _questions.isEmpty
-                    ? 'Keine passenden Fragen gefunden.'
-                    : '${_originals.length} Frage${_originals.length == 1 ? '' : 'n'} auf $pages '
-                        'Seite${pages == 1 ? '' : 'n'} gefunden'
-                        '${_questions.length > _originals.length ? ' (+ ${_questions.length - _originals.length} ergänzte ${_questions.length - _originals.length == 1 ? 'Stufe' : 'Stufen'})' : ''}.',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text(_headline(), style: Theme.of(context).textTheme.titleMedium),
               if (_dropped > 0)
                 Text('$_dropped unvollständige Einträge der KI wurden verworfen.',
                     style: TextStyle(fontSize: 12, color: c.inkMuted)),
+              for (final n in _notes) Text(n, style: TextStyle(fontSize: 12, color: c.inkMuted)),
               if (_stageNote != null) Text(_stageNote!, style: TextStyle(fontSize: 12, color: c.warn)),
               if (_error != null) Text(_error!, style: TextStyle(fontSize: 12, color: c.danger)),
               const SizedBox(height: 10),
@@ -783,9 +979,9 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () => _scan(retry: _failed),
+                    onPressed: () => _scan(retry: true),
                     icon: const Icon(Icons.refresh),
-                    label: const Text('Fehlgeschlagene Seiten erneut versuchen'),
+                    label: Text('Fehlgeschlagene Seiten erneut versuchen ($failedCount)'),
                   ),
                 ),
               ],
@@ -811,11 +1007,13 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
                   ],
                 ),
               for (final (i, q) in _questions.indexed) ...[
-                if (i == 0 || _questions[i - 1].page != q.page)
+                if (i == 0 || _questions[i - 1].page != q.page || _questions[i - 1].sourceFile != q.sourceFile)
                   Padding(
                     padding: const EdgeInsets.only(top: 12, bottom: 4),
-                    child: Text('Seite ${q.page}',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted)),
+                    child: Text(
+                      _files.length > 1 && q.sourceFile != null ? '${q.sourceFile} · Seite ${q.page}' : 'Seite ${q.page}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted),
+                    ),
                   ),
                 _questionTile(c, q, i),
               ],

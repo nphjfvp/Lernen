@@ -10,6 +10,7 @@ import '../models/material_item.dart';
 import 'ai_service.dart';
 import 'image_crop.dart';
 import 'image_edit.dart';
+import 'import_reference.dart';
 import 'pdf_page_renderer.dart';
 import 'pdf_service.dart';
 import 'question_parsing.dart';
@@ -42,6 +43,9 @@ class ScannedQuestion {
   /// Erst nach der Prüfung durch die zweite KI nachgeholt (siehe
   /// ImportVerifyService).
   bool addedByCheck = false;
+
+  /// Datei, aus der die Frage stammt (beim Import mehrerer PDFs).
+  String? sourceFile;
 
   /// Stufe der Frage (0 = leicht … 2 = schwer), falls die KI sie vergeben hat.
   int? get stageLevel => QuestionParsing.parseStageLevel(data['level']);
@@ -89,6 +93,9 @@ class PdfQuestionScan {
     required this.dropped,
     this.errors = const [],
     this.usedPageImages = false,
+    this.revised = 0,
+    this.windows = 0,
+    this.notes = const [],
   });
 
   final List<ScannedQuestion> questions;
@@ -99,19 +106,55 @@ class PdfQuestionScan {
   /// Die KI hat die Seiten als Bild gesehen (Abbildungen konnten
   /// übernommen werden) – sonst nur als PDF-Datei.
   final bool usedPageImages;
+
+  /// Bereits übernommene Fragen, die durch die nächste Seite vervollständigt
+  /// wurden (fortlaufender Import).
+  final int revised;
+
+  /// Wie viele Abschnitte gelesen wurden.
+  final int windows;
+
+  /// Hinweise (z.B. Seiten, die die KI beim ersten Lesen ausgelassen hat).
+  final List<String> notes;
 }
 
-/// "Fragen aus PDF importieren": schickt die Seiten einer PDF paketweise an
-/// das Vision-Modell, das auf jeder Seite nach den dort vorhandenen Fragen
-/// und Aufgaben sucht (Altklausur, Übungsblatt, Fragen auf Folien) – statt
-/// neue zu erfinden. Mehrere Pakete laufen gleichzeitig; ein fehlgeschlagenes
-/// Paket bricht den Rest nicht ab.
+/// Eine PDF für [PdfQuestionImportService.scanMany].
+class ImportSource {
+  const ImportSource({required this.name, required this.bytes, this.pageTexts, this.firstPage, this.lastPage});
+
+  final String name;
+  final Uint8List bytes;
+
+  /// Text je Seite (Index 0 = Seite 1), falls schon gelesen.
+  final List<String>? pageTexts;
+
+  /// Seitenbereich; ohne Angabe das ganze Dokument.
+  final int? firstPage;
+  final int? lastPage;
+}
+
+/// "Fragen aus PDF importieren": liest PDFs fortlaufend in überlappenden
+/// Abschnitten und übernimmt die dort vorhandenen Fragen und Aufgaben
+/// (Altklausur, Übungsblatt, Fragen auf Folien) – statt neue zu erfinden.
+///
+/// Fortlaufend heißt: Ein Abschnitt besteht aus einer sinnvollen Anzahl neuer
+/// Seiten (weniger bei viel Text, siehe [planScanWindows]) und beginnt mit der
+/// LETZTEN Seite des vorigen Abschnitts. Dazu bekommt die KI die daraus schon
+/// übernommenen Fragen und prüft, ob auf den neuen Seiten etwas steht, das zu
+/// ihnen gehört (Fortsetzung der Aufgabe, Musterlösung, Abbildung) – dann wird
+/// die Frage überarbeitet, sonst geht es einfach mit den neuen Seiten weiter.
+/// So gibt es weder eine Grenze für Umfang noch für die Zahl der Dateien, und
+/// eine Aufgabe, die über einen Seitenumbruch geht, wird nicht zerrissen.
+/// Abschnitte einer Datei laufen nacheinander (sie bauen aufeinander auf),
+/// verschiedene Dateien gleichzeitig ([scanMany]); ein fehlgeschlagener
+/// Abschnitt bricht den Rest nicht ab.
 class PdfQuestionImportService {
   PdfQuestionImportService({
     required this._ai,
     PdfService? pdf,
     this.pagesPerRequest = defaultPagesPerRequest,
-    this.parallelRequests = 3,
+    this.charBudget = defaultCharBudget,
+    this.parallelRequests = 2,
     PageRendererFactory? renderer,
   })  : _pdf = pdf ?? PdfService(),
         _openRenderer = renderer ?? PdfPageRenderer.open;
@@ -120,13 +163,22 @@ class PdfQuestionImportService {
   final PdfService _pdf;
   final PageRendererFactory _openRenderer;
 
-  /// Wenige Seiten je Anfrage – eine Altklausur hat oft viele Fragen pro
-  /// Seite, die Antwort soll nicht abgeschnitten werden.
-  static const int defaultPagesPerRequest = 3;
+  /// So viele NEUE Seiten höchstens je Abschnitt (dazu kommt die
+  /// Überlappungsseite) – bei viel Text weniger, siehe [charBudget].
+  static const int defaultPagesPerRequest = 4;
   final int pagesPerRequest;
+
+  /// So viel Seitentext (Zeichen) höchstens je Abschnitt an neuen Seiten – eine
+  /// Altklausur mit dicht beschriebenen Seiten hat oft viele Fragen pro Seite,
+  /// die Antwort soll nicht abgeschnitten werden.
+  static const int defaultCharBudget = 7000;
+  final int charBudget;
+
+  /// So viele PDFs gleichzeitig in [scanMany].
   final int parallelRequests;
 
-  /// Die Seiten [firstPage]..[lastPage] (1-basiert) in Paketen.
+  /// Die Seiten [firstPage]..[lastPage] (1-basiert) in Paketen fester Größe
+  /// (ohne Überlappung).
   static List<List<int>> batches(int firstPage, int lastPage, int size) {
     final result = <List<int>>[];
     for (var start = firstPage; start <= lastPage; start += size) {
@@ -136,17 +188,38 @@ class PdfQuestionImportService {
     return result;
   }
 
-  /// Sucht die Seiten [firstPage]..[lastPage] (bzw. genau [onlyBatches],
-  /// z.B. für einen erneuten Versuch) ab. [onProgress] meldet erledigte
-  /// Pakete; [isCancelled] beendet nach den laufenden Paketen. Mit [focus]
-  /// (Wortlaut einer Aufgabe) wird NUR diese eine Aufgabe übernommen – zum
-  /// Nachholen einer übersehenen (siehe ImportVerifyService).
+  /// Die Abschnitte, in denen [firstPage]..[lastPage] gelesen werden.
+  List<ScanWindow> planWindows(List<String> pageTexts, {required int firstPage, required int lastPage}) =>
+      planScanWindows(
+        pageTexts,
+        firstPage: firstPage,
+        lastPage: lastPage,
+        maxNewPages: pagesPerRequest,
+        charBudget: charBudget,
+      );
+
+  List<String> _pageTextsOf(Uint8List pdfBytes) {
+    try {
+      return _pdf.extractPageTexts(pdfBytes);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Liest die Seiten [firstPage]..[lastPage] (bzw. genau [onlyBatches], z.B.
+  /// für einen erneuten Versuch – ohne Überlappung) fortlaufend ab.
+  /// [onProgress] meldet erledigte Abschnitte; [isCancelled] beendet nach dem
+  /// laufenden Abschnitt.
   ///
   /// Mit [withPageImages] bekommt die KI jede Seite als Bild (plus deren
   /// Text) – so kann sie Abbildungen per Bereich angeben, die dann
   /// ausgeschnitten an der Frage hängen, und Bildfragen (beschriften,
   /// markieren) 1:1 übernehmen. Lässt sich die PDF auf dem Gerät nicht
   /// rendern, geht die PDF-Datei selbst an die KI (ohne Abbildungen).
+  /// [reference] ist das Nachschlagewerk für Lösungen aus anderen Dateien
+  /// ([owner] = diese Datei), [referenceText] ein einzelner Begleittext. Mit
+  /// [focus] (Wortlaut einer Aufgabe) wird NUR diese eine Aufgabe übernommen –
+  /// zum Nachholen einer übersehenen (siehe ImportVerifyService).
   Future<PdfQuestionScan> scan(
     Uint8List pdfBytes, {
     required int firstPage,
@@ -155,6 +228,9 @@ class PdfQuestionImportService {
     required bool fillMissingSolutions,
     bool withPageImages = true,
     String? referenceText,
+    ImportReference? reference,
+    String? owner,
+    List<String>? pageTexts,
     String? focus,
     List<List<int>>? onlyBatches,
     void Function(int done, int total)? onProgress,
@@ -162,13 +238,23 @@ class PdfQuestionImportService {
   }) async {
     final renderer = withPageImages ? await _openRenderer(pdfBytes) : null;
     try {
+      final texts = pageTexts ?? _pageTextsOf(pdfBytes);
+      final windows = onlyBatches != null
+          ? [for (final b in onlyBatches) ScanWindow(pages: b)]
+          : planWindows(texts, firstPage: firstPage, lastPage: lastPage);
+      final ImportReference? lookup = reference ??
+          ((referenceText ?? '').trim().isEmpty
+              ? null
+              : ImportReference(ImportReference.pagesOfText('Begleitdokument', referenceText!)));
       return await _scan(
         pdfBytes,
         renderer: renderer,
-        todo: onlyBatches ?? batches(firstPage, lastPage, pagesPerRequest),
+        pageTexts: texts,
+        windows: windows,
         contentOnly: contentOnly,
         fillMissingSolutions: fillMissingSolutions,
-        referenceText: referenceText,
+        reference: lookup,
+        owner: owner,
         focus: focus,
         onProgress: onProgress,
         isCancelled: isCancelled,
@@ -181,109 +267,294 @@ class PdfQuestionImportService {
   Future<PdfQuestionScan> _scan(
     Uint8List pdfBytes, {
     required PageImageRenderer? renderer,
-    required List<List<int>> todo,
+    required List<String> pageTexts,
+    required List<ScanWindow> windows,
     required bool contentOnly,
     required bool fillMissingSolutions,
-    String? referenceText,
+    ImportReference? reference,
+    String? owner,
     String? focus,
     void Function(int done, int total)? onProgress,
     bool Function()? isCancelled,
   }) async {
-    List<String>? pageTexts;
-    if (renderer != null) {
-      try {
-        pageTexts = _pdf.extractPageTexts(pdfBytes);
-      } catch (_) {}
-    }
     var usedImages = false;
-    final found = <int, List<ScannedQuestion>>{};
-    final failed = <List<int>>[];
+    final found = <ScannedQuestion>[];
+    final covered = <int>{};
+    final failedWindows = <List<int>>[];
     final errors = <String>[];
+    final notes = <String>[];
     var dropped = 0;
-    var next = 0;
+    var revised = 0;
+    var previousFailed = false;
+    onProgress?.call(0, windows.length);
+
+    String textOf(ScanWindow w) => [for (final p in w.shown) if (p - 1 < pageTexts.length) pageTexts[p - 1]].join('\n');
+
+    /// Liest einen Abschnitt und arbeitet das Ergebnis in [found] ein.
+    /// Wirft bei einem Fehler der Anfrage.
+    Future<ScanWindowReply> readWindow(ScanWindow window, List<ScannedQuestion> previous) async {
+      final images = renderer == null ? null : await _renderAll(renderer, window.shown);
+      final texts = [for (final p in window.shown) p - 1 < pageTexts.length ? pageTexts[p - 1] : ''];
+      final referenceText = reference?.forWindow(textOf(window), excludeOwner: owner) ?? '';
+      final numbered = [
+        for (final (i, q) in previous.indexed)
+          (
+            n: i + 1,
+            type: (q.data['type'] ?? 'flashcard').toString(),
+            front: q.front,
+            answer: _answerOf(q),
+          ),
+      ];
+      final ScanWindowReply reply;
+      if (images != null) {
+        usedImages = true;
+        reply = await _ai.scanPdfWindow(
+          null,
+          pageNumbers: window.shown,
+          overlapPage: window.overlap,
+          previous: numbered,
+          contentOnly: contentOnly,
+          fillMissingSolutions: fillMissingSolutions,
+          pageImages: [for (final image in images) await drawEdgeRuler(image) ?? image],
+          pageTexts: texts,
+          referenceText: referenceText,
+          focus: focus,
+        );
+      } else {
+        final sub = _pdf.extractPages(pdfBytes, [for (final p in window.shown) p - 1]);
+        reply = await _ai.scanPdfWindow(
+          sub,
+          pageNumbers: window.shown,
+          overlapPage: window.overlap,
+          previous: numbered,
+          contentOnly: contentOnly,
+          fillMissingSolutions: fillMissingSolutions,
+          referenceText: referenceText,
+          focus: focus,
+        );
+      }
+      final imagesByPage = images == null
+          ? const <int, Uint8List>{}
+          : {for (final (i, p) in window.shown.indexed) p: images[i]};
+
+      // Neue Fragen (Doppelte der Überlappungsseite fallen weg).
+      final added = <ScannedQuestion>[];
+      for (final entry in reply.questions) {
+        final fixed = QuestionParsing.normalizeGeneratedFlashcard(entry);
+        if (fixed == null) {
+          dropped++;
+          continue;
+        }
+        final page = entry['page'] as int;
+        if (imagesByPage[page] case final image?) await attachFigure(fixed, entry, image);
+        // Eine Bildfrage ohne Bild ließe sich nicht beantworten.
+        final type = QuestionParsing.parseType(fixed['type'] as String?);
+        if ((type == QuestionType.diagramLabel || type == QuestionType.markImage) && fixed['imageBase64'] == null) {
+          dropped++;
+          continue;
+        }
+        final question = ScannedQuestion(page: page, data: fixed, solutionByAi: entry['solutionFromDocument'] == false);
+        if (page == window.overlap && previous.any((q) => _sameQuestion(q.front, question.front))) continue;
+        if (added.any((q) => q.page == page && _sameQuestion(q.front, question.front))) continue;
+        added.add(question);
+      }
+
+      // Überarbeitungen bereits übernommener Fragen.
+      for (final entry in reply.revisions.entries) {
+        final index = entry.key - 1;
+        if (index < 0 || index >= previous.length) continue;
+        final old = previous[index];
+        final raw = entry.value;
+        final fixed = QuestionParsing.normalizeGeneratedFlashcard(raw);
+        // Eine halb ausgefüllte Überarbeitung ist schlechter als das Original.
+        if (fixed == null || (fixed['typeDowngraded'] == true && !old.typeDowngraded)) continue;
+        if (imagesByPage[raw['page'] as int] case final image?) await attachFigure(fixed, raw, image);
+        for (final key in const ['imageBase64', 'imageTargets']) {
+          if (fixed[key] == null && old.data[key] != null) fixed[key] = old.data[key];
+        }
+        final type = QuestionParsing.parseType(fixed['type'] as String?);
+        if ((type == QuestionType.diagramLabel || type == QuestionType.markImage) && fixed['imageBase64'] == null) {
+          continue;
+        }
+        final replacement = ScannedQuestion(page: old.page, data: fixed, solutionByAi: raw['solutionFromDocument'] == false)
+          ..selected = old.selected;
+        final at = found.indexOf(old);
+        if (at >= 0) {
+          found[at] = replacement;
+          revised++;
+        }
+      }
+      found.addAll(added);
+      return reply;
+    }
+
+    for (var w = 0; w < windows.length; w++) {
+      if (isCancelled?.call() ?? false) break;
+      var window = windows[w];
+      // Ist der vorige Abschnitt fehlgeschlagen, wurde seine letzte Seite noch
+      // nicht bearbeitet: dann ist sie hier eine neue Seite.
+      if (previousFailed && window.overlap != null) window = window.withoutOverlap;
+      final previous = window.overlap == null ? <ScannedQuestion>[] : [for (final q in found) if (q.page == window.overlap) q];
+      try {
+        final reply = await readWindow(window, previous);
+        covered.addAll(window.pages);
+        previousFailed = false;
+        // Seiten, die die KI nicht gelesen zu haben meldet (und aus denen sie
+        // nichts übernommen hat), einzeln nachlesen.
+        final seen = reply.pagesSeen;
+        if (seen != null && focus == null) {
+          for (final p in window.pages) {
+            if (seen.contains(p) || found.any((q) => q.page == p)) continue;
+            try {
+              await readWindow(ScanWindow(pages: [p]), const []);
+              notes.add('Seite $p wurde beim ersten Lesen ausgelassen und einzeln nachgelesen.');
+            } catch (_) {
+              failedWindows.add([p]);
+              errors.add('Seite $p: konnte nicht nachgelesen werden.');
+            }
+          }
+        }
+      } catch (e) {
+        failedWindows.add(window.pages);
+        previousFailed = true;
+        errors.add('${window.label}: ${e is AiServiceException ? e.message : e}');
+      }
+      onProgress?.call(w + 1, windows.length);
+    }
+
+    // Seiten, die ein späterer Abschnitt als Überlappung ohne Vorgänger doch
+    // noch gelesen hat, sind nicht mehr offen.
+    final openPages = {for (final pages in failedWindows) ...pages}..removeAll(covered);
+    final failed = _groupConsecutive(openPages.toList()..sort());
+    return PdfQuestionScan(
+      questions: _sortedByPage(found),
+      failedBatches: failed,
+      dropped: dropped,
+      errors: failed.isEmpty ? const [] : errors,
+      usedPageImages: usedImages,
+      revised: revised,
+      windows: windows.length,
+      notes: notes,
+    );
+  }
+
+  /// Fragen mit gleichem Anfang (bis auf Groß-/Kleinschreibung und
+  /// Satzzeichen) oder fast gleichem Wortlaut – dieselbe Aufgabe.
+  static bool _sameQuestion(String a, String b) {
+    String norm(String t) => t.toLowerCase().replaceAll(RegExp(r'[^a-z0-9äöüß]+'), ' ').trim();
+    final x = norm(a);
+    final y = norm(b);
+    if (x.isEmpty || y.isEmpty) return false;
+    if (x == y) return true;
+    final wa = x.split(' ').toSet();
+    final wb = y.split(' ').toSet();
+    final inter = wa.intersection(wb).length;
+    final union = wa.union(wb).length;
+    return wa.length >= 4 && wb.length >= 4 && inter / union >= 0.85;
+  }
+
+  static List<List<int>> _groupConsecutive(List<int> sorted) {
+    final result = <List<int>>[];
+    for (final p in sorted) {
+      if (result.isNotEmpty && result.last.last == p - 1) {
+        result.last.add(p);
+      } else {
+        result.add([p]);
+      }
+    }
+    return result;
+  }
+
+  /// Nach Seite, bei gleicher Seite in der Reihenfolge des Findens (List.sort
+  /// ist nicht stabil).
+  static List<ScannedQuestion> _sortedByPage(List<ScannedQuestion> questions) {
+    final indexed = questions.indexed.toList()
+      ..sort((a, b) {
+        final byPage = a.$2.page.compareTo(b.$2.page);
+        return byPage != 0 ? byPage : a.$1.compareTo(b.$1);
+      });
+    return [for (final e in indexed) e.$2];
+  }
+
+  static String _answerOf(ScannedQuestion q) =>
+      toFlashcards([q], moduleId: '', now: DateTime(2000)).single.answerSummary;
+
+  /// Liest mehrere PDFs. Jede Datei wird für sich fortlaufend gelesen
+  /// ([scan]); bis zu [parallelRequests] Dateien gleichzeitig. Zu jedem
+  /// Abschnitt sucht ein gemeinsames Nachschlagewerk die passenden Seiten der
+  /// ANDEREN Dateien (z.B. eine Musterlösung) sowie aus [extraReference] (Text
+  /// von Dateien ohne Seiten) heraus – so gibt es keine Obergrenze für die
+  /// Zahl der Dateien. [retry] (Dateiname → Seiten) liest nur diese Seiten
+  /// erneut. Das Ergebnis steht in der Reihenfolge von [sources]; jede Frage
+  /// trägt ihre Datei ([ScannedQuestion.sourceFile]).
+  Future<List<PdfQuestionScan>> scanMany(
+    List<ImportSource> sources, {
+    required bool contentOnly,
+    required bool fillMissingSolutions,
+    List<ImportReferencePage> extraReference = const [],
+    Map<String, List<List<int>>>? retry,
+    void Function(int done, int total, String label)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    final texts = [for (final s in sources) s.pageTexts ?? _pageTextsOf(s.bytes)];
+    final reference = ImportReference([
+      for (final (i, s) in sources.indexed)
+        for (final (p, text) in texts[i].indexed)
+          ImportReferencePage(owner: s.name, label: '${s.name}, Seite ${p + 1}', text: text),
+      ...extraReference,
+    ]);
+    final plans = <List<ScanWindow>>[
+      for (final (i, s) in sources.indexed)
+        retry != null
+            ? [for (final b in retry[s.name] ?? const <List<int>>[]) ScanWindow(pages: b)]
+            : planWindows(
+                texts[i],
+                firstPage: s.firstPage ?? 1,
+                lastPage: s.lastPage ?? texts[i].length,
+              ),
+    ];
+    final total = plans.fold<int>(0, (sum, w) => sum + w.length);
     var done = 0;
-    onProgress?.call(0, todo.length);
+    onProgress?.call(0, total, '');
+    final results = List<PdfQuestionScan?>.filled(sources.length, null);
+    var next = 0;
 
     Future<void> worker() async {
-      while (true) {
+      while (next < sources.length) {
         if (isCancelled?.call() ?? false) return;
-        if (next >= todo.length) return;
-        final index = next++;
-        final pages = todo[index];
-        try {
-          final images = renderer == null ? null : await _renderAll(renderer, pages);
-          final List<Map<String, dynamic>> raw;
-          if (images != null) {
-            usedImages = true;
-            raw = await _ai.scanPdfPagesForQuestions(
-              null,
-              pageNumbers: pages,
-              contentOnly: contentOnly,
-              fillMissingSolutions: fillMissingSolutions,
-              pageImages: [for (final image in images) await drawEdgeRuler(image) ?? image],
-              pageTexts: [for (final p in pages) p - 1 < (pageTexts?.length ?? 0) ? pageTexts![p - 1] : ''],
-              referenceText: referenceText,
-              focus: focus,
-            );
-          } else {
-            final sub = _pdf.extractPages(pdfBytes, [for (final p in pages) p - 1]);
-            raw = await _ai.scanPdfPagesForQuestions(
-              sub,
-              pageNumbers: pages,
-              contentOnly: contentOnly,
-              fillMissingSolutions: fillMissingSolutions,
-              referenceText: referenceText,
-              focus: focus,
-            );
-          }
-          final questions = <ScannedQuestion>[];
-          for (final entry in raw) {
-            final fixed = QuestionParsing.normalizeGeneratedFlashcard(entry);
-            if (fixed == null) {
-              dropped++;
-              continue;
-            }
-            if (images != null) {
-              await attachFigure(fixed, entry, images[pages.indexOf(entry['page'] as int)]);
-            }
-            // Eine Bildfrage ohne Bild ließe sich nicht beantworten.
-            final type = QuestionParsing.parseType(fixed['type'] as String?);
-            if ((type == QuestionType.diagramLabel || type == QuestionType.markImage) &&
-                fixed['imageBase64'] == null) {
-              dropped++;
-              continue;
-            }
-            questions.add(ScannedQuestion(
-              page: entry['page'] as int,
-              data: fixed,
-              solutionByAi: entry['solutionFromDocument'] == false,
-            ));
-          }
-          found[index] = questions;
-        } catch (e) {
-          failed.add(pages);
-          errors.add('Seite ${pages.first}${pages.length > 1 ? '–${pages.last}' : ''}: '
-              '${e is AiServiceException ? e.message : e}');
+        final i = next++;
+        final source = sources[i];
+        if (plans[i].isEmpty) {
+          results[i] = PdfQuestionScan(questions: [], failedBatches: const [], dropped: 0);
+          continue;
         }
-        done++;
-        onProgress?.call(done, todo.length);
+        var fileDone = 0;
+        final scan = await this.scan(
+          source.bytes,
+          firstPage: source.firstPage ?? 1,
+          lastPage: source.lastPage ?? texts[i].length,
+          contentOnly: contentOnly,
+          fillMissingSolutions: fillMissingSolutions,
+          reference: reference,
+          owner: source.name,
+          pageTexts: texts[i],
+          onlyBatches: retry == null ? null : [for (final w in plans[i]) w.pages],
+          isCancelled: isCancelled,
+          onProgress: (d, t) {
+            done += d - fileDone;
+            fileDone = d;
+            onProgress?.call(done, total, '${source.name} · Abschnitt $d von $t');
+          },
+        );
+        for (final q in scan.questions) {
+          q.sourceFile = source.name;
+        }
+        results[i] = scan;
       }
     }
 
-    await Future.wait([for (var i = 0; i < parallelRequests; i++) worker()]);
-    // Reihenfolge wie im Dokument, auch wenn die Pakete durcheinander fertig
-    // wurden.
-    final ordered = [
-      for (var i = 0; i < todo.length; i++) ...?found[i],
-    ]..sort((a, b) => a.page.compareTo(b.page));
-    failed.sort((a, b) => a.first.compareTo(b.first));
-    return PdfQuestionScan(
-      questions: ordered,
-      failedBatches: failed,
-      dropped: dropped,
-      errors: errors,
-      usedPageImages: usedImages,
-    );
+    await Future.wait([for (var k = 0; k < parallelRequests; k++) worker()]);
+    return [for (final r in results) r ?? PdfQuestionScan(questions: [], failedBatches: const [], dropped: 0)];
   }
 
   /// Alle Seiten eines Pakets als Bild – oder `null`, wenn eine fehlt (dann

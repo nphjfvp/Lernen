@@ -234,7 +234,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     _SoftRow(
                       icon: Icons.manage_search,
                       title: 'Fragen aus PDF importieren',
-                      subtitle: 'KI sucht jede Seite nach vorhandenen Fragen/Aufgaben ab und übernimmt sie ins Quiz',
+                      subtitle: 'KI liest beliebig viele PDFs fortlaufend und übernimmt jede vorhandene Frage/Aufgabe ins Quiz',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PdfQuestionImportScreen(moduleId: module.id, moduleName: module.name),

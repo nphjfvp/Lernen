@@ -403,21 +403,45 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
   Probeklausur). `RelativeImage` zeigt Bilder im echten Seitenverhältnis mit
   Ebenen an relativen Koordinaten (Quiz + Editor).
 - **„Fragen aus PDF importieren“** (`PdfQuestionImportScreen` +
-  `PdfQuestionImportService`): Seiten paketweise (3) an
-  `AiService.scanPdfPagesForQuestions` (Vision-Modell), 3 Pakete parallel,
-  `contentOnly`/`fillMissingSolutions`/`referenceText` steuern den Prompt.
-  Standard: `PdfPageRenderer` (über `PdfViewerPlatform.instance`, also
-  dieselbe Engine wie der Viewer; `PageImageRenderer` als Test-Hook) rendert
-  die Seiten als PNG, `drawEdgeRuler` zeichnet eine Randskala, dazu geht der
-  Seitentext mit. Die KI liefert `imageBox`/`imageCovers`/`targets` in
-  Seitenkoordinaten; `PdfQuestionImportService.attachFigure` schneidet aus,
-  rechnet Stellen auf den Ausschnitt um und zeichnet Abdeckungen ein.
-  Ohne Renderer (Linux, Tests ohne Hook) geht das Paket per
-  `PdfService.extractPages` als PDF-Datei raus. Ergebnis nach Seite
-  sortiert, fehlgeschlagene Pakete wiederholbar, Import als Karten mit
-  `priorityIntroduction`. Der Nachbereiten-Import (`ReviewScreen`,
-  `_importQuestions`) nutzt denselben Dienst für PDFs; nur Nicht-PDFs laufen
-  noch über den Text-Import. Die KI erfindet dort nichts.
+  `PdfQuestionImportService`): beliebig viele PDFs (`_ImportFile`,
+  Mehrfachauswahl/„Alle hinzufügen“/Upload/Drag-and-drop), fortlaufend
+  gelesen. `planScanWindows` (`lib/services/import_reference.dart`) teilt in
+  Abschnitte (`ScanWindow`: `pages` = neue Seiten, höchstens
+  `pagesPerRequest` = 4 und höchstens `charBudget` = 7000 Zeichen Text;
+  `overlap` = letzte Seite des vorigen Abschnitts). `AiService.scanPdfWindow`
+  schickt `pageNumbers` = overlap + neue Seiten, dazu die aus der
+  Überlappungsseite schon übernommenen Fragen (nummeriert) und den Zusatz
+  `_scanRollingRules`; Antwort `{pages, questions, revisions:[{n, question}]}`
+  (`parseScanWindow`: fehlende Seite → erste NEUE Seite, `revisions` nur mit
+  Überlappung, `pages` = Abdeckungsmeldung). Der Dienst arbeitet die
+  Abschnitte einer Datei NACHEINANDER ab (`_scan`): Überarbeitung ersetzt die
+  alte Frage (Bild der alten bleibt, halb ausgefüllte Überarbeitungen
+  zählen nicht), Doppelte der Überlappungsseite fallen weg
+  (`_sameQuestion`), nicht gemeldete Seiten ohne Fragen werden einzeln
+  nachgelesen; fällt ein Abschnitt aus, wird die Überlappungsseite des
+  nächsten `withoutOverlap` als NEUE Seite gelesen, `failedBatches` enthält
+  nur Seiten, die kein späterer Abschnitt abgedeckt hat (Wiederholen =
+  `onlyBatches`, ohne Überlappung). `scanMany` liest mehrere Dateien
+  (`parallelRequests` = 2 gleichzeitig), setzt `ScannedQuestion.sourceFile`
+  und baut EIN `ImportReference` (Seiten der ANDEREN Dateien +
+  `extraReference` = Text ohne Seiten via `ImportReference.pagesOfText`);
+  `forWindow` gibt bei Überschreitung von 20000 Zeichen nur die zum
+  Abschnitt passenden Seiten (IDF-Ranking über `PageIndex`) mit – deshalb
+  keine Obergrenze für die Zahl der Dateien. `contentOnly`/
+  `fillMissingSolutions` steuern den Prompt. Standard: `PdfPageRenderer`
+  (über `PdfViewerPlatform.instance`, also dieselbe Engine wie der Viewer;
+  `PageImageRenderer` als Test-Hook) rendert die Seiten als PNG,
+  `drawEdgeRuler` zeichnet eine Randskala, dazu geht der Seitentext mit. Die
+  KI liefert `imageBox`/`imageCovers`/`targets` in Seitenkoordinaten;
+  `PdfQuestionImportService.attachFigure` schneidet aus, rechnet Stellen auf
+  den Ausschnitt um und zeichnet Abdeckungen ein. Ohne Renderer (Linux, Tests
+  ohne Hook) geht der Abschnitt per `PdfService.extractPages` als PDF-Datei
+  raus. Ergebnis nach Datei und Seite sortiert, Import als Karten je Datei
+  (`sourceMaterialId` der Datei: vorhandenes Material oder beim Import
+  angelegte Übung) mit `priorityIntroduction`. Der Nachbereiten-Import
+  (`ReviewScreen`, `_importQuestions`) nutzt `scanMany`; nur Nicht-PDFs laufen
+  noch über den Text-Import (`importQuestionsFromExercises`, ohne
+  Überlappung der Textabschnitte). Die KI erfindet dort nichts.
 - KI-Einträge laufen vor der Prüfung durch `QuestionParsing.canonicalize`:
   Typ tolerant (camelCase, Leerzeichen, deutsch, Abkürzungen; fehlend →
   aus der Struktur abgeleitet), Optionen als Texte mit Lösung als
@@ -444,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 794 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 812 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -693,6 +717,14 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `PdfQuestionImportService.toFlashcards` schreibt `stageLevel`/`stageGroup`
     (Ordner + `#<Zeitstempel>` je Import). Test-Seams:
     `PdfQuestionImportScreen.aiFactory`, `ReviewScreen.aiFactory`.
+38. Fortlaufender Import (Nutzer-Wunsch: alle PDFs hoch, sinnvolle Seitenzahl
+    an die KI, dann letzte Seite erneut + neue Seiten, prüfen ob der letzten
+    Frage Kontext fehlte): siehe „Fragen aus PDF importieren“ oben.
+    Ersetzt die festen 3er-Pakete (parallel) durch überlappende, nacheinander
+    gelesene Abschnitte; `PdfQuestionImportService.defaultPagesPerRequest` = 4,
+    `defaultCharBudget` = 7000. `AiService.scanPdfPagesForQuestions` bleibt als
+    dünner Wrapper um `scanPdfWindow`. Tests: `test/services/rolling_import_test.dart`,
+    `test/ui/multi_pdf_import_test.dart`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

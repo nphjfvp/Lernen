@@ -51,6 +51,17 @@ typedef ImportVerification = ({
   String note,
 });
 
+/// Antwort der KI zu einem Abschnitt beim fortlaufenden Import (siehe
+/// [AiService.scanPdfWindow]): die neu gefundenen Fragen (Rohkarten mit
+/// "page"), Überarbeitungen bereits übernommener Fragen (Nummer in der
+/// mitgeschickten Liste → komplette neue Rohkarte) und die Seiten, die die
+/// KI gelesen zu haben meldet (null = keine Angabe).
+typedef ScanWindowReply = ({
+  List<Map<String, dynamic>> questions,
+  Map<int, Map<String, dynamic>> revisions,
+  List<int>? pagesSeen,
+});
+
 /// Stufe des Originals, Ordnername und die zusätzlichen Fragen (Rohkarten
 /// mit "level") zu einer übernommenen Frage (siehe
 /// [AiService.expandQuestionStages]).
@@ -780,7 +791,7 @@ Seiten TATSÄCHLICH stehen, und übernimm sie 1:1 als Quizfragen – in derselbe
 Aufgabenform wie im Original. Erfinde KEINE neuen Fragen.
 
 WELCHE FRAGEN: {{SCOPE}}
-
+{{ROLLING}}
 Übernimm jede Frage möglichst im Originalwortlaut; kürze nur, was für eine
 Quizfrage nötig ist. Eine Aufgabe mit Teilaufgaben (a, b, c …) wird zu
 mehreren Fragen – jede so formuliert, dass sie ohne die anderen verständlich
@@ -859,9 +870,35 @@ abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash (z.B.
 "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences und ohne
 Text davor oder danach:
-{"questions": [{"page": 3, "type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}], "solutionFromDocument": true}{{EXAMPLE}}]}
-Stehen auf diesen Seiten keine passenden Fragen: {"questions": []}.
+{"pages": [{"page": 3, "tasks": 2}], "questions": [{"page": 3, "type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}], "solutionFromDocument": true}{{EXAMPLE}}]{{REVISIONS_FORMAT}}}
+"pages" nennt JEDE gezeigte Seite mit der Zahl der Aufgaben, die du dort
+gefunden hast (auch 0) – so lässt sich prüfen, dass du alle Seiten gelesen
+hast. Stehen auf den Seiten keine passenden Fragen: "questions": [].
 Antworte in der Sprache des Dokuments.
+''';
+
+  /// Zusatz für Abschnitte, die mit der letzten Seite des vorigen beginnen
+  /// (fortlaufender Import, siehe [scanPdfWindow]).
+  static const _scanRollingRules = '''
+
+FORTLAUFENDER IMPORT: Das Dokument wird in überlappenden Abschnitten gelesen.
+Die ERSTE gezeigte Seite (Dokument-Seite {{OVERLAP}}) ist die letzte des
+vorigen Abschnitts und dort schon bearbeitet – sie ist nur dabei, damit du sie
+zusammen mit den neuen Seiten liest. Alle weiteren Seiten sind NEU.
+- Fragen auf den NEUEN Seiten übernimmst du wie oben unter "questions".
+- Aus Seite {{OVERLAP}} wurden schon Fragen übernommen (Liste in der
+  Nachricht). Übernimm sie NICHT noch einmal.
+- Prüfe für jede dieser Fragen, ob auf den neuen Seiten etwas steht, das zu ihr
+  gehört und beim Übernehmen gefehlt hat: die Aufgabe geht weiter (weitere
+  Teilaufgaben, Fortsetzung von Aufgabentext oder Tabelle), die Lösung bzw.
+  Musterlösung steht erst dort, eine zugehörige Abbildung, fehlende Angaben.
+  Dann liefere sie VOLLSTÄNDIG überarbeitet unter "revisions":
+  {"n": <Nummer aus der Liste>, "question": {komplette Frage im selben Format
+  wie oben}}. Fehlte nichts, lass sie aus "revisions" heraus – die Frage bleibt
+  dann unverändert. Ändere nichts ohne Grund.
+- Beginnt auf Seite {{OVERLAP}} eine Aufgabe, die dort noch NICHT übernommen
+  wurde (weil sie erst auf den neuen Seiten vollständig wird), übernimm sie
+  jetzt als neue Frage mit "page": {{OVERLAP}}.
 ''';
 
   static const _scanFiguresFromImages =
@@ -933,11 +970,46 @@ Antworte in der Sprache des Dokuments.
     String? referenceText,
     String? focus,
   }) async {
+    final reply = await scanPdfWindow(
+      pdfBytes,
+      pageNumbers: pageNumbers,
+      contentOnly: contentOnly,
+      fillMissingSolutions: fillMissingSolutions,
+      pageImages: pageImages,
+      pageTexts: pageTexts,
+      referenceText: referenceText,
+      focus: focus,
+    );
+    return reply.questions;
+  }
+
+  /// Ein Abschnitt des fortlaufenden Imports: wie [scanPdfPagesForQuestions],
+  /// aber mit Überlappung. [overlapPage] ist die erste der gezeigten
+  /// [pageNumbers] und stammt aus dem vorigen Abschnitt; [previous] sind die
+  /// daraus schon übernommenen Fragen (nummeriert ab 1). Die KI übernimmt nur
+  /// die NEUEN Seiten und meldet unter "revisions", wenn eine der bisherigen
+  /// Fragen durch die neuen Seiten vollständiger wird (Fortsetzung der
+  /// Aufgabe, Musterlösung, Abbildung) – sonst bleiben sie unverändert.
+  Future<ScanWindowReply> scanPdfWindow(
+    Uint8List? pdfBytes, {
+    required List<int> pageNumbers,
+    required bool contentOnly,
+    required bool fillMissingSolutions,
+    int? overlapPage,
+    List<({int n, String type, String front, String answer})> previous = const [],
+    List<Uint8List>? pageImages,
+    List<String>? pageTexts,
+    String? referenceText,
+    String? focus,
+  }) async {
     final withImages = pageImages != null && pageImages.length == pageNumbers.length;
     if (!withImages && pdfBytes == null) {
       throw ArgumentError('Weder Seitenbilder noch PDF übergeben.');
     }
+    final rolling = overlapPage != null && pageNumbers.length > 1;
     final systemPrompt = _scanPdfQuestionsSystemPrompt
+        .replaceFirst('{{ROLLING}}', rolling ? _scanRollingRules.replaceAll('{{OVERLAP}}', '$overlapPage') : '')
+        .replaceFirst('{{REVISIONS_FORMAT}}', rolling ? ', "revisions": [{"n": 1, "question": {…}}]' : '')
         .replaceFirst('{{SCOPE}}', contentOnly ? _scanScopeContent : _scanScopeEvery)
         .replaceFirst('{{FIGURES}}', withImages ? _scanFiguresFromImages : _scanFiguresFromPdf)
         .replaceFirst('{{LABEL_RULE}}', withImages ? _scanLabelFromImages : _scanLabelFromPdf)
@@ -999,6 +1071,17 @@ Antworte in der Sprache des Dokuments.
         },
       ];
     }
+    if (rolling) {
+      final list = StringBuffer();
+      for (final q in previous) {
+        list.writeln('${q.n}. [${q.type}] ${_cap(q.front, 500)} — Lösung: ${_cap(q.answer, 300)}');
+      }
+      content.add({
+        'type': 'text',
+        'text': 'Seite $overlapPage ist die schon bearbeitete letzte Seite des vorigen Abschnitts. '
+            '${previous.isEmpty ? 'Daraus wurde noch keine Frage übernommen.' : 'Daraus wurden schon diese Fragen übernommen:\n$list'}',
+      });
+    }
     if ((referenceText ?? '').trim().isNotEmpty) {
       content.add({
         'type': 'text',
@@ -1016,23 +1099,74 @@ Antworte in der Sprache des Dokuments.
       });
     }
     final raw = await _complete(systemPrompt, content, temperature: 0.1);
-    return parseScannedQuestions(_parseJsonObject(raw), pageNumbers);
+    return parseScanWindow(
+      _parseJsonObject(raw),
+      shownPages: pageNumbers,
+      overlapPage: rolling ? overlapPage : null,
+    );
+  }
+
+  /// Liest die Antwort eines Abschnitts: die neuen Fragen (siehe
+  /// [parseScannedQuestions]; eine fehlende oder unpassende Seitenangabe wird
+  /// zur ersten NEUEN Seite), die "revisions" (Nummer → komplette Rohkarte,
+  /// "page" fehlt → Überlappungsseite) und die gemeldeten "pages".
+  static ScanWindowReply parseScanWindow(
+    Map<String, dynamic> json, {
+    required List<int> shownPages,
+    int? overlapPage,
+  }) {
+    final newPages = [for (final p in shownPages) if (p != overlapPage) p];
+    final questions = parseScannedQuestions(
+      json,
+      shownPages,
+      fallbackPage: newPages.isEmpty ? null : newPages.first,
+    );
+    final revisions = <int, Map<String, dynamic>>{};
+    if (overlapPage != null) {
+      for (final entry in _mapsIn(json['revisions'])) {
+        final n = entry['n'] is num ? (entry['n'] as num).toInt() : int.tryParse('${entry['n']}');
+        final question = entry['question'];
+        if (n == null || question is! Map) continue;
+        final map = Map<String, dynamic>.from(question);
+        final page = map['page'] is num ? (map['page'] as num).toInt() : int.tryParse('${map['page']}');
+        map['page'] = page != null && shownPages.contains(page) ? page : overlapPage;
+        revisions.putIfAbsent(n, () => map);
+      }
+    }
+    final seen = json['pages'];
+    return (
+      questions: questions,
+      revisions: revisions,
+      pagesSeen: seen is List
+          ? [
+              for (final e in seen)
+                if (e is Map && (e['page'] is num || int.tryParse('${e['page']}') != null))
+                  e['page'] is num ? (e['page'] as num).toInt() : int.parse('${e['page']}'),
+            ]
+          : null,
+    );
   }
 
   /// Seitentext je Seite beim Import mit Seitenbildern – genug für eine dicht
   /// beschriebene Klausurseite.
   static const _scanPageTextCap = 8000;
 
-  /// Begleittext (andere Dateien, z.B. Musterlösung) je Anfrage.
-  static const _scanReferenceCap = 15000;
+  /// Begleittext (andere Dateien, z.B. Musterlösung) je Anfrage – der
+  /// Import wählt daraus die zum Abschnitt passenden Seiten (siehe
+  /// ImportReference), die Obergrenze ist nur ein Sicherheitsnetz.
+  static const _scanReferenceCap = 30000;
 
   /// Liest `{"questions": [...]}` (auch `{"flashcards": [...]}`) und sorgt
   /// dafür, dass jede Frage eine gültige Dokument-Seite aus [pageNumbers]
   /// trägt – eine fehlende oder unpassende Angabe wird zur ersten Seite.
-  static List<Map<String, dynamic>> parseScannedQuestions(Map<String, dynamic> parsed, List<int> pageNumbers) {
+  static List<Map<String, dynamic>> parseScannedQuestions(
+    Map<String, dynamic> parsed,
+    List<int> pageNumbers, {
+    int? fallbackPage,
+  }) {
     final list = parsed['questions'] ?? parsed['flashcards'];
     if (list is! List) return const [];
-    final fallback = pageNumbers.isEmpty ? 1 : pageNumbers.first;
+    final fallback = fallbackPage ?? (pageNumbers.isEmpty ? 1 : pageNumbers.first);
     return [
       for (final entry in list)
         if (entry is Map)

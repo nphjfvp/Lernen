@@ -40,18 +40,33 @@ engerem Fokus statt Feature-Fülle.
   Übersicht jederzeit bearbeiten oder löschen.
 - **Fragen aus PDF importieren** (`lib/ui/import/pdf_question_import_screen.dart`,
   im Fach als eigener Eintrag und im ⋮-Menü jeder PDF unter
-  "Materialien") – die KI sucht **jede Seite** einer PDF nach den Fragen
-  und Aufgaben ab, die dort schon stehen (Altklausur, Übungsblatt, Fragen
-  auf Folien), und übernimmt sie ins Quiz, statt neue zu erfinden. Vorher
-  wählt man: **"Jede Frage"** (wirklich alles inkl. Teilaufgaben und
-  Zwischenfragen auf Folien) oder **"Nur inhaltliche"** (ohne
-  Organisatorisches, rhetorische oder Meinungsfragen), ob **fehlende
+  "Materialien") – die KI liest **beliebig viele PDFs auf einmal** (aus dem
+  Fach mit "Alle hinzufügen", hochgeladen oder per Drag-and-drop) nach den
+  Fragen und Aufgaben durch, die dort schon stehen (Altklausur,
+  Übungsblatt, Fragen auf Folien), und übernimmt sie ins Quiz, statt neue
+  zu erfinden. Vorher wählt man: **"Jede Frage"** (wirklich alles inkl.
+  Teilaufgaben und Zwischenfragen auf Folien) oder **"Nur inhaltliche"**
+  (ohne Organisatorisches, rhetorische oder Meinungsfragen), ob **fehlende
   Lösungen von der KI ergänzt** werden (sonst werden Fragen ohne Lösung im
-  Dokument übersprungen) und optional einen Seitenbereich. Die Seiten werden
-  auf dem Gerät als **Bild** gerendert (`PdfPageRenderer`, dieselbe Engine
-  wie der PDF-Viewer) und paketweise (je 3) mit einer Randskala und ihrem
-  Text an das Vision-Modell geschickt, mehrere Pakete gleichzeitig
-  (`PdfQuestionImportService`, `AiService.scanPdfPagesForQuestions`). Die
+  Dokument übersprungen; eine Musterlösung in einer anderen der gewählten
+  PDFs wird dafür nachgeschlagen) und – nur bei einer einzelnen PDF –
+  optional einen Seitenbereich. **Es gibt keine Begrenzung bei Seiten oder
+  Dateien.** Die Seiten werden auf dem Gerät als **Bild** gerendert
+  (`PdfPageRenderer`, dieselbe Engine wie der PDF-Viewer) und mit einer
+  Randskala und ihrem Text an das Vision-Modell geschickt – **fortlaufend**
+  (`PdfQuestionImportService`, `AiService.scanPdfWindow`): Ein Abschnitt
+  besteht aus einer sinnvollen Zahl neuer Seiten (bis zu 4, bei viel Text
+  weniger) **plus der letzten Seite des vorigen Abschnitts**. Dazu bekommt
+  die KI die daraus schon übernommenen Fragen und prüft, ob auf den neuen
+  Seiten etwas steht, das zu ihnen gehört – Fortsetzung der Aufgabe, weitere
+  Teilaufgaben, die Musterlösung, eine Abbildung. Ja → die Frage wird
+  überarbeitet ("N Fragen wurden durch die nächste Seite vervollständigt"),
+  nein → es geht einfach mit den neuen Seiten weiter. So wird eine Aufgabe
+  über den Seitenumbruch nicht zerrissen. Die Abschnitte **einer** Datei
+  laufen nacheinander (sie bauen aufeinander auf), verschiedene Dateien bis
+  zu zwei gleichzeitig. Meldet die KI eine Seite nicht gelesen zu haben
+  (jede Antwort nennt alle gezeigten Seiten mit der Zahl gefundener
+  Aufgaben) und übernimmt daraus nichts, wird sie einzeln nachgelesen. Die
   KI übernimmt jede Aufgabe **1:1 in ihrer Form** – Ankreuzen, Lücken,
   Zuordnen/Kategorien, Tabellen und Matrizen als interaktive Frage,
   Abbildung beschriften/markieren als Bildfrage – und gibt für nötige
@@ -59,17 +74,20 @@ engerem Fokus statt Feature-Fülle.
   wird ausgeschnitten und hängt an der Frage (Lösungen im Bild werden
   abgedeckt). Lässt sich die PDF auf dem Gerät nicht rendern, geht sie als
   Datei an die KI, Abbildungen sind dann nur beschrieben. Ein
-  fehlgeschlagenes Paket lässt sich einzeln wiederholen. Die Treffer
-  erscheinen nach Seiten sortiert mit Typ, Lösung, Abbildung (einzeln
-  entfernbar) und dem Hinweis "Lösung von der KI" zum Abwählen; importiert
-  werden sie als Karten des Fachs (Einheit des Materials,
-  `priorityIntroduction`) – danach direkt **"Jetzt üben"**. Derselbe
-  seitenweise Import läuft auch im **Nachbereiten-Modus "Fragen
-  importieren"** für PDFs (weitere Dateien, z.B. eine separate
-  Musterlösung, dienen dabei als Nachschlagewerk für Lösungen). Übungs-PDFs
+  fehlgeschlagener Abschnitt lässt sich einzeln wiederholen (die nächste
+  Überlappung liest dessen letzte Seite trotzdem als neue Seite). Die
+  Treffer erscheinen nach Datei und Seite sortiert mit Typ, Lösung,
+  Abbildung (einzeln entfernbar) und dem Hinweis "Lösung von der KI" zum
+  Abwählen; importiert werden sie als Karten des Fachs (Einheit des
+  Materials, jede Frage kennt Datei und Seite, `priorityIntroduction`) –
+  danach direkt **"Jetzt üben"**. Derselbe fortlaufende Import läuft auch im
+  **Nachbereiten-Modus "Fragen importieren"** für PDFs (mehrere auf einmal;
+  weitere Dateien, auch Word/PowerPoint, dienen als Nachschlagewerk für
+  Lösungen – je Abschnitt werden nur die zum Text passenden Seiten
+  mitgeschickt, deshalb geht es mit beliebig vielen Dateien). Übungs-PDFs
   werden jetzt wie Folien gespeichert und lassen sich ansehen; bei früher
   hochgeladenen Übungen lässt sich die PDF über ⋮ → "Original-PDF
-  hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
+hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   schneller Selbsteinschätzungs-Durchlauf durch alle Konzepte eines Fachs
   (Titel zeigen, selbst einschätzen, Erklärung aufdecken); was man nicht
   wusste, landet in einer wiederholbaren Vertiefen-Runde
