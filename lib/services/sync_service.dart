@@ -58,6 +58,7 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'themeSkin': settings.themeSkin,
       'themeModePreference': settings.themeModePreference,
       'pageQuestionTierTypes': settings.pageQuestionTierTypes,
+      'favoriteModelIds': settings.favoriteModelIds,
     };
 
 /// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
@@ -94,6 +95,7 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     // Fehlt das Feld (älterer Cloud-Stand), bleibt der lokale Wert; eine
     // vorhandene, auch leere Angabe ist eine bewusste Einstellung.
     pageQuestionTierTypes: AppSettings.parseTierTypes(synced['pageQuestionTierTypes']),
+    favoriteModelIds: AppSettings.parseModelIds(synced['favoriteModelIds']),
   );
 }
 

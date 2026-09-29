@@ -92,6 +92,11 @@ class AppSettings {
   /// vor dem Erstellen trotzdem von Hand ändern.
   final Map<String, String> pageQuestionTierTypes;
 
+  /// Als Favorit markierte KI-Modelle (OpenRouter-IDs, in der Reihenfolge des
+  /// Markierens). Sie stehen im Modellwähler ganz oben und sind beim "Frage
+  /// erstellen" mit einem Tipp wählbar, ohne sie jedes Mal zu suchen.
+  final List<String> favoriteModelIds;
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
@@ -120,6 +125,7 @@ class AppSettings {
     this.themeSkin = defaultThemeSkin,
     this.themeModePreference = defaultThemeModePreference,
     this.pageQuestionTierTypes = const {},
+    this.favoriteModelIds = const [],
   });
 
   bool get hasApiKey =>
@@ -160,6 +166,7 @@ class AppSettings {
     String? themeSkin,
     String? themeModePreference,
     Map<String, String>? pageQuestionTierTypes,
+    List<String>? favoriteModelIds,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -181,6 +188,7 @@ class AppSettings {
       themeSkin: themeSkin ?? this.themeSkin,
       themeModePreference: themeModePreference ?? this.themeModePreference,
       pageQuestionTierTypes: pageQuestionTierTypes ?? this.pageQuestionTierTypes,
+      favoriteModelIds: favoriteModelIds ?? this.favoriteModelIds,
     );
   }
 
@@ -204,6 +212,7 @@ class AppSettings {
         'themeSkin': themeSkin,
         'themeModePreference': themeModePreference,
         'pageQuestionTierTypes': pageQuestionTierTypes,
+        'favoriteModelIds': favoriteModelIds,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -235,7 +244,26 @@ class AppSettings {
         themeSkin: map['themeSkin'] as String? ?? defaultThemeSkin,
         themeModePreference: map['themeModePreference'] as String? ?? defaultThemeModePreference,
         pageQuestionTierTypes: parseTierTypes(map['pageQuestionTierTypes']) ?? const {},
+        favoriteModelIds: parseModelIds(map['favoriteModelIds']) ?? const [],
       );
+
+  bool isFavoriteModel(String id) => favoriteModelIds.contains(id);
+
+  /// Die Favoritenliste mit [id] hinzugefügt bzw. – wenn schon Favorit –
+  /// entfernt.
+  List<String> favoritesToggled(String id) =>
+      isFavoriteModel(id) ? [for (final f in favoriteModelIds) if (f != id) f] : [...favoriteModelIds, id];
+
+  /// Liest eine Liste von Modell-IDs tolerant (ohne Doppelte und Leeres);
+  /// `null`, wenn gar keine Liste da ist.
+  static List<String>? parseModelIds(Object? raw) {
+    if (raw is! List) return null;
+    final ids = <String>[];
+    for (final e in raw) {
+      if (e is String && e.trim().isNotEmpty && !ids.contains(e.trim())) ids.add(e.trim());
+    }
+    return ids;
+  }
 
   /// Liest die Typ-Vorgaben je Stufe tolerant (ein kaputter Eintrag darf den
   /// App-Start nicht verhindern); `null`, wenn gar keine Angabe da ist.

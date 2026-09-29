@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/ai_model_info.dart';
 import '../../repositories/model_catalog_repository.dart';
+import '../../repositories/settings_repository.dart';
 import '../../services/model_catalog_service.dart';
 import '../../theme/app_colors.dart';
 import '../settings/model_picker_sheet.dart';
@@ -11,7 +12,9 @@ import '../settings/model_picker_sheet.dart';
 /// dafür gerade gilt – standardmäßig das aus den Einstellungen –, und lässt es
 /// hier wechseln, ohne die Einstellungen anzufassen. Tabellen, lange
 /// Aufgaben oder eine missglückte Frage gelingen mit einem stärkeren Modell
-/// oft besser; für den Alltag bleibt das günstige Standard-Modell.
+/// oft besser; für den Alltag bleibt das günstige Standard-Modell. Die als
+/// Favorit markierten Modelle (Stern im Modellwähler) stehen darunter als
+/// Schnellwahl – ein Tipp statt Suchen.
 class ModelOverrideTile extends StatelessWidget {
   const ModelOverrideTile({
     super.key,
@@ -71,6 +74,8 @@ class ModelOverrideTile extends StatelessWidget {
                 ? null
                 : '\$${info.promptPricePerMillion!.toStringAsFixed(2)}/1M';
     final changed = overrideId != null;
+    final favoriteIds = context.watch<SettingsRepository?>()?.settings.favoriteModelIds ?? const <String>[];
+    final favorites = [for (final id in favoriteIds) ...models.where((m) => m.id == id)];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,6 +132,26 @@ class ModelOverrideTile extends StatelessWidget {
             ),
           ),
         ),
+        if (favorites.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 0,
+              children: [
+                for (final m in favorites)
+                  ChoiceChip(
+                    key: ValueKey('model-fav-chip-${m.id}'),
+                    avatar: Icon(Icons.star_rounded, size: 15, color: c.warn),
+                    label: Text(m.name, style: const TextStyle(fontSize: 11.5)),
+                    selected: m.id == _activeId,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    onSelected: enabled ? (_) => onChanged(m.id == defaultId ? null : m.id) : null,
+                  ),
+              ],
+            ),
+          ),
         if (hint != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 5, 4, 0),

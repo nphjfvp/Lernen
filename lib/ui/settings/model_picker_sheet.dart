@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/ai_model_info.dart';
+import '../../repositories/settings_repository.dart';
 import '../../theme/app_colors.dart';
 
 /// Durchsuchbare Modell-Auswahl als Bottom-Sheet. Der Katalog kommt live von
 /// OpenRouter (siehe ModelCatalogRepository) und kann je nach Kategorie
 /// schnell einige hundert Einträge haben – Suche statt einer langen
-/// Radio-Liste hält das bedienbar.
+/// Radio-Liste hält das bedienbar. Mit dem Stern lassen sich Modelle als
+/// Favorit merken (siehe [AppSettings.favoriteModelIds]); Favoriten stehen
+/// ganz oben. Ohne SettingsRepository im Baum gibt es keine Sterne.
 Future<String?> showModelPickerSheet(
   BuildContext context, {
   required String title,
@@ -41,13 +47,31 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
     super.dispose();
   }
 
+  void _toggleFavorite(String id) {
+    final repo = context.read<SettingsRepository?>();
+    if (repo == null) return;
+    unawaited(repo.update(repo.settings.copyWith(favoriteModelIds: repo.settings.favoritesToggled(id))));
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final settingsRepo = context.watch<SettingsRepository?>();
+    final favoriteIds = settingsRepo?.settings.favoriteModelIds ?? const <String>[];
     final query = _query.trim().toLowerCase();
     final filtered = query.isEmpty
         ? widget.models
         : widget.models.where((m) => m.name.toLowerCase().contains(query) || m.id.toLowerCase().contains(query)).toList();
+    // Favoriten zuerst (in der Reihenfolge des Markierens), dann der Rest.
+    final favorites = [
+      for (final id in favoriteIds) ...filtered.where((m) => m.id == id),
+    ];
+    final rest = [for (final m in filtered) if (!favoriteIds.contains(m.id)) m];
+    final items = <Object>[
+      if (favorites.isNotEmpty) ...['Favoriten', ...favorites],
+      if (favorites.isNotEmpty && rest.isNotEmpty) 'Alle Modelle',
+      ...rest,
+    ];
 
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
@@ -96,12 +120,27 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                     : ListView.builder(
                         controller: scrollController,
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                        itemCount: filtered.length,
-                        itemBuilder: (ctx, i) => _ModelRow(
-                          model: filtered[i],
-                          selected: filtered[i].id == widget.selectedId,
-                          onTap: () => Navigator.of(ctx).pop(filtered[i].id),
-                        ),
+                        itemCount: items.length,
+                        itemBuilder: (ctx, i) {
+                          final item = items[i];
+                          if (item is String) {
+                            return Padding(
+                              padding: const EdgeInsets.fromLTRB(2, 4, 2, 8),
+                              child: Text(
+                                item,
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted),
+                              ),
+                            );
+                          }
+                          final model = item as AiModelInfo;
+                          return _ModelRow(
+                            model: model,
+                            selected: model.id == widget.selectedId,
+                            favorite: favoriteIds.contains(model.id),
+                            onToggleFavorite: settingsRepo == null ? null : () => _toggleFavorite(model.id),
+                            onTap: () => Navigator.of(ctx).pop(model.id),
+                          );
+                        },
                       ),
               ),
             ],
@@ -113,10 +152,20 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
 }
 
 class _ModelRow extends StatelessWidget {
-  const _ModelRow({required this.model, required this.selected, required this.onTap});
+  const _ModelRow({
+    required this.model,
+    required this.selected,
+    required this.onTap,
+    this.favorite = false,
+    this.onToggleFavorite,
+  });
   final AiModelInfo model;
   final bool selected;
   final VoidCallback onTap;
+  final bool favorite;
+
+  /// Null = Favoriten sind hier nicht verfügbar (kein Stern).
+  final VoidCallback? onToggleFavorite;
 
   @override
   Widget build(BuildContext context) {
@@ -163,6 +212,18 @@ class _ModelRow extends StatelessWidget {
               ),
             ),
             if (selected) Icon(Icons.check_circle, color: c.accent, size: 20),
+            if (onToggleFavorite != null)
+              IconButton(
+                key: ValueKey('model-fav-${model.id}'),
+                tooltip: favorite ? 'Favorit entfernen' : 'Als Favorit merken',
+                visualDensity: VisualDensity.compact,
+                onPressed: onToggleFavorite,
+                icon: Icon(
+                  favorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                  size: 22,
+                  color: favorite ? c.warn : c.inkMuted,
+                ),
+              ),
           ],
         ),
       ),
