@@ -514,7 +514,8 @@ class Flashcard {
   /// Folien-Fragen 1.0, Übungsaufgaben aus Übungsblättern 1.5), lässt sich
   /// aber jederzeit von Hand in der Kartenliste anpassen (siehe
   /// [copyWithWeight]). Wirkt zusammen mit [Module.weight] multiplikativ
-  /// (siehe CardReviewMixin.recordReview).
+  /// (siehe CardReviewMixin.recordReview). Bei 0 ist die Karte
+  /// stummgeschaltet (siehe [isMuted]).
   final double weight;
 
   /// Schwierigkeitsstufe innerhalb der Gruppe (0 = leicht, 1 = mittel,
@@ -1285,14 +1286,25 @@ class Flashcard {
 
   static int? _sanitizeStageLevel(int? value) => value == null || value < 0 || value > 2 ? null : value;
 
-  /// Erlaubter Bereich für [weight] (siehe dort) – schützt die Intervall-
-  /// Skalierung in FsrsService.review() vor Division durch 0/negative Werte
-  /// und vor absurden Extremen aus manuell bearbeiteten/importierten Daten.
+  /// Erlaubter Bereich für [weight] (siehe dort): 0 heißt "stumm" (kommt nie
+  /// dran, siehe [isMuted]), sonst von [minWeight] bis [maxWeight] – schützt
+  /// die Intervall-Skalierung in FsrsService.review() vor negativen Werten und
+  /// vor absurden Extremen aus manuell bearbeiteten/importierten Daten.
   static const double minWeight = 0.25;
   static const double maxWeight = 4.0;
 
+  /// Gewicht einer stummgeschalteten Karte.
+  static const double mutedWeight = 0.0;
+
+  /// Gewicht 0: die Karte ist stummgeschaltet und kommt nirgends dran – nicht
+  /// im Daily Quiz, Üben, Sprint, in der Probeklausur oder bei den
+  /// Schwachstellen – und zählt nicht für Ampel und Statistik. Sie bleibt in
+  /// der Kartenliste und lässt sich dort jederzeit wieder einschalten.
+  bool get isMuted => weight <= 0;
+
   static double _sanitizeWeight(double? value) {
     if (value == null || value.isNaN) return 1.0;
+    if (value <= 0) return mutedWeight;
     return value.clamp(minWeight, maxWeight).toDouble();
   }
 }

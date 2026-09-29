@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 812 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 826 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -725,6 +725,25 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `defaultCharBudget` = 7000. `AiService.scanPdfPagesForQuestions` bleibt als
     dünner Wrapper um `scanPdfWindow`. Tests: `test/services/rolling_import_test.dart`,
     `test/ui/multi_pdf_import_test.dart`.
+39. Gewichtung 0 = stumm (Nutzer-Wunsch: Fragen, die nie drankommen): `Flashcard.
+    weight` darf 0 sein (`_sanitizeWeight`: ≤0 → 0, sonst 0,25–4;
+    `Flashcard.isMuted`); `Module.weight` bleibt ≥ 0,25 und `WeightSlider`
+    ohne `allowZero` ab 0,5 (nur der Karten-Regler/`_WeightDialog`/Sammel-
+    Aktion gehen bis 0, Beschriftung „Aus“ via `weightLabel`). Zentral über
+    `StageStatus.muted` (`StageGate.statuses`: stumme Karten sofort markiert
+    und aus den Gruppen genommen → halten Stufen nicht auf): alles, was
+    `statuses`/`learnable` nutzt, lässt sie aus – Daily-Plan und Extra-Batch
+    (`_eligible`), Üben, Sprint, Schwachstellen-Übung, Wrong-Queue. Zusätzlich
+    ausdrücklich gefiltert: `MockExamService.eligible`,
+    `WeaknessService.rank`, `TaskFolderService.tasksOf`,
+    `StageGate.reactivateEasier` (holt keine stumme Stufe zurück),
+    `StatsService.compute` (Modulzahlen/Ø-Behaltensrate), `MasteryService.
+    breakdown` (Ampel; `levelFor(stage: muted)` = neu), Fach-Detail
+    (Zähler + Hinweis „N stummgeschaltet“). Bewusst NICHT: stumme Karten
+    aus Export/Sync/CSV entfernen. Test-Falle: Widget-Tests, die in DERSELBEN
+    Datei nach einem Test mit noch laufendem Speichern (`update`) weitere
+    `saveAll` machen, können die Datenbank blockieren – neue Tests in eigene
+    Datei (`test/ui/muted_weight_ui_test.dart`).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

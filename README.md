@@ -1049,8 +1049,20 @@ bleibt davon unberührt.
   Übungsblättern 1,5× (PDF-Fragen-Import, Import-Modus in Nachbereiten,
   "Frage erstellen" und Zwischen-Check auf einem Übungsblatt).
 - **Je Karte ändern**: Kartenliste → Karte aufklappen → "Gewichtung"
-  (0,5× bis 3×). Abweichende Gewichte stehen in der Statuszeile
-  ("1,5× gewichtet").
+  (0× bis 3×; für mehrere Karten auf einmal: Auswählen → "Gewichtung
+  setzen"). Abweichende Gewichte stehen in der Statuszeile ("1,5×
+  gewichtet").
+- **Ganz auf 0 = stummgeschaltet**: Zieht man den Regler einer Karte ganz
+  nach links ("Aus"), kommt die Frage **nie mehr dran** – nicht im Daily Quiz
+  (weder als neue noch als fällige Karte, auch nicht bei "Freiwillig
+  weiterlernen"), nicht beim Üben, im Sprint, in der Probeklausur und bei den
+  Schwachstellen. Sie zählt auch **nicht in Ampel und Statistik** (eine
+  stumme rote Karte zieht die Ampel nicht runter) und hält die Stufen ihrer
+  Gruppe (Leicht → Mittel → Schwer, siehe 5h) nicht auf: die nächste Stufe
+  ist dann dran. Eine stumme Lernaufgabe steht nicht im Aufgaben-Ordner (5k).
+  Die Karte bleibt in der Kartenliste ("Stummgeschaltet – kommt nie dran")
+  und lässt sich dort jederzeit wieder einschalten; im Fach steht, wie viele
+  stumm sind. Für das **Fach** geht der Regler weiterhin nur bis 0,5×.
 - **Je Fach**: Fach bearbeiten → "Gewichtung". Ein höher gewichtetes Fach
   (z.B. Technik 2×) wirkt auf ALLE seine Karten (Karten- × Fach-Gewicht) und
   bringt im Daily Quiz zusätzlich mehr neue Karten pro Tag (höchstens 15, in

@@ -16,7 +16,9 @@ class TaskFolderService {
   /// Seite und Erstellung.
   static List<Flashcard> tasksOf(Iterable<Flashcard> cards) => [
         for (final c in cards)
-          if (c.type == QuestionType.learn) c,
+          // Eine stummgeschaltete Aufgabe (Gewicht 0) will man nicht mehr
+          // bearbeiten – sie steht weder im Ordner noch im Klausur-Hinweis.
+          if (c.type == QuestionType.learn && !c.isMuted) c,
       ]..sort((a, b) {
           final byMaterial = (a.sourceMaterialId ?? '').compareTo(b.sourceMaterialId ?? '');
           if (byMaterial != 0) return byMaterial;

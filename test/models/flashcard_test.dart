@@ -722,8 +722,22 @@ void main() {
     test('ältere Datensätze ohne Feld zählen einfach, kaputte Werte werden begrenzt', () {
       final legacy = weighted(1.5).toMap()..remove('weight');
       expect(Flashcard.fromMap(legacy).weight, 1.0);
-      expect(Flashcard.fromMap({...weighted(1).toMap(), 'weight': 0}).weight, Flashcard.minWeight);
+      // 0 (oder darunter) heißt stumm; kleine positive Werte werden auf das Minimum gehoben.
+      expect(Flashcard.fromMap({...weighted(1).toMap(), 'weight': 0}).weight, 0.0);
+      expect(Flashcard.fromMap({...weighted(1).toMap(), 'weight': -3}).weight, 0.0);
+      expect(Flashcard.fromMap({...weighted(1).toMap(), 'weight': 0.1}).weight, Flashcard.minWeight);
       expect(Flashcard.fromMap({...weighted(1).toMap(), 'weight': 99}).weight, Flashcard.maxWeight);
+    });
+
+    test('Gewicht 0 = stummgeschaltet: übersteht den Round-Trip, wieder einschalten geht', () {
+      final muted = weighted(1.5).copyWithWeight(0);
+      expect(muted.weight, 0.0);
+      expect(muted.isMuted, isTrue);
+      expect(Flashcard.fromMap(muted.toMap()).isMuted, isTrue);
+      expect(weighted(1.0).isMuted, isFalse);
+      final back = muted.copyWithWeight(1.0);
+      expect(back.isMuted, isFalse);
+      expect(back.weight, 1.0);
     });
 
     test('copyWithWeight ändert nur das Gewicht, Lernstand bleibt', () {

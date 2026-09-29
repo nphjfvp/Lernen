@@ -374,7 +374,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         children: [
                           Expanded(
                             child: _StatPill(
-                              value: flashcards.where((card) => card.reps == 0).length,
+                              value: flashcards.where((card) => card.reps == 0 && !card.isMuted).length,
                               label: 'neu',
                               fg: c.accentOnSoft,
                               bg: c.accentSoft,
@@ -383,7 +383,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: _StatPill(
-                              value: flashcards.where((card) => card.reps > 0).length,
+                              value: flashcards.where((card) => card.reps > 0 && !card.isMuted).length,
                               label: 'in Wiederholung',
                               fg: c.good,
                               bg: c.goodSoft,
@@ -391,6 +391,15 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           ),
                         ],
                       ),
+                      if (flashcards.any((card) => card.isMuted)) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          '${flashcards.where((card) => card.isMuted).length} stummgeschaltet (Gewichtung 0) – '
+                          'kommen nie dran und zählen hier nicht mit.',
+                          key: const ValueKey('module-muted-count'),
+                          style: TextStyle(fontSize: 12, color: c.inkMuted),
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       _AmpelRow(breakdown: MasteryService().breakdown(flashcards)),
                       const SizedBox(height: 10),

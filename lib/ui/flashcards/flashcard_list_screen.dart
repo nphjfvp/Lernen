@@ -360,7 +360,10 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
           builder: (_) => _WeightDialog(initial: weights.length == 1 ? weights.single : 1.0),
         );
         if (picked == null) return;
-        await _applyToSelected((c) => c.copyWithWeight(picked), '$label: ${formatWeight(picked)}× gewichtet');
+        await _applyToSelected(
+          (c) => c.copyWithWeight(picked),
+          picked <= 0 ? '$label stummgeschaltet – kommen nie dran' : '$label: ${formatWeight(picked)}× gewichtet',
+        );
       case 'stage':
         final levels = selected.map((c) => c.stageLevel).toSet();
         final picked = await pickStageLevel(
@@ -1106,7 +1109,7 @@ class _FlashcardTile extends StatelessWidget {
         StageGate.levelOf(card).label,
       if (stage != StageStatus.active) stage.label,
       if (stage == StageStatus.active) card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
-      if (card.weight != 1.0) '${formatWeight(card.weight)}× gewichtet',
+      if (card.weight != 1.0 && !card.isMuted) '${formatWeight(card.weight)}× gewichtet',
       if (card.hasScript) 'Erklärung im Skript, S. ${card.scriptPage}',
       if ((card.type == QuestionType.dragDrop || card.type == QuestionType.dragCategory) &&
           AnswerChecker.isTrivialDrag(card))
@@ -1315,15 +1318,25 @@ class _WeightDialogState extends State<_WeightDialog> {
         children: [
           const Text(
             'Wie oft diese Frage im Vergleich drankommt: 1× ist normal (Folien-Fragen), '
-            'Übungsaufgaben starten mit 1,5×. Wirkt zusammen mit der Gewichtung des Fachs.',
+            'Übungsaufgaben starten mit 1,5×. Wirkt zusammen mit der Gewichtung des Fachs. '
+            'Ganz links (Aus) kommt die Frage nie dran.',
             style: TextStyle(fontSize: 13),
           ),
           const SizedBox(height: 8),
           WeightSlider(
             key: const ValueKey('card-weight-slider'),
             value: _value,
+            allowZero: true,
             onChanged: (w) => setState(() => _value = w),
           ),
+          if (_value <= 0)
+            Text(
+              'Stummgeschaltet: nicht im Daily Quiz, beim Üben, im Sprint, in der Probeklausur und bei den '
+              'Schwachstellen – und nicht in Ampel und Statistik. In der Kartenliste bleibt sie und lässt '
+              'sich jederzeit wieder einschalten.',
+              key: const ValueKey('card-weight-muted-hint'),
+              style: TextStyle(fontSize: 12, color: context.colors.inkMuted),
+            ),
         ],
       ),
       actions: [

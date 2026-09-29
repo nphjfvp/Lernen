@@ -36,6 +36,7 @@ class WeaknessService {
     final result = <WeakCard>[];
     for (final card in cards) {
       if (card.reps == 0) continue; // noch nie geübt – keine Schwäche, nur neu
+      if (card.isMuted) continue; // stummgeschaltet: kommt nie dran, ist keine Baustelle
       final level = _mastery.levelFor(card, now: now);
       var score = 0;
       final reasons = <String>[];

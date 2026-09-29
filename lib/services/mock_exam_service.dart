@@ -74,9 +74,10 @@ class MockExamService {
   ///
   /// Lernaufgaben ([QuestionType.learn]) fehlen: sie lassen sich nicht
   /// automatisch bewerten, die Note käme nur aus der Selbsteinschätzung.
+  /// Ebenso stumme Karten (Gewicht 0, siehe Flashcard.isMuted).
   static List<Flashcard> eligible(List<Flashcard> moduleCards, {Map<String, bool> unitCoveredById = const {}}) {
     return StageGate.hardestPerFolder(moduleCards.where((c) {
-      if (c.type == QuestionType.learn) return false;
+      if (c.type == QuestionType.learn || c.isMuted) return false;
       final unitId = c.unitId;
       if (unitId == null || c.priorityIntroduction) return true;
       return unitCoveredById[unitId] ?? true;

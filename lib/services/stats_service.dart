@@ -68,10 +68,12 @@ class StatsService {
 
     final streak = _computeStreak(allCards, studyDays, today);
     final totalReviews = allCards.fold<int>(0, (sum, c) => sum + c.reps);
-    final overallAverage = _averageRetrievability(allCards, today);
+    // Stumme Karten (Gewicht 0) zählen nicht zum Lernstand – sie kommen nie dran.
+    final active = allCards.where((c) => !c.isMuted).toList();
+    final overallAverage = _averageRetrievability(active, today);
 
     final moduleStats = modules
-        .map((m) => _computeModuleStats(m, allCards.where((c) => c.moduleId == m.id).toList(), today))
+        .map((m) => _computeModuleStats(m, active.where((c) => c.moduleId == m.id).toList(), today))
         .toList();
 
     return OverallStats(

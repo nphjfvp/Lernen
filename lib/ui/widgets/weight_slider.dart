@@ -8,13 +8,20 @@ String formatWeight(double weight) {
   return text.replaceAll('.', ',');
 }
 
+/// Text zur Gewichtung: "1,5×", bei 0 "Aus".
+String weightLabel(double weight) => weight <= 0 ? 'Aus' : '${formatWeight(weight)}×';
+
 /// Regler für eine Gewichtung (siehe Flashcard.weight/Module.weight): wie oft
-/// etwas im Vergleich drankommt, von 0,5× bis 3× in Viertelschritten.
+/// etwas im Vergleich drankommt, von 0,5× bis 3× in Viertelschritten. Mit
+/// [allowZero] (Karten) reicht er bis 0 = "Aus": die Frage kommt nie dran.
 class WeightSlider extends StatelessWidget {
-  const WeightSlider({super.key, required this.value, required this.onChanged});
+  const WeightSlider({super.key, required this.value, required this.onChanged, this.allowZero = false});
 
   final double value;
   final ValueChanged<double> onChanged;
+
+  /// Der Regler geht bis 0 ("Aus"), sonst nur bis [minValue].
+  final bool allowZero;
 
   static const double minValue = 0.5;
   static const double maxValue = 3.0;
@@ -22,16 +29,19 @@ class WeightSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final clamped = value.clamp(minValue, maxValue).toDouble();
-    final label = '${formatWeight(clamped)}×';
+    final min = allowZero ? 0.0 : minValue;
+    // Ein Wert außerhalb des Reglerbereichs (z.B. 0,25 ohne Null-Modus) wird
+    // auf dessen Rand begrenzt.
+    final clamped = value.clamp(min, maxValue).toDouble();
+    final label = weightLabel(clamped);
     return Row(
       children: [
         Expanded(
           child: Slider(
             value: clamped,
-            min: minValue,
+            min: min,
             max: maxValue,
-            divisions: ((maxValue - minValue) / step).round(),
+            divisions: ((maxValue - min) / step).round(),
             label: label,
             onChanged: onChanged,
           ),

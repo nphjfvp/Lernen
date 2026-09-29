@@ -26,6 +26,10 @@ enum StageStatus {
   /// Stufe geschafft, eine schwerere Stufe der Gruppe hat übernommen – die
   /// Karte ruht (die schwerere hält das Wissen per Wiederholung frisch).
   done,
+
+  /// Gewicht 0 (siehe Flashcard.isMuted): kommt nie dran und zählt für die
+  /// Stufen ihrer Gruppe nicht mit.
+  muted,
 }
 
 extension StageStatusLabel on StageStatus {
@@ -33,6 +37,7 @@ extension StageStatusLabel on StageStatus {
         StageStatus.active => 'Aktiv',
         StageStatus.locked => 'Wartet auf leichtere Stufe',
         StageStatus.done => 'Stufe geschafft',
+        StageStatus.muted => 'Stummgeschaltet – kommt nie dran',
       };
 }
 
@@ -126,11 +131,16 @@ class StageGate {
   /// alle Karten der betroffenen Fächer, nicht schon eine gefilterte Auswahl.
   static Map<String, StageStatus> statuses(Iterable<Flashcard> cards) {
     final groups = <String, List<Flashcard>>{};
+    final result = <String, StageStatus>{};
     for (final card in cards) {
+      // Stumme Karten kommen nie dran und halten auch keine Stufe auf.
+      if (card.isMuted) {
+        result[card.id] = StageStatus.muted;
+        continue;
+      }
       final key = groupOf(card);
       if (key != null) groups.putIfAbsent(key, () => []).add(card);
     }
-    final result = <String, StageStatus>{};
     for (final group in groups.values) {
       if (group.length < 2) continue;
       final active = activeLevel(group)!;
@@ -287,7 +297,9 @@ class StageGate {
     final key = groupOf(card);
     if (key == null) return const [];
     final own = levelOf(card).index;
-    final lower = moduleCards.where((c) => c.id != card.id && groupOf(c) == key && levelOf(c).index < own).toList();
+    final lower = moduleCards
+        .where((c) => !c.isMuted && c.id != card.id && groupOf(c) == key && levelOf(c).index < own)
+        .toList();
     if (lower.isEmpty) return const [];
     final target = lower.map((c) => levelOf(c).index).reduce(max);
     final at = now ?? DateTime.now();

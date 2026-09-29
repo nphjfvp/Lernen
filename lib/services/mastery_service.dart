@@ -40,10 +40,10 @@ class MasteryService {
   /// [stage]: Stand der Karte im Stufen-Ablauf ihrer Gruppe (siehe
   /// StageGate). Eine geschaffte, ruhende Stufe zählt als grün (sie wird
   /// nicht mehr wiederholt, ihre Behaltensrate sinkt nur rechnerisch); eine
-  /// wartende als noch nicht dran ("neu").
+  /// wartende als noch nicht dran ("neu"), eine stumme (Gewicht 0) ebenso.
   MasteryLevel levelFor(Flashcard card, {DateTime? now, StageStatus stage = StageStatus.active}) {
     if (stage == StageStatus.done) return MasteryLevel.green;
-    if (stage == StageStatus.locked) return MasteryLevel.neu;
+    if (stage == StageStatus.locked || stage == StageStatus.muted) return MasteryLevel.neu;
     if (card.reps == 0) return MasteryLevel.neu;
     // masteryBox ist die PRIMÄRE Grundlage, nicht die momentane
     // Retrievability: die ist direkt nach JEDER Wiederholung (egal ob
@@ -79,7 +79,11 @@ class MasteryService {
     final counts = {for (final l in MasteryLevel.values) l: 0};
     final stages = StageGate.statuses(cards);
     for (final card in cards) {
-      final level = levelFor(card, now: now, stage: StageGate.statusOf(stages, card));
+      final stage = StageGate.statusOf(stages, card);
+      // Stumme Karten sind bewusst aus dem Lernen genommen – sie sollen die
+      // Ampel weder nach unten ziehen noch aufhübschen.
+      if (stage == StageStatus.muted) continue;
+      final level = levelFor(card, now: now, stage: stage);
       counts[level] = counts[level]! + 1;
     }
     return counts;
