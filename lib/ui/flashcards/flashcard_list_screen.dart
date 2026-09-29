@@ -1244,6 +1244,7 @@ class _AnswerDetail extends StatelessWidget {
     final c = context.colors;
     switch (card.type) {
       case QuestionType.flashcard:
+      case QuestionType.learn:
         return MathText(card.back, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5));
 
       case QuestionType.singleChoice:

@@ -1116,6 +1116,49 @@ zählt, lässt die Ampel aber nicht steigen.
   "Kopf"], ["gegeben", {"answer": "Lösung; Variante"}]]` – statt des Objekts
   geht auch `"[[Lösung]]"`.
 
+### 5k. Fragetyp "Lernen" und der Aufgaben-Ordner
+
+Manche Aufgaben lassen sich in einer Quiz-App schlicht nicht prüfen:
+zeichnen, entwerfen (Gantt-Diagramm, Netzplan …), programmieren, beweisen,
+lange Rechen- und Herleitungswege. Dafür gibt es den Typ **"Lernen"**:
+
+- Die KI übernimmt die Aufgabe **1:1 wie im Dokument** (alle Teilaufgaben und
+  Zahlenwerte, nicht aufgeteilt; bei einem PDF-Import samt Ausschnitt der
+  Seite) und schreibt dazu eine **Erklärung / den Lösungsweg** Schritt für
+  Schritt (steht eine Musterlösung im Dokument, erklärt sie diese). Sie wählt
+  den Typ nur, wenn keiner der prüfbaren Typen passt – auch nicht "Interaktiv".
+  Beim "Frage erstellen" lässt er sich außerdem fest als Typ wählen.
+- Im Lernen (Daily Quiz, Üben) steht die Aufgabe, ein Tipp deckt die
+  Erklärung auf, dann bewertest du selbst, **wie gut du sie verstanden hast**:
+  Unklar / Teilweise / Verstanden / Sicher (wirkt wie Nochmal / Schwer / Gut /
+  Leicht auf den Lernplan). Lernaufgaben stehen für sich (keine
+  Leicht/Mittel/Schwer-Ordner), kommen nicht in die Probeklausur und nicht in
+  den Sprint (zu lang).
+- **Aufgaben-Ordner:** Im Fach gibt es (sobald es solche Aufgaben gibt) den
+  Knopf "Aufgaben-Ordner": alle Lernaufgaben des Fachs, dauerhaft
+  einsehbar – geordnet nach Datei und Seite, mit Aufgabe, Erklärung, "Im
+  Skript" (springt zur Stelle im Original) und Bearbeiten/Löschen, unabhängig
+  vom Lernplan.
+- **Rot vor der Klausur:** Ab **20 Tage** vor der Klausur (auch am
+  Klausurtag, danach nicht mehr) wird der Ordner rot – der Knopf im Fach
+  ("Klausur in 12 Tagen"), ein Hinweis auf der Fachkarte der Startseite und
+  ein roter Kasten oben im Ordner: jetzt außerhalb der App durcharbeiten,
+  z.B. auf Papier. Dafür braucht das Fach ein Klausurdatum.
+
+### 5l. Frage erstellen: Typ-Vorgaben je Stufe
+
+Statt bei jeder Stufe (Leicht/Mittel/Schwer) neu zu wählen, lässt sich der
+Fragetyp je Stufe vorgeben – z.B. **Schwer = Freitext**:
+
+- **Einstellungen → "Frage erstellen"**: je Stufe ein Typ oder "KI
+  entscheidet" (wirkt sofort).
+- Im Fenster "Frage erstellen" sind die Stufen damit vorausgewählt. **Von Hand
+  ändern** geht vor dem Erstellen weiterhin – das gilt dann nur für dieses
+  Mal. Mit **"Typ-Auswahl als Standard merken"** wird die aktuelle Wahl zur
+  neuen Vorgabe. Welche Stufen eingeschaltet sind, bleibt wie bisher (Leicht
+  an).
+- Die Vorgaben reisen mit dem Sync auf andere Geräte.
+
 ### 6. Ausführen
 
 **Am einfachsten zum Ausprobieren: im Browser**, kein Visual Studio/Android

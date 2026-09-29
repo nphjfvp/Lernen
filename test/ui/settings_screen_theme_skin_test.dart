@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/app_settings.dart';
+import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/repositories/auth_repository.dart';
 import 'package:lernen/repositories/model_catalog_repository.dart';
 import 'package:lernen/repositories/module_repository.dart';
@@ -115,6 +116,54 @@ void main() {
     expect(settings.settings.themeModePreference, 'dark');
     expect(labelOf('theme-mode-dark').style?.fontWeight, FontWeight.w700);
     expect(labelOf('theme-mode-system').style?.fontWeight, FontWeight.w500);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Frage erstellen: Typ-Vorgabe je Stufe wählen speichert sofort, "KI entscheidet" löscht sie',
+      (tester) async {
+    tester.view.physicalSize = const Size(900, 6000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final settings = SettingsRepository();
+    final auth = AuthRepository();
+    await tester.runAsync(() => settings.update(const AppSettings()));
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: settings),
+        ChangeNotifierProvider.value(value: auth),
+        ChangeNotifierProvider(create: (_) => ModelCatalogRepository()),
+        ChangeNotifierProvider(create: (_) => ModuleRepository()),
+        ChangeNotifierProvider(create: (_) => AutoSyncService(settings: settings, auth: auth)),
+      ],
+      child: MaterialApp(theme: AppTheme.light, home: const Scaffold(body: SettingsScreen())),
+    ));
+    await tester.pump();
+
+    expect(settings.settings.pageQuestionTierTypes, isEmpty);
+    Future<void> waitFor(bool Function() done) async {
+      for (var i = 0; i < 20 && !done(); i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    final schwer = find.descendant(
+        of: find.byKey(const ValueKey('tier-pref-schwer')), matching: find.byType(DropdownButton<QuestionType?>));
+    await tester.ensureVisible(schwer);
+    await tester.tap(schwer);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Freitext').last);
+    await waitFor(() => settings.settings.pageQuestionTierTypes.isNotEmpty);
+    expect(settings.settings.pageQuestionTierTypes, {'schwer': 'freeText'});
+    expect(settings.settings.pageTierType('Schwer'), QuestionType.freeText);
+
+    await tester.tap(schwer);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('KI entscheidet').last);
+    await waitFor(() => settings.settings.pageQuestionTierTypes.isEmpty);
+    expect(settings.settings.pageQuestionTierTypes, isEmpty);
 
     await tester.pumpWidget(const SizedBox());
   });

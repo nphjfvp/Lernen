@@ -71,8 +71,12 @@ class MockExamService {
 
   /// Je Ordner (Leicht/Mittel/Schwer derselben Frage) zählt nur die
   /// schwerste Stufe, siehe StageGate.hardestPerFolder.
+  ///
+  /// Lernaufgaben ([QuestionType.learn]) fehlen: sie lassen sich nicht
+  /// automatisch bewerten, die Note käme nur aus der Selbsteinschätzung.
   static List<Flashcard> eligible(List<Flashcard> moduleCards, {Map<String, bool> unitCoveredById = const {}}) {
     return StageGate.hardestPerFolder(moduleCards.where((c) {
+      if (c.type == QuestionType.learn) return false;
       final unitId = c.unitId;
       if (unitId == null || c.priorityIntroduction) return true;
       return unitCoveredById[unitId] ?? true;

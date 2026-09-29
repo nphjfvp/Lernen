@@ -84,7 +84,7 @@ class StageGate {
         QuestionType.diagramLabel ||
         QuestionType.flashcard =>
           StageLevel.mittel,
-        QuestionType.freeText || QuestionType.html || QuestionType.table => StageLevel.schwer,
+        QuestionType.freeText || QuestionType.html || QuestionType.table || QuestionType.learn => StageLevel.schwer,
       };
 
   static StageLevel? levelFromIndex(int? index) =>
@@ -96,6 +96,8 @@ class StageGate {
 
   /// Gruppenschlüssel oder null (eigene Gruppe). Pro Fach getrennt.
   static String? groupOf(Flashcard card) {
+    // Lernaufgaben stehen für sich: sie sind keine Stufe eines Sachverhalts.
+    if (card.type == QuestionType.learn) return null;
     final chain = card.variantChain;
     if (chain != null && chain.length > 1) return null;
     final key = (card.stageGroup ?? card.conceptId)?.trim();
@@ -159,7 +161,7 @@ class StageGate {
   /// zeitnah erstellt) beieinander steht – die KI sieht sie in Portionen.
   static List<Flashcard> assignable(List<Flashcard> cards) => [
         for (final c in cards)
-          if ((c.variantChain?.length ?? 0) < 2) c,
+          if ((c.variantChain?.length ?? 0) < 2 && c.type != QuestionType.learn) c,
       ]..sort((a, b) {
           final byConcept = (a.conceptId ?? '').compareTo(b.conceptId ?? '');
           return byConcept != 0 ? byConcept : a.createdAt.compareTo(b.createdAt);

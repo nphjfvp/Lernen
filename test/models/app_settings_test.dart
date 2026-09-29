@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/app_settings.dart';
+import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/pdf_storage_config.dart';
 
 void main() {
@@ -164,6 +165,38 @@ void main() {
       final updated = settings.copyWith(themeModePreference: 'dark');
       expect(updated.themeModePreference, 'dark');
       expect(updated.dailyReminderEnabled, settings.dailyReminderEnabled);
+    });
+  });
+
+  group('Typ-Vorgaben je Stufe (Frage erstellen)', () {
+    test('standardmäßig keine – jede Stufe "KI entscheidet"', () {
+      const settings = AppSettings();
+      expect(settings.pageQuestionTierTypes, isEmpty);
+      expect(settings.pageTierType('Schwer'), isNull);
+    });
+
+    test('Round-Trip, Stufe unabhängig von der Schreibweise', () {
+      final settings = const AppSettings().copyWith(pageQuestionTierTypes: {'schwer': 'freeText', 'leicht': 'singleChoice'});
+      final back = AppSettings.fromMap(settings.toMap());
+      expect(back.pageTierType('Schwer'), QuestionType.freeText);
+      expect(back.pageTierType('LEICHT'), QuestionType.singleChoice);
+      expect(back.pageTierType('Mittel'), isNull);
+    });
+
+    test('ältere oder kaputte Datensätze bleiben lesbar', () {
+      expect(AppSettings.fromMap(const {}).pageQuestionTierTypes, isEmpty);
+      final broken = AppSettings.fromMap({
+        'pageQuestionTierTypes': {'schwer': 'gibtEsNicht', 'Mittel': 42, 'leicht': ''},
+      });
+      // Unbekannter Typ = "KI entscheidet"; Ungültiges verhindert nichts.
+      expect(broken.pageTierType('Schwer'), isNull);
+      expect(broken.pageTierType('Mittel'), isNull);
+      expect(broken.pageTierType('Leicht'), isNull);
+    });
+
+    test('eine leere Auswahl setzt alles zurück auf "KI entscheidet"', () {
+      final set = const AppSettings().copyWith(pageQuestionTierTypes: {'schwer': 'freeText'});
+      expect(set.copyWith(pageQuestionTierTypes: {}).pageQuestionTierTypes, isEmpty);
     });
   });
 }

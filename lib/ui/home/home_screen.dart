@@ -12,6 +12,7 @@ import '../../repositories/module_repository.dart';
 import '../../services/database_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/module_export_service.dart';
+import '../../services/task_folder_service.dart';
 import '../../theme/app_colors.dart';
 import '../modules/module_detail_screen.dart';
 import '../modules/module_form_screen.dart';
@@ -32,6 +33,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   /// Ampel je Fach (siehe MasteryService.breakdown), null bis geladen.
   Map<String, Map<MasteryLevel, int>>? _ampelByModule;
+
+  /// Anzahl Aufgaben im Aufgaben-Ordner je Fach (siehe TaskFolderService).
+  Map<String, int> _taskCountByModule = const {};
   FlashcardRepository? _flashcards;
 
   /// Karten haben sich geändert, während die Startseite verdeckt war – beim
@@ -75,9 +79,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (!mounted) return;
     final mastery = MasteryService();
-    setState(() => _ampelByModule = {
-          for (final entry in byModule.entries) entry.key: mastery.breakdown(entry.value),
-        });
+    setState(() {
+      _ampelByModule = {
+        for (final entry in byModule.entries) entry.key: mastery.breakdown(entry.value),
+      };
+      _taskCountByModule = {
+        for (final entry in byModule.entries) entry.key: TaskFolderService.tasksOf(entry.value).length,
+      };
+    });
   }
 
   /// Importiert ein zuvor über ModuleDetailScreen exportiertes Fach (siehe
@@ -176,6 +185,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       itemBuilder: (context, i) => _ModuleTile(
                         module: modules[i],
                         ampel: _ampelByModule == null ? null : (_ampelByModule![modules[i].id] ?? const {}),
+                        taskFolderWarning: TaskFolderService.isWarning(
+                          taskCount: _taskCountByModule[modules[i].id] ?? 0,
+                          examDate: modules[i].examDate,
+                        ),
                       ),
                     ),
             ),
@@ -227,8 +240,11 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ModuleTile extends StatelessWidget {
-  const _ModuleTile({required this.module, required this.ampel});
+  const _ModuleTile({required this.module, required this.ampel, this.taskFolderWarning = false});
   final Module module;
+
+  /// Klausur nah und Aufgaben im Aufgaben-Ordner: roter Hinweis.
+  final bool taskFolderWarning;
 
   /// Ampel des Fachs, null solange noch nicht geladen.
   final Map<MasteryLevel, int>? ampel;
@@ -273,6 +289,25 @@ class _ModuleTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 7),
                     ExamCountdownBadge(daysUntilExam: module.daysUntilExam),
+                    if (taskFolderWarning) ...[
+                      const SizedBox(height: 7),
+                      Container(
+                        key: ValueKey('task-warning-${module.id}'),
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                        decoration: BoxDecoration(color: c.dangerSoft, borderRadius: BorderRadius.circular(20)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.flag_rounded, size: 13, color: c.danger),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Aufgaben-Ordner durcharbeiten',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: c.danger),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (ampel != null) ...[
                       const SizedBox(height: 10),
                       MasteryBar(key: ValueKey('ampel-${module.id}'), breakdown: ampel!),

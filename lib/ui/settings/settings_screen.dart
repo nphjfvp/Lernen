@@ -23,6 +23,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../auth/login_screen.dart';
 import '../widgets/add_password_dialog.dart';
+import '../widgets/question_type_dropdown.dart';
 import '../widgets/update_actions.dart';
 import 'model_picker_sheet.dart';
 
@@ -554,6 +555,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 22),
+                  _SectionLabel('Frage erstellen'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Welcher Fragetyp je Schwierigkeitsstufe vorausgewählt ist, wenn du im Lernmodus '
+                    '"Frage erstellen" öffnest. "KI entscheidet" lässt der KI die Wahl. Vor dem '
+                    'Erstellen kannst du jede Stufe trotzdem von Hand ändern.',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                  ),
+                  const SizedBox(height: 6),
+                  for (final level in const ['Leicht', 'Mittel', 'Schwer'])
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 64,
+                          child: Text(level, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                        ),
+                        Expanded(
+                          child: KeyedSubtree(
+                            key: ValueKey('tier-pref-${AppSettings.tierKey(level)}'),
+                            child: QuestionTypeDropdown(
+                              value: settings.pageTierType(level),
+                              onChanged: (t) {
+                                final types = {...settings.pageQuestionTierTypes};
+                                if (t == null) {
+                                  types.remove(AppSettings.tierKey(level));
+                                } else {
+                                  types[AppSettings.tierKey(level)] = t.name;
+                                }
+                                context.read<SettingsRepository>().update(
+                                      settings.copyWith(pageQuestionTierTypes: types),
+                                    );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   const SizedBox(height: 22),
                   _SectionLabel('Chunking'),
                   const SizedBox(height: 4),

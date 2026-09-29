@@ -60,7 +60,11 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
   Future<void> _loadPool() async {
     setState(() => _phase = _Phase.loading);
     // Nur die gerade freigeschaltete Stufe je Gruppe (siehe StageGate).
-    final cards = StageGate.learnable(await context.read<FlashcardRepository>().loadAll());
+    // Lernaufgaben sind zu lang für die Sekunden-Runde – sie bleiben im
+    // normalen Lernen und im Aufgaben-Ordner.
+    final cards = StageGate.learnable(await context.read<FlashcardRepository>().loadAll())
+        .where((c) => c.type != QuestionType.learn)
+        .toList();
     final mastery = MasteryService();
     var pool = cards.where((c) => mastery.levelFor(c) == MasteryLevel.red).toList();
     var usedFallback = false;

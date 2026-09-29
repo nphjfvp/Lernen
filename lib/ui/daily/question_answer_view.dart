@@ -383,6 +383,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     if (_aiChecking) return false;
     switch (widget.card.type) {
       case QuestionType.flashcard:
+      case QuestionType.learn:
         return false;
       case QuestionType.singleChoice:
         return _selectedIndex != null;
@@ -446,6 +447,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.table:
         return _checkTableAnswer();
       case QuestionType.flashcard:
+      case QuestionType.learn:
       case QuestionType.html:
         return null; // eigene build()-Zweige.
     }
@@ -706,6 +708,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                   '${_tableControllers[i].text.trim()}',
         ].join('; ');
       case QuestionType.flashcard:
+      case QuestionType.learn:
       case QuestionType.html:
         return null;
     }
@@ -889,7 +892,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    if (widget.card.type == QuestionType.flashcard || !_answerable) {
+    if (widget.card.type == QuestionType.flashcard || widget.card.type == QuestionType.learn || !_answerable) {
       return _buildFlashcard(c);
     }
     if (widget.card.type == QuestionType.html) {
@@ -942,6 +945,9 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   // Flashcard: unverändert Umdrehen + Selbstbewertung.
   // ---------------------------------------------------------------------
   Widget _buildFlashcard(AppColors c) {
+    // Lernaufgabe: lange Aufgabe links, Erklärung darunter, Bewertung "wie
+    // gut verstanden" statt "gewusst".
+    final learn = widget.card.type == QuestionType.learn;
     return Column(
       children: [
         Expanded(
@@ -965,28 +971,51 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _newBadge(c),
+                          if (learn)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                                decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(20)),
+                                child: Text(
+                                  'Aufgabe zum Verstehen',
+                                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.accentOnSoft),
+                                ),
+                              ),
+                            ),
                           _buildCardImage(c),
                           MathText(
                             // Ersatzansicht (z.B. Zuordnen mit nur einem
                             // Ziel): mit den Begriffen/Optionen, sonst wüsste
                             // man nicht, worum es geht.
-                            widget.card.type == QuestionType.flashcard ? widget.card.front : widget.card.promptText,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, height: 1.45),
+                            widget.card.type == QuestionType.flashcard || learn
+                                ? widget.card.front
+                                : widget.card.promptText,
+                            textAlign: learn ? TextAlign.start : TextAlign.center,
+                            style: TextStyle(fontSize: learn ? 16 : 19, fontWeight: FontWeight.w600, height: 1.45),
                           ),
                           if (_showBack) ...[
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 24),
                               child: Divider(height: 1, color: c.border),
                             ),
+                            if (learn)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  'Erklärung / Lösungsweg',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted),
+                                ),
+                              ),
                             MathText(
                               _backText,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 15, height: 1.6, color: c.inkMuted),
+                              textAlign: learn ? TextAlign.start : TextAlign.center,
+                              style: TextStyle(fontSize: learn ? 14.5 : 15, height: 1.6, color: learn ? c.ink : c.inkMuted),
                             ),
                           ] else ...[
                             const SizedBox(height: 16),
-                            Text('Zum Umdrehen tippen', style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                            Text(learn ? 'Zur Erklärung tippen' : 'Zum Umdrehen tippen',
+                                style: TextStyle(fontSize: 12, color: c.inkMuted)),
                           ],
                         ],
                       ),
@@ -998,6 +1027,14 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             ),
           ),
         ),
+        if (_showBack && learn)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+            child: Text(
+              'Wie gut hast du die Aufgabe verstanden?',
+              style: TextStyle(fontSize: 12.5, color: context.colors.inkMuted),
+            ),
+          ),
         if (_showBack)
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 30),
@@ -1005,28 +1042,28 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               children: [
                 Expanded(
                     child: _ActionButton(
-                        label: 'Nochmal',
+                        label: learn ? 'Unklar' : 'Nochmal',
                         fg: c.danger,
                         bg: c.dangerSoft,
                         onTap: () => _submit(selfGrade: Grade.again))),
                 const SizedBox(width: 9),
                 Expanded(
                     child: _ActionButton(
-                        label: 'Schwer',
+                        label: learn ? 'Teilweise' : 'Schwer',
                         fg: c.warn,
                         bg: c.warnSoft,
                         onTap: () => _submit(selfGrade: Grade.hard))),
                 const SizedBox(width: 9),
                 Expanded(
                     child: _ActionButton(
-                        label: 'Gut',
+                        label: learn ? 'Verstanden' : 'Gut',
                         fg: c.good,
                         bg: c.goodSoft,
                         onTap: () => _submit(selfGrade: Grade.good))),
                 const SizedBox(width: 9),
                 Expanded(
                     child: _ActionButton(
-                        label: 'Leicht',
+                        label: learn ? 'Sicher' : 'Leicht',
                         fg: c.accentOnSoft,
                         bg: c.accentSoft,
                         onTap: () => _submit(selfGrade: Grade.easy))),
@@ -1216,6 +1253,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   Widget _buildAnswerInput(AppColors c) {
     switch (widget.card.type) {
       case QuestionType.flashcard:
+      case QuestionType.learn:
       case QuestionType.html:
         return const SizedBox.shrink(); // eigene build()-Zweige.
       case QuestionType.singleChoice:

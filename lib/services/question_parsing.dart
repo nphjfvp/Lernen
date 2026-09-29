@@ -68,6 +68,7 @@ class QuestionParsing {
     'diagram_label': QuestionType.diagramLabel,
     'mark_image': QuestionType.markImage,
     'table': QuestionType.table,
+    'learn': QuestionType.learn,
   };
 
   /// Wandelt den von der KI gelieferten "type"-String (snake_case, siehe
@@ -140,6 +141,15 @@ class QuestionParsing {
     'fill_table': 'table',
     'tabelle_ausfuellen': 'table',
     'tabelle_ausfüllen': 'table',
+    'lernen': 'learn',
+    'lernaufgabe': 'learn',
+    'aufgabe': 'learn',
+    'task': 'learn',
+    'exercise': 'learn',
+    'worked_example': 'learn',
+    'explain': 'learn',
+    'explanation': 'learn',
+    'verstehen': 'learn',
   };
 
   static QuestionType? _parseTypeOrNull(String? value) {
@@ -350,6 +360,28 @@ class QuestionParsing {
       if (type == QuestionType.freeText) fill('correctText', answer.toString());
       if (type == QuestionType.flashcard || type == QuestionType.html) fill('back', answer.toString());
     }
+    // Lernaufgabe: die Erklärung/der Lösungsweg steht in "back".
+    if (type == QuestionType.learn) {
+      final explanation = _first(raw, const [
+        'explanation',
+        'erklaerung',
+        'erklärung',
+        'loesungsweg',
+        'lösungsweg',
+        'solutionSteps',
+        'walkthrough',
+        'musterloesung',
+        'musterlösung',
+        'solution',
+        'loesung',
+        'lösung',
+        'answer',
+        'antwort',
+      ]);
+      if (explanation != null && explanation is! Map) {
+        fill('back', explanation is List ? explanation.map((e) => '$e').join('\n') : explanation.toString());
+      }
+    }
     return entry;
   }
 
@@ -530,6 +562,7 @@ class QuestionParsing {
           ],
         };
       case QuestionType.flashcard:
+      case QuestionType.learn:
       case QuestionType.freeText:
       case QuestionType.html:
         return entry;
@@ -561,6 +594,8 @@ class QuestionParsing {
   static bool _isComplete(Map<String, dynamic> raw, QuestionType type) {
     switch (type) {
       case QuestionType.flashcard:
+      case QuestionType.learn:
+        // Karteikarte: Antwort; Lernaufgabe: Erklärung/Lösungsweg.
         return (raw['back'] ?? '').toString().trim().isNotEmpty;
       case QuestionType.singleChoice:
       case QuestionType.multipleChoice:

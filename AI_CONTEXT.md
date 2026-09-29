@@ -88,7 +88,7 @@ Befehle (Flutter liegt in dieser Umgebung unter `/home/user/flutter-sdk/flutter/
 **`Flashcard`** (`lib/models/flashcard.dart`) – Frage + eigener SR-Zustand:
 - Inhalt: `front`, `back`, `type` (`QuestionType`: flashcard, singleChoice,
   multipleChoice, freeText, fillBlank, dragDrop, dragCategory, html,
-  diagramLabel, markImage, table), je nach Typ
+  diagramLabel, markImage, table, learn), je nach Typ
   `options`/`correctText`/`blanks`/`dragPairs`/`htmlContent`/`imageTargets`/
   `tableRows`;
   `imageBase64` (Seiten-Screenshot/Bild, nur wenn für die Frage nötig).
@@ -444,7 +444,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 722 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 749 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -611,6 +611,28 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Import mit PDF vision; Wahl wird beim Moduswechsel verworfen; nicht
     beim Crosscheck). Weitere KI-Aufrufe (Prepare, Seiten-Frage, Chat …)
     haben noch keine Modellwahl.
+33. Fragetyp `QuestionType.learn` („Lernen“, Nutzer-Wunsch für nicht quiz-
+    fähige Aufgaben): `front` = Aufgabe 1:1, `back` = KI-Erklärung/Lösungsweg
+    (Parser: `explanation`/`lösungsweg`/… → `back`; `_isComplete` verlangt
+    `back`, sonst verworfen). Anzeige = Karteikarten-Ansicht mit anderen
+    Beschriftungen (Unklar/Teilweise/Verstanden/Sicher = again/hard/good/
+    easy) in `QuestionAnswerView._buildFlashcard` (`learn`-Flag). Keine
+    Stufen-Gruppe (`StageGate.groupOf` → null, nicht `assignable`), NICHT in
+    Probeklausur (`MockExamService.eligible`) und Sprint. KI-Prompts: Import
+    (Text + PDF-Seiten, mit `imageBox` um die ganze Aufgabe), Konzepte/
+    externes JSON, `_variantTypeRule`, wählbar im Seiten-Fenster. Aufgaben-
+    Ordner: KEIN eigener Speicher – `TaskFolderService.tasksOf` filtert die
+    `learn`-Karten (Sync/Export/Löschen kommen so gratis mit);
+    `TaskFolderScreen`; rot per `TaskFolderService.isWarning` (Aufgaben > 0,
+    Klausur 0…20 Kalendertage, UTC-gerechnet) im Fach-Knopf, auf der
+    Home-Fachkarte und im Ordner. Kein „erledigt“-Häkchen (nur Hinweis).
+34. Typ-Vorgaben je Stufe: `AppSettings.pageQuestionTierTypes`
+    (`leicht`/`mittel`/`schwer` → `QuestionType.name`, fehlend = KI), im Sync
+    (`syncedSettingsOf`/`mergeAiSettings`: fehlendes Feld lässt Lokales
+    stehen, vorhandenes auch leeres gilt). Einstellungen-Abschnitt „Frage
+    erstellen“ und `PageQuestionCreationSheet` (Vorbelegung in `initState`,
+    „Typ-Auswahl als Standard merken“; nur Typen, keine An/Aus-Zustände).
+    Gemeinsames Widget `QuestionTypeDropdown`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

@@ -24,6 +24,21 @@ class _SettingsWithKey extends SettingsRepository {
   AppSettings get settings => const AppSettings(openRouterApiKey: 'sk-test');
 }
 
+/// Einstellungen mit Typ-Vorgaben; merkt sich, was gespeichert wird.
+class _SettingsWithPrefs extends SettingsRepository {
+  _SettingsWithPrefs(this._current);
+  AppSettings _current;
+
+  @override
+  AppSettings get settings => _current;
+
+  @override
+  Future<void> update(AppSettings settings) async {
+    _current = settings;
+    notifyListeners();
+  }
+}
+
 /// PNG mit linker Hälfte rot, rechter Hälfte blau.
 Future<Uint8List> _twoColorPng(int width, int height) async {
   final recorder = ui.PictureRecorder();
@@ -377,6 +392,77 @@ void main() {
       await tester.tap(find.text('Tabelle').last);
       await tester.pumpAndSettle();
       expect(find.textContaining('Tabellen, interaktive Seiten und Bildfragen'), findsOneWidget);
+    });
+  });
+
+  group('Typ-Vorgaben je Stufe', () {
+    MaterialItem material() => MaterialItem(
+          id: 'mat1',
+          moduleId: 'm1',
+          fileName: 'Folien.pdf',
+          kind: MaterialKind.slide,
+          extractedText: 'Text',
+          createdAt: DateTime(2026, 9, 26),
+        );
+
+    Widget host(SettingsRepository settings) => MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SettingsRepository>.value(value: settings),
+            ChangeNotifierProvider<ModelCatalogRepository>.value(value: ModelCatalogRepository()),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(extensions: const [AppColors.light]),
+            home: Scaffold(
+              body: PageQuestionCreationSheet(
+                material: material(),
+                pageNumber: 1,
+                pageText: 'Seitentext',
+                pageImageBytes: Uint8List.fromList([1]),
+                highlightsOnPage: const [],
+              ),
+            ),
+          ),
+        );
+
+    testWidgets('sind vorausgewählt, ohne Vorgabe entscheidet die KI', (tester) async {
+      tester.view.physicalSize = const Size(1200, 4800);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(host(_SettingsWithPrefs(const AppSettings(
+        openRouterApiKey: 'sk-test',
+        pageQuestionTierTypes: {'schwer': 'freeText', 'mittel': 'table'},
+      ))));
+
+      // Leicht: keine Vorgabe.
+      expect(find.text('KI entscheidet'), findsOneWidget);
+      expect(find.text('Tabelle'), findsOneWidget);
+      expect(find.text('Freitext'), findsOneWidget);
+    });
+
+    testWidgets('von Hand änderbar und als neuer Standard speicherbar', (tester) async {
+      tester.view.physicalSize = const Size(1200, 4800);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final settings = _SettingsWithPrefs(const AppSettings(
+        openRouterApiKey: 'sk-test',
+        pageQuestionTierTypes: {'schwer': 'freeText'},
+      ));
+      await tester.pumpWidget(host(settings));
+
+      // Schwer einschalten und dort "Lernen" statt "Freitext" wählen.
+      await tester.tap(find.byType(Checkbox).at(2));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Freitext'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Lernen').last);
+      await tester.pumpAndSettle();
+      // Nur für dieses Fenster: gespeichert ist noch der alte Stand.
+      expect(settings.settings.pageQuestionTierTypes, {'schwer': 'freeText'});
+
+      await tester.tap(find.byKey(const ValueKey('save-tier-defaults')));
+      await tester.pumpAndSettle();
+      expect(settings.settings.pageQuestionTierTypes, {'schwer': 'learn'});
+      expect(find.textContaining('Als Standard gespeichert'), findsOneWidget);
     });
   });
 }

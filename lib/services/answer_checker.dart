@@ -371,6 +371,7 @@ class AnswerChecker {
   static bool isAnswerable(Flashcard q) {
     switch (q.type) {
       case QuestionType.flashcard:
+      case QuestionType.learn:
       case QuestionType.html:
         return true;
       case QuestionType.singleChoice:

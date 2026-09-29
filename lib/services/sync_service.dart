@@ -57,6 +57,7 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'bestSprintScore': settings.bestSprintScore,
       'themeSkin': settings.themeSkin,
       'themeModePreference': settings.themeModePreference,
+      'pageQuestionTierTypes': settings.pageQuestionTierTypes,
     };
 
 /// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
@@ -90,6 +91,9 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     themeModePreference: (synced['themeModePreference'] as String?)?.trim().isNotEmpty == true
         ? synced['themeModePreference'] as String
         : null,
+    // Fehlt das Feld (älterer Cloud-Stand), bleibt der lokale Wert; eine
+    // vorhandene, auch leere Angabe ist eine bewusste Einstellung.
+    pageQuestionTierTypes: AppSettings.parseTierTypes(synced['pageQuestionTierTypes']),
   );
 }
 

@@ -1484,11 +1484,13 @@ class _PreviewView extends StatelessWidget {
         QuestionType.diagramLabel => Icons.label_outline,
         QuestionType.markImage => Icons.ads_click,
         QuestionType.table => Icons.table_chart_outlined,
+        QuestionType.learn => Icons.school_outlined,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
     switch (type) {
       case QuestionType.flashcard:
+      case QuestionType.learn:
         return (f['back'] ?? '').toString();
       case QuestionType.singleChoice:
       case QuestionType.multipleChoice:

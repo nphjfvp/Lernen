@@ -185,6 +185,9 @@ class _CardEditScreenState extends State<CardEditScreen> {
       if (blanks.isEmpty) return setState(() => _error = 'Markiere die Lücken im Text mit ___ (drei Unterstriche).');
       if (blanks.any((b) => b.isEmpty)) return setState(() => _error = 'Für jede Lücke eine Lösung eintragen.');
     }
+    if (_type == QuestionType.learn && _back.text.trim().isEmpty) {
+      return setState(() => _error = 'Eine Erklärung bzw. den Lösungsweg eintragen.');
+    }
     if (_type == QuestionType.freeText) {
       correctText = _correctText.text.trim();
       if (correctText.isEmpty) return setState(() => _error = 'Eine Musterantwort eintragen.');
@@ -213,6 +216,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
 
   String get _backLabel => switch (_type) {
         QuestionType.flashcard => 'Rückseite',
+        QuestionType.learn => 'Erklärung / Lösungsweg',
         QuestionType.markImage => 'Was ist dort zu sehen? (optional)',
         QuestionType.html => 'Antwort (wenn die Seite nicht angezeigt werden kann)',
         _ => 'Erklärung (optional)',
@@ -236,7 +240,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
             controller: _front,
             maxLines: null,
             decoration: InputDecoration(
-              labelText: 'Frage',
+              labelText: _type == QuestionType.learn ? 'Aufgabe (wie im Dokument)' : 'Frage',
               helperText: _type == QuestionType.fillBlank ? 'Lücken mit ___ (drei Unterstriche) markieren.' : null,
               border: const OutlineInputBorder(),
             ),

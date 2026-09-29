@@ -1,3 +1,4 @@
+import 'flashcard.dart';
 import 'pdf_storage_config.dart';
 
 /// Wie stark ein großer Text vor der KI-Generierung in Abschnitte zerlegt
@@ -85,6 +86,12 @@ class AppSettings {
   /// unbekannter Wert fällt beim Lesen ebenfalls darauf zurück.
   final String themeModePreference;
 
+  /// Voreingestellter Fragetyp je Schwierigkeitsstufe beim "Frage erstellen"
+  /// (Schlüssel `leicht`/`mittel`/`schwer`, Wert = `QuestionType.name`). Eine
+  /// fehlende Stufe heißt "KI entscheidet". Im Fenster lässt sich jede Stufe
+  /// vor dem Erstellen trotzdem von Hand ändern.
+  final Map<String, String> pageQuestionTierTypes;
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
@@ -112,10 +119,23 @@ class AppSettings {
     this.pdfStorage = const PdfStorageConfig(),
     this.themeSkin = defaultThemeSkin,
     this.themeModePreference = defaultThemeModePreference,
+    this.pageQuestionTierTypes = const {},
   });
 
   bool get hasApiKey =>
       openRouterApiKey != null && openRouterApiKey!.trim().isNotEmpty;
+
+  /// Schlüssel einer Stufe in [pageQuestionTierTypes] ("Leicht" → `leicht`).
+  static String tierKey(String level) => level.trim().toLowerCase();
+
+  /// Voreingestellter Typ der Stufe [level] oder null ("KI entscheidet").
+  QuestionType? pageTierType(String level) {
+    final name = pageQuestionTierTypes[tierKey(level)];
+    for (final t in QuestionType.values) {
+      if (t.name == name) return t;
+    }
+    return null;
+  }
 
   int get dailyReminderHour => dailyReminderMinuteOfDay ~/ 60;
   int get dailyReminderMinute => dailyReminderMinuteOfDay % 60;
@@ -139,6 +159,7 @@ class AppSettings {
     PdfStorageConfig? pdfStorage,
     String? themeSkin,
     String? themeModePreference,
+    Map<String, String>? pageQuestionTierTypes,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -159,6 +180,7 @@ class AppSettings {
       pdfStorage: pdfStorage ?? this.pdfStorage,
       themeSkin: themeSkin ?? this.themeSkin,
       themeModePreference: themeModePreference ?? this.themeModePreference,
+      pageQuestionTierTypes: pageQuestionTierTypes ?? this.pageQuestionTierTypes,
     );
   }
 
@@ -181,6 +203,7 @@ class AppSettings {
         'pdfStorage': pdfStorage.toMap(),
         'themeSkin': themeSkin,
         'themeModePreference': themeModePreference,
+        'pageQuestionTierTypes': pageQuestionTierTypes,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -211,5 +234,17 @@ class AppSettings {
             : const PdfStorageConfig(),
         themeSkin: map['themeSkin'] as String? ?? defaultThemeSkin,
         themeModePreference: map['themeModePreference'] as String? ?? defaultThemeModePreference,
+        pageQuestionTierTypes: parseTierTypes(map['pageQuestionTierTypes']) ?? const {},
       );
+
+  /// Liest die Typ-Vorgaben je Stufe tolerant (ein kaputter Eintrag darf den
+  /// App-Start nicht verhindern); `null`, wenn gar keine Angabe da ist.
+  static Map<String, String>? parseTierTypes(Object? raw) {
+    if (raw is! Map) return null;
+    return {
+      for (final e in raw.entries)
+        if (e.key is String && e.value is String && (e.value as String).trim().isNotEmpty)
+          tierKey(e.key as String): e.value as String,
+    };
+  }
 }

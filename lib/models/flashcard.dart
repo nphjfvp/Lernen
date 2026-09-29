@@ -24,6 +24,14 @@ enum QuestionType {
   /// Tabelle ausfüllen: vorgegebene Zellen stehen fest, die übrigen werden
   /// eingetippt (siehe [QuestionTableCell], [Flashcard.tableRows]).
   table,
+
+  /// Aufgabe zum Verstehen: für Aufgaben, die sich in einer Quiz-App nicht
+  /// prüfen lassen (zeichnen, entwerfen, lange Rechen- und Herleitungswege,
+  /// programmieren …). [Flashcard.front] ist die Aufgabe 1:1 wie im
+  /// Dokument, [Flashcard.back] die Erklärung/der Lösungsweg der KI – der
+  /// Lernende bewertet selbst, wie gut er es verstanden hat. Alle dieser
+  /// Aufgaben liegen zusätzlich dauerhaft im Aufgaben-Ordner des Fachs.
+  learn,
 }
 
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
@@ -44,6 +52,7 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.diagramLabel => 'Bild beschriften',
         QuestionType.markImage => 'Bild markieren',
         QuestionType.table => 'Tabelle',
+        QuestionType.learn => 'Lernen',
       };
 }
 
@@ -573,7 +582,7 @@ class Flashcard {
       };
 
   String get answerSummary => switch (type) {
-        QuestionType.flashcard => back,
+        QuestionType.flashcard || QuestionType.learn => back,
         QuestionType.singleChoice ||
         QuestionType.multipleChoice =>
           (options ?? const []).where((o) => o.isCorrect).map((o) => o.text).join('; '),

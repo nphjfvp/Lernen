@@ -31,11 +31,13 @@ import '../../services/pdf_cloud_store.dart';
 import '../../services/pdf_cloud_sync_service.dart';
 import '../../services/pdf_ocr_service.dart';
 import '../../services/pdf_service.dart';
+import '../../services/task_folder_service.dart';
 import '../../services/unit_schedule_service.dart';
 import '../../theme/app_colors.dart';
 import '../chat/module_chat_screen.dart';
 import '../exam/mock_exam_screen.dart';
 import '../flashcards/flashcard_list_screen.dart';
+import '../flashcards/task_folder_screen.dart';
 import '../import/pdf_question_import_screen.dart';
 import '../practice/practice_screen.dart';
 import '../prepare/prepare_screen.dart';
@@ -77,6 +79,38 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     await context.read<FlashcardRepository>().loadForModule(widget.moduleId);
     if (!mounted) return;
     await context.read<LectureUnitRepository>().loadForModule(widget.moduleId);
+  }
+
+  /// Knopf zum Aufgaben-Ordner (nur wenn es Aufgaben zum Verstehen gibt) –
+  /// rot, sobald die Klausur nah ist (siehe TaskFolderService).
+  List<Widget> _taskFolderButton(BuildContext context, Module module, List<Flashcard> flashcards) {
+    final count = TaskFolderService.tasksOf(flashcards).length;
+    if (count == 0) return const [];
+    final c = context.colors;
+    final warning = TaskFolderService.isWarning(taskCount: count, examDate: module.examDate);
+    final days = TaskFolderService.daysUntilExam(module.examDate);
+    return [
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        key: const ValueKey('task-folder-button'),
+        style: warning
+            ? OutlinedButton.styleFrom(
+                foregroundColor: c.danger,
+                backgroundColor: c.dangerSoft,
+                side: BorderSide(color: c.danger),
+              )
+            : null,
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => TaskFolderScreen(moduleId: module.id, moduleName: module.name)),
+        ),
+        icon: Icon(warning ? Icons.flag_rounded : Icons.folder_open_outlined),
+        label: Text(
+          warning
+              ? 'Aufgaben-Ordner ($count) · ${days == 0 ? 'Klausur heute' : 'Klausur in $days ${days == 1 ? 'Tag' : 'Tagen'}'}'
+              : 'Aufgaben-Ordner ($count)',
+        ),
+      ),
+    ];
   }
 
   @override
@@ -369,6 +403,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         icon: const Icon(Icons.style_outlined),
                         label: const Text('Alle Karteikarten ansehen'),
                       ),
+                      ..._taskFolderButton(context, module, flashcards),
                     ],
                     const SizedBox(height: 20),
                     _SectionHeader(title: 'Einheiten', count: units.length),

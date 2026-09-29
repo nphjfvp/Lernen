@@ -137,6 +137,17 @@ sondern möglichst den spezifischsten:
    - "drag_category": Begriffe in Kategorien einsortieren. "dragPairs" wie bei
      drag_drop, "target" ist hier der Kategoriename (mehrere "source" können
      denselben "target"-Wert haben).
+   - "learn": NUR für Aufgaben, die sich in einer Quiz-App gar nicht prüfen
+     lassen und in keinen der Typen oben passen: zeichnen, konstruieren,
+     entwerfen (z.B. Diagramme, Netzpläne), programmieren, beweisen, lange
+     Rechen-/Herleitungswege mit vielen Zwischenschritten. "front" = die
+     Aufgabe WORTGETREU wie im Dokument (alle Teilaufgaben und Zahlenwerte,
+     NICHT in einzelne Fragen aufteilen), "back" = deine ausführliche
+     Erklärung bzw. der Lösungsweg Schritt für Schritt (steht eine
+     Musterlösung im Dokument, erkläre sie verständlich). Der Lernende liest
+     das und bewertet selbst, wie gut er es verstanden hat. Kein Typ für
+     Aufgaben, die sich als Auswahl, Lücke, Tabelle oder Kurzantwort prüfen
+     lassen. {"type": "learn", "front": "Aufgabe 1:1", "back": "Erklärung / Lösungsweg"}
    - "flashcard": einfaches front/back, nur wenn kein anderer Typ passt.
      "back" ist PFLICHT und darf nie leer sein.
    - "html": bei Zuordnungs-/Matrix-/Tabellenstruktur mit mehreren
@@ -400,6 +411,17 @@ Tabelle) behalten diese Form. Wähle pro Frage den zum Inhalt passenden Typ:
    - "drag_category": Begriffe in Kategorien einsortieren; "dragPairs" wie
      bei drag_drop, "target" ist hier der Kategoriename (mehrere "source"
      können denselben "target"-Wert haben).
+   - "learn": NUR für Aufgaben, die sich in einer Quiz-App gar nicht prüfen
+     lassen und in keinen der Typen oben passen: zeichnen, konstruieren,
+     entwerfen (z.B. Diagramme, Netzpläne), programmieren, beweisen, lange
+     Rechen-/Herleitungswege mit vielen Zwischenschritten. "front" = die
+     Aufgabe WORTGETREU wie im Dokument (alle Teilaufgaben und Zahlenwerte,
+     NICHT in einzelne Fragen aufteilen), "back" = deine ausführliche
+     Erklärung bzw. der Lösungsweg Schritt für Schritt (steht eine
+     Musterlösung im Dokument, erkläre sie verständlich). Der Lernende liest
+     das und bewertet selbst, wie gut er es verstanden hat. Kein Typ für
+     Aufgaben, die sich als Auswahl, Lücke, Tabelle oder Kurzantwort prüfen
+     lassen. {"type": "learn", "front": "Aufgabe 1:1", "back": "Erklärung / Lösungsweg"}
    - "flashcard": nur als letzte Wahl (siehe oben) – "front"/"back" wie
      bisher. Das Feld "back" ist dabei PFLICHT und darf NIE leer sein – eine
      Karteikarte ohne Antwort ist nutzlos.
@@ -647,6 +669,13 @@ anderen Typ passt – bevor du "free_text" wählst, prüfe der Reihe nach:
      Antwort (bei denen ein einziger Textvergleich zu starr wäre)? -> "html"
      (siehe unten) – NICHT in eine vereinfachte free_text-Frage umwandeln,
      nur weil das weniger Aufwand bedeutet.
+  3b. Ist es eine Aufgabe, die sich in einer Quiz-App gar nicht prüfen lässt
+     (zeichnen, konstruieren, entwerfen, programmieren, beweisen, langer
+     Rechenweg mit vielen Zwischenschritten)? -> "learn": "front" = die
+     Aufgabe WORTGETREU mit allen Teilaufgaben und Zahlenwerten (NICHT
+     aufteilen), "back" = deine ausführliche Erklärung/der Lösungsweg
+     Schritt für Schritt. Dafür ist keine Musterlösung im Dokument nötig –
+     du erklärst die Aufgabe selbst.
   4. Erst wenn NICHTS davon zutrifft und es sich um eine wirklich offene
      Frage mit einer einzelnen, kurzen erwarteten Antwort handelt (Zahl,
      Formel, ein Satz): "free_text".
@@ -679,7 +708,8 @@ anderen Typ passt – bevor du "free_text" wählst, prüfe der Reihe nach:
      an (Fallback-Anzeige ohne WebView-Unterstützung).
 
 Enthält das Dokument KEINE erkennbare Musterlösung zu einer Frage, überspringe
-diese Frage (keine Karte ohne bekannte Antwort erzeugen).
+diese Frage (keine Karte ohne bekannte Antwort erzeugen) – außer bei "learn":
+dort erklärst du die Aufgabe selbst.
 
 Prüfe VOR der Wahl, ob du den gewählten Typ wirklich vollständig ausfüllen
 kannst (single_choice/multiple_choice: mindestens 2 Optionen, genau die
@@ -772,8 +802,20 @@ Auffangtyp für alles; prüfe der Reihe nach:
    HTML) – NICHT zu free_text vereinfachen.
 7. Kurze Antwort (Begriff, Zahl, Formel, ein Satz) -> "free_text":
    "correctText": "..." (mehrere akzeptierte Varianten mit ";").
-8. Längere Erklär-, Herleitungs- oder Diskussionsaufgabe ohne kurze
-   Antwort -> "flashcard": "back": Musterlösung, knapp und vollständig.
+8. Aufgabe, die sich in einer Quiz-App gar nicht prüfen lässt (zeichnen,
+   konstruieren, entwerfen, z.B. Diagramm oder Netzplan erstellen,
+   programmieren, beweisen, langer Rechenweg mit vielen Zwischenschritten)
+   -> "learn": "front" = die Aufgabe WORTGETREU wie auf dem Blatt mit allen
+   Teilaufgaben und Zahlenwerten (NICHT in Teilaufgaben aufteilen, 1:1),
+   "back" = deine ausführliche Erklärung bzw. der Lösungsweg Schritt für
+   Schritt (steht eine Musterlösung im Dokument, erkläre sie verständlich
+   und setze "solutionFromDocument": true; sonst erklärst du selbst und
+   setzt false). Gib "imageBox" um die KOMPLETTE Aufgabe an, wie sie auf der
+   Seite steht (samt Abbildungen). {"type": "learn", "front": "...",
+   "back": "...", "imageBox": [0.05, 0.2, 0.95, 0.6]}
+9. Längere Erklär- oder Diskussionsaufgabe ohne kurze Antwort, die man
+   nicht als Aufgabe "durcharbeiten" muss -> "flashcard": "back":
+   Musterlösung, knapp und vollständig.
 Prüfe VOR der Wahl, ob du den Typ wirklich vollständig ausfüllen kannst
 (single_choice/multiple_choice: mindestens 2 Optionen, genau die richtige(n)
 markiert; html: der exakte postMessage-Aufruf ist enthalten; free_text:
@@ -1135,6 +1177,7 @@ Sprache der Vorlage.
   /// – deshalb nur auf ausdrücklichen Wunsch statt als KI-Wahl.
   static const selectablePageQuestionTypes = [
     ...pageQuestionTypes,
+    QuestionType.learn,
     QuestionType.table,
     QuestionType.html,
     QuestionType.diagramLabel,
@@ -1390,6 +1433,13 @@ Antworte in der Sprache der Vorlage.
         QuestionType.flashcard =>
           'Zieltyp "flashcard": offene Frage/Antwort. Antwortformat: '
               '{"front": "...", "back": "..."}',
+        QuestionType.learn =>
+          'Zieltyp "learn" (Aufgabe zum Verstehen): "front" ist die Aufgabe '
+              'WORTGETREU mit allen Teilaufgaben (bzw. der Fakt als zu '
+              'lösende Aufgabe), "back" deine ausführliche Erklärung bzw. der '
+              'Lösungsweg Schritt für Schritt. Der Lernende liest sie und '
+              'bewertet selbst, wie gut er es verstanden hat. Antwortformat: '
+              '{"front": "...", "back": "Erklärung / Lösungsweg"}',
         QuestionType.html =>
           'Zieltyp "html": derselbe Fakt als eigenständige interaktive Seite '
               '(z.B. Zuordnungs-Matrix, Klick-Aufgabe). '

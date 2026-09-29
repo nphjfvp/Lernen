@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/app_settings.dart';
 import '../../models/flashcard.dart';
 import '../../models/material_item.dart';
 import '../../repositories/flashcard_repository.dart';
@@ -19,6 +20,7 @@ import '../daily/question_answer_view.dart';
 import 'confirm_delete_dialog.dart';
 import 'image_editor_screen.dart';
 import 'model_override_tile.dart';
+import 'question_type_dropdown.dart';
 import 'page_region_picker.dart';
 import 'safe_set_state.dart';
 
@@ -287,6 +289,32 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
     final focus = widget.initialQuestionText ?? _firstOfColor(HighlightColor.red)?.text ?? '';
     _focusController = TextEditingController(text: focus);
     _answerController = TextEditingController(text: _firstOfColor(HighlightColor.green)?.text ?? '');
+    // Vorgaben aus den Einstellungen (Typ je Stufe) – vor dem Erstellen von
+    // Hand weiter änderbar.
+    final settings = context.read<SettingsRepository?>()?.settings;
+    if (settings != null) {
+      for (final slot in _slots) {
+        final preferred = settings.pageTierType(slot.label);
+        if (preferred != null && AiService.selectablePageQuestionTypes.contains(preferred)) {
+          slot.type = preferred;
+        }
+      }
+    }
+  }
+
+  /// Die aktuelle Typwahl aller drei Stufen als neue Vorgabe speichern.
+  Future<void> _saveTypesAsDefault() async {
+    final repo = context.read<SettingsRepository?>();
+    if (repo == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final types = {
+      for (final slot in _slots)
+        if (slot.type != null) AppSettings.tierKey(slot.label): slot.type!.name,
+    };
+    await repo.update(repo.settings.copyWith(pageQuestionTierTypes: types));
+    messenger.showSnackBar(const SnackBar(
+      content: Text('Als Standard gespeichert – gilt beim nächsten "Frage erstellen" (änderbar in den Einstellungen).'),
+    ));
   }
 
   @override
@@ -815,29 +843,24 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: DropdownButton<QuestionType?>(
-                      isExpanded: true,
+                    child: QuestionTypeDropdown(
                       value: slot.type,
-                      hint: const Text('KI entscheidet', style: TextStyle(fontSize: 13.5)),
-                      disabledHint: Text(slot.type?.label ?? 'KI entscheidet', style: const TextStyle(fontSize: 13.5)),
                       onChanged: (!_generating && slot.enabled) ? (t) => setState(() => slot.type = t) : null,
-                      items: [
-                        const DropdownMenuItem<QuestionType?>(
-                          value: null,
-                          child: Text('KI entscheidet', style: TextStyle(fontSize: 13.5)),
-                        ),
-                        for (final t in AiService.selectablePageQuestionTypes)
-                          DropdownMenuItem<QuestionType?>(
-                            value: t,
-                            child: Text(t.label, style: const TextStyle(fontSize: 13.5)),
-                          ),
-                      ],
                     ),
                   ),
                 ],
               ),
             )),
-        const SizedBox(height: 20),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            key: const ValueKey('save-tier-defaults'),
+            onPressed: _generating ? null : _saveTypesAsDefault,
+            icon: const Icon(Icons.push_pin_outlined, size: 16),
+            label: const Text('Typ-Auswahl als Standard merken'),
+          ),
+        ),
+        const SizedBox(height: 12),
         ModelOverrideTile(
           defaultId: _defaultModelId,
           overrideId: _modelOverride,

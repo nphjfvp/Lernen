@@ -178,4 +178,21 @@ void main() {
       expect(() => checkUsablePayload({'modules': []}), returnsNormally);
     });
   });
+
+  group('Typ-Vorgaben je Stufe im Sync', () {
+    test('reisen mit, ein älterer Cloud-Stand ohne das Feld lässt den lokalen Wert stehen', () {
+      final local = const AppSettings().copyWith(pageQuestionTierTypes: {'schwer': 'freeText'});
+      expect(syncedSettingsOf(local, includeSecrets: false)['pageQuestionTierTypes'], {'schwer': 'freeText'});
+
+      final fromOldCloud = mergeAiSettings(local, {'questionModelId': 'x/y'});
+      expect(fromOldCloud.pageQuestionTierTypes, {'schwer': 'freeText'});
+    });
+
+    test('eine vorhandene Angabe der Cloud gilt – auch eine leere', () {
+      final local = const AppSettings().copyWith(pageQuestionTierTypes: {'schwer': 'freeText'});
+      expect(mergeAiSettings(local, {'pageQuestionTierTypes': {'leicht': 'singleChoice'}}).pageQuestionTierTypes,
+          {'leicht': 'singleChoice'});
+      expect(mergeAiSettings(local, {'pageQuestionTierTypes': <String, dynamic>{}}).pageQuestionTierTypes, isEmpty);
+    });
+  });
 }
