@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../models/flashcard.dart';
+import 'stage_gate_service.dart';
 
 /// Ergebnis einer Probeklausur – klein gehalten, damit der Verlauf lokal
 /// gespeichert werden kann (siehe MockExamRepository).
@@ -68,12 +69,14 @@ class MockExamService {
     return pool.take(count).toList();
   }
 
+  /// Je Ordner (Leicht/Mittel/Schwer derselben Frage) zählt nur die
+  /// schwerste Stufe, siehe StageGate.hardestPerFolder.
   static List<Flashcard> eligible(List<Flashcard> moduleCards, {Map<String, bool> unitCoveredById = const {}}) {
-    return moduleCards.where((c) {
+    return StageGate.hardestPerFolder(moduleCards.where((c) {
       final unitId = c.unitId;
       if (unitId == null || c.priorityIntroduction) return true;
       return unitCoveredById[unitId] ?? true;
-    }).toList();
+    }).toList());
   }
 
   /// Wählbare Fragenanzahlen: die Standardgrößen, gedeckelt auf das, was

@@ -469,7 +469,7 @@ class _ReviewTileState extends State<_ReviewTile> {
     try {
       final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
       final text = await ai.explainAnswer(
-        question: widget.card.front,
+        question: widget.card.promptText,
         correctAnswer: _answer,
         wasCorrect: widget.correct,
       );

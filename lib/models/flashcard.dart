@@ -556,6 +556,20 @@ class Flashcard {
   /// wenn eine harte Variante daraus erzeugt wird (siehe
   /// AiService.generateHarderVariant), damit sich der geprüfte Fakt dabei
   /// nicht ändert.
+  /// Die Frage so, wie sie beim Lernen zu sehen ist, als Text für KI-
+  /// Hilfen (Tipp, Erklärung, Sokrates): bei Auswahlfragen mit den Optionen,
+  /// bei Tabellen mit der Tabelle ("___" = auszufüllen) – der Fragetext
+  /// allein ("Fülle die Tabelle aus") gäbe der KI zu wenig Zusammenhang.
+  String get promptText => switch (type) {
+        QuestionType.singleChoice || QuestionType.multipleChoice when (options ?? const []).isNotEmpty =>
+          '$front\nAntwortoptionen: ${options!.map((o) => o.text).join(' | ')}',
+        QuestionType.table when (tableRows ?? const []).isNotEmpty => [
+            front,
+            for (final row in tableRows!) row.map((c) => c.given ? c.text : '___').join(' | '),
+          ].join('\n'),
+        _ => front,
+      };
+
   String get answerSummary => switch (type) {
         QuestionType.flashcard => back,
         QuestionType.singleChoice ||
@@ -678,7 +692,7 @@ class Flashcard {
     List<ImageTarget>? imageTargets,
     List<List<QuestionTableCell>>? tableRows,
   }) {
-    return Flashcard(
+    final updated = Flashcard(
       id: id,
       moduleId: moduleId,
       conceptId: conceptId,
@@ -720,6 +734,10 @@ class Flashcard {
       stageGroup: stageGroup,
       aiHints: aiHints,
     );
+    // Gespeicherte KI-Hilfestellungen passen nach einer geänderten Frage
+    // bzw. Lösung nicht mehr – beim nächsten Bedarf neu erzeugen.
+    final contentChanged = updated.front != this.front || updated.answerSummary != answerSummary;
+    return contentChanged && aiHints != null ? Flashcard.fromMap({...updated.toMap(), 'aiHints': null}) : updated;
   }
 
   /// Lernhilfen nachtragen: gefundene Stelle in den Unterlagen bzw. eine

@@ -97,9 +97,15 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
   }
 
   Future<void> _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
-    await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
+    final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
     if (!mounted) return;
     setState(() {
+      // Rückfall: die zurückgeholten leichteren Fragen direkt als Nächstes.
+      final queue = _queue;
+      if (queue != null) {
+        final upcoming = queue.skip(_index + 1).map((c) => c.id).toSet();
+        queue.insertAll(_index + 1, outcome.reopened.where((c) => !upcoming.contains(c.id)));
+      }
       _index += 1;
       _reviewedCount += 1;
     });

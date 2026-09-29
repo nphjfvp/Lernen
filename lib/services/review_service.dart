@@ -41,7 +41,13 @@ class ReviewOutcome {
     this.cardDeleted = false,
     this.fallbackRequested = false,
     this.movedToEasierStage = false,
+    this.reopened = const [],
   });
+
+  /// Beim Rückfall zurückgeholte leichtere Karten (siehe
+  /// [movedToEasierStage]) – der Lernmodus nimmt sie gleich in die laufende
+  /// Runde, statt sie erst beim nächsten Plan auftauchen zu lassen.
+  final List<Flashcard> reopened;
 
   /// Der Rückfall ist passiert: die leichteren Karten der Gruppe sind wieder
   /// dran, diese Karte wartet – sie gehört in keine Wiederholungsrunde mehr.

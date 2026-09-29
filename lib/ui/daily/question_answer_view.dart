@@ -265,7 +265,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     setState(() => _ladderHintsLoading = true);
     try {
       while (hints.length < due) {
-        hints.add(await ai.generateHint(question: card.front, correctAnswer: answer, previousHints: hints));
+        hints.add(await ai.generateHint(question: card.promptText, correctAnswer: answer, previousHints: hints));
         if (mounted) setState(() => _ladderHints = List.of(hints));
       }
       await repo?.updateHints(card.id, hints, type: card.type, front: card.front);
@@ -629,6 +629,11 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     setState(() {
       _result = AnswerCheckResult(isCorrect: true, correctAnswerLabel: result.correctAnswerLabel);
       if (_blankHits != null) _blankHits = List.filled(_blankHits!.length, true);
+      if (_tableHits != null) {
+        _tableHits = List.filled(_tableHits!.length, true);
+        _tableRight = _tableHits!.length;
+        _tablePartial = false;
+      }
       _labelResults = _labelResults?.map((z) => (correct: true, allowed: z.allowed)).toList();
       _checkInfo = 'Von dir als richtig gewertet.';
     });
@@ -641,6 +646,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       !_result!.isCorrect &&
       (widget.card.type == QuestionType.freeText ||
           widget.card.type == QuestionType.fillBlank ||
+          widget.card.type == QuestionType.table ||
           (widget.card.type == QuestionType.diagramLabel && _labelTyping));
 
   AiService? _aiOrNull() {
@@ -713,7 +719,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       _aiHelpError = null;
     });
     try {
-      final hint = await ai.generateHint(question: widget.card.front, correctAnswer: _correctAnswerText);
+      final hint = await ai.generateHint(question: widget.card.promptText, correctAnswer: _correctAnswerText);
       if (mounted) setState(() => _hint = hint);
     } catch (e) {
       if (mounted) setState(() => _aiHelpError = e is AiServiceException ? e.message : 'Tipp fehlgeschlagen: $e');
@@ -731,7 +737,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     });
     try {
       final text = await ai.explainAnswer(
-        question: widget.card.front,
+        question: widget.card.promptText,
         correctAnswer: _correctAnswerText,
         userAnswer: _userAnswerText,
         wasCorrect: _result?.isCorrect,

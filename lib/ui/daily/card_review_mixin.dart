@@ -69,10 +69,16 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
     var message = outcome.needsGeneration && !settings.hasApiKey ? null : outcome.levelChangeMessage;
     var result = outcome;
     if (outcome.fallbackRequested) {
-      final easier = await _fallBackToEasierStage(repo, outcome.card);
-      if (easier != null) {
-        message = '⬇️ Zurück zu ${easier.label}: erst die leichteren Fragen dazu wieder sicher, dann geht es hier weiter.';
-        result = ReviewOutcome(card: outcome.card, wasWrong: outcome.wasWrong, movedToEasierStage: true);
+      final reopened = await _fallBackToEasierStage(repo, outcome.card);
+      if (reopened.isNotEmpty) {
+        message = '⬇️ Zurück zu ${StageGate.levelOf(reopened.first).label}: erst die leichteren Fragen dazu '
+            'wieder sicher, dann geht es hier weiter.';
+        result = ReviewOutcome(
+          card: outcome.card,
+          wasWrong: outcome.wasWrong,
+          movedToEasierStage: true,
+          reopened: reopened,
+        );
       }
     }
     if (message != null && showLevelFeedback && mounted) {
@@ -86,13 +92,13 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
   /// Rückfall bei getrennten Karten (siehe StageGate.reactivateEasier): holt
   /// die nächstleichtere Stufe der Gruppe zurück und startet die Fehler-
   /// Leiter dieser Karte neu – sie wartet jetzt, bis die leichtere wieder
-  /// sitzt. Liefert die zurückgeholte Stufe, oder null, wenn es keine gibt.
-  Future<StageLevel?> _fallBackToEasierStage(FlashcardRepository repo, Flashcard card) async {
+  /// sitzt. Liefert die zurückgeholten Karten (leer, wenn es keine gibt).
+  Future<List<Flashcard>> _fallBackToEasierStage(FlashcardRepository repo, Flashcard card) async {
     final moduleCards = await repo.loadModuleCards(card.moduleId);
     final reopened = StageGate.reactivateEasier(moduleCards, card);
-    if (reopened.isEmpty) return null;
+    if (reopened.isEmpty) return const [];
     await repo.updateAll([...reopened, card.copyWithMissStreak(0)]);
-    return StageGate.levelOf(reopened.first);
+    return reopened;
   }
 
   /// Speichert ein beim Lernen bearbeitetes Bild (z.B. eine verräterische

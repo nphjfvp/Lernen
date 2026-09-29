@@ -118,6 +118,20 @@ void main() {
       expect(importedCard.front, 'Was ist ein Werkstoff?');
     });
 
+    test('ein Ordner, der als Konzept-ID gespeichert ist, zeigt nach dem Import aufs neue Konzept', () {
+      final payload = ModuleExportService.buildPayload(
+        module: module,
+        lectureUnits: [unit],
+        materialsWithBytes: [material],
+        concepts: [concept],
+        flashcards: [flashcard.copyWithStage(group: 'concept1'), flashcard.copyWithStage(group: 'Ohm#1')],
+      );
+      final imported = ModuleExportService.parse(payload);
+      final newConceptId = imported.concepts.single.id;
+      expect(imported.flashcards[0].stageGroup, newConceptId);
+      expect(imported.flashcards[1].stageGroup, 'Ohm#1');
+    });
+
     test('zwei Importe derselben Datei erzeugen unabhängige, kollisionsfreie IDs', () {
       final payload = buildFullPayload();
       final first = ModuleExportService.parse(payload);

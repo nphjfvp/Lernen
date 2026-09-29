@@ -34,28 +34,41 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, Map<MasteryLevel, int>>? _ampelByModule;
   FlashcardRepository? _flashcards;
 
+  /// Karten haben sich geändert, während die Startseite verdeckt war – beim
+  /// nächsten Sichtbarwerden neu laden statt nach jeder einzelnen Antwort.
+  bool _stale = false;
+
   @override
   void initState() {
     super.initState();
-    _flashcards = context.read<FlashcardRepository?>()?..addListener(_loadAmpel);
+    _flashcards = context.read<FlashcardRepository?>()?..addListener(_onCardsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadAmpel());
+  }
+
+  void _onCardsChanged() {
+    if (widget.isActive) {
+      _loadAmpel();
+    } else {
+      _stale = true;
+    }
   }
 
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isActive && !oldWidget.isActive) _loadAmpel();
+    if (widget.isActive && !oldWidget.isActive && _stale) _loadAmpel();
   }
 
   @override
   void dispose() {
-    _flashcards?.removeListener(_loadAmpel);
+    _flashcards?.removeListener(_onCardsChanged);
     super.dispose();
   }
 
   Future<void> _loadAmpel() async {
     final repo = _flashcards;
     if (repo == null) return;
+    _stale = false;
     final byModule = <String, List<Flashcard>>{};
     for (final card in await repo.loadAll()) {
       byModule.putIfAbsent(card.moduleId, () => []).add(card);

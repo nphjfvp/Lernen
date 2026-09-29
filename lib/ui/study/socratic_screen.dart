@@ -68,7 +68,7 @@ class _SocraticScreenState extends State<SocraticScreen> with SafeSetState<Socra
     });
     try {
       final turn = await widget.ai.socraticTurn(
-        question: widget.card.front,
+        question: widget.card.promptText,
         correctAnswer: answerTextOf(widget.card),
         wrongAnswer: widget.wrongAnswer,
         sourceText: _source?.pageText,

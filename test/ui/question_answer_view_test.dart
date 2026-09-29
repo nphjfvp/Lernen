@@ -594,6 +594,28 @@ void main() {
       expect(r.grade, Grade.hard);
     });
 
+    testWidgets('abgelehnte Tabelle lässt sich als richtig werten', (tester) async {
+      Grade? grade;
+      bool? correct;
+      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect}) {
+        grade = selfGrade;
+        correct = isCorrect;
+      }));
+      for (final (i, a) in ['H', 'He', 'Li', 'O', 'K'].indexed) {
+        await tester.enterText(find.byKey(ValueKey('table-cell-${i + 1}-1')), a);
+      }
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Als richtig werten'));
+      await tester.pumpAndSettle();
+      expect(find.text('Richtig!'), findsOneWidget);
+      await tester.tap(find.text('Weiter'));
+      await tester.pumpAndSettle();
+      expect(correct, isTrue);
+      expect(grade, isNull);
+    });
+
     testWidgets('3 von 5 Zellen: falsch, Lösung wird angezeigt', (tester) async {
       Grade? grade;
       bool? correct;

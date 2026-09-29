@@ -246,7 +246,7 @@ class _MiniLessonSheetState extends State<MiniLessonSheet> {
         if (c.id == stored.conceptId) conceptExplanation = c.explanation;
       }
       final lesson = await ai.generateMiniLesson(
-        question: stored.front,
+        question: stored.promptText,
         correctAnswer: answerTextOf(stored),
         sourceText: _source?.pageText,
         conceptExplanation: conceptExplanation,

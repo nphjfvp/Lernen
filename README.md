@@ -214,7 +214,9 @@ engerem Fokus statt Feature-Fülle.
   fast unmöglich zu erfüllen) – ohne API-Key oder bei einem Fehler bleibt es
   beim strengeren lokalen Ergebnis. **Lückentexte** genauso, je Lücke: lokal
   zählen die hinterlegte Lösung, jede per ";" hinterlegte Variante
-  ("Mitochondrium; Mitochondrien") und kleine Tippfehler; lehnt das eine
+  ("Mitochondrium; Mitochondrien") und kleine Tippfehler – nie bei Zahlen
+  (eine andere Ziffer ist ein anderes Ergebnis; "3.5" = "3,5") und nie bei
+  einer fehlenden/zusätzlichen Vorsilbe ("homogen" ≠ "inhomogen"); lehnt das eine
   Lücke ab, bewertet `AiService.checkFillBlankAnswers` den ganzen Satz nach
   – geprüft wird Wissen, nicht Rechtschreibung: gröbere Tippfehler
   ("debinrten" für "definierten"), vertauschte gleichrangige Lücken ("bei
@@ -225,7 +227,8 @@ engerem Fokus statt Feature-Fülle.
   hinterlegte Schreibweise und die kurze Begründung der KI, darunter steht,
   ob die KI nachgeprüft hat oder (z.B. offline) nicht. Liegt die Prüfung
   trotzdem daneben, wertet **"Als richtig werten"** eine abgelehnte
-  Freitext-/Lückentext-Antwort als richtig (nicht in der Probeklausur).
+  Freitext-/Lückentext-/Tabellen-Antwort als richtig (nicht in der
+  Probeklausur).
   **Zuordnen/Kategorien** arbeitet mit Positionen statt Texten: gleich
   lautende Begriffe oder Ziele (z.B. zweimal "Metall") belegen nie mehrere
   Felder; kommt ein Ziel mehrfach vor, wird die Frage als Kategorien-Frage
@@ -369,7 +372,8 @@ engerem Fokus statt Feature-Fülle.
   und "JSON einfügen").
 - **Probeklausur mit Note** (`lib/ui/exam/mock_exam_screen.dart`, im
   Fach unter "Probeklausur"): 10/20/30 zufällige Fragen aus dem bereits
-  behandelten Stoff, optional mit Zeitlimit (15/30/60 min), OHNE Feedback,
+  behandelten Stoff (aus einem Ordner Leicht/Mittel/Schwer nur die schwerste
+  Stufe – dasselbe Wissen kommt nicht dreimal dran), optional mit Zeitlimit (15/30/60 min), OHNE Feedback,
   Tipps oder Erklärungen während der Bearbeitung (`QuestionAnswerView.examMode`),
   Überspringen/vorzeitiges Abgeben möglich. Danach: Note nach der üblichen
   Hochschulskala (`MockExamService.germanGrade`: ab 50 % 4,0, ab 95 % 1,0),
@@ -1050,7 +1054,8 @@ Fragen zum selben Sachverhalt kommen nicht mehr alle gleichzeitig dran:
 - Von Hand: "Stufe" an einer Karte; mehrere auswählen → "In Ordner legen"
   (vorhandener oder neuer Ordner) bzw. "Aus Ordner nehmen".
 - Gilt im Daily Quiz, in Üben, Sprint und im Fehlertagebuch – nicht in der
-  Probeklausur (die simuliert die echte Klausur mit allen Fragen).
+  Probeklausur (die fragt je Ordner die schwerste Stufe, wie in der echten
+  Klausur).
 
 **Fehler-Leiter**: Geht eine Frage 2× in Folge schief, erscheint vor dem
 Antworten automatisch eine KI-Hilfestellung; nach dem 3. Fehler eine zweite,

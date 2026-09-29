@@ -63,6 +63,11 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
   /// Zusammengehöriges auch über Portionsgrenzen in einem Ordner landet.
   static const _stageBatchSize = 80;
 
+  /// So viele Ordnernamen früherer Portionen gehen höchstens mit (die
+  /// jüngsten – die Karten sind nach Konzept sortiert, Zusammengehöriges
+  /// steht also nah beieinander).
+  static const _maxKnownGroups = 200;
+
   /// Aufgeklappte Ordner (Gruppenschlüssel, siehe StageGate.groupOf).
   final Set<String> _openFolders = {};
 
@@ -128,7 +133,9 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
         final results = await ai.assignStages([
           for (var i = 0; i < batch.length; i++)
             (n: i + 1, type: batch[i].type.label, front: batch[i].front, answer: batch[i].answerSummary),
-        ], knownGroups: knownGroups);
+        ], knownGroups: knownGroups.length > _maxKnownGroups
+            ? knownGroups.sublist(knownGroups.length - _maxKnownGroups)
+            : knownGroups);
         final updated = StageGate.applyAssignments(batch, results, runTag: runTag);
         await repo.updateAll(updated);
         assigned.addAll(updated);
@@ -159,31 +166,12 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     }
   }
 
-  /// Gespeicherter Gruppenwert eines Ordners (siehe Flashcard.stageGroup) –
-  /// bei der Gruppe aus dem Konzept die Konzept-ID.
-  static String? _storedGroupOf(Flashcard card) => card.stageGroup ?? card.conceptId;
-
   /// Fragt einen Ordnernamen ab (null = abgebrochen).
   Future<String?> _askFolderName({String initial = '', required String title}) async {
-    final controller = TextEditingController(text: initial);
     final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          key: const ValueKey('folder-name'),
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name (was die Fragen abfragen)'),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(controller.text), child: const Text('Speichern')),
-        ],
-      ),
+      builder: (_) => _FolderNameDialog(title: title, initial: initial),
     );
-    controller.dispose();
     return name?.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
@@ -192,12 +180,12 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
       name.isEmpty ? 'manuell-${DateTime.now().millisecondsSinceEpoch}' : '$name#${DateTime.now().millisecondsSinceEpoch}';
 
   /// Wendet [change] auf den gespeicherten Stand aller Karten des Ordners an.
-  Future<void> _applyToFolder(StageFolder folder, Flashcard Function(Flashcard) change, String doneMessage) async {
+  Future<void> _applyToFolder(StageFolder folder, Flashcard Function(Flashcard) change, String? doneMessage) async {
     final repo = context.read<FlashcardRepository>();
     final messenger = ScaffoldMessenger.of(context);
     final stored = (await repo.loadModuleCards(widget.moduleId)).where((c) => StageGate.groupOf(c) == folder.key);
     await repo.updateAll([for (final c in stored) change(c)]);
-    messenger.showSnackBar(SnackBar(content: Text(doneMessage)));
+    if (doneMessage != null) messenger.showSnackBar(SnackBar(content: Text(doneMessage)));
   }
 
   Future<void> _renameFolder(StageFolder folder) async {
@@ -293,7 +281,7 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
             if (e.folder != null) e.folder!,
         ];
         const newFolder = '\u0000neu';
-        final picked = await showDialog<String>(
+        final picked = await showDialog<Object>(
           context: context,
           builder: (ctx) => SimpleDialog(
             title: Text('$label in Ordner legen'),
@@ -305,15 +293,26 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
               ),
               for (final f in folders)
                 SimpleDialogOption(
-                  onPressed: () => Navigator.of(ctx).pop(_storedGroupOf(f.hardest)),
+                  onPressed: () => Navigator.of(ctx).pop(f),
                   child: Text(f.name ?? f.hardest.front, maxLines: 2, overflow: TextOverflow.ellipsis),
                 ),
             ],
           ),
         );
         if (picked == null || !mounted) return;
-        var group = picked;
-        if (picked == newFolder) {
+        final String group;
+        if (picked is StageFolder) {
+          final stored = picked.hardest.stageGroup?.trim() ?? '';
+          if (stored.isEmpty || stored == picked.hardest.conceptId) {
+            // Ordner nur aus dem Konzept: bekommt jetzt einen eigenen Namen,
+            // damit Ordner und hinzugelegte Fragen sicher zusammenbleiben.
+            group = _folderGroup(picked.name ?? '');
+            await _applyToFolder(picked, (c) => c.copyWithStage(group: group), null);
+            if (!mounted) return;
+          } else {
+            group = stored;
+          }
+        } else {
           final name = await _askFolderName(title: 'Neuer Ordner');
           if (name == null || !mounted) return;
           group = _folderGroup(name);
@@ -608,6 +607,45 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Eingabe eines Ordnernamens – eigenes State-Objekt, damit das Textfeld
+/// seinen Controller erst nach dem Schließen des Dialogs freigibt.
+class _FolderNameDialog extends StatefulWidget {
+  const _FolderNameDialog({required this.title, required this.initial});
+  final String title;
+  final String initial;
+
+  @override
+  State<_FolderNameDialog> createState() => _FolderNameDialogState();
+}
+
+class _FolderNameDialogState extends State<_FolderNameDialog> {
+  late final TextEditingController _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        key: const ValueKey('folder-name'),
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(labelText: 'Name (was die Fragen abfragen)'),
+        onSubmitted: (v) => Navigator.of(context).pop(v),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Abbrechen')),
+        FilledButton(onPressed: () => Navigator.of(context).pop(_controller.text), child: const Text('Speichern')),
+      ],
     );
   }
 }

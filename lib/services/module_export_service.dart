@@ -347,8 +347,9 @@ class ModuleExportService {
               weight: f.weight,
               stageLevel: f.stageLevel,
               // Konzept-IDs werden oben neu vergeben – eine Gruppe, die nur
-              // aus dem Konzept kam, folgt dem neuen Konzept automatisch.
-              stageGroup: f.stageGroup,
+              // aus dem Konzept kam, folgt dem neuen Konzept automatisch; ein
+              // als Gruppe gespeichertes Konzept wird mit übersetzt.
+              stageGroup: conceptIdMap[f.stageGroup] ?? f.stageGroup,
               aiHints: f.aiHints,
             ))
         .toList();

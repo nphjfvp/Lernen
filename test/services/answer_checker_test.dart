@@ -87,6 +87,21 @@ void main() {
       expect(AnswerChecker.checkFreeText(q, 'Photosyntese').isCorrect, isTrue); // 1 Zeichen fehlt
     });
 
+    test('Zahlen müssen exakt stimmen, Dezimalpunkt = Dezimalkomma', () {
+      expect(AnswerChecker.answerMatches('12346', '12345'), isFalse);
+      expect(AnswerChecker.answerMatches('1025 kB', '1024 kB'), isFalse);
+      expect(AnswerChecker.answerMatches('0,126', '0,125'), isFalse);
+      expect(AnswerChecker.answerMatches('3.14', '3,14'), isTrue);
+      expect(AnswerChecker.answerMatches('12345 Ohm', '12345 Ohn'), isTrue); // Tippfehler im Wort bleibt ok
+    });
+
+    test('fehlende oder zusätzliche Vorsilbe ist kein Tippfehler', () {
+      expect(AnswerChecker.answerMatches('homogen', 'inhomogen'), isFalse);
+      expect(AnswerChecker.answerMatches('irreversibel', 'reversibel'), isFalse);
+      expect(AnswerChecker.answerMatches('elastisch', 'unelastisch'), isFalse);
+      expect(AnswerChecker.answerMatches('reversible', 'reversibel'), isTrue);
+    });
+
     test('zu große Abweichungen zählen als falsch', () {
       final q = _question(type: QuestionType.freeText, correctText: 'Photosynthese');
       expect(AnswerChecker.checkFreeText(q, 'Zellatmung').isCorrect, isFalse);

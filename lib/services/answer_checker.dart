@@ -391,17 +391,33 @@ class AnswerChecker {
     if (a.isEmpty) return false;
     final candidates = correct.split(';').map(_normalize).where((c) => c.isNotEmpty);
     for (final c in candidates) {
-      if (a == c) return true;
-      final allowed = c.length >= 9 ? 2 : (c.length >= 5 ? 1 : 0);
-      if (allowed > 0 && _levenshtein(a, c) <= allowed) return true;
+      if (a == c || _isTypo(a, c)) return true;
     }
     return false;
   }
 
+  /// Kleiner Tippfehler statt einer anderen Antwort: bis 1 Zeichen ab 5,
+  /// bis 2 ab 9 Zeichen Abweichung. Nie bei Zahlen (eine andere Ziffer ist
+  /// ein anderes Ergebnis) und nie, wenn nur eine Vorsilbe fehlt oder
+  /// dazukommt ("homogen"/"inhomogen", "reversibel"/"irreversibel" – das
+  /// dreht die Bedeutung um).
+  static bool _isTypo(String a, String c) {
+    final allowed = c.length >= 9 ? 2 : (c.length >= 5 ? 1 : 0);
+    if (allowed == 0) return false;
+    if (_digits(a) != _digits(c)) return false;
+    if (a.endsWith(c) || c.endsWith(a)) return false;
+    return _levenshtein(a, c) <= allowed;
+  }
+
+  static String _digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
+
+  /// Vergleichsform: klein, einfache Leerzeichen, ohne Satzzeichen am Rand;
+  /// Dezimalpunkt wie Dezimalkomma ("3.5" = "3,5").
   static String _normalize(String s) => s
       .trim()
       .toLowerCase()
       .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAll(RegExp(r'(?<=\d)\.(?=\d)'), ',')
       .replaceAll(RegExp(r'^[.,;:!?]+|[.,;:!?]+$'), '');
 
   static int _levenshtein(String a, String b) {

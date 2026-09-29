@@ -192,4 +192,43 @@ void main() {
       expect(fixed?['type'], isNot('table'));
     });
   });
+
+  group('Text für KI-Hilfen (promptText)', () {
+    test('Tabelle mit ___ an den auszufüllenden Stellen', () {
+      final text = _fiveBlanks.promptText;
+      expect(text, contains('Fülle die Tabelle aus.'));
+      expect(text, contains('Wasserstoff | ___'));
+      expect(text, isNot(contains('| H\n')));
+    });
+
+    test('Auswahlfrage mit Optionen, sonst nur die Frage', () {
+      final choice = Flashcard(
+        id: 'c',
+        moduleId: 'm',
+        front: 'Was gilt?',
+        back: '',
+        createdAt: DateTime(2026),
+        due: DateTime(2026),
+        type: QuestionType.singleChoice,
+        options: const [QuizOption(text: 'A', isCorrect: true), QuizOption(text: 'B', isCorrect: false)],
+      );
+      expect(choice.promptText, 'Was gilt?\nAntwortoptionen: A | B');
+      expect(Flashcard(id: 'f', moduleId: 'm', front: 'Frage', back: 'x', createdAt: DateTime(2026), due: DateTime(2026))
+          .promptText, 'Frage');
+    });
+  });
+
+  group('Gespeicherte KI-Tipps', () {
+    test('verfallen, wenn Frage oder Lösung bearbeitet wird, sonst nicht', () {
+      final card = _fiveBlanks.copyWithHints(const ['Denk an das Periodensystem.']);
+      expect(card.copyWithContent(front: 'Neue Frage').aiHints, isNull);
+      expect(
+        card.copyWithContent(tableRows: const [
+          [QuestionTableCell(text: 'Helium'), QuestionTableCell(text: 'He', given: false)],
+        ]).aiHints,
+        isNull,
+      );
+      expect(card.copyWithContent(front: card.front).aiHints, ['Denk an das Periodensystem.']);
+    });
+  });
 }

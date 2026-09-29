@@ -420,7 +420,10 @@ dann "schwer" (vorher kommen die schwereren nicht dran):
 Gib JEDER Karte "level": "leicht" | "mittel" | "schwer" und "group": einen
 kurzen Schlüssel für den Sachverhalt (z.B. "Stücklisten-Arten"), der für
 alle Stufen DESSELBEN Sachverhalts Zeichen für Zeichen gleich ist und sich
-von anderen Sachverhalten unterscheidet. Lass eine Stufe weg, wenn sie für
+von anderen Sachverhalten unterscheidet. Dieselbe "group" nur für Fragen,
+die dasselbe Wissen prüfen – sobald die schwerere Stufe dran ist, wird die
+leichtere nicht mehr abgefragt; verschiedene Fakten desselben Kapitels
+bekommen verschiedene Gruppen. Lass eine Stufe weg, wenn sie für
 den Sachverhalt keinen Sinn ergibt (z.B. keine sinnvolle Auswahlfrage) –
 dann rückt die nächste Stufe nach. Übungsaufgaben, die 1:1 übernommen
 werden, sind "schwer".

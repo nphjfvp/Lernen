@@ -13,6 +13,7 @@ import '../../repositories/module_repository.dart';
 import '../../services/daily_scheduler_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/home_widget_service.dart';
+import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import 'card_review_mixin.dart';
 import 'question_answer_view.dart';
@@ -159,11 +160,14 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       _index = 0;
       _answeredSinceLoad = 0;
       _reviewedCount = session.reviewedCount;
+      // Nur, was noch dran ist: eine Karte, die inzwischen auf eine
+      // leichtere Stufe wartet (Rückfall) oder ruht, nicht wieder abfragen.
+      final stages = StageGate.statuses(allCards);
       _wrongQueue
         ..clear()
         ..addAll([
           for (final id in session.wrongIds)
-            if (cardsById[id] != null && !plannedIds.contains(id)) cardsById[id]!,
+            if (cardsById[id] != null && !plannedIds.contains(id) && !stages.containsKey(id)) cardsById[id]!,
         ]);
       _wrongAttempts
         ..clear()
@@ -233,6 +237,11 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
 
     if (!mounted) return;
     setState(() {
+      // Rückfall: die zurückgeholten leichteren Fragen kommen gleich in die
+      // Wiederholungsrunde dieser Session.
+      for (final easier in outcome.reopened) {
+        if (!_wrongQueue.any((c) => c.id == easier.id)) _wrongQueue.add(easier);
+      }
       switch (stage) {
         case _QuizStage.main:
           _index += 1;

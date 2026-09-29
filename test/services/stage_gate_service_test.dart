@@ -280,4 +280,22 @@ void main() {
       expect(StageGate.listEntries(cards, cards).every((e) => e.card != null), isTrue);
     });
   });
+
+  group('Audit-Fixes', () {
+    test('Gruppe = Konzept-ID zeigt den Konzepttitel statt der ID', () {
+      expect(StageGate.groupName(_card('a', stageGroup: 'k1'), conceptTitles: {'k1': 'Spannung'}), 'Spannung');
+    });
+
+    test('Probeklausur: je ausdrücklichem Ordner nur die schwerste Stufe, Konzept-Ordner vollständig', () {
+      final cards = [
+        _card('l', type: QuestionType.singleChoice, stageGroup: 'Ohm#1'),
+        _card('m', type: QuestionType.fillBlank, stageGroup: 'Ohm#1'),
+        _card('s', type: QuestionType.freeText, stageGroup: 'Ohm#1'),
+        _card('k1', type: QuestionType.singleChoice),
+        _card('k2', type: QuestionType.freeText),
+        _card('solo', type: QuestionType.singleChoice, stageGroup: 'einzeln-solo'),
+      ];
+      expect(StageGate.hardestPerFolder(cards).map((c) => c.id), ['s', 'k1', 'k2', 'solo']);
+    });
+  });
 }

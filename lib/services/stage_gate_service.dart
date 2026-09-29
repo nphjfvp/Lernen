@@ -190,7 +190,7 @@ class StageGate {
   /// Gruppen.
   static String? groupName(Flashcard card, {Map<String, String> conceptTitles = const {}}) {
     final stored = card.stageGroup?.trim() ?? '';
-    if (stored.isEmpty) {
+    if (stored.isEmpty || stored == card.conceptId) {
       final title = conceptTitles[card.conceptId]?.trim();
       return title == null || title.isEmpty ? null : title;
     }
@@ -251,6 +251,29 @@ class StageGate {
               return StageFolder(key: item as String, cards: cards, name: name);
             }(),
           ),
+    ];
+  }
+
+  /// Für die Probeklausur: aus jedem ausdrücklich gebildeten Ordner (KI
+  /// oder von Hand, [Flashcard.stageGroup]) nur die Fragen der schwersten
+  /// Stufe – dasselbe Wissen soll nicht dreimal verschieden schwer drankommen.
+  /// Ordner, die nur aus dem Konzept stammen, bleiben vollständig (dort ist
+  /// nicht sicher, dass die Fragen dasselbe abfragen).
+  static List<Flashcard> hardestPerFolder(List<Flashcard> cards) {
+    String? explicitKey(Flashcard c) {
+      final stored = c.stageGroup?.trim() ?? '';
+      if (stored.isEmpty || stored == c.conceptId || stored.startsWith('einzeln-')) return null;
+      return groupOf(c);
+    }
+
+    final top = <String, int>{};
+    for (final c in cards) {
+      final key = explicitKey(c);
+      if (key != null) top[key] = max(top[key] ?? 0, levelOf(c).index);
+    }
+    return [
+      for (final c in cards)
+        if (explicitKey(c) == null || levelOf(c).index == top[explicitKey(c)]) c,
     ];
   }
 

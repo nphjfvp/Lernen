@@ -123,4 +123,34 @@ void main() {
     expect(find.byKey(const ValueKey('concept-hint-sort')), findsOneWidget);
     expect(find.textContaining('nach Konzept'), findsWidgets);
   });
+
+  testWidgets('In Ordner legen: Frage kommt in einen Konzept-Ordner, der dabei einen eigenen Namen bekommt',
+      (tester) async {
+    const m = 'folder-move-module';
+    await _pumpList(tester, m, [
+      _card('a', m, 'Leicht?', conceptId: 'k1'),
+      _card('b', m, 'Schwer?', type: QuestionType.freeText, conceptId: 'k1'),
+      _card('c', m, 'Dazu passend?', type: QuestionType.fillBlank),
+    ]);
+    expect(find.text('2 Fragen · nach Konzept'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('select-mode')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dazu passend?'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('bulk-edit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('In Ordner legen (Leicht → Schwer)'));
+    await tester.pumpAndSettle();
+    // Der Konzept-Ordner steht mit seiner schwersten Frage in der Auswahl.
+    await tester.tap(find.descendant(of: find.byType(SimpleDialog), matching: find.text('Schwer?')));
+    await tester.pumpAndSettle();
+    // Speichern läuft über die echte Datenbank.
+    for (var i = 0; i < 50 && find.text('3 Fragen').evaluate().isEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(find.text('3 Fragen'), findsOneWidget);
+    expect(find.byKey(const ValueKey('concept-hint-sort')), findsNothing);
+  });
 }

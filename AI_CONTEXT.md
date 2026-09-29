@@ -444,7 +444,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 703 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 713 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -574,6 +574,21 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Ordner mit Name, schwerster Frage und Stufenstand, aufgeklappt nach
     Leicht/Mittel/Schwer; KI-Sortierung über das ganze Fach mit
     portionsübergreifenden Ordnernamen und strengerer Regel (5.6b).
+30. Audit (September 2026), behoben: Tippfehler-Toleranz
+    (`AnswerChecker._isTypo`) nie bei abweichenden Ziffern oder reiner
+    Vorsilbe (homogen/inhomogen), Dezimalpunkt = -komma; Rückfall-Karten
+    (`ReviewOutcome.reopened`) kommen sofort in die laufende Runde (Daily:
+    Wiederholungsrunde, Üben: als Nächstes); wiederhergestellte
+    Wiederholungsrunde ohne inzwischen gesperrte Karten; „Als richtig
+    werten“ auch bei Tabellen; `copyWithContent` verwirft `aiHints`, wenn
+    Frage/Lösung sich ändern; KI-Hilfen bekommen `Flashcard.promptText`
+    (Optionen bzw. Tabelle mit „___“); Probeklausur je ausdrücklichem Ordner
+    nur die schwerste Stufe (`StageGate.hardestPerFolder`, Konzept-Ordner
+    vollständig); „In Ordner legen“ in einen Konzept-Ordner gibt ihm einen
+    eigenen Gruppenwert (keine Konzept-ID als Name), Import übersetzt eine
+    als Gruppe gespeicherte Konzept-ID; Ordnername-Dialog besitzt seinen
+    Controller selbst; CSV-Ampel mit Stufen; Startseite lädt die Ampel nur
+    sichtbar neu; KI-Sortierung schickt höchstens 200 bekannte Ordnernamen.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

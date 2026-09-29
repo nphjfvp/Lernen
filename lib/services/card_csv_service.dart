@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/flashcard.dart';
 import 'mastery_service.dart';
+import 'stage_gate_service.dart';
 
 /// CSV-Export (Backup, Tabellenkalkulation, Anki) und einfacher Import von
 /// Vorder-/Rückseite-Karten – z.B. aus einem Anki-Export ("Notizen als
@@ -15,6 +16,8 @@ class CardCsvService {
   /// LibreOffice; Anki erkennt das Trennzeichen beim Import selbst.
   static String export(List<Flashcard> cards, {MasteryService? mastery, DateTime? now}) {
     final m = mastery ?? MasteryService();
+    // Ampel wie in der Kartenliste: geschaffte Stufen grün, wartende neu.
+    final stages = StageGate.statuses(cards);
     final rows = <List<String>>[
       _header,
       for (final c in cards)
@@ -22,7 +25,7 @@ class CardCsvService {
           c.front,
           c.answerSummary.isNotEmpty ? c.answerSummary : c.back,
           c.type.label,
-          m.levelFor(c, now: now).label,
+          m.levelFor(c, now: now, stage: StageGate.statusOf(stages, c)).label,
           c.reps == 0 ? '' : _date(c.due),
           '${c.reps}',
         ],
