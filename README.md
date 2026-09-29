@@ -1202,6 +1202,41 @@ zusätzlich als **Schnellwahl** unter dem Modell-Feld – ein Tipp wechselt das
 Modell für diese Aktion, das Standard-Modell als Favorit setzt zurück auf
 "Standard". Favoriten reisen mit dem Sync auf andere Geräte.
 
+### 5o. Import: zweite KI prüft die Vollständigkeit, Schwierigkeitsstufen
+
+Beim **Fragen-Import aus einem Dokument** – Nachbereiten → "Fragen
+importieren" und "Fragen aus PDF importieren" (Fach → PDF) – gibt es vor dem
+Start die Karte **"Genauigkeit und Schwierigkeit"** mit zwei Schaltern:
+
+- **Zweite KI prüft die Vollständigkeit**: Nach dem Import liest eine zweite
+  KI (das **Zweitmeinungs-Modell** aus den Einstellungen) den Text der
+  PDF-Seiten selbst, zählt die dort stehenden Fragen/Aufgaben (Teilaufgaben
+  einzeln) und gleicht sie mit den übernommenen ab. Sieht sie etwas anderes
+  als die erste KI, **begründet sie jede Abweichung** (mit Zitat aus dem
+  Dokument), und **du entscheidest**:
+  - *Fehlt im Import* → **Ergänzen** (die erste KI liest diese eine Aufgabe
+    gezielt nach) oder **Ignorieren**.
+  - *Steht nicht im Dokument / doppelt / weicht ab* → **Entfernen** (im
+    PDF-Import abgewählt, in Nachbereiten aus der Vorschau gelöscht) oder
+    **Behalten**.
+  Oben steht die Zählung ("Zweite KI zählt 12 Fragen im Dokument ·
+  übernommen: 11"). Es wird nichts von allein geändert. Auch nachträglich
+  möglich: in der Vorschau **"Jetzt prüfen"/"Erneut prüfen"**.
+  Grenzen: nur PDFs mit Textebene bzw. OCR-Text (Seiten ohne lesbaren Text
+  meldet die Prüfung als "nicht geprüft"); Word/PowerPoint-Dateien werden
+  nicht geprüft; Bilder sieht die zweite KI nicht.
+- **Verschiedene Schwierigkeitsstufen**: Zu jeder übernommenen Frage ergänzt
+  die KI dasselbe Wissen in den gewählten Stufen (Leicht/Mittel/Schwer, per
+  Chip abwählbar). Die **Original-Frage bleibt unverändert** und bekommt ihre
+  Stufe; die ergänzten Fragen sind in der Vorschau gekennzeichnet ("Stufe
+  Leicht · von der KI ergänzt") und einzeln abwählbar/löschbar. Original und
+  Stufen teilen sich einen Ordner (siehe 5h): beim Lernen kommt erst die
+  leichte Stufe, dann die nächste. Der Typ je Stufe folgt den Vorgaben aus
+  Einstellungen → "Frage erstellen" (5l), sonst Auswahl → Lücke → Freitext.
+
+In der Nachbereiten-Vorschau hat jede Karte jetzt außerdem einen
+**Löschen-Knopf** (nimmt ergänzte Stufen mit).
+
 ### 6. Ausführen
 
 **Am einfachsten zum Ausprobieren: im Browser**, kein Visual Studio/Android

@@ -33,6 +33,19 @@ class ScannedQuestion {
   /// In der Vorschau zum Import ausgewählt.
   bool selected = true;
 
+  /// Gehört diese Frage zu einer im Dokument gefundenen ([variantOf]), hat die
+  /// KI sie als weitere Schwierigkeitsstufe DERSELBEN Sache ergänzt (siehe
+  /// ImportStageService) – sie steht nicht im Dokument.
+  ScannedQuestion? variantOf;
+  bool get isStageVariant => variantOf != null;
+
+  /// Erst nach der Prüfung durch die zweite KI nachgeholt (siehe
+  /// ImportVerifyService).
+  bool addedByCheck = false;
+
+  /// Stufe der Frage (0 = leicht … 2 = schwer), falls die KI sie vergeben hat.
+  int? get stageLevel => QuestionParsing.parseStageLevel(data['level']);
+
   QuestionType get type => QuestionParsing.parseType(data['type'] as String?);
   String get front => (data['front'] ?? '').toString();
 
@@ -125,7 +138,9 @@ class PdfQuestionImportService {
 
   /// Sucht die Seiten [firstPage]..[lastPage] (bzw. genau [onlyBatches],
   /// z.B. für einen erneuten Versuch) ab. [onProgress] meldet erledigte
-  /// Pakete; [isCancelled] beendet nach den laufenden Paketen.
+  /// Pakete; [isCancelled] beendet nach den laufenden Paketen. Mit [focus]
+  /// (Wortlaut einer Aufgabe) wird NUR diese eine Aufgabe übernommen – zum
+  /// Nachholen einer übersehenen (siehe ImportVerifyService).
   ///
   /// Mit [withPageImages] bekommt die KI jede Seite als Bild (plus deren
   /// Text) – so kann sie Abbildungen per Bereich angeben, die dann
@@ -140,6 +155,7 @@ class PdfQuestionImportService {
     required bool fillMissingSolutions,
     bool withPageImages = true,
     String? referenceText,
+    String? focus,
     List<List<int>>? onlyBatches,
     void Function(int done, int total)? onProgress,
     bool Function()? isCancelled,
@@ -153,6 +169,7 @@ class PdfQuestionImportService {
         contentOnly: contentOnly,
         fillMissingSolutions: fillMissingSolutions,
         referenceText: referenceText,
+        focus: focus,
         onProgress: onProgress,
         isCancelled: isCancelled,
       );
@@ -168,6 +185,7 @@ class PdfQuestionImportService {
     required bool contentOnly,
     required bool fillMissingSolutions,
     String? referenceText,
+    String? focus,
     void Function(int done, int total)? onProgress,
     bool Function()? isCancelled,
   }) async {
@@ -205,6 +223,7 @@ class PdfQuestionImportService {
               pageImages: [for (final image in images) await drawEdgeRuler(image) ?? image],
               pageTexts: [for (final p in pages) p - 1 < (pageTexts?.length ?? 0) ? pageTexts![p - 1] : ''],
               referenceText: referenceText,
+              focus: focus,
             );
           } else {
             final sub = _pdf.extractPages(pdfBytes, [for (final p in pages) p - 1]);
@@ -214,6 +233,7 @@ class PdfQuestionImportService {
               contentOnly: contentOnly,
               fillMissingSolutions: fillMissingSolutions,
               referenceText: referenceText,
+              focus: focus,
             );
           }
           final questions = <ScannedQuestion>[];
@@ -372,6 +392,7 @@ class PdfQuestionImportService {
     final result = <Flashcard>[];
     for (final q in questions) {
       final f = q.data;
+      final stageGroup = QuestionParsing.parseStageGroup(f['group']);
       result.add(Flashcard(
         id: const Uuid().v4(),
         moduleId: moduleId,
@@ -391,6 +412,11 @@ class PdfQuestionImportService {
         imageBase64: q.imageBase64,
         imageTargets: parseImageTargets(f['imageTargets']),
         tableRows: parseTableRows(f['tableRows']),
+        // Leicht/Mittel/Schwer derselben Sache (siehe StageGate) – je Import
+        // eindeutig, damit gleich benannte Ordner aus einem späteren Import
+        // nicht mit diesen verschmelzen.
+        stageLevel: stageGroup == null ? null : q.stageLevel,
+        stageGroup: stageGroup == null ? null : '$stageGroup#${now.millisecondsSinceEpoch}',
         sourceMaterialId: sourceMaterialId,
         sourcePage: sourceMaterialId == null ? null : q.page,
         weight: defaultFlashcardWeightFor(sourceKind),

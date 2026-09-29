@@ -23,6 +23,8 @@ import '../../services/ai_service.dart';
 import '../../services/answer_checker.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
+import '../../services/import_stage_service.dart';
+import '../../services/import_verify_service.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/math_markup.dart';
@@ -30,10 +32,13 @@ import '../../services/pdf_ocr_service.dart';
 import '../../services/pdf_question_import_service.dart';
 import '../../services/pdf_service.dart';
 import '../../services/question_parsing.dart';
+import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/discard_guard.dart';
 import '../widgets/existing_material_picker.dart';
+import '../widgets/import_check_panel.dart';
+import '../widgets/import_options_card.dart';
 import '../widgets/model_override_tile.dart';
 import '../widgets/ocr_notice.dart';
 import '../widgets/pdf_preview_screen.dart';
@@ -99,6 +104,11 @@ class ReviewScreen extends StatefulWidget {
   @visibleForTesting
   static PdfQuestionImportService Function(AiService ai)? importServiceFactory;
 
+  /// Nur für Tests: KI-Zugang (API-Key, Modell) für die Prüfung durch die
+  /// zweite KI und die Stufen-Erweiterung im Import-Modus.
+  @visibleForTesting
+  static AiService Function(String apiKey, String model)? aiFactory;
+
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
 }
@@ -156,6 +166,19 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
 
   /// Hinweise zum Import (fehlgeschlagene Seiten, keine Seitenbilder).
   List<String> _importNotes = const [];
+
+  /// Import-Modus: Prüfung durch die zweite KI und Schwierigkeitsstufen.
+  ImportOptions _importOptions = const ImportOptions();
+  ImportCheckReport? _importReport;
+
+  /// `importId` der Fragen, gegen die geprüft wurde – [ImportFinding.ref] ist
+  /// die Position darin.
+  List<String> _checkedIds = const [];
+  bool _importChecking = false;
+  String? _importCheckProgress;
+  String? _importCheckNote;
+  final Map<int, FindingDecision> _importDecisions = {};
+  final Set<int> _busyFindings = {};
 
   /// "create": Folien allein reichen (Übungsaufgaben verbessern die
   /// Konzepte, sind aber nicht mehr Pflicht – "nur erstellen" direkt aus
@@ -296,6 +319,11 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
       _crosscheckError = null;
       _progressText = null;
       _importNotes = const [];
+      _importReport = null;
+      _checkedIds = const [];
+      _importCheckNote = null;
+      _importDecisions.clear();
+      _busyFindings.clear();
     });
 
     try {
@@ -442,8 +470,243 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         granularity: settings.chunkGranularity,
       ));
     }
+    for (final f in imported) {
+      f['importId'] = const Uuid().v4();
+    }
+    var result = imported;
+    if (_importOptions.expandStages && imported.isNotEmpty) {
+      final staged = await _withStages(imported, settings);
+      result = staged.cards;
+      if (staged.note != null) notes.add(staged.note!);
+    }
+    if (_importOptions.verify && imported.isNotEmpty) await _verifyImported(result, settings);
     _importNotes = notes;
-    return imported;
+    return result;
+  }
+
+  /// KI-Zugang mit [model] (Stufen, Prüfung); null ohne API-Key.
+  AiService? _aiFor(String model, AppSettings settings) {
+    final factory = ReviewScreen.aiFactory;
+    if (factory != null) return factory(settings.openRouterApiKey ?? 'test', model);
+    return settings.hasApiKey ? AiService(apiKey: settings.openRouterApiKey!, model: model) : null;
+  }
+
+  static String _answerOf(Map<String, dynamic> f) => PdfQuestionImportService.toFlashcards(
+        [ScannedQuestion(page: 0, data: f, solutionByAi: false)],
+        moduleId: '',
+        now: DateTime(2000),
+      ).single.answerSummary;
+
+  /// Ergänzt zu den übernommenen [originals] die gewählten Schwierigkeits-
+  /// stufen: das Original behält seinen Wortlaut und bekommt Stufe und
+  /// Ordner, die KI schreibt die übrigen Stufen dazu (siehe
+  /// ImportStageService); die Varianten stehen direkt hinter ihrem Original.
+  /// Ein Fehler lässt die Fragen einfach ohne Stufen.
+  Future<({List<Map<String, dynamic>> cards, String? note})> _withStages(
+    List<Map<String, dynamic>> originals,
+    AppSettings settings,
+  ) async {
+    final ai = _aiFor(settings.questionModelId, settings);
+    if (ai == null) return (cards: originals, note: null);
+    setState(() => _progressText = 'Schwierigkeitsstufen werden ergänzt …');
+    final run = await ImportStageService(ai: ai).expand(
+      [
+        for (final (i, f) in originals.indexed)
+          StageInput(ref: i, type: (f['type'] ?? 'flashcard').toString(), front: (f['front'] ?? '').toString(), answer: _answerOf(f)),
+      ],
+      levels: _importOptions.levels.toList(),
+      takenGroups: [
+        for (final raw in (_result?['flashcards'] as List?) ?? const [])
+          if (raw is Map) ?QuestionParsing.parseStageGroup(raw['group']),
+      ],
+      tierTypes: {
+        for (final level in AiService.stageLevelNames) level: ?settings.pageTierType(level),
+      },
+      onProgress: (done, total) => setState(() => _progressText = 'Schwierigkeitsstufen werden ergänzt … $done von $total'),
+    );
+    final cards = <Map<String, dynamic>>[];
+    for (final (i, f) in originals.indexed) {
+      cards.add(f);
+      final r = run.results[i];
+      if (r == null) continue;
+      f['level'] = AiService.stageLevelNames[r.level];
+      if (r.group != null) f['group'] = r.group;
+      for (final v in r.variants) {
+        cards.add({
+          ...v,
+          'group': r.group,
+          // Dieselbe Stelle im Dokument wie das Original.
+          'sourceFile': f['sourceFile'],
+          'sourcePage': f['sourcePage'],
+          'importId': const Uuid().v4(),
+          'variantOf': f['importId'],
+        });
+      }
+    }
+    final missing = run.failedCards + run.droppedVariants;
+    return (
+      cards: cards,
+      note: missing == 0
+          ? null
+          : '${run.failedCards > 0 ? '${run.failedCards} ${run.failedCards == 1 ? 'Frage bleibt' : 'Fragen bleiben'} ohne Stufen (KI-Anfrage fehlgeschlagen). ' : ''}'
+              '${run.droppedVariants > 0 ? '${run.droppedVariants} ${run.droppedVariants == 1 ? 'Stufe war' : 'Stufen waren'} unvollständig und ${run.droppedVariants == 1 ? 'wurde' : 'wurden'} verworfen.' : ''}',
+    );
+  }
+
+  /// PDFs, die die zweite KI Seite für Seite prüfen kann.
+  List<_PickedFile> get _checkablePdfs => [
+        for (final f in _exercisesFiles)
+          if (f.fileName.toLowerCase().endsWith('.pdf') && f.bytes.isNotEmpty) f,
+      ];
+
+  /// Die zweite KI liest die PDFs selbst und gleicht sie mit den
+  /// übernommenen Fragen [cards] ab (siehe ImportVerifyService). Ändert
+  /// nichts – es entsteht nur ein Bericht mit Begründungen, über den der
+  /// Nutzer entscheidet.
+  Future<void> _verifyImported(List<Map<String, dynamic>> cards, AppSettings settings) async {
+    final ai = _aiFor(settings.crosscheckModelId, settings);
+    final pdfs = _checkablePdfs;
+    if (ai == null || pdfs.isEmpty) return;
+    final originals = [
+      for (final f in cards)
+        if (f['variantOf'] == null && pdfs.any((p) => p.fileName == f['sourceFile'])) f,
+    ];
+    setState(() {
+      _importChecking = true;
+      _importCheckProgress = 'Zweite KI liest das Dokument …';
+      _progressText = 'Zweite KI prüft die Vollständigkeit …';
+      _importReport = null;
+      _importDecisions.clear();
+      _busyFindings.clear();
+    });
+    final parts = <({String fileName, ImportCheckReport report})>[];
+    final errors = <String>[];
+    for (final file in pdfs) {
+      final List<String> texts;
+      try {
+        texts = PdfService().extractPageTexts(file.bytes);
+      } catch (e) {
+        errors.add('${file.fileName}: Text nicht lesbar ($e)');
+        continue;
+      }
+      final report = await ImportVerifyService(ai: ai).verify(
+        pageTexts: texts,
+        items: [
+          for (final (i, f) in originals.indexed)
+            if (f['sourceFile'] == file.fileName)
+              ImportedItem(
+                ref: i,
+                page: (f['sourcePage'] as num?)?.toInt() ?? 1,
+                front: (f['front'] ?? '').toString(),
+                answer: _answerOf(f),
+              ),
+        ],
+        contentOnly: false,
+        fileName: file.fileName,
+        onProgress: (done, total) => setState(() {
+          _importCheckProgress = '${file.fileName}: zweite KI liest das Dokument … $done von $total';
+          _progressText = 'Zweite KI prüft die Vollständigkeit … $done von $total';
+        }),
+      );
+      parts.add((fileName: file.fileName, report: report));
+    }
+    final skipped = [
+      for (final f in _exercisesFiles)
+        if (!_checkablePdfs.contains(f)) f.fileName,
+    ];
+    if (!mounted) return;
+    setState(() {
+      _importReport = parts.isEmpty ? null : ImportCheckReport.merge(parts);
+      _checkedIds = [for (final f in originals) f['importId'] as String];
+      _importChecking = false;
+      _importCheckProgress = null;
+      _importCheckNote = [
+        if (skipped.isNotEmpty) 'Nicht geprüft (keine PDF): ${skipped.join(', ')}.',
+        ...errors,
+      ].join(' ');
+    });
+  }
+
+  /// Prüfung nach dem Import von Hand starten (auch wenn die Option vorher
+  /// aus war).
+  Future<void> _runImportCheck() async {
+    final settings = context.read<SettingsRepository>().settings;
+    final live = (_result?['flashcards'] as List?) ?? const [];
+    await _verifyImported([for (final f in live) if (f is Map<String, dynamic>) f], settings);
+  }
+
+  /// Karte [index] aus der Vorschau entfernen – samt ihrer ergänzten
+  /// Stufen. Die Ergebnisse der Zweitmeinung (Crosscheck) beziehen sich auf
+  /// Positionen in der Liste und gelten danach nicht mehr.
+  void _removeFlashcard(int index) {
+    final list = List<dynamic>.from((_result?['flashcards'] as List?) ?? const []);
+    if (index < 0 || index >= list.length) return;
+    setState(() {
+      final removed = list.removeAt(index);
+      final id = removed is Map && removed['variantOf'] == null ? removed['importId'] : null;
+      if (id != null) list.removeWhere((f) => f is Map && f['variantOf'] == id);
+      _result!['flashcards'] = list;
+      _crosscheckResult = null;
+      _appliedIssueIndices.clear();
+    });
+  }
+
+  Future<void> _acceptFinding(int index) async {
+    final finding = _importReport?.findings[index];
+    if (finding == null) return;
+    if (!finding.isMissing) {
+      final id = finding.ref == null || finding.ref! >= _checkedIds.length ? null : _checkedIds[finding.ref!];
+      final list = (_result?['flashcards'] as List?) ?? const [];
+      final position = id == null ? -1 : list.indexWhere((f) => f is Map && f['importId'] == id);
+      if (position >= 0) _removeFlashcard(position);
+      setState(() => _importDecisions[index] = FindingDecision.accepted);
+      return;
+    }
+    final settings = context.read<SettingsRepository>().settings;
+    final file = _checkablePdfs.where((f) => f.fileName == finding.fileName).firstOrNull;
+    if (file == null) return;
+    final vision = _modelOverride ?? settings.visionModelId;
+    final visionAi = _aiFor(vision, settings);
+    if (visionAi == null) return;
+    final service = ReviewScreen.importServiceFactory?.call(visionAi) ?? PdfQuestionImportService(ai: visionAi);
+    setState(() => _busyFindings.add(index));
+    final scan = await service.scan(
+      file.bytes,
+      firstPage: finding.page,
+      lastPage: finding.page,
+      contentOnly: false,
+      fillMissingSolutions: true,
+      focus: finding.text,
+    );
+    if (!mounted) return;
+    var added = <Map<String, dynamic>>[
+      for (final q in scan.questions)
+        {
+          ...q.data,
+          'sourceFile': file.fileName,
+          'sourcePage': q.page,
+          'importId': const Uuid().v4(),
+          'addedByCheck': true,
+        },
+    ];
+    if (added.isNotEmpty && _importOptions.expandStages) {
+      added = (await _withStages(added, settings)).cards;
+    }
+    if (!mounted) return;
+    setState(() {
+      _busyFindings.remove(index);
+      _progressText = null;
+      if (added.isEmpty) {
+        _error = 'Die KI konnte diese Aufgabe nicht übernehmen'
+            '${scan.errors.isEmpty ? '.' : ': ${scan.errors.first}'}';
+        return;
+      }
+      _error = null;
+      _result!['flashcards'] = [...(_result!['flashcards'] as List), ...added];
+      _crosscheckResult = null;
+      _appliedIssueIndices.clear();
+      _importDecisions[index] = FindingDecision.accepted;
+    });
   }
 
   Future<void> _crosscheck() async {
@@ -506,9 +769,20 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         final original = list[targetIndex];
         final fixed = Map<String, dynamic>.from(fix);
         // Der Crosscheck sieht keine Bilder – eine angehängte Abbildung samt
-        // Stellen bleibt an der korrigierten Karte.
+        // Stellen bleibt an der korrigierten Karte, ebenso die Herkunft im
+        // Dokument sowie Stufe/Ordner und die Kennung des Imports.
         if (original is Map) {
-          for (final key in const ['imageBase64', 'imageTargets']) {
+          for (final key in const [
+            'imageBase64',
+            'imageTargets',
+            'sourceFile',
+            'sourcePage',
+            'importId',
+            'variantOf',
+            'addedByCheck',
+            'level',
+            'group',
+          ]) {
             if (original[key] != null && fixed[key] == null) fixed[key] = original[key];
           }
         }
@@ -842,6 +1116,9 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
           selectedUnitChoice: _unitChoice,
           onUnitChanged: _handleUnitChanged,
           onPastedJsonChanged: (v) => setState(() => _pastedJson = v),
+          importOptions: _importOptions,
+          onImportOptionsChanged: (o) => setState(() => _importOptions = o),
+          verifyAvailable: _checkablePdfs.isNotEmpty,
         );
       case _Step.generating:
         return Center(
@@ -880,6 +1157,23 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
           onCrosscheck: _crosscheck,
           onApplyFix: _applyCrosscheckFix,
           onApplyAllFixes: _applyAllCrosscheckFixes,
+          onRemoveFlashcard: _removeFlashcard,
+          error: _error,
+          checkPanel: _mode == _GenerateMode.import
+              ? ImportCheckPanel(
+                  report: _importReport,
+                  running: _importChecking,
+                  progress: _importCheckProgress,
+                  decisions: _importDecisions,
+                  busy: _busyFindings,
+                  note: _importCheckNote == null || _importCheckNote!.isEmpty
+                      ? (_checkablePdfs.isEmpty ? 'Die Prüfung liest PDFs – hier gibt es keine.' : null)
+                      : _importCheckNote,
+                  onRun: _importChecking || _checkablePdfs.isEmpty ? null : _runImportCheck,
+                  onAccept: _acceptFinding,
+                  onDismiss: (i) => setState(() => _importDecisions[i] = FindingDecision.dismissed),
+                )
+              : null,
         );
     }
   }
@@ -907,6 +1201,9 @@ class _PickView extends StatelessWidget {
     required this.selectedUnitChoice,
     required this.onUnitChanged,
     required this.onPastedJsonChanged,
+    required this.importOptions,
+    required this.onImportOptionsChanged,
+    required this.verifyAvailable,
     this.modelSelector,
     this.analysis,
     this.error,
@@ -937,6 +1234,9 @@ class _PickView extends StatelessWidget {
   final String selectedUnitChoice;
   final void Function(String? choice) onUnitChanged;
   final void Function(String value) onPastedJsonChanged;
+  final ImportOptions importOptions;
+  final ValueChanged<ImportOptions> onImportOptionsChanged;
+  final bool verifyAvailable;
   final ContentAnalysis? analysis;
   final String? error;
   final String? rawResponse;
@@ -1134,6 +1434,14 @@ class _PickView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
           ],
+        if (mode == _GenerateMode.import) ...[
+          ImportOptionsCard(
+            options: importOptions,
+            onChanged: onImportOptionsChanged,
+            verifyAvailable: verifyAvailable,
+          ),
+          const SizedBox(height: 12),
+        ],
         if (modelSelector != null) ...[
           modelSelector!,
           const SizedBox(height: 12),
@@ -1280,9 +1588,19 @@ class _PreviewView extends StatelessWidget {
     required this.appliedIssueIndices,
     required this.onApplyFix,
     required this.onApplyAllFixes,
+    required this.onRemoveFlashcard,
+    this.checkPanel,
+    this.error,
     this.crosscheckResult,
     this.crosscheckError,
   });
+
+  /// Karte an dieser Position aus der Vorschau entfernen.
+  final void Function(int index) onRemoveFlashcard;
+
+  /// Ergebnis der Prüfung durch die zweite KI (nur beim Import).
+  final Widget? checkPanel;
+  final String? error;
 
   final Map<String, dynamic> result;
   final int droppedFlashcardCount;
@@ -1323,6 +1641,14 @@ class _PreviewView extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(note, style: const TextStyle(color: Colors.orange, fontSize: 12.5)),
               ],
+              if (error != null) ...[
+                const SizedBox(height: 6),
+                Text(error!, style: const TextStyle(color: Colors.red, fontSize: 12.5)),
+              ],
+              if (checkPanel != null) ...[
+                const SizedBox(height: 12),
+                checkPanel!,
+              ],
               const SizedBox(height: 16),
               ...concepts.map((c) => Card(
                     child: ExpansionTile(
@@ -1340,8 +1666,9 @@ class _PreviewView extends StatelessWidget {
                   )),
               const SizedBox(height: 16),
               Text('Karteikarten', style: Theme.of(context).textTheme.titleMedium),
-              ...flashcards.map((raw) {
-                final f = Map<String, dynamic>.from(raw as Map);
+              ...flashcards.asMap().entries.map((entry) {
+                final index = entry.key;
+                final f = Map<String, dynamic>.from(entry.value as Map);
                 final type = QuestionParsing.parseType(f['type'] as String?);
                 final image = f['imageBase64'];
                 final downgraded = f['typeDowngraded'] == true;
@@ -1355,6 +1682,16 @@ class _PreviewView extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('${type.label} · ${_answerPreview(f, type)}'),
+                        if (QuestionParsing.parseStageLevel(f['level']) case final level?)
+                          Text(
+                            f['variantOf'] != null
+                                ? 'Stufe ${StageGate.levelFromIndex(level)?.label ?? ''} · von der KI ergänzt'
+                                : 'Original · ${StageGate.levelFromIndex(level)?.label ?? ''}',
+                            style: TextStyle(fontSize: 11.5, color: context.colors.accentOnSoft),
+                          ),
+                        if (f['addedByCheck'] == true)
+                          Text('Nach der Prüfung ergänzt',
+                              style: TextStyle(fontSize: 11.5, color: context.colors.accentOnSoft)),
                         if (downgraded)
                           Text(
                             '⚠️ Unsicher: sollte ${requestedType?.label ?? 'ein anderer Typ'} sein, '
@@ -1363,7 +1700,18 @@ class _PreviewView extends StatelessWidget {
                           ),
                       ],
                     ),
-                    trailing: image is String ? _Base64Thumbnail(image) : null,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (image is String) _Base64Thumbnail(image),
+                        IconButton(
+                          key: ValueKey('preview-remove-$index'),
+                          tooltip: 'Aus der Vorschau entfernen',
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          onPressed: () => onRemoveFlashcard(index),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }),

@@ -444,7 +444,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 777 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 794 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -664,6 +664,35 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (Stern je Zeile, Abschnitte „Favoriten“/„Alle Modelle“; ohne Repository
     keine Sterne); `ModelOverrideTile` zeigt Favoriten als `ChoiceChip`-
     Schnellwahl (Standard-Modell wählen = Override null).
+37. Import-Optionen (Nutzer-Wunsch: beim „einfachen“ KI-Import eine zweite KI
+    die Vollständigkeit prüfen lassen + Schwierigkeitsstufen): `ImportOptions`
+    (`verify`, `levels` = Namen leicht/mittel/schwer) + `ImportOptionsCard`
+    (`lib/ui/widgets/import_options_card.dart`) in `PdfQuestionImportScreen`
+    und `ReviewScreen` (nur Import-Modus). Prüfung: `ImportVerifyService`
+    (`lib/services/import_verify_service.dart`) liest die Seitentexte
+    (`PdfService.extractPageTexts`, Seiten < 15 Zeichen = „nicht geprüft“) in
+    Paketen à 4 Seiten mit `AiService.verifyImportedQuestions` (Zweitmeinungs-
+    Modell `crosscheckModelId`, Prompt `_verifyImportSystemPrompt`; Antwort
+    `documentCount`/`missing`/`surplus`+`kind`+`reason`/`note`, geparst von
+    `parseImportVerification`). Ergebnis `ImportCheckReport` (Befunde
+    `ImportFinding` mit `ref` = Position in der geprüften Liste; mehrere
+    Dateien via `ImportCheckReport.merge`). Ändert NIE selbst etwas: UI
+    `ImportCheckPanel` (`lib/ui/widgets/import_check_panel.dart`) zeigt
+    Zählung + Begründung, Entscheidung je Befund (`FindingDecision`):
+    missing → „Ergänzen“ = `PdfQuestionImportService.scan(..., focus: task)`
+    für genau diese Seite (`AiService.scanPdfPagesForQuestions(focus:)`),
+    surplus → „Entfernen“ (PDF-Import: abwählen inkl. Stufen; Nachbereiten:
+    aus `_result['flashcards']` löschen). Stufen: `ImportStageService`
+    (`lib/services/import_stage_service.dart`, Batches à 8) +
+    `AiService.expandQuestionStages`/`parseStageExpansions`: Original bleibt
+    unverändert (bekommt `level`/`group`), Varianten (nur gewünschte Stufen,
+    nicht die des Originals, keine zurückgestuften) hinter dem Original,
+    Ordnername je Frage eindeutig (`takenGroups`). Markierung an den Rohkarten:
+    Nachbereiten `importId`/`variantOf`/`addedByCheck` (Crosscheck-Fixes
+    behalten sie), PDF-Import `ScannedQuestion.variantOf`/`addedByCheck`;
+    `PdfQuestionImportService.toFlashcards` schreibt `stageLevel`/`stageGroup`
+    (Ordner + `#<Zeitstempel>` je Import). Test-Seams:
+    `PdfQuestionImportScreen.aiFactory`, `ReviewScreen.aiFactory`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

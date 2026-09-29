@@ -39,6 +39,23 @@ class AiServiceException implements Exception {
 /// [AiService.checkFillBlankAnswers]); [note] ist eine kurze Begründung.
 typedef BlankVerdict = ({bool correct, String? note});
 
+/// Urteil der zweiten KI über einen Import (siehe
+/// [AiService.verifyImportedQuestions]): die selbst gezählten Fragen im
+/// Dokument, Aufgaben, die in der Liste fehlen, und Einträge der Liste, die
+/// im Dokument nicht stehen ([kind]: `not_in_document`, `duplicate`,
+/// `altered`) – jeweils mit Begründung; [note] für Unsicherheiten.
+typedef ImportVerification = ({
+  int? documentCount,
+  List<({int page, String task, String reason})> missing,
+  List<({int n, String kind, String reason})> surplus,
+  String note,
+});
+
+/// Stufe des Originals, Ordnername und die zusätzlichen Fragen (Rohkarten
+/// mit "level") zu einer übernommenen Frage (siehe
+/// [AiService.expandQuestionStages]).
+typedef StageExpansion = ({int? level, String? group, List<Map<String, dynamic>> variants});
+
 class AiService {
   AiService({required this.apiKey, required this.model, http.Client? client})
       : _client = client ?? http.Client();
@@ -903,7 +920,9 @@ Antworte in der Sprache des Dokuments.
   /// ([pdfBytes], z.B. per PdfService.extractPages ausgeschnitten).
   /// [contentOnly] lässt Organisatorisches/Rhetorisches weg;
   /// [fillMissingSolutions] beantwortet Fragen ohne Lösung im Dokument
-  /// selbst, sonst fallen sie weg. Gedacht für das Vision-Modell.
+  /// selbst, sonst fallen sie weg. Mit [focus] (Wortlaut einer Aufgabe)
+  /// übernimmt die KI NUR diese eine Aufgabe – zum Nachholen einer beim
+  /// ersten Durchlauf übersehenen. Gedacht für das Vision-Modell.
   Future<List<Map<String, dynamic>>> scanPdfPagesForQuestions(
     Uint8List? pdfBytes, {
     required List<int> pageNumbers,
@@ -912,6 +931,7 @@ Antworte in der Sprache des Dokuments.
     List<Uint8List>? pageImages,
     List<String>? pageTexts,
     String? referenceText,
+    String? focus,
   }) async {
     final withImages = pageImages != null && pageImages.length == pageNumbers.length;
     if (!withImages && pdfBytes == null) {
@@ -987,6 +1007,14 @@ Antworte in der Sprache des Dokuments.
             'Lösung zählt als "solutionFromDocument": true.\n\n${_cap(referenceText!.trim(), _scanReferenceCap)}',
       });
     }
+    if ((focus ?? '').trim().isNotEmpty) {
+      content.add({
+        'type': 'text',
+        'text': 'NUR EINE AUFGABE: Übernimm auf diesen Seiten AUSSCHLIESSLICH die folgende Aufgabe (alle anderen '
+            'sind schon importiert – erzeuge für sie keine Fragen). Gehört dazu eine Abbildung oder Tabelle, '
+            'übernimm sie mit.\n\n${_cap(focus!.trim(), 1500)}',
+      });
+    }
     final raw = await _complete(systemPrompt, content, temperature: 0.1);
     return parseScannedQuestions(_parseJsonObject(raw), pageNumbers);
   }
@@ -1015,6 +1043,204 @@ Antworte in der Sprache des Dokuments.
             return map;
           }(),
     ];
+  }
+
+  static const _verifyImportSystemPrompt = """
+Du bist ein unabhängiger Prüfer für einen Fragen-Import. Eine andere KI hat aus
+den unten gezeigten Seiten eines Dokuments (Übungsblatt, Altklausur, Folien …)
+Fragen und Aufgaben als Quizfragen übernommen. Du bekommst den Text der Seiten
+und die Liste der übernommenen Fragen (nummeriert, mit Seite). Prüfe UNABHÄNGIG,
+ob der Import vollständig und ehrlich ist – vertraue der Liste nicht.
+
+Vorgehen:
+1. Lies die Seiten und zähle selbst, wie viele Fragen und Aufgaben darauf
+   stehen ({{SCOPE}}). Teilaufgaben (a, b, c …) zählen einzeln, ein reiner
+   Aufgabenkopf ohne eigene Frage nicht. Eine Aufgabe zählt zu der Seite, auf
+   der sie beginnt.
+2. Gleiche mit der Liste ab:
+   - "missing": eine Aufgabe steht im Dokument, aber keine Frage der Liste
+     deckt sie ab.
+   - "surplus": ein Eintrag der Liste passt zu KEINER Aufgabe im Dokument.
+     "kind": "not_in_document" (erfunden oder aus anderem Zusammenhang),
+     "duplicate" (dieselbe Aufgabe steht zweimal in der Liste) oder
+     "altered" (die Aufgabe gibt es, aber die Frage ändert sie inhaltlich –
+     andere Zahlen, andere Aufgabenstellung).
+   Kürzungen und andere Formulierungen bei gleichem Inhalt sind in Ordnung
+   und KEINE Abweichung.
+3. Begründe JEDE Abweichung konkret: was steht im Dokument (kurz zitieren),
+   was fehlt oder ist zu viel. Bist du unsicher (z.B. Text unleserlich oder
+   unvollständig), melde es NICHT als Abweichung, sondern schreibe es in
+   "note". Erfinde keine Abweichungen: stimmt alles, sind beide Listen leer.
+
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
+{"documentCount": 7,
+ "missing": [{"page": 3, "task": "Aufgabe 2b: Berechnen Sie …", "reason": "Steht auf Seite 3, keine Frage der Liste behandelt sie."}],
+ "surplus": [{"n": 4, "kind": "not_in_document", "reason": "Im Dokument gibt es keine Aufgabe zu …"}],
+ "note": ""}
+Antworte in der Sprache der Vorlage.
+""";
+
+  static const _verifyScopeEvery = 'wirklich jede Frage und Aufgabe, auch Teilaufgaben und kleine Zwischenfragen';
+  static const _verifyScopeContent =
+      'nur inhaltliche Fragen, die fachliches Wissen prüfen – Organisatorisches, rhetorische Fragen und '
+      'Meinungsfragen zählen nicht';
+
+  /// Text einer Seite in der Prüf-Anfrage.
+  static const _verifyPageTextCap = 6000;
+
+  /// Zweite Meinung zu einem Import ([ImportVerifyService]): liest den Text
+  /// der Seiten [pageNumbers] SELBST, zählt die dort stehenden Fragen und
+  /// gleicht sie mit den übernommenen [imported] ab (nummeriert, mit Seite).
+  /// Weicht sie ab, begründet sie jede Abweichung – der Nutzer entscheidet.
+  Future<ImportVerification> verifyImportedQuestions({
+    required List<int> pageNumbers,
+    required List<String> pageTexts,
+    required List<({int n, int page, String front, String answer})> imported,
+    required bool contentOnly,
+  }) async {
+    final system = _verifyImportSystemPrompt.replaceFirst(
+        '{{SCOPE}}', contentOnly ? _verifyScopeContent : _verifyScopeEvery);
+    final buffer = StringBuffer('Seiten des Dokuments:\n');
+    for (var i = 0; i < pageNumbers.length; i++) {
+      final text = i < pageTexts.length ? pageTexts[i].trim() : '';
+      buffer
+        ..writeln('=== Seite ${pageNumbers[i]} ===')
+        ..writeln(text.isEmpty ? '(kein Text)' : _cap(text, _verifyPageTextCap))
+        ..writeln();
+    }
+    buffer.writeln('Übernommene Fragen:');
+    if (imported.isEmpty) buffer.writeln('(keine)');
+    for (final q in imported) {
+      buffer.writeln('${q.n}. (Seite ${q.page}) ${_cap(q.front, 400)} — Lösung: ${_cap(q.answer, 160)}');
+    }
+    final raw = await _complete(system, buffer.toString(), temperature: 0.1);
+    return parseImportVerification(_parseJsonObject(raw), pageNumbers);
+  }
+
+  /// Liest die Antwort von [verifyImportedQuestions]. Eine fehlende oder
+  /// unpassende Seitenangabe wird zur ersten Seite des Pakets, eine
+  /// unbekannte Art zu "not_in_document"; Einträge ohne Aufgabentext bzw.
+  /// Nummer fallen weg.
+  static ImportVerification parseImportVerification(Map<String, dynamic> json, List<int> pageNumbers) {
+    final fallbackPage = pageNumbers.isEmpty ? 1 : pageNumbers.first;
+    String reasonOf(Map<String, dynamic> e) {
+      final reason = (e['reason'] ?? e['begruendung'] ?? '').toString().trim();
+      return reason.isEmpty ? 'Keine Begründung angegeben.' : reason;
+    }
+
+    final count = json['documentCount'] ?? json['count'];
+    return (
+      documentCount: count is num ? count.toInt() : int.tryParse('$count'),
+      missing: [
+        for (final e in _mapsIn(json['missing']))
+          if ((e['task'] ?? '').toString().trim().isNotEmpty)
+            (
+              page: () {
+                final page = e['page'] is num ? (e['page'] as num).toInt() : int.tryParse('${e['page']}');
+                return page != null && pageNumbers.contains(page) ? page : fallbackPage;
+              }(),
+              task: e['task'].toString().trim(),
+              reason: reasonOf(e),
+            ),
+      ],
+      surplus: [
+        for (final e in _mapsIn(json['surplus']))
+          if (e['n'] is num || int.tryParse('${e['n']}') != null)
+            (
+              n: e['n'] is num ? (e['n'] as num).toInt() : int.parse('${e['n']}'),
+              kind: const {'not_in_document', 'duplicate', 'altered'}.contains(e['kind']) ? e['kind'] as String : 'not_in_document',
+              reason: reasonOf(e),
+            ),
+      ],
+      note: (json['note'] ?? '').toString().trim(),
+    );
+  }
+
+  static const _expandStagesSystemPrompt = """
+Du erweiterst bereits übernommene Quizfragen um Schwierigkeitsstufen. Du
+bekommst nummerierte ORIGINAL-Fragen (Typ, Frage, Lösung), die 1:1 aus einem
+Dokument stammen und unverändert bleiben. Beim Lernen kommt zuerst die
+leichte Stufe, erst wenn sie sitzt die mittlere, dann die schwere.
+
+Je Original-Frage lieferst du:
+1. "level": die Stufe des Originals nach seinem tatsächlichen Anspruch –
+   "leicht" = wiedererkennen (Auswahl), "mittel" = ergänzen oder zuordnen
+   (Lücke, Zuordnen), "schwer" = selbst formulieren, herleiten oder anwenden
+   (Freitext, Rechen-/Übungsaufgabe, Tabelle).
+2. "group": kurzer Ordnername (2–6 Wörter) für das geprüfte Wissen.
+3. "variants": für JEDE gewünschte Stufe ({{LEVELS}}), die NICHT die Stufe des
+   Originals ist, EINE zusätzliche Frage zu DEMSELBEN Wissen in dieser Stufe –
+   wer die schwere sicher kann, kann auch die leichte. Nutze nur, was in
+   Frage und Lösung des Originals steht oder unmittelbar daraus folgt; erfinde
+   keine neuen Fakten. Lässt sich eine Stufe für diese Frage nicht sinnvoll
+   umsetzen, lass diese Variante weg (eine leere Liste ist erlaubt).
+
+Typ der Varianten:
+{{TYPE_RULES}}
+
+$_noGiveawayRule
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
+{"cards": [{"n": 1, "level": "mittel", "group": "Ohmsches Gesetz",
+  "variants": [{"level": "leicht", "type": "single_choice", "front": "…", "options": [{"text": "…", "isCorrect": true}, {"text": "…", "isCorrect": false}, {"text": "…", "isCorrect": false}]},
+               {"level": "schwer", "type": "free_text", "front": "…", "correctText": "…"}]}]}
+Jede Nummer aus der Liste kommt genau einmal vor. Antworte in der Sprache der Vorlage.
+""";
+
+  /// Stufen (Namen wie in [QuestionParsing.parseStageLevel]) in der
+  /// Reihenfolge leicht → schwer.
+  static const stageLevelNames = ['leicht', 'mittel', 'schwer'];
+
+  /// Ergänzt übernommene Original-Fragen um die Schwierigkeitsstufen
+  /// [levels] (Namen aus [stageLevelNames]): je Frage die Stufe des Originals,
+  /// ein Ordnername und die zusätzlichen Fragen derselben Sache. Den Typ der
+  /// Varianten gibt [tierTypes] je Stufe vor, sonst die Eskalationskette
+  /// (leicht = Auswahl, mittel = Lücke, schwer = Freitext).
+  Future<Map<int, StageExpansion>> expandQuestionStages(
+    List<({int n, String type, String front, String answer})> cards, {
+    required List<String> levels,
+    Map<String, QuestionType> tierTypes = const {},
+  }) async {
+    final wanted = [for (final l in stageLevelNames) if (levels.contains(l)) l];
+    final rules = StringBuffer();
+    for (final level in wanted) {
+      final type = tierTypes[level] ?? QuestionParsing.escalationChain[stageLevelNames.indexOf(level)];
+      rules.writeln('- "$level": ${_variantTypeRule(type)}');
+    }
+    final system = _expandStagesSystemPrompt
+        .replaceFirst('{{LEVELS}}', wanted.join(', '))
+        .replaceFirst('{{TYPE_RULES}}', rules.toString().trimRight());
+    final buffer = StringBuffer('Gewünschte Stufen: ${wanted.join(', ')}\n\nOriginal-Fragen:\n');
+    for (final c in cards) {
+      buffer.writeln('${c.n}. [${c.type}] ${_cap(c.front, 500)} — Lösung: ${_cap(c.answer, 300)}');
+    }
+    final raw = await _complete(system, buffer.toString());
+    return parseStageExpansions(_parseJsonObject(raw), wanted);
+  }
+
+  /// Liest die Antwort von [expandQuestionStages]: Nummer → Stufe/Ordner des
+  /// Originals und seine Varianten. Varianten ohne gültige Stufe, mit einer
+  /// nicht gewünschten Stufe oder in der Stufe des Originals fallen weg,
+  /// ebenso doppelte Stufen (die erste zählt).
+  static Map<int, StageExpansion> parseStageExpansions(Map<String, dynamic> json, List<String> wantedLevels) {
+    final wanted = {for (final l in wantedLevels) QuestionParsing.parseStageLevel(l)}.whereType<int>().toSet();
+    final result = <int, StageExpansion>{};
+    for (final entry in _mapsIn(json['cards'])) {
+      final n = entry['n'] is num ? (entry['n'] as num).toInt() : int.tryParse('${entry['n']}');
+      if (n == null) continue;
+      final level = QuestionParsing.parseStageLevel(entry['level']);
+      final seen = <int>{?level};
+      final variants = <Map<String, dynamic>>[];
+      for (final v in _mapsIn(entry['variants'])) {
+        final vLevel = QuestionParsing.parseStageLevel(v['level']);
+        if (vLevel == null || !wanted.contains(vLevel) || !seen.add(vLevel)) continue;
+        variants.add({...v, 'level': stageLevelNames[vLevel]});
+      }
+      result[n] = (level: level, group: QuestionParsing.parseStageGroup(entry['group']), variants: variants);
+    }
+    return result;
   }
 
   static const _pageConceptSystemPrompt = '''
