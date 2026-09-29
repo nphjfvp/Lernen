@@ -18,6 +18,7 @@ import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
+import '../../repositories/lab_experiment_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../models/summary.dart';
@@ -39,6 +40,7 @@ import '../exam/mock_exam_screen.dart';
 import '../flashcards/flashcard_list_screen.dart';
 import '../flashcards/task_folder_screen.dart';
 import '../import/pdf_question_import_screen.dart';
+import '../lab/lab_experiments_section.dart';
 import '../practice/practice_screen.dart';
 import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
@@ -466,6 +468,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           ),
                       ],
                     ),
+                    const SizedBox(height: 20),
+                    LabExperimentsSection(moduleId: module.id, moduleName: module.name),
                     const SizedBox(height: 20),
                     _SectionHeader(title: 'Materialien', count: materials.length),
                     const SizedBox(height: 10),
@@ -1082,6 +1086,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
       concepts: concepts,
       flashcards: flashcards,
       summaries: summaries,
+      labExperiments: context.read<LabExperimentRepository?>()?.forModule(module.id) ?? const [],
     );
     final bytes = Uint8List.fromList(utf8.encode(jsonEncode(payload)));
     final safeName = module.name.replaceAll(RegExp(r'[^\w\säöüÄÖÜß-]'), '').trim();

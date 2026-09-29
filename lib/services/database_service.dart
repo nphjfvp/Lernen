@@ -35,4 +35,5 @@ class DatabaseService {
   static final masterySnapshots = stringMapStoreFactory.store('mastery_snapshots');
   static final modelCatalog = stringMapStoreFactory.store('model_catalog');
   static final chatMessages = stringMapStoreFactory.store('chat_messages');
+  static final labExperiments = stringMapStoreFactory.store('lab_experiments');
 }

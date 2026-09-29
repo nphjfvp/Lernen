@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../models/flashcard.dart';
 import '../../models/module.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../repositories/lab_experiment_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../services/database_service.dart';
 import '../../services/mastery_service.dart';
@@ -16,6 +17,7 @@ import '../../services/task_folder_service.dart';
 import '../../theme/app_colors.dart';
 import '../modules/module_detail_screen.dart';
 import '../modules/module_form_screen.dart';
+import '../lab/lab_widgets.dart';
 import '../widgets/exam_countdown_badge.dart';
 import '../widgets/mastery_bar.dart';
 
@@ -129,6 +131,8 @@ class _HomeScreenState extends State<HomeScreen> {
       await db.transaction((txn) => ModuleExportService.saveImported(txn, imported));
       await moduleRepo.load();
       if (!context.mounted) return;
+      await context.read<LabExperimentRepository?>()?.loadAll();
+      if (!context.mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => ModuleDetailScreen(moduleId: imported.module.id)),
       );
@@ -140,6 +144,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final modules = context.watch<ModuleRepository>().modules;
+    final labs = context.watch<LabExperimentRepository?>();
     final c = context.colors;
 
     return Material(
@@ -189,6 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           taskCount: _taskCountByModule[modules[i].id] ?? 0,
                           examDate: modules[i].examDate,
                         ),
+                        labHint: labHomeHint(labs?.forModule(modules[i].id) ?? const [], DateTime.now()),
                       ),
                     ),
             ),
@@ -240,8 +246,11 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ModuleTile extends StatelessWidget {
-  const _ModuleTile({required this.module, required this.ampel, this.taskFolderWarning = false});
+  const _ModuleTile({required this.module, required this.ampel, this.taskFolderWarning = false, this.labHint});
   final Module module;
+
+  /// Anstehende Laborvorbereitung oder offener Bericht (siehe labHomeHint).
+  final String? labHint;
 
   /// Klausur nah und Aufgaben im Aufgaben-Ordner: roter Hinweis.
   final bool taskFolderWarning;
@@ -303,6 +312,29 @@ class _ModuleTile extends StatelessWidget {
                             Text(
                               'Aufgaben-Ordner durcharbeiten',
                               style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: c.danger),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (labHint != null) ...[
+                      const SizedBox(height: 7),
+                      Container(
+                        key: ValueKey('lab-hint-${module.id}'),
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                        decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(20)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.science_outlined, size: 13, color: c.warn),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                labHint!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: c.warn),
+                              ),
                             ),
                           ],
                         ),

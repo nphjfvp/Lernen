@@ -8,6 +8,10 @@ engerem Fokus statt Feature-Fülle.
 
 - **Modul-Verwaltung** – Fächer-Ordner mit Klausurdatum, in denen Folien und
   Übungsaufgaben gesammelt werden.
+- **Laborversuche** – Vorbereitung, Durchführung und Bericht eines
+  Praktikumsversuchs an einem Ort, mit Termin im Kalender; die KI liest
+  deine selbst geschriebenen Antworten und Berichtsabschnitte **gegen**
+  (sie schreibt nichts für dich), siehe Abschnitt 5p.
 - **Vorbereiten-Modus, zwei Varianten** – Vorlesungsfolien als PDF, Word oder
   PowerPoint hochladen, dann Wahl zwischen: **Kurz** (die KI erstellt eine
   strukturierte Zusammenfassung mit hervorgehobenen Kernkonzepten,
@@ -1332,6 +1336,65 @@ die Engine (`flutter_windows.dll`), die Plugin-DLLs und `data/` werden zur
 Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
+
+### 5p. Laborversuch: Vorbereitung, Durchführung, Bericht
+
+Für Praktika, bei denen du dich **vor dem Versuch vorbereiten**, ihn im Labor
+**durchführen** und danach einen **Bericht** schreiben musst (und am
+Semesterende darüber geprüft wirst): im Fach unter **Laborversuche** →
+"Laborversuch anlegen" (`lib/ui/lab/`).
+
+**Anlegen.** Name (optional), **Labortermin** und **Berichtsabgabe**, dazu die
+Unterlagen: **Versuchsanleitung/Durchführung** und – falls vorhanden – das
+**Theorie-Skript** (neu hochladen oder "Aus dem Fach"; hochgeladene Dateien
+liegen danach auch unter Materialien). "Versuch einlesen": die KI liest
+daraus die **Vorbereitungsaufgaben** (Wortlaut und Nummerierung wie im
+Skript), die **Versuchsteile** mit Schritten, **Messwerttabellen** (Vorgaben
+fest, leere Felder zum Ausfüllen) und **Auswertungsfragen** sowie die
+Hinweise (z.B. "USB-Stick mitbringen"). Alles lässt sich danach von Hand
+ändern, ergänzen und löschen. Ohne KI-Key geht "Leer anlegen".
+
+**Vier Reiter** (der Versuch öffnet je nach Termin auf dem passenden):
+- **Vorbereitung**: Aufgaben mit **eigener Antwort** (wird nach einer kurzen
+  Pause von selbst gespeichert). **"Gegenlesen lassen"**: die KI sagt
+  *Passt / Teilweise / Noch nicht getroffen*, was **fehlt** und **wo du
+  nachschauen** kannst – **keine Musterlösung**. Sie stützt sich dabei auf die
+  passenden Skript-Seiten (lokaler Stichwortabgleich, dazu Chips zum direkten
+  Öffnen der Seite). Ändert man den Text danach, steht die Einschätzung als
+  veraltet da. **"Im Skript nachschlagen"** geht auch ohne KI.
+  **Exportieren/Drucken**: PDF, Text oder in die Zwischenablage (nur Aufgaben
+  und *deine* Antworten – die KI-Einschätzung steht nicht darin).
+- **Durchführung** (auch am Handy am Platz): Schritte abhaken, **Messwerte in
+  die Tabellen** eintragen, Notizen je Versuchsteil, Auswertungsfragen mit
+  demselben Gegenlesen (die KI sieht dabei deine Messwerte).
+- **Bericht**: ein Abschnitt je Versuchsteil plus Einleitung und Fazit – du
+  schreibst, die KI liest jeden Abschnitt **gegen**: stimmen Werte mit der
+  Tabelle, fehlen Einheiten/Messabweichungen, sind die Fragen beantwortet,
+  trägt der Schluss? Sie schreibt den Text nicht um und liefert keine
+  Formulierungen. Export als PDF/Text (mit den Messwerten im Anhang);
+  "Abgegeben" abhaken.
+- **Lernen**: **"Karten aus dem Skript erstellen"** öffnet Nachbereiten mit
+  Theorie-Skript und Anleitung schon eingetragen; **"Meine Antworten als
+  Karten"** macht aus deinen Antworten, die beim Gegenlesen *Passt* bekamen,
+  Karteikarten (schon vorhandene Fragen werden übersprungen); dazu der
+  Frage-Chat und die Unterlagen.
+
+**Kalender und Startseite.** Labortermin und Berichtsabgabe stehen im
+Kalender (Tippen öffnet den Versuch); auf der Startseite erscheint am Fach ein
+Hinweis, wenn die Vorbereitung eines Versuchs in den nächsten 14 Tagen noch
+nicht beantwortet ist oder ein Bericht in den nächsten 7 Tagen fällig und
+unfertig ist.
+
+**Sync/Export.** Laborversuche reisen mit dem Cloud-Sync und dem Fach-Export;
+ein weitergegebenes Fach enthält die Aufgaben, aber keine Antworten, Messwerte,
+Berichtstexte oder Termine.
+
+Grenzen: Die KI liest nur Text (Oszillogramme/Abbildungen der Anleitung und
+Messkurven werden nicht ausgewertet), es gibt keine Diagramme oder
+Messdaten-Auswertung, und sehr lange Unterlagen werden auf etwa 45 000
+Zeichen je Gruppe gekürzt (die App weist darauf hin). In PDFs werden nur die
+Standard-Schriften genutzt – Ω, µ (griechisch) und Pfeile erscheinen daher als
+"Ohm", "µ" und "->"; der Text-Export bleibt unverändert.
 
 ### In-App-Update-Hinweis
 

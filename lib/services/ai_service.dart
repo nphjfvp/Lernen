@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/app_settings.dart';
 import '../models/flashcard.dart' show QuestionType;
+import '../models/lab_experiment.dart' show LabFeedback;
 import 'math_markup.dart';
 import 'question_parsing.dart';
 import 'text_chunker.dart';
@@ -2786,5 +2787,257 @@ Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
     final end = t.lastIndexOf(lastChar);
     if (end == -1 || end < start) return t;
     return t.substring(start, end + 1);
+  }
+
+  // -- Laborversuch ---------------------------------------------------------
+
+  /// Text je Quelle (Anleitung, Theorie-Skript), den die KI beim Einlesen eines
+  /// Versuchs sieht – längere Skripte werden gekürzt.
+  static const labSourceCap = 45000;
+
+  static const _labStructureSystemPrompt = '''
+Du bist Assistent für Laborpraktika an einer Hochschule. Du bekommst die
+Unterlagen zu EINEM Versuch (Versuchsanleitung/Durchführung und/oder ein
+Theorie-Skript zum Versuch) und liest daraus die Struktur heraus, damit sich
+die Studierenden vorbereiten, den Versuch durchführen und den Bericht
+schreiben können. Du beantwortest nichts und erfindest nichts: nur, was in den
+Unterlagen steht.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
+davor oder danach, in genau diesem Format:
+{
+  "title": "Name des Versuchs",
+  "prepQuestions": [{"number": "1a", "question": "Wortlaut der Vorbereitungsaufgabe"}],
+  "parts": [
+    {
+      "title": "Name des Versuchsteils bzw. der Aufgabe",
+      "goals": ["Ziel oder Fragestellung dieses Teils"],
+      "steps": ["Ein Arbeitsschritt, kurz und im Imperativ"],
+      "tables": [
+        {"title": "Name der Messwerttabelle",
+         "columns": ["Spaltenüberschrift 1", "Spaltenüberschrift 2"],
+         "rows": [["Vorgabe aus der Anleitung", ""], ["", ""]]}
+      ],
+      "evaluationQuestions": [{"number": "2.1", "question": "Frage oder Aufgabe zur Auswertung"}]
+    }
+  ],
+  "hints": ["Organisatorisches: was mitzubringen ist, Sicherheit, Abgabe"]
+}
+Regeln:
+1. "prepQuestions": ALLE Aufgaben/Fragen, die vor dem Versuch schriftlich zu
+   bearbeiten oder vorzubereiten sind (Vorbereitungsaufgaben, Fragen zur
+   Vorbereitung, "Machen Sie sich vertraut mit …", auch wenn sie im
+   Theorie-Skript stehen). Wortlaut und Nummerierung ("1a", "3", "2.4.1")
+   übernehmen; Unteraufgaben einzeln, wenn sie einzeln beantwortet werden.
+   Nichts ergänzen, was nicht gefragt wird.
+2. "parts": die Teile der Durchführung in der Reihenfolge der Anleitung.
+   "steps" sind konkrete Handlungen am Aufbau (Einstellen, Anschließen,
+   Messen, Speichern), je Eintrag EINE Handlung. Verweise, Erklärungen und
+   Theorie gehören nicht in die Schritte.
+3. "tables": jede Tabelle, in die Messwerte einzutragen sind. Kopfzeile in
+   "columns", danach je Zeile alle Zellen; was in der Anleitung schon
+   vorgegeben ist (z.B. Einstellwerte, Beschriftungen) steht als Text in der
+   Zelle, was gemessen bzw. eingetragen werden soll, ist "" (leerer String).
+   Jede Zeile hat genau so viele Zellen wie "columns".
+4. "evaluationQuestions": Fragen und Aufgaben, die während oder nach dem
+   Versuchsteil zu beantworten sind (Auswertung, Beobachtung, Vergleich,
+   Skizze). Nummerierung wie in der Anleitung, sonst weglassen.
+5. Fehlt etwas in den Unterlagen, lass die Liste leer statt zu raten. Gibt es
+   keinen erkennbaren Namen, lass "title" leer.
+6. Formeln in LaTeX (\$…\$) und in JSON jeden Backslash verdoppeln.
+Antworte in der Sprache der Unterlagen.
+''';
+
+  /// Liest aus den Unterlagen eines Versuchs ([sources]: Bezeichnung und Text,
+  /// z.B. „Versuchsanleitung“, „Theorie-Skript“) Vorbereitungsfragen, Versuchs-
+  /// teile mit Schritten/Messwerttabellen/Auswertungsfragen und Hinweise
+  /// heraus. Das Ergebnis ist die rohe Struktur für
+  /// `LabExperiment.fromStructure`.
+  Future<Map<String, dynamic>> structureLabExperiment({
+    required List<({String label, String text})> sources,
+  }) async {
+    final buffer = StringBuffer();
+    for (final source in sources) {
+      if (source.text.trim().isEmpty) continue;
+      buffer
+        ..writeln('=== ${source.label} ===')
+        ..writeln(_cap(source.text.trim(), labSourceCap))
+        ..writeln();
+    }
+    if (buffer.isEmpty) {
+      throw AiServiceException('Aus den gewählten Unterlagen konnte kein Text gelesen werden.');
+    }
+    final raw = await _complete(_labStructureSystemPrompt, buffer.toString(), temperature: 0.1);
+    return _parseJsonObject(raw);
+  }
+
+  static const _labAnswerReviewSystemPrompt = '''
+Du bist Betreuer im Laborpraktikum und liest die SELBST geschriebene Antwort
+eines Studierenden auf eine Aufgabe zur Versuchsvorbereitung (oder Auswertung)
+gegen. Er soll den Stoff selbst verstehen und die Antwort selbst schreiben.
+Regeln:
+1. Schreibe KEINE Musterlösung und keine Sätze, die er übernehmen könnte. Sag,
+   was an seiner Antwort stimmt, was fehlt oder nicht stimmt (Fehler knapp
+   benennen und begründen) und wo er nachschauen kann – mehr nicht.
+2. Beurteile nur anhand der Aufgabe, der Antwort und der mitgegebenen
+   Auszüge aus den Unterlagen bzw. Messwerten. Reichen die Auszüge nicht
+   aus, sag das ehrlich, statt etwas zu erfinden.
+3. "verdict": "gut" (inhaltlich richtig und vollständig genug), "teilweise"
+   (richtiger Ansatz, aber Lücken oder Fehler) oder "unklar" (geht am Kern
+   vorbei oder ist nicht nachvollziehbar).
+4. "summary": ein bis zwei Sätze ehrliche Einschätzung, du-Form.
+5. "missing": höchstens vier kurze Punkte – was fehlt oder nicht stimmt, als
+   Aspekt benannt ("Du gehst nicht darauf ein, wie …"), ohne die Lösung
+   auszuformulieren. Bei "gut" leer.
+6. "hints": höchstens drei Hinweise, wo bzw. worüber er nachlesen oder
+   nachdenken soll (Kapitel, Seite, Begriff). Bei "gut" leer.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Codefences, ohne Text davor
+oder danach:
+{"verdict": "gut|teilweise|unklar", "summary": "…", "missing": ["…"], "hints": ["…"]}
+Formeln in LaTeX (\$…\$), in JSON jeden Backslash verdoppeln. Antworte in der
+Sprache der Aufgabe.
+''';
+
+  /// Liest die Antwort [answer] auf die Aufgabe [question] gegen: Einschätzung,
+  /// was fehlt, und Hinweise – bewusst ohne Musterlösung. [context] sind
+  /// Auszüge aus dem Skript, [measurements] die Messwerte des Versuchsteils
+  /// (bei Auswertungsfragen).
+  Future<LabFeedback> reviewLabAnswer({
+    required String experimentTitle,
+    required String number,
+    required String question,
+    required String answer,
+    String context = '',
+    String measurements = '',
+    DateTime? now,
+  }) async {
+    final at = now ?? DateTime.now();
+    if (answer.trim().isEmpty) return parseLabFeedback(const {'verdict': 'leer'}, forText: answer, at: at);
+    final buffer = StringBuffer()
+      ..writeln('Versuch: $experimentTitle')
+      ..writeln('Aufgabe ${number.isEmpty ? '' : '$number: '}$question');
+    if (measurements.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Messwerte des Versuchsteils:')
+        ..writeln(_cap(measurements.trim(), _labMeasurementCap));
+    }
+    if (context.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Auszüge aus den Unterlagen:')
+        ..writeln(_cap(context.trim(), _labContextCap));
+    }
+    buffer
+      ..writeln()
+      ..writeln('Antwort des Studierenden:')
+      ..writeln(_cap(answer.trim(), _labAnswerCap));
+    final raw = await _complete(_labAnswerReviewSystemPrompt, buffer.toString(), temperature: 0);
+    return parseLabFeedback(_parseJsonObject(raw), forText: answer, at: at);
+  }
+
+  static const _labReportReviewSystemPrompt = '''
+Du bist Gegenleser für Laborberichte. Ein Studierender hat einen Abschnitt
+seines Berichts SELBST geschrieben und möchte vor der Abgabe Rückmeldung.
+Regeln:
+1. Schreibe den Text NICHT um und liefere keine Formulierungen zum Übernehmen.
+   Du sagst, was gut ist, was fehlt oder nicht stimmt und woran es liegt.
+2. Prüfe: Stimmen genannte Werte mit den mitgegebenen Messwerten überein?
+   Fehlen Einheiten oder Messabweichungen? Sind die Schlüsse aus den Messwerten
+   nachvollziehbar? Sind die zum Abschnitt gehörenden Fragen beantwortet?
+   Ist der Aufbau bzw. die Durchführung so beschrieben, dass andere den
+   Versuch wiederholen könnten? Sachliche Fehler benennen.
+3. Sprache und Stil nur kurz ansprechen, wenn sie das Verständnis stören
+   (Umgangssprache, Ich-Form statt Passiv, wenn im Bericht üblich, sehr
+   lange Sätze).
+4. Beurteile nur, was im Text und in den mitgegebenen Daten steht. Erfinde
+   keine Messwerte und nimm keine an.
+5. "verdict": "gut" (kann so bleiben), "teilweise" (Lücken oder Fehler) oder
+   "unklar" (Kern fehlt oder ist nicht nachvollziehbar).
+6. "summary": ein bis zwei Sätze Gesamteindruck, du-Form.
+7. "missing": höchstens fünf Punkte – was fehlt, nicht stimmt oder unklar ist,
+   jeweils mit Bezug zur Stelle. Bei "gut" leer.
+8. "hints": höchstens drei Hinweise, wie er es selbst verbessern kann (worauf
+   er achten, wo er nachsehen soll).
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Codefences, ohne Text davor
+oder danach:
+{"verdict": "gut|teilweise|unklar", "summary": "…", "missing": ["…"], "hints": ["…"]}
+Formeln in LaTeX (\$…\$), in JSON jeden Backslash verdoppeln. Antworte in der
+Sprache des Berichts.
+''';
+
+  /// Liest den Berichtsabschnitt [text] gegen. [measurements] sind die Messwerte
+  /// des zugehörigen Versuchsteils, [answers] die dort schon beantworteten
+  /// Fragen (Aufgabe und Antwort), [context] Auszüge aus den Unterlagen.
+  Future<LabFeedback> reviewReportSection({
+    required String experimentTitle,
+    required String sectionTitle,
+    required String hint,
+    required String text,
+    String measurements = '',
+    String answers = '',
+    String context = '',
+    DateTime? now,
+  }) async {
+    final at = now ?? DateTime.now();
+    if (text.trim().isEmpty) return parseLabFeedback(const {'verdict': 'leer'}, forText: text, at: at);
+    final buffer = StringBuffer()
+      ..writeln('Versuch: $experimentTitle')
+      ..writeln('Abschnitt: $sectionTitle');
+    if (hint.trim().isNotEmpty) buffer.writeln('Was in den Abschnitt gehört: ${hint.trim()}');
+    if (measurements.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Messwerte:')
+        ..writeln(_cap(measurements.trim(), _labMeasurementCap));
+    }
+    if (answers.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Bereits beantwortete Auswertungsfragen:')
+        ..writeln(_cap(answers.trim(), _labContextCap));
+    }
+    if (context.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Auszüge aus den Unterlagen:')
+        ..writeln(_cap(context.trim(), _labContextCap));
+    }
+    buffer
+      ..writeln()
+      ..writeln('Text des Abschnitts:')
+      ..writeln(_cap(text.trim(), _labReportCap));
+    final raw = await _complete(_labReportReviewSystemPrompt, buffer.toString(), temperature: 0);
+    return parseLabFeedback(_parseJsonObject(raw), forText: text, at: at);
+  }
+
+  static const _labContextCap = 9000;
+  static const _labMeasurementCap = 4000;
+  static const _labAnswerCap = 4000;
+  static const _labReportCap = 12000;
+
+  /// Liest die Einschätzung der KI zu einer Antwort bzw. einem Berichts-
+  /// abschnitt ([forText] = der begutachtete Wortlaut). Unbekannte Urteile
+  /// werden zu "unklar"; bei "gut" entfallen Anmerkungen und Hinweise.
+  static LabFeedback parseLabFeedback(Map<String, dynamic> json, {required String forText, required DateTime at}) {
+    List<String> strings(Object? v, int limit) => [
+          if (v is List)
+            for (final e in v)
+              if (e.toString().trim().isNotEmpty) e.toString().trim(),
+          if (v is String && v.trim().isNotEmpty) v.trim(),
+        ].take(limit).toList();
+    final verdict = switch ('${json['verdict']}'.trim().toLowerCase()) {
+      'gut' || 'good' || 'ok' || 'richtig' || 'correct' => 'gut',
+      'teilweise' || 'partial' || 'partly' || 'teilweise richtig' => 'teilweise',
+      'leer' || 'empty' => 'leer',
+      _ => 'unklar',
+    };
+    return LabFeedback(
+      verdict: verdict,
+      summary: '${json['summary'] ?? ''}'.trim(),
+      missing: verdict == 'gut' ? const [] : strings(json['missing'], 5),
+      hints: verdict == 'gut' ? const [] : strings(json['hints'], 3),
+      forText: forText,
+      at: at,
+    );
   }
 }

@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/concept.dart';
 import '../models/flashcard.dart';
+import '../models/lab_experiment.dart';
 import '../models/lecture_unit.dart';
 import '../models/material_item.dart';
 import '../models/module.dart';
@@ -29,6 +30,7 @@ class ImportedModule {
     required this.concepts,
     required this.flashcards,
     this.summaries = const [],
+    this.labExperiments = const [],
   });
 
   final Module module;
@@ -37,6 +39,7 @@ class ImportedModule {
   final List<Concept> concepts;
   final List<Flashcard> flashcards;
   final List<Summary> summaries;
+  final List<LabExperiment> labExperiments;
 
   /// Dieselben Inhalte, aber jede Karte wieder "neu" (siehe
   /// [ModuleExportService.resetLearningState]) – für ein weitergegebenes
@@ -48,6 +51,7 @@ class ImportedModule {
         concepts: concepts,
         flashcards: flashcards.map(ModuleExportService.resetLearningState).toList(),
         summaries: summaries,
+        labExperiments: [for (final e in labExperiments) e.withoutProgress()],
       );
 }
 
@@ -110,6 +114,7 @@ class ModuleExportService {
     required List<Concept> concepts,
     required List<Flashcard> flashcards,
     List<Summary> summaries = const [],
+    List<LabExperiment> labExperiments = const [],
   }) {
     return {
       'formatVersion': moduleExportFormatVersion,
@@ -120,6 +125,7 @@ class ModuleExportService {
       'summaries': summaries.map((s) => s.toMap()).toList(),
       'concepts': concepts.map((c) => c.toMap()).toList(),
       'flashcards': flashcards.map((f) => f.toMap()).toList(),
+      'labExperiments': labExperiments.map((e) => e.toMap()).toList(),
     };
   }
 
@@ -142,6 +148,9 @@ class ModuleExportService {
     }
     for (final f in imported.flashcards) {
       await DatabaseService.flashcards.record(f.id).put(client, f.toMap());
+    }
+    for (final e in imported.labExperiments) {
+      await DatabaseService.labExperiments.record(e.id).put(client, e.toMap());
     }
   }
 
@@ -360,6 +369,15 @@ class ModuleExportService {
             ))
         .toList();
 
+    final labExperiments = ((json['labExperiments'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => LabExperiment.fromMap(Map<String, dynamic>.from(e)).reassigned(
+              newId: const Uuid().v4(),
+              newModuleId: newModuleId,
+              materialIds: materialIdMap,
+            ))
+        .toList();
+
     return ImportedModule(
       module: module,
       lectureUnits: lectureUnits,
@@ -367,6 +385,7 @@ class ModuleExportService {
       concepts: concepts,
       flashcards: flashcards,
       summaries: summaries,
+      labExperiments: labExperiments,
     );
   }
 }

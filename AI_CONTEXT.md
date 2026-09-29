@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 828 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 894 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -753,6 +753,40 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Einstellungen) haben dafür festes Bottom-Padding (140–160). Neuer Tab mit
     Knöpfen ganz unten → `FloatingNavClearance` benutzen. Tests in
     `test/widget_test.dart`.
+41. Laborversuch (Nutzer-Wunsch: Vorbereitung, Durchführung, Bericht eines
+    Praktikumsversuchs; am Semesterende Prüfung darüber). Modell
+    `lib/models/lab_experiment.dart` (`LabExperiment` mit Vorbereitungs-
+    `LabQuestion`s, `LabPart`s aus `LabStep`/`LabTable`/Auswertungsfragen,
+    `LabReportSection`s, `LabFeedback`; `LabPhase` aus Labortermin, `phase(now)`,
+    `preparationOverdue`). Speicher: Sembast-Store `lab_experiments`,
+    `LabExperimentRepository` hält ALLES im Speicher (`save` aktualisiert und
+    benachrichtigt zuerst, schreibt dann; Konstruktor `openDatabase` nur für
+    Tests). Hängt an: Fach löschen (`ModuleRepository.deleteCascade`), Cloud-
+    Sync (`labExperiments`), Fach-Export/-Import (`reassigned` vergibt neue
+    IDs und übersetzt Material-IDs; `withoutProgress` für "ohne Lernstand").
+    KI (`AiService`): `structureLabExperiment` (Anleitung/Theorie → JSON für
+    `LabExperiment.fromStructure`), `reviewLabAnswer`, `reviewReportSection`,
+    `parseLabFeedback` – Regel: KI ist Gegenleser, KEINE Musterlösung und
+    kein Umformulieren; leere Texte werden lokal als "leer" beurteilt (kein
+    Aufruf). `LabContextService` sucht per `PageIndex` die passenden Skript-
+    Seiten (Theorie vor Anleitung; Nicht-PDFs als Pseudo-Seiten ohne
+    Fundstelle). `LabExportService`: Text und PDF (Standard-Schriften →
+    `latin1Safe` ersetzt Ω/µ/Pfeile). UI in `lib/ui/lab/` (Anlegen,
+    `LabExperimentScreen` mit vier Reitern, `LabExperimentsSection` im Fach);
+    `LabAnswerField` speichert entprellt und beim Verlassen; `LabCard` hat ein
+    eigenes durchsichtiges `Material` (sonst wirft `ListTile` in der Karte eine
+    Assertion). Kalender: `CalendarEventType.lab/labReport` (`eventsInRange(
+    labs:)`, abgegebene Berichte ohne Frist); Startseite: `labHomeHint`.
+    `ReviewScreen(initialSlideMaterialIds:)` übernimmt Materialien vorab. Die
+    Provider werden in Home/Kalender/Fach-Abschnitt/Export/Sync-Pull als
+    `LabExperimentRepository?` gelesen (ältere Tests ohne den Provider).
+    Falle (Test fand es): `cond ? [...a, x] : [...a]..[i] = x` bindet die
+    Kaskade an die GANZE Bedingung – nie so schreiben. Tests: `test/models/
+    lab_experiment_test.dart`, `test/services/lab_*_test.dart`, `test/
+    repositories/lab_experiment_repository_test.dart`, `test/ui/lab_*_test.dart`,
+    `test/ui/review_preselect_test.dart`. Grenzen: nur Text (keine Oszillogramm-
+    Bilder), keine Diagramme/Messdaten-Auswertung, Quellen je Gruppe auf
+    `AiService.labSourceCap` (45 000 Zeichen) gekürzt.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

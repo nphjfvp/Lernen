@@ -96,9 +96,13 @@ class _PickedFile {
 /// (nicht nur Theorie-Wiedergabe). Ein optionaler Crosscheck-Pass mit einem
 /// zweiten Modell kann die Ergebnisse anschließend gegenprüfen.
 class ReviewScreen extends StatefulWidget {
-  const ReviewScreen({super.key, required this.moduleId});
+  const ReviewScreen({super.key, required this.moduleId, this.initialSlideMaterialIds = const []});
 
   final String moduleId;
+
+  /// Materialien des Fachs, die von Anfang an als Folien ausgewählt sind (z.B.
+  /// Theorie-Skript und Anleitung eines Laborversuchs).
+  final List<String> initialSlideMaterialIds;
 
   /// Test-Hook: erzeugt den seitenweisen Import-Dienst (z.B. mit einem
   /// Seiten-Renderer ohne Plattform-Engine).
@@ -142,8 +146,37 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-        (_) => context.read<LectureUnitRepository>().loadForModule(widget.moduleId));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<LectureUnitRepository>().loadForModule(widget.moduleId);
+      _preselectMaterials();
+    });
+  }
+
+  /// Übernimmt [ReviewScreen.initialSlideMaterialIds] wie eine Auswahl über
+  /// "Vorhandenes Material".
+  Future<void> _preselectMaterials() async {
+    if (widget.initialSlideMaterialIds.isEmpty) return;
+    final available = context.read<MaterialRepository>().forModule(widget.moduleId);
+    final selected = [
+      for (final id in widget.initialSlideMaterialIds)
+        for (final m in available)
+          if (m.id == id && m.extractedText.trim().isNotEmpty) m,
+    ];
+    if (selected.isEmpty) return;
+    final bytes = await loadMaterialPdfBytes(selected);
+    if (!mounted) return;
+    setState(() {
+      for (var i = 0; i < selected.length; i++) {
+        final material = selected[i];
+        final highlightBlock = HighlightContext.build(material);
+        _slidesFiles.add(_PickedFile(
+          fileName: material.fileName,
+          text: highlightBlock.isEmpty ? material.extractedText : '${material.extractedText}\n\n$highlightBlock',
+          bytes: bytes[i],
+          existingMaterialId: material.id,
+        ));
+      }
+    });
   }
 
   bool _crosschecking = false;

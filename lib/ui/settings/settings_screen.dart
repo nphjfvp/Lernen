@@ -10,6 +10,7 @@ import '../../models/app_settings.dart';
 import '../../models/pdf_storage_config.dart';
 import '../../repositories/auth_repository.dart';
 import '../../repositories/model_catalog_repository.dart';
+import '../../repositories/lab_experiment_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/auth_service.dart';
@@ -243,6 +244,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final repo = context.read<SettingsRepository>();
     final autoSync = context.read<AutoSyncService>();
     final moduleRepo = context.read<ModuleRepository>();
+    final labRepo = context.read<LabExperimentRepository?>();
     await _runSync(
       () async {
         // Der Download schreibt alle Daten neu – das soll keinen sofortigen
@@ -260,6 +262,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // Fächerliste sofort aktualisieren (die übrigen Ansichten laden beim
         // Öffnen neu).
         await moduleRepo.load();
+        await labRepo?.loadAll();
         autoSync.markInSync();
       },
       successMessage: 'Heruntergeladen.',

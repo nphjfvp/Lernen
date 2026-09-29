@@ -10,6 +10,7 @@ import '../models/chat_message.dart';
 import '../models/concept.dart';
 import '../models/daily_session_state.dart';
 import '../models/flashcard.dart';
+import '../models/lab_experiment.dart';
 import '../models/lecture_unit.dart';
 import '../models/mastery_snapshot.dart';
 import '../models/material_item.dart';
@@ -333,6 +334,7 @@ class SyncService {
       'concepts': (await DatabaseService.concepts.find(db)).map((r) => r.value).toList(),
       'flashcards': (await DatabaseService.flashcards.find(db)).map((r) => r.value).toList(),
       'lectureUnits': (await DatabaseService.lectureUnits.find(db)).map((r) => r.value).toList(),
+      'labExperiments': (await DatabaseService.labExperiments.find(db)).map((r) => r.value).toList(),
       // Verlauf und Statistik – ohne sie finge jedes weitere Gerät bei null
       // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
       'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
@@ -453,6 +455,8 @@ class SyncService {
       // nicht – dann die lokalen Einheiten behalten statt sie ersatzlos zu
       // löschen.
       if (data.containsKey('lectureUnits')) await DatabaseService.lectureUnits.delete(txn);
+      // Laborversuche gibt es erst seit kurzem – ältere Stände kennen sie nicht.
+      if (data.containsKey('labExperiments')) await DatabaseService.labExperiments.delete(txn);
 
       for (final m in (data['modules'] as List? ?? [])) {
         final module = Module.fromMap(Map<String, dynamic>.from(m as Map));
@@ -484,6 +488,11 @@ class SyncService {
         await DatabaseService.lectureUnits.record(unit.id).put(txn, unit.toMap());
       }
 
+      for (final e in (data['labExperiments'] as List? ?? [])) {
+        final experiment = LabExperiment.fromMap(Map<String, dynamic>.from(e as Map));
+        await DatabaseService.labExperiments.record(experiment.id).put(txn, experiment.toMap());
+      }
+
       await applySyncedHistory(txn, data);
 
       // Lokale Daten zu Fächern, die es nach dem Download nicht mehr gibt,
@@ -493,6 +502,10 @@ class SyncService {
         for (final m in (data['modules'] as List? ?? [])) (m as Map)['id']?.toString() ?? '',
       };
       await DatabaseService.chatMessages.delete(
+        txn,
+        finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+      );
+      await DatabaseService.labExperiments.delete(
         txn,
         finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
       );

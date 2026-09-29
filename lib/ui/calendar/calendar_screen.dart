@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/lab_experiment.dart';
+import '../../repositories/lab_experiment_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../services/calendar_service.dart';
 import '../../theme/app_colors.dart';
+import '../lab/lab_experiment_screen.dart';
 import '../widgets/exam_countdown_badge.dart';
 
 const _kWeekdayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -52,7 +55,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     final gridStart = _gridStart();
     final gridEnd = DateTime(gridStart.year, gridStart.month, gridStart.day + 42);
-    final events = _service.eventsInRange(modules: modules, start: gridStart, end: gridEnd);
+    final labs = context.watch<LabExperimentRepository?>()?.all ?? const <LabExperiment>[];
+    final events = _service.eventsInRange(modules: modules, start: gridStart, end: gridEnd, labs: labs);
 
     final eventsByDay = <DateTime, List<CalendarEvent>>{};
     for (final event in events) {
@@ -220,7 +224,12 @@ class _MonthGrid extends StatelessWidget {
                                 margin: const EdgeInsets.symmetric(horizontal: 1),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: event.type == CalendarEventType.exam ? c.danger : c.accent,
+                                  color: switch (event.type) {
+                                    CalendarEventType.exam => c.danger,
+                                    CalendarEventType.lab => c.good,
+                                    CalendarEventType.labReport => c.warn,
+                                    CalendarEventType.lecture => c.accent,
+                                  },
                                 ),
                               );
                             }).toList(),
@@ -245,7 +254,8 @@ class _EventTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final isExam = event.type == CalendarEventType.exam;
+    final type = event.type;
+    final isLab = type == CalendarEventType.lab || type == CalendarEventType.labReport;
     final start = '${event.dateTime.hour.toString().padLeft(2, '0')}:'
         '${event.dateTime.minute.toString().padLeft(2, '0')}';
     final endDateTime = event.endDateTime;
@@ -253,43 +263,57 @@ class _EventTile extends StatelessWidget {
         ? start
         : '$start–${endDateTime.hour.toString().padLeft(2, '0')}:'
             '${endDateTime.minute.toString().padLeft(2, '0')}';
+    // Labortermine sind Tagesdaten ohne Uhrzeit.
+    final label = switch (type) {
+      CalendarEventType.exam => 'Klausur · $time Uhr',
+      CalendarEventType.lecture => 'Vorlesung · $time Uhr',
+      CalendarEventType.lab => 'Laborversuch: ${event.title ?? ''}',
+      CalendarEventType.labReport => 'Bericht abgeben: ${event.title ?? ''}',
+    };
+    final (Color soft, Color strong, IconData icon) = switch (type) {
+      CalendarEventType.exam => (c.dangerSoft, c.danger, Icons.school_rounded),
+      CalendarEventType.lecture => (c.accentSoft, c.accentOnSoft, Icons.event_repeat_rounded),
+      CalendarEventType.lab => (c.goodSoft, c.good, Icons.science_outlined),
+      CalendarEventType.labReport => (c.warnSoft, c.warn, Icons.description_outlined),
+    };
+    final experimentId = event.experimentId;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surface,
         border: Border.all(color: c.border),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: isExam ? c.dangerSoft : c.accentSoft,
-                shape: BoxShape.circle,
+      child: InkWell(
+        key: isLab ? ValueKey('calendar-lab-${type.name}-$experimentId') : null,
+        borderRadius: BorderRadius.circular(14),
+        onTap: !isLab || experimentId == null
+            ? null
+            : () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => LabExperimentScreen(experimentId: experimentId, moduleName: event.module.name),
+                )),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(color: soft, shape: BoxShape.circle),
+                child: Icon(icon, size: 17, color: strong),
               ),
-              child: Icon(
-                isExam ? Icons.school_rounded : Icons.event_repeat_rounded,
-                size: 17,
-                color: isExam ? c.danger : c.accentOnSoft,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(event.module.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text(label, style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(event.module.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  Text(
-                    isExam ? 'Klausur · $time Uhr' : 'Vorlesung · $time Uhr',
-                    style: TextStyle(fontSize: 11.5, color: c.inkMuted),
-                  ),
-                ],
-              ),
-            ),
-          ],
+              if (isLab) Icon(Icons.chevron_right_rounded, size: 16, color: c.inkMuted),
+            ],
+          ),
         ),
       ),
     );
