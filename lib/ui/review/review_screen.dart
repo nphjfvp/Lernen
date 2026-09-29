@@ -33,6 +33,7 @@ import '../../theme/app_colors.dart';
 import '../widgets/analysis_recommendation_card.dart';
 import '../widgets/discard_guard.dart';
 import '../widgets/existing_material_picker.dart';
+import '../widgets/model_override_tile.dart';
 import '../widgets/ocr_notice.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
@@ -108,6 +109,12 @@ String? _batchGroup(String? group, DateTime savedAt) =>
 class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScreen> {
   _Step _step = _Step.pick;
   _GenerateMode _mode = _GenerateMode.create;
+
+  /// Für DIESE Erstellung gewähltes KI-Modell (null = Standard aus den
+  /// Einstellungen) – z.B. ein stärkeres für Tabellen oder lange Aufgaben.
+  /// Gilt für Konzepte/Karteikarten und den PDF-Import, nicht für die
+  /// Zweitmeinung (Crosscheck).
+  String? _modelOverride;
   final List<_PickedFile> _slidesFiles = [];
   final List<_PickedFile> _exercisesFiles = [];
   Map<String, dynamic>? _result;
@@ -293,7 +300,8 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
       final Map<String, dynamic> result;
       switch (_mode) {
         case _GenerateMode.create:
-          final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+          final ai = AiService(
+              apiKey: settings.openRouterApiKey!, model: _modelOverride ?? settings.questionModelId);
           final examContext =
               MaterialItem.practiceExamTextFrom(context.read<MaterialRepository>().forModule(widget.moduleId));
           result = await ai.generateConceptsAndFlashcards(
@@ -385,7 +393,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     final imported = <Map<String, dynamic>>[];
     final notes = <String>[];
     if (pdfs.isNotEmpty) {
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.visionModelId);
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: _modelOverride ?? settings.visionModelId);
       final service = ReviewScreen.importServiceFactory?.call(ai) ?? PdfQuestionImportService(ai: ai);
       var withoutImages = false;
       for (final (i, file) in pdfs.indexed) {
@@ -426,7 +434,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     }
     if (others.isNotEmpty) {
       setState(() => _progressText = 'Weitere Dateien werden gelesen …');
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: _modelOverride ?? settings.questionModelId);
       imported.addAll(await ai.importQuestionsFromExercises(
         others.map((f) => '=== Datei: ${f.fileName} ===\n${f.text}').join('\n\n'),
         granularity: settings.chunkGranularity,
@@ -778,6 +786,12 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     );
   }
 
+  /// Der Import liest PDF-Aufgaben als Seitenbilder – dafür ist ein Modell
+  /// mit Bildverständnis nötig (sonst das Fragen-Modell).
+  bool get _importUsesVision =>
+      _mode == _GenerateMode.import &&
+      _exercisesFiles.any((f) => f.fileName.toLowerCase().endsWith('.pdf') && f.bytes.isNotEmpty);
+
   Widget _buildBody() {
     switch (_step) {
       case _Step.pick:
@@ -788,7 +802,20 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
             : null;
         return _PickView(
           mode: _mode,
-          onModeChanged: (m) => setState(() => _mode = m),
+          onModeChanged: (m) => setState(() {
+            _mode = m;
+            // Andere Aufgabe, anderes Standard-Modell (Vision beim Import).
+            _modelOverride = null;
+          }),
+          modelSelector: _mode == _GenerateMode.pasteJson
+              ? null
+              : ModelOverrideTile(
+                  defaultId: _importUsesVision ? settings.visionModelId : settings.questionModelId,
+                  overrideId: _modelOverride,
+                  vision: _importUsesVision,
+                  hint: 'Tabellen und lange Aufgaben gelingen mit einem stärkeren Modell meist besser.',
+                  onChanged: (id) => setState(() => _modelOverride = id),
+                ),
           slidesFiles: _slidesFiles,
           exercisesFiles: _exercisesFiles,
           extracting: _extracting,
@@ -875,10 +902,15 @@ class _PickView extends StatelessWidget {
     required this.selectedUnitChoice,
     required this.onUnitChanged,
     required this.onPastedJsonChanged,
+    this.modelSelector,
     this.analysis,
     this.error,
     this.rawResponse,
   });
+
+  /// Modellwahl für diese Erstellung (siehe [ModelOverrideTile]); null im
+  /// Modus "JSON einfügen" (dort wird keine KI aufgerufen).
+  final Widget? modelSelector;
 
   final _GenerateMode mode;
   final void Function(_GenerateMode mode) onModeChanged;
@@ -1097,6 +1129,10 @@ class _PickView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
           ],
+        if (modelSelector != null) ...[
+          modelSelector!,
+          const SizedBox(height: 12),
+        ],
         FilledButton.icon(
           onPressed: onGenerate,
           icon: Icon(switch (mode) {

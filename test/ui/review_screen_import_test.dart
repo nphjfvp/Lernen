@@ -209,4 +209,95 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('Nachbereiten-Import: gewähltes Modell wird für den PDF-Import verwendet', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final png = (await tester.runAsync(_grayPng))!;
+    final models = <String>[];
+    final client = MockClient((request) async {
+      models.add((jsonDecode(request.body) as Map<String, dynamic>)['model'] as String);
+      return http.Response(
+        jsonEncode({
+          'choices': [
+            {
+              'message': {
+                'content': jsonEncode({
+                  'questions': [
+                    {'page': 1, 'type': 'free_text', 'front': 'Frage?', 'correctText': 'Antwort'},
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    ReviewScreen.importServiceFactory = (ai) => PdfQuestionImportService(
+          ai: AiService(apiKey: ai.apiKey, model: ai.model, client: client),
+          renderer: (_) async => _FakeRenderer(png),
+        );
+
+    final settings = SettingsRepository();
+    final materials = MaterialRepository();
+    await tester.runAsync(() async {
+      await settings.update(const AppSettings(openRouterApiKey: 'sk-test'));
+      await materials.save(MaterialItem(
+        id: 'blatt4',
+        moduleId: 'm2',
+        fileName: 'Blatt 4.pdf',
+        kind: MaterialKind.exercise,
+        extractedText: 'Seite 1',
+        createdAt: DateTime(2026, 9, 27),
+        fileBytesBase64: base64Encode(pdfWithPages(1)),
+      ));
+    });
+
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: settings),
+        ChangeNotifierProvider.value(value: materials),
+        ChangeNotifierProvider(create: (_) => FlashcardRepository()),
+        ChangeNotifierProvider(create: (_) => ConceptRepository()),
+        ChangeNotifierProvider(create: (_) => LectureUnitRepository()),
+      ],
+      child: MaterialApp(theme: AppTheme.light, home: const ReviewScreen(moduleId: 'm2')),
+    ));
+    await tester.pumpAndSettle();
+
+    // "JSON einfügen" ruft keine KI auf – dort gibt es keine Modellwahl.
+    expect(find.byKey(const ValueKey('model-override')), findsOneWidget);
+    await tester.tap(find.text('JSON einfügen').first);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('model-override')), findsNothing);
+
+    await tester.tap(find.text('Fragen importieren').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Vorhandenes Material verwenden'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Blatt 4.pdf'));
+    await tester.pump();
+    await tester.tap(find.text('Übernehmen'));
+    await tester.pumpAndSettle();
+
+    // Mit PDF steht das Vision-Modell als Standard da; ein anderes wählen.
+    expect(find.textContaining('Gemini 2.5 Flash'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('model-override')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Claude 3.5 Haiku'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.file_download_outlined));
+    for (var i = 0; i < 60 && models.isEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(models, ['anthropic/claude-3.5-haiku']);
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

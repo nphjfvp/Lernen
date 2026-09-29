@@ -1,14 +1,28 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:lernen/models/app_settings.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/material_item.dart';
+import 'package:lernen/repositories/model_catalog_repository.dart';
+import 'package:lernen/repositories/settings_repository.dart';
+import 'package:lernen/services/ai_service.dart';
 import 'package:lernen/services/image_crop.dart';
 import 'package:lernen/theme/app_colors.dart';
+import 'package:lernen/ui/widgets/model_override_tile.dart';
+import 'package:provider/provider.dart';
 import 'package:lernen/ui/widgets/page_question_creation_sheet.dart';
 import 'package:lernen/ui/widgets/page_region_picker.dart';
+
+class _SettingsWithKey extends SettingsRepository {
+  @override
+  AppSettings get settings => const AppSettings(openRouterApiKey: 'sk-test');
+}
 
 /// PNG mit linker Hälfte rot, rechter Hälfte blau.
 Future<Uint8List> _twoColorPng(int width, int height) async {
@@ -215,5 +229,154 @@ void main() {
     await tester.tap(find.text('KI entscheidet').first);
     await tester.pumpAndSettle();
     expect(find.text('Interaktiv').last, findsOneWidget);
+  });
+
+  group('Modellwechsel', () {
+    Widget host(Widget child) => MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SettingsRepository>.value(value: _SettingsWithKey()),
+            ChangeNotifierProvider<ModelCatalogRepository>.value(value: ModelCatalogRepository()),
+          ],
+          child: MaterialApp(theme: ThemeData(extensions: const [AppColors.light]), home: Scaffold(body: child)),
+        );
+
+    testWidgets('Auswahlfeld: Standard zeigen, anderes Modell wählen, zurück auf Standard', (tester) async {
+      String? override;
+      await tester.pumpWidget(host(StatefulBuilder(
+        builder: (context, setState) => ModelOverrideTile(
+          defaultId: AppSettings.defaultVisionModel,
+          overrideId: override,
+          vision: true,
+          hint: 'Ein Hinweis',
+          onChanged: (id) => setState(() => override = id),
+        ),
+      )));
+
+      expect(find.textContaining('Standard aus den Einstellungen'), findsOneWidget);
+      expect(find.textContaining('Gemini 2.5 Flash'), findsOneWidget);
+      expect(find.text('Ein Hinweis'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('model-override')));
+      await tester.pumpAndSettle();
+      // Nur Modelle mit Bildverständnis stehen zur Wahl.
+      expect(find.textContaining('DeepSeek'), findsNothing);
+      await tester.tap(find.textContaining('Claude 3.5 Haiku'));
+      await tester.pumpAndSettle();
+
+      expect(override, 'anthropic/claude-3.5-haiku');
+      expect(find.text('KI-Modell für diese Aktion'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('model-override-reset')));
+      await tester.pumpAndSettle();
+      expect(override, isNull);
+      expect(find.textContaining('Standard aus den Einstellungen'), findsOneWidget);
+    });
+
+    testWidgets('Frage erstellen: gewähltes Modell geht an die KI, "Neu" nutzt es erneut', (tester) async {
+      tester.view.physicalSize = const Size(1200, 4800);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final png = (await tester.runAsync(() => _twoColorPng(40, 20)))!;
+
+      final models = <String>[];
+      final client = MockClient((request) async {
+        models.add((jsonDecode(request.body) as Map)['model'] as String);
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'content': jsonEncode({
+                    'questions': [
+                      {
+                        'flashcards': [
+                          {'type': 'flashcard', 'front': 'Was ist ein Werkstoff?', 'back': 'Ein Stoff'},
+                        ],
+                      },
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+
+      await tester.pumpWidget(host(PageQuestionCreationSheet(
+        material: MaterialItem(
+          id: 'mat1',
+          moduleId: 'm1',
+          fileName: 'Folien.pdf',
+          kind: MaterialKind.slide,
+          extractedText: 'Text',
+          createdAt: DateTime(2026, 9, 26),
+        ),
+        pageNumber: 3,
+        pageText: 'Seitentext',
+        pageImageBytes: png,
+        highlightsOnPage: const [],
+        aiFactory: (key, model) => AiService(apiKey: key, model: model, client: client),
+      )));
+
+      // Bilder werden echt asynchron verarbeitet, der Ladekreis animiert
+      // endlos – deshalb gezielt warten, bis das Erstellen durch ist.
+      Future<void> untilGenerated(int calls) async {
+        for (var i = 0; i < 100 && (models.length < calls || find.byType(CircularProgressIndicator).evaluate().isNotEmpty); i++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        await tester.pumpAndSettle();
+      }
+
+      // Standard: das Vision-Modell aus den Einstellungen.
+      await tester.tap(find.widgetWithText(FilledButton, 'Frage erstellen'));
+      await tester.pump();
+      await untilGenerated(1);
+      expect(models, [AppSettings.defaultVisionModel]);
+      expect(find.text('Was ist ein Werkstoff?'), findsWidgets);
+
+      // In der Vorschau ein stärkeres Modell wählen und alles neu erstellen.
+      await tester.tap(find.byKey(const ValueKey('model-override')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Claude 3.5 Haiku'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('regenerate-with-model')));
+      await tester.pumpAndSettle();
+      expect(find.text('Alle Fragen neu erstellen?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Neu erstellen'));
+      await tester.pump();
+      await untilGenerated(2);
+
+      expect(models, [AppSettings.defaultVisionModel, 'anthropic/claude-3.5-haiku']);
+    });
+
+    testWidgets('Hinweis erscheint bei Tabellen als gewähltem Typ', (tester) async {
+      tester.view.physicalSize = const Size(1200, 4800);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(host(PageQuestionCreationSheet(
+        material: MaterialItem(
+          id: 'mat1',
+          moduleId: 'm1',
+          fileName: 'Folien.pdf',
+          kind: MaterialKind.slide,
+          extractedText: 'Text',
+          createdAt: DateTime(2026, 9, 26),
+        ),
+        pageNumber: 3,
+        pageText: 'Seitentext',
+        pageImageBytes: Uint8List.fromList([1]),
+        highlightsOnPage: const [],
+      )));
+      expect(find.textContaining('stärkeren Modell'), findsNothing);
+
+      await tester.tap(find.text('KI entscheidet').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tabelle').last);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Tabellen, interaktive Seiten und Bildfragen'), findsOneWidget);
+    });
   });
 }

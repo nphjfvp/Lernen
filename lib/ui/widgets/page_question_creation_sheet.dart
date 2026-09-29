@@ -16,7 +16,9 @@ import '../../services/image_edit.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
+import 'confirm_delete_dialog.dart';
 import 'image_editor_screen.dart';
+import 'model_override_tile.dart';
 import 'page_region_picker.dart';
 import 'safe_set_state.dart';
 
@@ -44,7 +46,12 @@ class PageQuestionCreationSheet extends StatefulWidget {
     required this.highlightsOnPage,
     this.initialQuestionText,
     this.examContext,
+    this.aiFactory,
   });
+
+  /// Nur für Tests: baut den KI-Zugang aus API-Key und Modell (sonst der
+  /// echte [AiService]).
+  final AiService Function(String apiKey, String model)? aiFactory;
 
   final MaterialItem material;
   final int pageNumber;
@@ -248,6 +255,10 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
     _DifficultySlot('Schwer', enabled: false),
   ];
   int _questionCount = 1;
+
+  /// Für DIESES Fenster gewähltes KI-Modell (null = Vision-Modell aus den
+  /// Einstellungen) – z.B. ein stärkeres für Tabellen oder lange Aufgaben.
+  String? _modelOverride;
   Rect? _focusRect;
   Uint8List? _focusImage;
 
@@ -294,6 +305,41 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           for (var t = 0; t < _questions![q].tiers.length; t++) (question: q, tier: t),
       ];
 
+  /// Hinweis, wann sich ein stärkeres Modell lohnt: Formate, die dem Modell
+  /// viel abverlangen, oder eine Seite mit viel Inhalt.
+  String? get _modelHint {
+    final hard = _slots.any((s) =>
+        s.enabled &&
+        (s.type == QuestionType.table ||
+            s.type == QuestionType.html ||
+            s.type == QuestionType.diagramLabel ||
+            s.type == QuestionType.markImage));
+    if (hard) {
+      return 'Tabellen, interaktive Seiten und Bildfragen gelingen mit einem stärkeren Modell meist besser.';
+    }
+    if (widget.pageText.length > 3000) {
+      return 'Viel Inhalt auf der Seite – ein stärkeres Modell erfasst sie meist besser.';
+    }
+    return null;
+  }
+
+  String get _defaultModelId => context.read<SettingsRepository?>()?.settings.visionModelId ?? '';
+
+  /// Mit dem (evtl. gewechselten) Modell alle KI-Fragen komplett neu
+  /// erstellen – die Einstellungen darüber (Stufen, Fokus …) bleiben. Von
+  /// Hand erstellte Bildfragen bleiben erhalten.
+  Future<void> _regenerateWithModel() async {
+    final ok = await confirmDelete(
+      context,
+      title: 'Alle Fragen neu erstellen?',
+      message: 'Die aktuellen KI-Fragen werden durch neue ersetzt (selbst erstellte Bildfragen bleiben). '
+          'Stufen, Fokus und Antwort-Vorgaben bleiben wie eingestellt.',
+      confirmLabel: 'Neu erstellen',
+    );
+    if (!ok || !mounted) return;
+    await _generate();
+  }
+
   Future<void> _pickRegion() async {
     final rect = await showPageRegionPicker(context, widget.pageImageBytes, initial: _focusRect);
     if (rect == null || !mounted) return;
@@ -318,7 +364,9 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
       _error = null;
     });
     try {
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.visionModelId);
+      final modelId = _modelOverride ?? settings.visionModelId;
+      final ai = widget.aiFactory?.call(settings.openRouterApiKey!, modelId) ??
+          AiService(apiKey: settings.openRouterApiKey!, model: modelId);
       final focus = _focusController.text.trim();
       final answer = _answerController.text.trim();
       // Für Bildfragen bekommt die KI das Bild mit Koordinatenraster (auf
@@ -790,6 +838,15 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
               ),
             )),
         const SizedBox(height: 20),
+        ModelOverrideTile(
+          defaultId: _defaultModelId,
+          overrideId: _modelOverride,
+          vision: true,
+          enabled: !_generating,
+          hint: _modelHint,
+          onChanged: (id) => setState(() => _modelOverride = id),
+        ),
+        const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: (_generating || _enabledSlots.isEmpty) ? null : () => _generate(),
           icon: _generating
@@ -969,6 +1026,32 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
                     icon: _generating
                         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: ModelOverrideTile(
+                      defaultId: _defaultModelId,
+                      overrideId: _modelOverride,
+                      vision: true,
+                      enabled: !_generating,
+                      hint: _modelHint,
+                      onChanged: (id) => setState(() => _modelOverride = id),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Alle Fragen mit dem gewählten Modell neu erstellen',
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('regenerate-with-model'),
+                      onPressed: _generating ? null : _regenerateWithModel,
+                      icon: const Icon(Icons.replay, size: 18),
+                      label: const Text('Neu'),
+                    ),
                   ),
                 ],
               ),

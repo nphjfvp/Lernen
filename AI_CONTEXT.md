@@ -444,7 +444,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 718 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 722 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -599,6 +599,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     die Frage gehängt, Ziel = correctText). Gespeicherte:
     `AnswerChecker.isTrivialDrag` → nicht beantwortbar → Karteikarten-
     Ersatzansicht mit `Flashcard.promptText` (Begriffe) und Lösung zuerst.
+32. Modellwechsel je Aktion (Nutzer-Wunsch: stärkeres Modell für Tabellen/
+    große Aufgaben): `ModelOverrideTile` (`lib/ui/widgets/`) zeigt Standard
+    aus den Einstellungen bzw. die Wahl, öffnet `showModelPickerSheet`
+    (Katalog aus `ModelCatalogRepository?`, sonst `kFallbackModels`; mit
+    `vision: true` nur Bild-Modelle); gewählt = null-Standard zurück. Die
+    Wahl ist reiner Fensterzustand (`_modelOverride`), NICHT in den
+    Einstellungen. `PageQuestionCreationSheet` (Vision-Modell; `aiFactory`
+    nur für Tests; Vorschau: „Neu“ = `_generate()` nach Rückfrage, ersetzt KI-
+    Fragen, behält `manual`) und `ReviewScreen` (Modi create/import;
+    Import mit PDF vision; Wahl wird beim Moduswechsel verworfen; nicht
+    beim Crosscheck). Weitere KI-Aufrufe (Prepare, Seiten-Frage, Chat …)
+    haben noch keine Modellwahl.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

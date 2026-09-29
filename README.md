@@ -939,6 +939,18 @@ Nachbereiten-Modus zu wechseln.
   Textstelle bzw. eigene Anweisung vorgeben (vorbelegt aus der Textauswahl
   im PDF oder einer roten Markierung) und optional die erwartete Antwort.
   Bleibt alles leer, wählt die KI selbst das Wichtigste der Seite.
+  **KI-Modell wechseln:** Über dem Knopf "Frage erstellen" steht das
+  Modell, das gerade gilt (Standard: das Vision-Modell aus den
+  Einstellungen); ein Tipp darauf öffnet die durchsuchbare Modellliste
+  (nur Modelle mit Bildverständnis, mit Preis), "Standard" setzt zurück. Die
+  Wahl gilt nur für dieses Fenster – die Einstellungen bleiben. Bei
+  Tabellen, interaktiven Seiten, Bildfragen und sehr inhaltsreichen Seiten
+  steht ein Hinweis, dass sich ein stärkeres Modell lohnt. In der Vorschau
+  gibt es dasselbe Feld samt **"Neu"**: alle KI-Fragen mit dem gewählten
+  Modell komplett neu erstellen (selbst erstellte Bildfragen bleiben) –
+  "Überarbeiten" nutzt es ebenfalls. Dasselbe Feld gibt es in Nachbereiten
+  ("KI erstellt" und "Fragen importieren", beim Import mit PDF nur Modelle
+  mit Bildverständnis); die Zweitmeinung (Crosscheck) behält ihr Modell.
   Bewusst IMMER multimodal (Seiten-Screenshot ans Vision-Modell) statt
   optional umschaltbar – einfacher UND robuster, da Folienseiten oft
   Diagramme/Formeln enthalten, die reiner Text nicht wiedergibt. Die
