@@ -16,8 +16,11 @@ import '../../services/answer_checker.dart';
 import '../../services/card_csv_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/module_export_service.dart';
+import '../../services/script_match_service.dart';
+import '../../services/source_locator.dart';
 import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
+import '../study/script_match_runner.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/mastery_dot.dart';
@@ -205,6 +208,105 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
     );
     if (!ok || !mounted) return;
     await _applyToFolder(folder, (c) => c.copyWithStage(group: 'einzeln-${c.id}'), 'Ordner aufgelöst');
+  }
+
+  /// Fortschritt von [_matchScript] (0..1), null wenn nicht aktiv.
+  double? _scriptProgress;
+
+  /// So viele Fragen je Speicherschritt – ein Abbruch verliert höchstens einen
+  /// Teil.
+  static const _scriptChunk = 40;
+
+  /// Sucht per KI im Skript die Seite mit der Erklärung zu den Fragen des
+  /// Fachs (siehe ScriptMatchService) – vor allem für Fragen aus
+  /// Übungsblättern, bei denen "Im Skript" sonst nur aufs Blatt zeigt.
+  Future<void> _matchScript(List<Flashcard> allCards) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final env = ScriptMatchContext.of(context);
+    if (env == null) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Dafür wird ein OpenRouter-API-Key gebraucht (Einstellungen).'),
+      ));
+      return;
+    }
+    final mats = await env.materialsOf(widget.moduleId);
+    if (SourceLocator.scriptPdfs(mats).isEmpty) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Im Fach liegt kein Skript (Folien als PDF) auf diesem Gerät – lade zuerst die '
+            'Vorlesungsfolien hoch.'),
+      ));
+      return;
+    }
+    final open = ScriptMatchService.candidatesFrom(allCards, mats, includeUnsourced: true);
+    final all = ScriptMatchService.candidatesFrom(allCards, mats, includeUnsourced: true, force: true);
+    if (all.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Alle Fragen stammen schon aus dem Skript.')));
+      return;
+    }
+    if (!mounted) return;
+    var again = false;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Erklärungen im Skript suchen?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                open.isEmpty
+                    ? 'Für alle Fragen wurde schon gesucht.'
+                    : 'Die KI sucht für ${open.length} ${open.length == 1 ? 'Frage' : 'Fragen'} aus Übungsblättern '
+                        '(oder ohne bekannte Quelle) in deinem Skript die Seite, auf der die Erklärung bzw. '
+                        'Lösung steht. Danach öffnet "Im Skript" genau diese Seite; das Übungsblatt bleibt '
+                        'als "Aufgabenblatt" erreichbar.',
+              ),
+              if (all.length > open.length)
+                CheckboxListTile(
+                  key: const ValueKey('script-match-again'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: again,
+                  onChanged: (v) => setLocal(() => again = v ?? false),
+                  title: Text('Auch die ${all.length - open.length} schon gesuchten erneut prüfen'),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+            FilledButton(
+              onPressed: open.isEmpty && !again ? null : () => Navigator.of(ctx).pop(true),
+              child: const Text('Suchen'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final todo = again ? all : open;
+    setState(() => _scriptProgress = 0);
+    var found = 0;
+    var failed = 0;
+    try {
+      for (var start = 0; start < todo.length; start += _scriptChunk) {
+        final chunk = todo.sublist(start, min(start + _scriptChunk, todo.length));
+        final run = await env.run(widget.moduleId, chunk);
+        if (run == null) break;
+        found += run.found;
+        failed += run.failedCards;
+        if (mounted) setState(() => _scriptProgress = (start + chunk.length) / todo.length);
+      }
+      messenger.showSnackBar(SnackBar(
+        content: Text('$found von ${todo.length} Fragen im Skript verortet'
+            '${failed > 0 ? ' ($failed fehlgeschlagen – bitte nochmal versuchen)' : ''}.'),
+        duration: const Duration(seconds: 5),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Suche abgebrochen: $e')));
+    } finally {
+      if (mounted) setState(() => _scriptProgress = null);
+    }
   }
 
   @override
@@ -509,22 +611,25 @@ class _FlashcardListScreenState extends State<FlashcardListScreen> {
                   onSelected: (value) => switch (value) {
                     'export' => _exportCsv(allCards),
                     'stages' => _assignStagesWithAi(allCards),
+                    'script' => _matchScript(allCards),
                     _ => _importCsv(),
                   },
                   itemBuilder: (_) => [
                     if (allCards.isNotEmpty && _assignProgress == null)
                       const PopupMenuItem(value: 'stages', child: Text('Per KI in Ordner sortieren')),
+                    if (allCards.isNotEmpty && _scriptProgress == null)
+                      const PopupMenuItem(value: 'script', child: Text('Erklärungen im Skript suchen')),
                     if (allCards.isNotEmpty)
                       const PopupMenuItem(value: 'export', child: Text('Als CSV exportieren')),
                     const PopupMenuItem(value: 'import', child: Text('CSV importieren (Vorder-/Rückseite)')),
                   ],
                 ),
               ],
-        bottom: _assignProgress == null
+        bottom: (_assignProgress ?? _scriptProgress) == null
             ? null
             : PreferredSize(
                 preferredSize: const Size.fromHeight(4),
-                child: LinearProgressIndicator(value: _assignProgress),
+                child: LinearProgressIndicator(value: _assignProgress ?? _scriptProgress),
               ),
       ),
       body: allCards.isEmpty
@@ -1002,6 +1107,7 @@ class _FlashcardTile extends StatelessWidget {
       if (stage != StageStatus.active) stage.label,
       if (stage == StageStatus.active) card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
       if (card.weight != 1.0) '${formatWeight(card.weight)}× gewichtet',
+      if (card.hasScript) 'Erklärung im Skript, S. ${card.scriptPage}',
       if ((card.type == QuestionType.dragDrop || card.type == QuestionType.dragCategory) &&
           AnswerChecker.isTrivialDrag(card))
         'zu wenig Paare – wird als Karteikarte abgefragt',

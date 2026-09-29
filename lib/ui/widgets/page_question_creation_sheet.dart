@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -17,6 +18,7 @@ import '../../services/image_edit.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
+import '../study/script_match_runner.dart';
 import 'confirm_delete_dialog.dart';
 import 'image_editor_screen.dart';
 import 'model_override_tile.dart';
@@ -658,8 +660,11 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
     final kept = (_questions ?? const <_GeneratedQuestion>[]).where((q) => q.keep).toList();
     if (kept.isEmpty) return;
     setState(() => _saving = true);
-    await context.read<FlashcardRepository>().saveAll([for (final q in kept) mergeTiersIntoChain(q.tiers)]);
+    final cards = [for (final q in kept) mergeTiersIntoChain(q.tiers)];
+    await context.read<FlashcardRepository>().saveAll(cards);
     if (!mounted) return;
+    // Stammt die Seite aus einem Übungsblatt: Erklärung im Skript suchen.
+    unawaited(matchNewCardsToScript(context, cards));
     setState(() => _saving = false);
     Navigator.of(context).pop(kept.length);
   }

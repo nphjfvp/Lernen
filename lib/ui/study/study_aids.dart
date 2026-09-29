@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
+import '../../models/material_item.dart';
 import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
@@ -18,7 +19,10 @@ import 'socratic_screen.dart';
 
 /// Sucht, wo die Karte in den Unterlagen ihres Fachs steht (siehe
 /// [SourceLocator]). `null` ohne Treffer oder ohne Material-Repository.
-Future<CardSource?> findCardSource(BuildContext context, Flashcard card) async {
+///
+/// [preferScript] true (Standard): die ERKLÄRUNG im Skript; false: die Aufgabe
+/// im Original (bei Übungsblatt-Fragen das Übungsblatt).
+Future<CardSource?> findCardSource(BuildContext context, Flashcard card, {bool preferScript = true}) async {
   final materials = context.read<MaterialRepository?>();
   if (materials == null) return null;
   final concepts = context.read<ConceptRepository?>();
@@ -28,14 +32,27 @@ Future<CardSource?> findCardSource(BuildContext context, Flashcard card) async {
     card,
     materials: materials.forModule(card.moduleId),
     concepts: concepts?.forModule(card.moduleId) ?? const [],
+    preferScript: preferScript,
   );
+}
+
+/// Stammt die Frage aus einem Übungsblatt oder einer Altklausur (nicht aus den
+/// Folien)? Dann gibt es zwei Ziele: die Aufgabe im Blatt und die Erklärung im
+/// Skript.
+bool isWorksheetQuestion(BuildContext context, Flashcard card) {
+  final id = card.sourceMaterialId;
+  if (id == null) return false;
+  for (final m in context.read<MaterialRepository?>()?.forModule(card.moduleId) ?? const <MaterialItem>[]) {
+    if (m.id == id) return m.kind != MaterialKind.slide;
+  }
+  return false;
 }
 
 /// "Im Skript": öffnet die Seite, auf der die Frage steht. Eine nur
 /// vermutete Stelle (Textabgleich) wird als solche angekündigt.
-Future<void> openCardSource(BuildContext context, Flashcard card) async {
+Future<void> openCardSource(BuildContext context, Flashcard card, {bool preferScript = true}) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
-  final source = await findCardSource(context, card);
+  final source = await findCardSource(context, card, preferScript: preferScript);
   if (!context.mounted) return;
   if (source == null) {
     messenger?.showSnackBar(const SnackBar(
@@ -48,6 +65,12 @@ Future<void> openCardSource(BuildContext context, Flashcard card) async {
     messenger?.showSnackBar(SnackBar(
       content: Text('Vermutlich hier: ${source.material.fileName}, Seite ${source.page}'),
       duration: const Duration(seconds: 3),
+    ));
+  } else if (preferScript && source.material.kind != MaterialKind.slide) {
+    // Bei einer Übungsblatt-Frage ohne Erklärung im Skript.
+    messenger?.showSnackBar(const SnackBar(
+      content: Text('Im Skript keine passende Erklärung gefunden – hier ist das Übungsblatt.'),
+      duration: Duration(seconds: 3),
     ));
   }
   await openMaterialAt(context, source.material, page: source.page);
@@ -102,19 +125,25 @@ Future<void> openSocratic(BuildContext context, Flashcard card, {String? wrongAn
 /// nicht perfekt), nicht erst danach. Zeigt sich selbst nur, wenn überhaupt
 /// ein Material-Repository verfügbar ist.
 class SourceLinkButton extends StatelessWidget {
-  const SourceLinkButton({super.key, required this.card});
+  const SourceLinkButton({super.key, required this.card, this.script = false});
 
   final Flashcard card;
+
+  /// true: die Erklärung im Skript. false (Standard): die Aufgabe im
+  /// Original – bei Übungsblatt-Fragen das Übungsblatt ("Aufgabenblatt"), sonst
+  /// die Folie.
+  final bool script;
 
   @override
   Widget build(BuildContext context) {
     final hasMaterials = context.read<MaterialRepository?>() != null;
     if (!hasMaterials) return const SizedBox.shrink();
+    final worksheet = !script && isWorksheetQuestion(context, card);
     return TextButton.icon(
-      key: const ValueKey('aid-source-early'),
-      onPressed: () => openCardSource(context, card),
-      icon: const Icon(Icons.menu_book_outlined, size: 18),
-      label: const Text('Im Skript'),
+      key: ValueKey(script ? 'aid-source-script' : 'aid-source-early'),
+      onPressed: () => openCardSource(context, card, preferScript: script),
+      icon: Icon(worksheet ? Icons.description_outlined : Icons.menu_book_outlined, size: 18),
+      label: Text(worksheet ? 'Aufgabenblatt' : 'Im Skript'),
     );
   }
 }
@@ -172,6 +201,14 @@ class StudyAidsBar extends StatelessWidget {
                 onPressed: () => openCardSource(context, card),
                 icon: const Icon(Icons.menu_book_outlined, size: 18),
                 label: const Text('Im Skript'),
+              ),
+            // Bei Übungsblatt-Fragen zusätzlich die Aufgabe im Original.
+            if (hasMaterials && isWorksheetQuestion(context, card))
+              TextButton.icon(
+                key: const ValueKey('aid-worksheet'),
+                onPressed: () => openCardSource(context, card, preferScript: false),
+                icon: const Icon(Icons.description_outlined, size: 18),
+                label: const Text('Aufgabenblatt'),
               ),
             if (aiAvailable || card.miniLesson != null)
               TextButton.icon(

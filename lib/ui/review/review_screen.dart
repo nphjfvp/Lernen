@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cross_file/cross_file.dart';
@@ -37,6 +38,7 @@ import '../widgets/model_override_tile.dart';
 import '../widgets/ocr_notice.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
+import '../study/script_match_runner.dart';
 import '../widgets/safe_set_state.dart';
 
 enum _Step { pick, generating, preview }
@@ -768,6 +770,9 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
     }
     await conceptRepo.saveAll(concepts);
     await flashcardRepo.saveAll(flashcards);
+    // Fragen aus Übungsblättern: die Erklärung im Skript suchen (läuft im
+    // Hintergrund weiter, auch wenn der Screen schließt).
+    if (mounted) unawaited(matchNewCardsToScript(context, flashcards));
     if (mounted) Navigator.of(context).pop();
   }
 

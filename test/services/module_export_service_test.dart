@@ -132,6 +132,27 @@ void main() {
       expect(imported.flashcards[1].stageGroup, 'Ohm#1');
     });
 
+    test('die Fundstelle im Skript wird auf das neu nummerierte Material übersetzt', () {
+      final payload = ModuleExportService.buildPayload(
+        module: module,
+        lectureUnits: [unit],
+        materialsWithBytes: [material],
+        concepts: [concept],
+        flashcards: [
+          Flashcard.fromMap({...flashcard.toMap(), 'scriptMaterialId': 'mat1', 'scriptPage': 6}),
+          // Material nicht mit exportiert: Suche gilt als noch nicht gelaufen.
+          Flashcard.fromMap({...flashcard.toMap(), 'id': 'card2', 'scriptMaterialId': 'fremd', 'scriptPage': 3}),
+        ],
+      );
+      final imported = ModuleExportService.parse(payload);
+      final newMaterialId = imported.materials.single.id;
+      expect(newMaterialId, isNot('mat1'));
+      expect(imported.flashcards[0].scriptMaterialId, newMaterialId);
+      expect(imported.flashcards[0].scriptPage, 6);
+      expect(imported.flashcards[1].scriptMaterialId, isNull);
+      expect(imported.flashcards[1].scriptPage, isNull);
+    });
+
     test('zwei Importe derselben Datei erzeugen unabhängige, kollisionsfreie IDs', () {
       final payload = buildFullPayload();
       final first = ModuleExportService.parse(payload);

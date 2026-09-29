@@ -246,7 +246,8 @@ class _TaskTile extends StatelessWidget {
             Wrap(
               alignment: WrapAlignment.end,
               children: [
-                if (task.sourceMaterialId != null) SourceLinkButton(card: task),
+                if (task.sourceMaterialId != null || task.hasScript) SourceLinkButton(card: task, script: true),
+                if (task.sourceMaterialId != null && isWorksheetQuestion(context, task)) SourceLinkButton(card: task),
                 TextButton.icon(
                   onPressed: () => _edit(context),
                   icon: const Icon(Icons.edit_outlined, size: 16),

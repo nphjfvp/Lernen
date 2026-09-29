@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -16,6 +17,7 @@ import '../../services/pdf_question_import_service.dart';
 import '../../services/pdf_service.dart';
 import '../../theme/app_colors.dart';
 import '../practice/practice_screen.dart';
+import '../study/script_match_runner.dart';
 import '../widgets/discard_guard.dart';
 import '../widgets/math_text.dart';
 import '../widgets/safe_set_state.dart';
@@ -283,6 +285,8 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     );
     await context.read<FlashcardRepository>().saveAll(cards);
     if (!mounted) return;
+    // Fragen aus einem Arbeitsblatt: Erklärung im Skript suchen.
+    unawaited(matchNewCardsToScript(context, cards));
     setState(() {
       _saving = false;
       _questions = [];

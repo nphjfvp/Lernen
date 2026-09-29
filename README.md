@@ -149,7 +149,9 @@ engerem Fokus statt Feature-Fülle.
   Nachbereiten-Import: `Flashcard.sourceMaterialId`/`sourcePage`), sonst über
   das Konzept der Karte oder einen lokalen Textabgleich mit den PDFs des
   Fachs (`SourceLocator`, zuerst in derselben Einheit; als "vermutlich"
-  gekennzeichnet). **"Kurze Lerneinheit"** (mit API-Key): Worum es geht,
+  gekennzeichnet). Bei Fragen aus **Übungsblättern** zeigt "Im Skript" die
+  beim Erstellen abgeglichene Erklärung in den Folien (siehe 5m), das Blatt
+  selbst bleibt als "Aufgabenblatt" erreichbar. **"Kurze Lerneinheit"** (mit API-Key): Worum es geht,
   Kern, Beispiel, Merksatz – auf Basis der gefundenen Seite bzw. der
   Konzept-Erklärung, einmal erzeugt und an der Karte gespeichert
   (`Flashcard.miniLesson`, reist mit dem Sync). **"Sokratisch erarbeiten"**
@@ -1158,6 +1160,47 @@ Fragetyp je Stufe vorgeben – z.B. **Schwer = Freitext**:
   neuen Vorgabe. Welche Stufen eingeschaltet sind, bleibt wie bisher (Leicht
   an).
 - Die Vorgaben reisen mit dem Sync auf andere Geräte.
+
+### 5m. Skript-Abgleich: Erklärung im Skript statt nur im Übungsblatt
+
+Fragen, die aus einem **Übungsblatt** erstellt wurden, verwiesen bei "Im
+Skript" bisher nur auf das Blatt selbst – die Erklärung steht aber in den
+Vorlesungsfolien. Jetzt gleicht die App die Fragen mit dem Skript ab:
+
+- **Automatisch nach dem Erstellen** (Nachbereiten – Erstellen und Import,
+  "Frage erstellen" im PDF-Viewer, PDF-Fragen-Import): Für Fragen aus einem
+  Übungsblatt oder einer Altklausur sucht die KI im Skript des Fachs die Seite,
+  auf der die Erklärung bzw. Lösung steht. Ein Hinweis unten zeigt Start und
+  Ergebnis ("3 von 4 Fragen im Skript verortet"). Fragen direkt aus Folien
+  brauchen das nicht.
+- **Von Hand**: Kartenliste → Menü **"Erklärungen im Skript suchen"** für
+  alle Karten des Fachs (auch ältere ohne bekannte Quelle). Mit dem Häkchen
+  "Auch die schon gesuchten erneut prüfen" lässt sich eine frühere Suche
+  wiederholen. In der Kartenliste steht an gefundenen Karten "Erklärung im
+  Skript, S. N".
+- **Wie gesucht wird**: lokal die fünf wahrscheinlichsten Folien (seltene
+  Begriffe zählen mehr, Folien derselben Vorlesungseinheit werden bevorzugt),
+  dann wählt die KI daraus die Seite – oder "keine passt". Das Ergebnis wird
+  an der Karte gespeichert (`scriptMaterialId`/`scriptPage`); die Quelle
+  (das Übungsblatt) bleibt erhalten.
+- **Zwei Knöpfe**: Bei Fragen aus Übungsblättern heißt der Knopf vor dem
+  Antworten **"Aufgabenblatt"** (die Aufgabe im Original), danach zusätzlich
+  **"Im Skript"** (die Erklärung). Ist keine Erklärung bekannt, vermutet "Im
+  Skript" die Stelle per Textabgleich; passt nichts, kommt der Hinweis "Im
+  Skript keine passende Erklärung gefunden – hier ist das Übungsblatt."
+- **Voraussetzungen**: OpenRouter-API-Key und Vorlesungsfolien als **PDF auf
+  diesem Gerät** (nur die werden durchsucht). Ohne beides passiert beim
+  Erstellen nichts, die Kartenliste erklärt, was fehlt.
+- Fundstellen reisen mit dem Fach-Export/-Import und Sync mit.
+
+### 5n. KI-Modell-Favoriten
+
+Im Modellwähler (Einstellungen und "Frage erstellen") hat jedes Modell einen
+**Stern**: markierte Modelle stehen im Wähler ganz oben unter "Favoriten"
+(auch beim Suchen). Beim **Frage erstellen** erscheinen die Favoriten
+zusätzlich als **Schnellwahl** unter dem Modell-Feld – ein Tipp wechselt das
+Modell für diese Aktion, das Standard-Modell als Favorit setzt zurück auf
+"Standard". Favoriten reisen mit dem Sync auf andere Geräte.
 
 ### 6. Ausführen
 

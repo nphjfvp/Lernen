@@ -486,6 +486,21 @@ class Flashcard {
   final String? sourceMaterialId;
   final int? sourcePage;
 
+  /// Wo im SKRIPT (Vorlesungsfolien) die Erklärung bzw. Lösung zu dieser
+  /// Frage steht – gefunden per Abgleich nach dem Erstellen (siehe
+  /// ScriptMatchService). Nötig, weil [sourceMaterialId] bei Fragen aus
+  /// Übungsblättern nur aufs Übungsblatt zeigt. [scriptPage] 0 = gesucht,
+  /// aber nichts gefunden (dann nicht bei jedem Lauf erneut suchen); null =
+  /// noch nicht gesucht.
+  final String? scriptMaterialId;
+  final int? scriptPage;
+
+  /// Eine Fundstelle im Skript ist bekannt.
+  bool get hasScript => scriptMaterialId != null && (scriptPage ?? 0) > 0;
+
+  /// Der Abgleich mit dem Skript ist schon gelaufen (mit oder ohne Treffer).
+  bool get scriptSearched => scriptPage != null;
+
   /// Einmal erzeugte kurze Lerneinheit zur Frage (siehe
   /// AiService.generateMiniLesson) – gespeichert, damit sie beim nächsten
   /// Mal sofort da ist und mit synchronisiert.
@@ -554,6 +569,8 @@ class Flashcard {
     this.priorityIntroduction = false,
     this.sourceMaterialId,
     this.sourcePage,
+    this.scriptMaterialId,
+    this.scriptPage,
     this.miniLesson,
     this.weight = 1.0,
     this.stageLevel,
@@ -658,6 +675,8 @@ class Flashcard {
       priorityIntroduction: priorityIntroduction,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
+      scriptMaterialId: scriptMaterialId,
+      scriptPage: scriptPage,
       miniLesson: miniLesson,
       weight: weight,
       stageLevel: stageLevel,
@@ -739,6 +758,8 @@ class Flashcard {
       priorityIntroduction: priorityIntroduction,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
+      scriptMaterialId: scriptMaterialId,
+      scriptPage: scriptPage,
       miniLesson: miniLesson,
       weight: weight,
       stageLevel: stageLevel,
@@ -762,6 +783,12 @@ class Flashcard {
     if (miniLesson != null) map['miniLesson'] = miniLesson;
     return Flashcard.fromMap(map);
   }
+
+  /// Fundstelle der Erklärung im Skript setzen (siehe [scriptMaterialId]);
+  /// [materialId] null mit [page] 0 hält fest, dass nichts gefunden wurde.
+  /// Alles andere bleibt unverändert.
+  Flashcard copyWithScript({String? materialId, required int page}) =>
+      Flashcard.fromMap({...toMap(), 'scriptMaterialId': materialId, 'scriptPage': page});
 
   /// Gewichtung von Hand ändern (siehe [weight], Kartenliste) – Inhalt,
   /// Lernstand und Stufenkette bleiben unverändert. Wird auf
@@ -895,6 +922,8 @@ class Flashcard {
         priorityIntroduction: priorityIntroduction,
         sourceMaterialId: sourceMaterialId,
         sourcePage: sourcePage,
+        scriptMaterialId: scriptMaterialId,
+        scriptPage: scriptPage,
         miniLesson: miniLesson,
         weight: weight,
         stageLevel: stageLevel,
@@ -957,6 +986,8 @@ class Flashcard {
       priorityIntroduction: priorityIntroduction,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
+      scriptMaterialId: scriptMaterialId,
+      scriptPage: scriptPage,
       miniLesson: miniLesson,
       weight: weight,
       stageLevel: stageLevel,
@@ -1034,6 +1065,8 @@ class Flashcard {
       priorityIntroduction: priorityIntroduction,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
+      scriptMaterialId: scriptMaterialId,
+      scriptPage: scriptPage,
       miniLesson: miniLesson,
       weight: weight,
       stageLevel: stageLevel,
@@ -1133,6 +1166,8 @@ class Flashcard {
       priorityIntroduction: priorityIntroduction,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
+      scriptMaterialId: scriptMaterialId,
+      scriptPage: scriptPage,
       miniLesson: miniLesson,
       weight: weight,
       stageLevel: stageLevel,
@@ -1181,6 +1216,8 @@ class Flashcard {
         'priorityIntroduction': priorityIntroduction,
         'sourceMaterialId': sourceMaterialId,
         'sourcePage': sourcePage,
+        'scriptMaterialId': scriptMaterialId,
+        'scriptPage': scriptPage,
         'miniLesson': miniLesson,
         'weight': weight,
         'stageLevel': stageLevel,
@@ -1235,6 +1272,8 @@ class Flashcard {
         priorityIntroduction: map['priorityIntroduction'] as bool? ?? false,
         sourceMaterialId: map['sourceMaterialId'] as String?,
         sourcePage: (map['sourcePage'] as num?)?.toInt(),
+        scriptMaterialId: map['scriptMaterialId'] as String?,
+        scriptPage: (map['scriptPage'] as num?)?.toInt(),
         miniLesson: map['miniLesson'] as String?,
         // Ältere Datensätze ohne Gewicht zählen einfach (1.0); ein kaputter
         // Wert (0, negativ) würde die Intervall-Skalierung aushebeln.

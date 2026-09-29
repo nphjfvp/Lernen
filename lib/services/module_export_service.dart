@@ -190,6 +190,8 @@ class ModuleExportService {
       priorityIntroduction: f.priorityIntroduction,
       sourceMaterialId: f.sourceMaterialId,
       sourcePage: f.sourcePage,
+      scriptMaterialId: f.scriptMaterialId,
+      scriptPage: f.scriptPage,
       miniLesson: f.miniLesson,
       weight: f.weight,
       stageLevel: f.stageLevel,
@@ -343,6 +345,10 @@ class ModuleExportService {
               unitId: f.unitId == null ? null : unitIdMap[f.unitId],
               sourceMaterialId: f.sourceMaterialId == null ? null : materialIdMap[f.sourceMaterialId],
               sourcePage: f.sourceMaterialId == null || materialIdMap[f.sourceMaterialId] == null ? null : f.sourcePage,
+              // Das Material wird beim Import neu nummeriert – ohne es (nicht
+              // mit-exportiert) gilt die Skript-Suche als noch nicht gelaufen.
+              scriptMaterialId: f.scriptMaterialId == null ? null : materialIdMap[f.scriptMaterialId],
+              scriptPage: f.scriptMaterialId != null && materialIdMap[f.scriptMaterialId] != null ? f.scriptPage : null,
               miniLesson: f.miniLesson,
               weight: f.weight,
               stageLevel: f.stageLevel,

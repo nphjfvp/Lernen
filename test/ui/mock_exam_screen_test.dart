@@ -105,8 +105,8 @@ void main() {
       await materials.save(MaterialItem(
         id: 'skript-exam',
         moduleId: 'exam-m1',
-        fileName: 'Uebungsblatt.pdf',
-        kind: MaterialKind.exercise,
+        fileName: 'Folien.pdf',
+        kind: MaterialKind.slide,
         extractedText: 'x',
         createdAt: DateTime(2026, 1, 1),
       ));

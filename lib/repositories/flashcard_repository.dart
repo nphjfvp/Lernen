@@ -123,6 +123,34 @@ class FlashcardRepository extends ChangeNotifier {
     return updated;
   }
 
+  /// Fundstellen der Erklärung im Skript am GESPEICHERTEN Stand ablegen
+  /// (siehe Flashcard.scriptMaterialId): [locations] ordnet Karten-IDs
+  /// (Material-ID oder null für "nichts gefunden", Seite) zu. Alles andere an
+  /// der Karte – auch ein gleichzeitig verbuchter Lernstand – bleibt; gelöschte
+  /// Karten bleiben weg. Gibt zurück, wie viele Karten geändert wurden.
+  Future<int> updateScriptLocations(Map<String, ({String? materialId, int page})> locations) async {
+    if (locations.isEmpty) return 0;
+    final db = await DatabaseService.instance.database;
+    final moduleIds = <String>{};
+    final changed = await db.transaction((txn) async {
+      var n = 0;
+      for (final e in locations.entries) {
+        final ref = DatabaseService.flashcards.record(e.key);
+        final stored = await ref.get(txn);
+        if (stored == null) continue;
+        final card = Flashcard.fromMap(stored).copyWithScript(materialId: e.value.materialId, page: e.value.page);
+        await ref.put(txn, card.toMap());
+        moduleIds.add(card.moduleId);
+        n++;
+      }
+      return n;
+    });
+    for (final id in moduleIds) {
+      if (_byModule.containsKey(id)) await loadForModule(id);
+    }
+    return changed;
+  }
+
   /// KI-Hilfestellungen am GESPEICHERTEN Stand ablegen (siehe
   /// Flashcard.aiHints) – nur, solange die Karte noch dieselbe Frage
   /// ([type]/[front]) zeigt; nach einem Stufenwechsel passen sie nicht mehr.

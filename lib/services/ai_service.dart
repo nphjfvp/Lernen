@@ -2329,6 +2329,65 @@ Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
     return parseStageAssignments(_parseJsonObject(raw));
   }
 
+  static const _matchScriptSystemPrompt = '''
+Du ordnest Lernfragen ihrer Erklärung im Skript (Vorlesungsfolien) zu. Du
+bekommst nummerierte Fragen (Typ, Frage, Lösung) und je Frage einige
+Kandidaten-Seiten aus dem Skript – mit Kennung, Datei, Seitenzahl und Text.
+Die Fragen stammen meist aus Übungsblättern; die Erklärung oder Lösung steht
+im Skript.
+
+Wähle je Frage die Kandidaten-Seite, auf der die ERKLÄRUNG bzw. der Stoff
+hinter der Lösung steht (Definition, Formel, Herleitung, Beispiel, Regel).
+Regeln:
+- Nur eine Kennung aus den Kandidaten DIESER Frage, nie eine erfundene.
+- Eine Seite, die das Thema nur streift, nur Überschrift, Gliederung oder
+  Inhaltsverzeichnis ist, zählt nicht.
+- Im Zweifel null: lieber keine Fundstelle als eine falsche.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
+{"matches": [{"n": 1, "page": "c2"}, {"n": 2, "page": null}]}
+''';
+
+  /// Ordnet Fragen der Skript-Seite zu, auf der ihre Erklärung steht. Jede
+  /// Frage kommt mit ihren Kandidaten-Seiten (Kennung, Beschriftung, Text –
+  /// meist die besten Treffer eines lokalen Textabgleichs). Liefert je
+  /// Fragennummer die gewählte Kandidaten-Kennung oder `null` (keine passt);
+  /// Kennungen, die es nicht gab, werden zu `null`.
+  Future<Map<int, String?>> matchCardsToScript(
+    List<
+        ({
+          int n,
+          String type,
+          String question,
+          String answer,
+          List<({String id, String label, String text})> candidates,
+        })>
+        items,
+  ) async {
+    final buffer = StringBuffer();
+    for (final item in items) {
+      buffer
+        ..writeln('### Frage ${item.n} [${item.type}]')
+        ..writeln('Frage: ${_cap(item.question, 500)}')
+        ..writeln('Lösung: ${_cap(item.answer, 300)}')
+        ..writeln('Kandidaten:');
+      for (final c in item.candidates) {
+        buffer.writeln('[${c.id}] ${c.label}: ${_cap(c.text.replaceAll(RegExp(r'\s+'), ' '), 800)}');
+      }
+      buffer.writeln();
+    }
+    final raw = await _complete(_matchScriptSystemPrompt, buffer.toString());
+    final parsed = _parseJsonObject(raw);
+    final valid = {for (final item in items) item.n: {for (final c in item.candidates) c.id}};
+    return {
+      for (final entry in _mapsIn(parsed['matches']))
+        if (entry['n'] is num && valid.containsKey((entry['n'] as num).toInt()))
+          (entry['n'] as num).toInt(): () {
+            final id = entry['page']?.toString().trim();
+            return id != null && valid[(entry['n'] as num).toInt()]!.contains(id) ? id : null;
+          }(),
+    };
+  }
+
   /// Die Objekte einer JSON-Liste – ein einzelner kaputter Eintrag (Text
   /// statt Objekt) oder ein fehlendes Feld kostet sonst das Ergebnis des
   /// ganzen Abschnitts.

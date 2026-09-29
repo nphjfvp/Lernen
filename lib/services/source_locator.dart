@@ -24,11 +24,16 @@ class CardSource {
   final bool guessed;
 }
 
-/// Findet, wo eine Frage in den Unterlagen ihres Fachs steht: die beim
-/// Erstellen gespeicherte Seite ([Flashcard.sourcePage]), sonst die Seite
-/// des verknüpften Konzepts, sonst die Seite, deren Text am besten zu Frage
-/// und Lösung passt (lokal, ohne KI). Nur PDFs, die auf dem Gerät liegen,
-/// werden durchsucht.
+/// Findet, wo eine Frage in den Unterlagen ihres Fachs steht. Für "Im Skript"
+/// ([preferScript] true, der Standard) zählt die ERKLÄRUNG: die beim
+/// Abgleich gefundene Skript-Seite ([Flashcard.scriptPage]), sonst – bei
+/// Folien-Fragen – die beim Erstellen gespeicherte Seite, bei Fragen aus
+/// einem Übungsblatt eine per Textabgleich vermutete Skript-Seite und erst
+/// zuletzt das Übungsblatt selbst. Mit [preferScript] false (die Aufgabe im
+/// Original ansehen) kommt zuerst die beim Erstellen gespeicherte Stelle.
+/// Weitere Stufen: die Seite des verknüpften Konzepts und ein lokaler
+/// Textabgleich (ohne KI). Nur PDFs, die auf dem Gerät liegen, werden
+/// durchsucht.
 class SourceLocator {
   SourceLocator({Future<Uint8List?> Function(MaterialItem material)? loadBytes, PdfService? pdf})
       : _loadBytes = loadBytes ?? _defaultLoad,
@@ -45,6 +50,11 @@ class SourceLocator {
       MaterialFileStore.load(filePath: m.filePath, fileBytesBase64: m.fileBytesBase64);
 
   static bool _isPdf(MaterialItem m) => m.fileName.toLowerCase().endsWith('.pdf');
+
+  /// Die Folien/Skripte, in denen Erklärungen stehen: Vorlesungsmaterial
+  /// (keine Übungsblätter oder Altklausuren) als PDF auf diesem Gerät.
+  static List<MaterialItem> scriptPdfs(Iterable<MaterialItem> materials) =>
+      [for (final m in materials) if (m.kind == MaterialKind.slide && m.hasViewablePdf && _isPdf(m)) m];
 
   Future<List<String>> pageTextsOf(MaterialItem material) async {
     final cached = _pageTextCache[material.id];
@@ -71,6 +81,7 @@ class SourceLocator {
     Flashcard card, {
     required List<MaterialItem> materials,
     List<Concept> concepts = const [],
+    bool preferScript = true,
   }) async {
     MaterialItem? byId(String? id) {
       if (id == null) return null;
@@ -82,33 +93,62 @@ class SourceLocator {
 
     final query = queryFor(card);
 
-    // 1. Beim Erstellen gespeichert.
-    final stored = byId(card.sourceMaterialId);
-    if (stored != null) {
-      final page = card.sourcePage ?? (await _bestIn([stored], query))?.page ?? 1;
-      return _withText(stored, page);
+    // 1. Die beim Abgleich gefundene Erklärung im Skript.
+    if (preferScript && card.hasScript) {
+      final script = byId(card.scriptMaterialId);
+      if (script != null) return _withText(script, card.scriptPage!);
     }
 
-    // 2. Das Konzept der Karte kennt seine Seite.
+    // 2. Beim Erstellen gespeichert. Stammt die Frage aus einem Übungsblatt
+    // und soll die Erklärung gezeigt werden, steht sie im Skript.
+    final stored = byId(card.sourceMaterialId);
     Concept? concept;
     for (final c in concepts) {
       if (c.id == card.conceptId) concept = c;
     }
+    if (stored != null) {
+      final fromWorksheet = stored.kind != MaterialKind.slide;
+      if (!(preferScript && fromWorksheet)) {
+        final page = card.sourcePage ?? (await _bestIn([stored], query))?.page ?? 1;
+        return _withText(stored, page);
+      }
+      final inScript = await _guessInScript(card, materials, concept, query);
+      if (inScript != null) return inScript;
+      final page = card.sourcePage ?? (await _bestIn([stored], query))?.page ?? 1;
+      return _withText(stored, page);
+    }
+
+    // 3. Das Konzept der Karte kennt seine Seite.
     final linked = byId(concept?.linkedMaterialId);
     if (linked != null) {
       final page = concept!.linkedPageNumber ?? (await _bestIn([linked], query))?.page ?? 1;
       return _withText(linked, page);
     }
 
-    // 3. Textabgleich – zuerst in den Materialien derselben Einheit bzw. des
-    // Konzepts, dann im ganzen Fach.
-    final searchable = materials.where((m) => m.hasViewablePdf && _isPdf(m)).toList();
-    final preferred = searchable
-        .where((m) =>
-            (card.unitId != null && m.unitId == card.unitId) ||
-            (concept?.sourceMaterialIds.contains(m.id) ?? false))
-        .toList();
-    for (final pool in [if (preferred.isNotEmpty) preferred, searchable]) {
+    // 4. Textabgleich.
+    return _guessInScript(card, materials, concept, query, allPdfsAsFallback: true);
+  }
+
+  /// Textabgleich im Skript – zuerst in den Materialien derselben Einheit
+  /// bzw. des Konzepts, dann in allen Folien; mit [allPdfsAsFallback]
+  /// zuletzt in jedem PDF des Fachs.
+  Future<CardSource?> _guessInScript(
+    Flashcard card,
+    List<MaterialItem> materials,
+    Concept? concept,
+    ({List<String> question, List<String> answer}) query, {
+    bool allPdfsAsFallback = false,
+  }) async {
+    final slides = scriptPdfs(materials);
+    final anyPdf = materials.where((m) => m.hasViewablePdf && _isPdf(m)).toList();
+    bool preferredFor(MaterialItem m) =>
+        (card.unitId != null && m.unitId == card.unitId) || (concept?.sourceMaterialIds.contains(m.id) ?? false);
+    final preferred = slides.where(preferredFor).toList();
+    for (final pool in [
+      if (preferred.isNotEmpty) preferred,
+      slides,
+      if (allPdfsAsFallback) anyPdf,
+    ]) {
       final best = await _bestIn(pool, query);
       if (best != null) {
         return CardSource(material: best.material, page: best.page, pageText: best.text, guessed: true);
@@ -168,30 +208,58 @@ class SourceLocator {
   /// zählen mehr (IDF), Begriffe der Lösung anderthalbfach. `null`, wenn
   /// keine Seite mindestens zwei Begriffe teilt.
   static int? bestPage(({List<String> question, List<String> answer}) query, List<String> pageTexts) {
-    if (pageTexts.isEmpty) return null;
-    final pageStems = [for (final t in pageTexts) keywords(t).toSet()];
+    final ranked = PageIndex(pageTexts).rank(query, limit: 1);
+    return ranked.isEmpty ? null : ranked.first.index;
+  }
+}
+
+/// Die Seiten eines oder mehrerer Skripte zum schnellen Durchsuchen: je Seite
+/// die Stichwort-Stämme, dazu wie viele Seiten jeden Stamm enthalten (für die
+/// Gewichtung seltener Begriffe). Einmal gebaut und für viele Fragen
+/// wiederverwendbar.
+class PageIndex {
+  PageIndex(List<String> pageTexts)
+      : _stems = [for (final t in pageTexts) SourceLocator.keywords(t).toSet()] {
+    for (final stems in _stems) {
+      for (final s in stems) {
+        _df[s] = (_df[s] ?? 0) + 1;
+      }
+    }
+  }
+
+  final List<Set<String>> _stems;
+  final Map<String, int> _df = {};
+
+  int get length => _stems.length;
+
+  /// Die besten Seiten zur Anfrage, beste zuerst: [index] (0-basiert),
+  /// [score] und wie viele Begriffe [hits] die Seite mit der Anfrage teilt.
+  /// Nur Seiten mit mindestens zwei gemeinsamen Begriffen. [boost] wertet
+  /// bestimmte Seiten auf (z.B. Folien derselben Einheit).
+  List<({int index, double score, int hits})> rank(
+    ({List<String> question, List<String> answer}) query, {
+    int limit = 5,
+    double Function(int pageIndex)? boost,
+  }) {
     final weights = <String, double>{
       for (final s in query.question) s: 1,
       for (final s in query.answer) s: 1.5,
     };
-    if (weights.isEmpty) return null;
-    final n = pageStems.length;
-    int? best;
-    var bestScore = 0.0;
+    if (weights.isEmpty || _stems.isEmpty) return const [];
+    final n = _stems.length;
+    final idf = {for (final e in weights.entries) e.key: math.log((n + 1) / ((_df[e.key] ?? 0) + 0.5))};
+    final result = <({int index, double score, int hits})>[];
     for (var i = 0; i < n; i++) {
       var score = 0.0;
       var hits = 0;
       for (final e in weights.entries) {
-        if (!pageStems[i].contains(e.key)) continue;
-        final df = pageStems.where((p) => p.contains(e.key)).length;
-        score += e.value * math.log((n + 1) / (df + 0.5));
+        if (!_stems[i].contains(e.key)) continue;
+        score += e.value * idf[e.key]!;
         hits++;
       }
-      if (hits >= 2 && score > bestScore) {
-        best = i;
-        bestScore = score;
-      }
+      if (hits >= 2 && score > 0) result.add((index: i, score: score * (boost?.call(i) ?? 1), hits: hits));
     }
-    return best;
+    result.sort((a, b) => b.score.compareTo(a.score));
+    return result.length > limit ? result.sublist(0, limit) : result;
   }
 }

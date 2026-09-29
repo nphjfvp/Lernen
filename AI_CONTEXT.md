@@ -444,7 +444,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 749 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 777 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -633,6 +633,37 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     erstellen“ und `PageQuestionCreationSheet` (Vorbelegung in `initState`,
     „Typ-Auswahl als Standard merken“; nur Typen, keine An/Aus-Zustände).
     Gemeinsames Widget `QuestionTypeDropdown`.
+35. Skript-Abgleich (Nutzer-Wunsch: „Im Skript“ bei Übungsblatt-Fragen soll
+    die Erklärung zeigen): `Flashcard.scriptMaterialId`/`scriptPage`
+    (`hasScript`, `scriptSearched`, `copyWithScript`; `scriptPage == 0` =
+    gesucht/ohne Treffer, `null` = nie gesucht; in allen Rekonstruktions-
+    stellen durchgereicht, Export-Reset + Import-Remap). `SourceLocator.locate`
+    ist skript-first (`preferScript`, Standard): gespeicherte Skript-Seite →
+    Übungsblatt-Quelle bevorzugt per `_guessInScript` in Folien → Blatt als
+    Fallback → Konzept → Textabgleich; `PageIndex.rank` (IDF, ≥2 Treffer,
+    Einheiten-Boost) ist die lokale Kandidatensuche. `ScriptMatchService`
+    (`needsMatch`/`candidatesFrom`/`match`): je Karte Top-5-Seiten, KI
+    (`AiService.matchCardsToScript`, Batches à 8, ungültige IDs → null) wählt
+    Seite oder keine; Karten ohne Kandidaten brauchen keine KI, ein
+    fehlgeschlagener Batch zählt in `failedCards` und wird nicht gespeichert.
+    Speichern: `FlashcardRepository.updateScriptLocations`. UI:
+    `ScriptMatchContext`/`matchNewCardsToScript` (`lib/ui/study/
+    script_match_runner.dart`; liest Repos vor dem ersten await, Test-Seam
+    `aiFactory`, still ohne Key/Folien-PDF) aus ReviewScreen,
+    PageQuestionCreationSheet, PdfQuestionImportScreen, TaskFolderScreen;
+    Kartenliste-Menü „Erklärungen im Skript suchen“ (Häkchen erneut prüfen,
+    Chunks à 40). `SourceLinkButton`: bei Übungsblatt-Fragen vor dem
+    Antworten „Aufgabenblatt“ (`preferScript: false`), danach „Im Skript“.
+    Automatisch nur für Karten mit Nicht-Folien-Quelle; ohne Quelle nur von
+    Hand (`includeUnsourced`). Nur Folien-PDFs auf dem Gerät zählen
+    (`SourceLocator.scriptPdfs`).
+36. KI-Modell-Favoriten: `AppSettings.favoriteModelIds` (Reihenfolge des
+    Markierens, tolerant gelesen via `parseModelIds`, `favoritesToggled`),
+    im Sync (fehlendes Feld lässt Lokales stehen, vorhandenes auch leeres
+    gilt). `showModelPickerSheet` liest `SettingsRepository?` selbst
+    (Stern je Zeile, Abschnitte „Favoriten“/„Alle Modelle“; ohne Repository
+    keine Sterne); `ModelOverrideTile` zeigt Favoriten als `ChoiceChip`-
+    Schnellwahl (Standard-Modell wählen = Override null).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
