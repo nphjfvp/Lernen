@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../services/firestore_rules.dart';
 import '../../services/sync_diagnostics.dart';
 import '../../theme/app_colors.dart';
 
@@ -77,6 +78,19 @@ class SyncDiagnosisDialog extends StatelessWidget {
                   ),
           ),
           actions: [
+            TextButton(
+              key: const ValueKey('copy-rules'),
+              onPressed: () async {
+                await Clipboard.setData(const ClipboardData(text: firestoreRulesText));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Firestore-Regeln kopiert – in der Firebase-Konsole unter Firestore → Regeln '
+                        'einfügen und veröffentlichen.'),
+                  ));
+                }
+              },
+              child: const Text('Regeln kopieren'),
+            ),
             if (lines != null)
               TextButton(
                 onPressed: () async {

@@ -1,0 +1,47 @@
+/// Der Inhalt von `firestore.rules` (Repo-Wurzel) – für "Regeln kopieren" in den
+/// Einstellungen: Firebase liest die Regeln nicht aus dem Repo, sie müssen
+/// einmal von Hand in der Firebase-Konsole (Firestore → Regeln) eingefügt und
+/// veröffentlicht werden. Ein Test hält beide Fassungen gleich.
+const firestoreRulesText = r'''rules_version = '2';
+
+// Zwei Zugriffswege auf Sync-Daten (siehe lib/services/sync_service.dart):
+//  - users/{uid}: an ein Firebase-Konto gebunden (Google/E-Mail-Anmeldung).
+//    Nur der authentifizierte Besitzer selbst darf lesen/schreiben - echte
+//    Zugriffskontrolle statt eines geteilten Geheimnisses. Empfohlener Weg,
+//    seit hier auch der BYOK-API-Key mit übertragen wird.
+//  - sync_codes/{code}: Fallback ohne Konto (wie beim Vorgänger) - wer den
+//    Sync-Code kennt, darf genau dieses eine Dokument lesen/schreiben, wie
+//    ein Passwort.
+// In beiden Fällen ist "list" verboten, damit niemand die Sammlung
+// durchsuchen/aufzählen kann, um an existierende IDs/Codes zu kommen. Alles
+// außerhalb dieser beiden Pfade ist per Default-Regel gesperrt.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow get, write: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+
+      // Große Datenbestände werden in Teilen hochgeladen (siehe
+      // SyncCodec/SyncService) – gleiche Regel wie das Hauptdokument.
+      match /sync_parts/{part} {
+        allow get, write: if request.auth != null && request.auth.uid == uid;
+        allow list: if false;
+      }
+    }
+
+    match /sync_codes/{code} {
+      allow get, write: if code is string && code.size() >= 6;
+      allow list: if false;
+
+      match /sync_parts/{part} {
+        allow get, write: if code is string && code.size() >= 6;
+        allow list: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+''';

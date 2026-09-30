@@ -36,4 +36,9 @@ class DatabaseService {
   static final modelCatalog = stringMapStoreFactory.store('model_catalog');
   static final chatMessages = stringMapStoreFactory.store('chat_messages');
   static final labExperiments = stringMapStoreFactory.store('lab_experiments');
+
+  /// Lokale Sicherungen des Lernstands (siehe SyncBackupService): Kopfdaten und
+  /// – getrennt, damit das Auflisten nicht alles lädt – die Daten selbst.
+  static final syncBackups = stringMapStoreFactory.store('sync_backups');
+  static final syncBackupData = stringMapStoreFactory.store('sync_backup_data');
 }

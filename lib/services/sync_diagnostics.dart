@@ -97,6 +97,22 @@ class SyncDiagnostics {
     );
   }
 
+  /// Ein Satz zum Cloud-Stand für Bestätigungsfragen: "12 Fächer, 340 Karten ·
+  /// hochgeladen vor 3 Std. von einem anderen Gerät".
+  static String describeCloudState({
+    required int? modules,
+    required int? flashcards,
+    required DateTime? updatedAt,
+    required bool fromThisDevice,
+    required DateTime now,
+  }) {
+    final counts = modules == null && flashcards == null
+        ? 'Umfang unbekannt'
+        : '${modules ?? '?'} Fächer, ${flashcards ?? '?'} Karten';
+    final when = updatedAt == null ? '' : ' · hochgeladen ${since(updatedAt, now)}';
+    return '$counts$when ${fromThisDevice ? 'von diesem Gerät' : 'von einem anderen Gerät'}';
+  }
+
   /// "vor 5 Min." / "vor 3 Std." / "vor 2 Tagen".
   static String since(DateTime time, DateTime now) {
     final diff = now.difference(time);

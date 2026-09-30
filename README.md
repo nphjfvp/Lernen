@@ -585,6 +585,29 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   "erfolgreich heruntergeladen" geliefert hätte) und hat Fristen, damit ein
   Upload bei abgerissener Verbindung nicht endlos hängt und den Auto-Sync
   blockiert. Auf Android ist `INTERNET` ausdrücklich im Manifest angefordert.
+- **Sicherungen auf dem Gerät** – ein Download ersetzt den lokalen Stand
+  vollständig, und ein Gerät mit altem Stand kann den Cloud-Stand
+  überschreiben. Deshalb legt die App **vor jedem Download automatisch eine
+  Sicherung** an (dazu einmal täglich eine weitere; die letzten 5 bzw. 3
+  bleiben) – in derselben lokalen Datenbank, also auch im Web, und nie in der
+  Cloud. Einstellungen → Cloud-Sync → **"Sicherungen (auf diesem Gerät)"**
+  zeigt sie mit Datum, Fächern und Karten; **"Wiederherstellen"** holt einen
+  Stand zurück (vorher wird der jetzige gesichert, es lässt sich also
+  zurücknehmen; lokal gespeicherte PDFs bleiben). Schlägt die Sicherung vor
+  einem Download fehl, wird nichts heruntergeladen.
+  **Rückfragen mit Zahlen:** vor "Herunterladen" steht, was in der Cloud liegt
+  (Fächer, Karten, wann, von welchem Gerät) und was hier überschrieben wird;
+  vor "Hochladen" fragt die App, wenn in der Cloud ein Stand eines ANDEREN
+  Geräts liegt, den dieses nicht kennt – mit einer Warnung, wenn dort MEHR
+  liegt als hier.
+  **Abgebrochene Uploads** lassen den Cloud-Stand nicht mehr unlesbar zurück
+  (Cloud-Format 3): große Stände werden in Teilen `sync_parts/{pushId}_n`
+  unter neuen Kennungen geschrieben, erst das Hauptdokument schaltet den neuen
+  Stand ein, dann werden die alten Teile gelöscht. Frühere Stände (Format 1
+  und 2) werden weiter gelesen; eine ältere App-Version meldet bei einem
+  Format-3-Stand "neuere App-Version – bitte aktualisieren". In der
+  Diagnose ("Verbindung prüfen") kopiert **"Regeln kopieren"** den Inhalt von
+  `firestore.rules` für die Firebase-Konsole.
 - **Anmelden auf einem neuen Gerät** – direkt nach der Anmeldung fragt die
   App, ob der Stand aus dem Konto geholt werden soll (mit Anzahl Fächer/
   Karten; auf einem leeren Gerät ohne zusätzliche Überschreiben-Warnung). Ist

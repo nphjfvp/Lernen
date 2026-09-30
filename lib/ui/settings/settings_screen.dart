@@ -28,6 +28,7 @@ import '../widgets/add_password_dialog.dart';
 import '../widgets/question_type_dropdown.dart';
 import '../widgets/update_actions.dart';
 import 'model_picker_sheet.dart';
+import 'sync_backups_dialog.dart';
 import 'sync_diagnosis_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -185,28 +186,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// zwischenzeitlich offline weitergelernt und noch nicht gepusht, geht
   /// dieser Fortschritt hier lautlos verloren. Die konkreten Zahlen machen
   /// zumindest sichtbar, was auf dem Spiel steht.
-  Future<bool?> _confirmOverwrite() async {
+  Future<bool?> _confirmOverwrite(SyncTarget target) async {
     final counts = await _syncService.localCounts();
     if (!mounted) return false;
     // Auf einem neuen Gerät ohne Daten gibt es nichts zu verlieren.
     if (counts.modules == 0 && counts.materials == 0 && counts.concepts == 0 && counts.flashcards == 0) return true;
+    final cloud = await _cloudSummary(target);
+    if (!mounted) return false;
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Lokale Daten überschreiben?'),
         content: Text(
+            '${cloud == null ? '' : 'In der Cloud liegt: $cloud.\n\n'}'
             'Der Cloud-Stand ersetzt deine aktuell ${counts.modules} lokalen Fächer, '
             '${counts.materials} Materialien, ${counts.concepts} Konzepte und '
             '${counts.flashcards} Karteikarten VOLLSTÄNDIG – kein Zusammenführen. '
             'Hat ein anderes Gerät zwischenzeitlich offline weitergelernt und das '
-            'noch nicht hochgeladen, geht dieser Fortschritt hier verloren. Das kann '
-            'nicht rückgängig gemacht werden.'),
+            'noch nicht hochgeladen, geht dieser Fortschritt hier verloren.\n\n'
+            'Vorher legt die App automatisch eine Sicherung auf diesem Gerät an – '
+            'sie lässt sich unter "Sicherungen" wiederherstellen.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
           FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Überschreiben')),
         ],
       ),
     );
+  }
+
+  /// Was gerade in der Cloud liegt, als Satz (siehe SyncDiagnostics.describeCloudState);
+  /// `null`, wenn dort nichts liegt oder sie nicht erreichbar ist.
+  Future<String?> _cloudSummary(SyncTarget target) async {
+    try {
+      final cloud = await _syncService.cloudMeta(target);
+      if (cloud == null) return null;
+      final deviceId = await AutoSyncService.ensureDeviceId(_settingsRepo);
+      return SyncDiagnostics.describeCloudState(
+        modules: cloud.modules,
+        flashcards: cloud.flashcards,
+        updatedAt: cloud.updatedAt,
+        fromThisDevice: cloud.deviceId == deviceId,
+        now: DateTime.now(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Vor "Hochladen": liegt in der Cloud ein Stand eines ANDEREN Geräts, den
+  /// dieses Gerät nicht kennt, ersetzt der Upload ihn – dann mit Zahlen fragen,
+  /// welcher der bessere Stand ist.
+  Future<bool> _confirmUpload(SyncTarget target) async {
+    final CloudSyncMeta? cloud;
+    try {
+      cloud = await _syncService.cloudMeta(target);
+    } catch (_) {
+      return true; // nicht erreichbar: der Upload selbst meldet das
+    }
+    if (cloud == null || !mounted) return true;
+    final deviceId = await AutoSyncService.ensureDeviceId(_settingsRepo);
+    if (!AutoSyncService.isBlockedByOtherDevice(
+      meta: cloud,
+      lastSyncedPushId: _settingsRepo.settings.lastSyncedPushId,
+      deviceId: deviceId,
+    )) {
+      return true;
+    }
+    final local = await _syncService.localCounts();
+    if (!mounted) return false;
+    final cloudText = SyncDiagnostics.describeCloudState(
+      modules: cloud.modules,
+      flashcards: cloud.flashcards,
+      updatedAt: cloud.updatedAt,
+      fromThisDevice: false,
+      now: DateTime.now(),
+    );
+    final cloudHasMore = (cloud.flashcards ?? 0) > local.flashcards || (cloud.modules ?? 0) > local.modules;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cloud-Stand eines anderen Geräts ersetzen?'),
+        content: Text(
+          'In der Cloud liegt: $cloudText – diesen Stand kennt dieses Gerät nicht.\n'
+          'Dieses Gerät hat: ${local.modules} Fächer, ${local.flashcards} Karten.\n\n'
+          '${cloudHasMore ? 'ACHTUNG: In der Cloud liegt MEHR als hier. Vielleicht ist der Cloud-Stand der neuere – '
+              'dann besser erst "Herunterladen".\n\n' : ''}'
+          'Ein Upload ersetzt den Cloud-Stand vollständig; der andere Stand ist danach nicht mehr in der Cloud.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Cloud ersetzen')),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   Future<void> _push(SyncTarget target, {String? codeToRemember}) async {
@@ -241,7 +314,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _pull(SyncTarget target, {String? codeToRemember}) async {
-    final confirmed = await _confirmOverwrite();
+    final confirmed = await _confirmOverwrite(target);
     if (confirmed != true || !mounted) return;
     final repo = context.read<SettingsRepository>();
     final autoSync = context.read<AutoSyncService>();
@@ -269,6 +342,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
       successMessage: 'Heruntergeladen.',
     );
+  }
+
+  /// "Sicherungen": die automatischen Sicherungen dieses Geräts ansehen und eine
+  /// wiederherstellen.
+  Future<void> _showBackups() async {
+    final restored = await showDialog<bool>(context: context, builder: (_) => const SyncBackupsDialog());
+    if (restored != true || !mounted) return;
+    await context.read<ModuleRepository>().load();
+    if (!mounted) return;
+    await context.read<LabExperimentRepository?>()?.loadAll();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sicherung wiederhergestellt.')));
   }
 
   /// "Verbindung prüfen": geht Ziel, Cloud-Stand und Schreibzugriff durch und
@@ -300,7 +385,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _pushCode() async {
     final target = _codeTarget();
-    if (target != null) await _push(target, codeToRemember: target.id);
+    if (target == null || !await _confirmUpload(target) || !mounted) return;
+    await _push(target, codeToRemember: target.id);
   }
 
   Future<void> _pullCode() async {
@@ -310,7 +396,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _pushAccount() async {
     final target = _accountTarget();
-    if (target != null) await _push(target);
+    if (target == null || !await _confirmUpload(target) || !mounted) return;
+    await _push(target);
   }
 
   Future<void> _pullAccount() async {
@@ -783,6 +870,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       label: 'Verbindung prüfen',
                       onTap: _syncBusy ? null : _diagnoseSync,
                     ),
+                    const SizedBox(height: 10),
+                    _SoftButton(
+                      icon: Icons.settings_backup_restore_outlined,
+                      label: 'Sicherungen (auf diesem Gerät)',
+                      onTap: _syncBusy ? null : _showBackups,
+                    ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
                     _AutoSyncTile(enabled: settings.autoSyncEnabled, onChanged: _setAutoSync),
                   ] else ...[
@@ -823,6 +916,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.health_and_safety_outlined,
                       label: 'Verbindung prüfen',
                       onTap: _syncBusy ? null : _diagnoseSync,
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftButton(
+                      icon: Icons.settings_backup_restore_outlined,
+                      label: 'Sicherungen (auf diesem Gerät)',
+                      onTap: _syncBusy ? null : _showBackups,
                     ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
                     _AutoSyncTile(enabled: settings.autoSyncEnabled, onChanged: _setAutoSync),

@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 906 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 921 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -810,6 +810,30 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     das ist Absicht (kein stilles Überschreiben lokaler Änderungen).
     Merke: `dart format` ohne `-l 120` bricht die Projektdateien um und
     bläht Diffs auf.
+43. Sync-Verlust (Nutzer: Fortschritt vom PC weg; Android hatte hochgeladen,
+    Windows-Upload/Android-Download gingen nicht). Ursachenlage: der Auto-Sync
+    kann nur erkennen, dass die CLOUD seit dem letzten eigenen Abgleich
+    gewechselt hat – nicht, dass ein anderes Gerät ungesicherte lokale Arbeit
+    hat (Auto-Upload ist standardmäßig aus). Ein altes Gerät darf deshalb einen
+    Cloud-Stand überschreiben, der seinem eigenen letzten Stand entspricht.
+    Zusätzlich war der Multi-Part-Upload nicht atomar: Teile "0..n-1" wurden an
+    Ort und Stelle überschrieben, ein abgebrochener Upload (Timeout, fehlende
+    sync_parts-Regel mitten drin, App beendet) machte den bisherigen Stand
+    unlesbar ("gerade aktualisiert"). Umgesetzt: (a) Format 3 – Teile heißen
+    `{pushId}_{i}` (`syncPartId`/`syncPartIdsOf`), das Hauptdokument schaltet
+    erst nach allen Teilen um, alte Teile werden danach gelöscht, bei Fehlern
+    die eigenen; Reader lesen Format 1/2/3; (b) `SyncBackupService`
+    (`lib/services/sync_backup_service.dart`, Stores `sync_backups` +
+    `sync_backup_data`): Sicherung vor JEDEM Pull (bricht den Pull ab, wenn sie
+    fehlschlägt), tägliche Sicherung 45 s nach dem Start, `restore` sichert
+    vorher den jetzigen Stand; Behalten: pull 5, daily 3, restore 2; (c)
+    `buildSyncPayload`/`applySyncPayload` sind jetzt Top-Level-Funktionen in
+    sync_service.dart (Pull, Backup und Restore nutzen dasselbe); (d) Rückfrage
+    mit Cloud-Zahlen vor Pull und – wenn ein fremdes Gerät neuer hochgeladen hat
+    (`AutoSyncService.isBlockedByOtherDevice`) – vor manuellem Upload; (e)
+    `firestoreRulesText` (Test hält ihn gleich `firestore.rules`) + Knopf
+    "Regeln kopieren". Nicht gelöst (bewusst): echtes Zusammenführen zweier
+    Geräte; Cloud-Verlauf früherer Stände.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

@@ -26,6 +26,7 @@ import '../repositories/study_log_repository.dart';
 import '../services/database_service.dart';
 import 'mock_exam_service.dart';
 import 'sync_codec.dart';
+import 'sync_backup_service.dart';
 import 'sync_diagnostics.dart';
 
 class SyncException implements Exception {
@@ -178,6 +179,105 @@ void checkUsablePayload(Map<String, dynamic> data) {
   }
 }
 
+/// Der gesamte lokale Datenbestand für den Upload, die Diagnose und die lokalen
+/// Sicherungen (siehe SyncBackupService).
+Future<Map<String, dynamic>> buildSyncPayload(DatabaseClient db) async {
+  return {
+    'modules': (await DatabaseService.modules.find(db)).map((r) => r.value).toList(),
+    'materials': (await DatabaseService.materials.find(db))
+        .map((r) => SyncCodec.stripDeviceLocalMaterialFields(r.value))
+        .toList(),
+    'summaries': (await DatabaseService.summaries.find(db)).map((r) => r.value).toList(),
+    'concepts': (await DatabaseService.concepts.find(db)).map((r) => r.value).toList(),
+    'flashcards': (await DatabaseService.flashcards.find(db)).map((r) => r.value).toList(),
+    'lectureUnits': (await DatabaseService.lectureUnits.find(db)).map((r) => r.value).toList(),
+    'labExperiments': (await DatabaseService.labExperiments.find(db)).map((r) => r.value).toList(),
+    // Verlauf und Statistik – ohne sie finge jedes weitere Gerät bei null
+    // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
+    'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
+    'masterySnapshots': (await DatabaseService.masterySnapshots.find(db)).map((r) => r.value).toList(),
+    'mockExamResults': (await MockExamRepository.loadFrom(db)).map((r) => r.toMap()).toList(),
+    'studyDays': await StudyLogRepository.dayKeysFrom(db),
+    // Heute eingeführte neue Karten – damit ein zweites Gerät am selben Tag
+    // nicht noch einmal das volle Neu-Karten-Budget verteilt.
+    'dailySession': (await DailySessionRepository.loadFrom(db, DateTime.now())).toMap(),
+  };
+}
+
+/// Ersetzt die lokalen Fächer, Materialien, Konzepte, Karten, Einheiten,
+/// Laborversuche und den Verlauf durch [data] (ein Stand aus der Cloud oder aus
+/// einer lokalen Sicherung). Lokal vorhandene PDFs bleiben erhalten (siehe
+/// SyncCodec.withLocalMaterialFields). Gehört in eine Transaktion.
+Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) async {
+  final localMaterials = {
+    for (final r in await DatabaseService.materials.find(txn)) r.key: r.value,
+  };
+  await DatabaseService.modules.delete(txn);
+  await DatabaseService.materials.delete(txn);
+  await DatabaseService.summaries.delete(txn);
+  await DatabaseService.concepts.delete(txn);
+  await DatabaseService.flashcards.delete(txn);
+  // Ältere Cloud-Stände (vor Einheiten-Sync) enthalten den Schlüssel
+  // nicht – dann die lokalen Einheiten behalten statt sie ersatzlos zu
+  // löschen.
+  if (data.containsKey('lectureUnits')) await DatabaseService.lectureUnits.delete(txn);
+  // Laborversuche gibt es erst seit kurzem – ältere Stände kennen sie nicht.
+  if (data.containsKey('labExperiments')) await DatabaseService.labExperiments.delete(txn);
+
+  for (final m in (data['modules'] as List? ?? [])) {
+    final module = Module.fromMap(Map<String, dynamic>.from(m as Map));
+    await DatabaseService.modules.record(module.id).put(txn, module.toMap());
+  }
+  for (final m in (data['materials'] as List? ?? [])) {
+    final remote = Map<String, dynamic>.from(m as Map);
+    final item = MaterialItem.fromMap(
+        SyncCodec.withLocalMaterialFields(remote, localMaterials[remote['id']?.toString()]));
+    await DatabaseService.materials.record(item.id).put(txn, item.toMap());
+  }
+  for (final m in (data['summaries'] as List? ?? [])) {
+    final summary = Summary.fromMap(Map<String, dynamic>.from(m as Map));
+    await DatabaseService.summaries.record(summary.id).put(txn, summary.toMap());
+  }
+  for (final m in (data['concepts'] as List? ?? [])) {
+    final concept = Concept.fromMap(Map<String, dynamic>.from(m as Map));
+    await DatabaseService.concepts.record(concept.id).put(txn, concept.toMap());
+  }
+  for (final m in (data['flashcards'] as List? ?? [])) {
+    final card = Flashcard.fromMap(Map<String, dynamic>.from(m as Map));
+    await DatabaseService.flashcards.record(card.id).put(txn, card.toMap());
+  }
+  // Ohne Einheiten würden Materialien/Karten auf dem Zielgerät auf nicht
+  // existierende unitIds zeigen: Materialien unsichtbar im Modul-Detail,
+  // Karten noch nicht behandelter Einheiten sofort im Daily Quiz.
+  for (final u in (data['lectureUnits'] as List? ?? [])) {
+    final unit = LectureUnit.fromMap(Map<String, dynamic>.from(u as Map));
+    await DatabaseService.lectureUnits.record(unit.id).put(txn, unit.toMap());
+  }
+
+  for (final e in (data['labExperiments'] as List? ?? [])) {
+    final experiment = LabExperiment.fromMap(Map<String, dynamic>.from(e as Map));
+    await DatabaseService.labExperiments.record(experiment.id).put(txn, experiment.toMap());
+  }
+
+  await applySyncedHistory(txn, data);
+
+  // Lokale Daten zu Fächern, die es nach dem Download nicht mehr gibt,
+  // würden sonst verwaist liegen bleiben (auch bei älteren Cloud-
+  // Ständen ohne Chat/Probeklausuren, dann bleiben die lokalen).
+  final moduleIds = {
+    for (final m in (data['modules'] as List? ?? [])) (m as Map)['id']?.toString() ?? '',
+  };
+  await DatabaseService.chatMessages.delete(
+    txn,
+    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+  );
+  await DatabaseService.labExperiments.delete(
+    txn,
+    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+  );
+  await MockExamRepository.retainModulesIn(txn, moduleIds);
+}
+
 /// Wohin synchronisiert wird: an ein Firebase-Konto gebunden oder über
 /// einen frei gewählten Sync-Code.
 class SyncTarget {
@@ -193,6 +293,23 @@ class SyncTarget {
 
   @override
   int get hashCode => Object.hash(id, isAccount);
+}
+
+/// Kennung des Teil-Dokuments [index] eines Cloud-Stands. Ab Format 3 trägt sie
+/// die `pushId` des Uploads: ein neuer Upload schreibt neue Dokumente neben den
+/// alten und schaltet erst am Ende das Hauptdokument um – bricht er ab, bleibt
+/// der bisherige Stand vollständig lesbar. (Format 2 überschrieb die Teile
+/// "0".."n-1" an Ort und Stelle; ein abgebrochener Upload machte den Stand
+/// unlesbar.)
+String syncPartId({required int format, required String? pushId, required int index}) =>
+    format >= 3 ? '${pushId}_$index' : '$index';
+
+/// Die Teile, die zu einem Cloud-Stand ([root] = sein Hauptdokument) gehören.
+List<String> syncPartIdsOf(Map<String, dynamic>? root) {
+  if (root == null) return const [];
+  final count = (root['partCount'] as num?)?.toInt() ?? 0;
+  final format = (root['format'] as num?)?.toInt() ?? 1;
+  return [for (var i = 0; i < count; i++) syncPartId(format: format, pushId: root['pushId'] as String?, index: i)];
 }
 
 /// Kopfdaten des Cloud-Stands – wer ihn wann zuletzt hochgeladen hat.
@@ -233,10 +350,14 @@ class CloudSyncMeta {
 ///
 /// Speicherformat (Version [syncFormat]): der Datenbestand wird komprimiert
 /// (siehe SyncCodec). Passt er in ein Dokument, liegt er direkt im
-/// Hauptdokument (`data`); sonst in Teilen unter `…/sync_parts/0..n-1` (braucht die aktuellen Firestore-Regeln, siehe firestore.rules).
-/// Jeder Upload trägt eine eigene `pushId`, damit ein Download nie Teile
-/// zweier verschiedener Uploads zusammensetzt. Ältere Cloud-Stände (alles
-/// als Klartext in EINEM Dokument) werden weiterhin gelesen.
+/// Hauptdokument (`data`); sonst in Teilen unter `…/sync_parts/{pushId}_0..n-1`
+/// (braucht die aktuellen Firestore-Regeln, siehe firestore.rules).
+/// Jeder Upload trägt eine eigene `pushId` und schreibt seine Teile unter neuen
+/// Kennungen; erst das Hauptdokument setzt den neuen Stand in Kraft. Ein
+/// abgebrochener Upload lässt den bisherigen Stand deshalb unangetastet
+/// lesbar, und ein Download setzt nie Teile zweier Uploads zusammen. Ältere
+/// Cloud-Stände (Format 2 mit Teilen "0".."n-1", Format 1 als Klartext in EINEM
+/// Dokument) werden weiterhin gelesen.
 ///
 /// Setzt voraus, dass Firebase in main.dart erfolgreich initialisiert wurde.
 /// Ist Firebase nicht konfiguriert, bleibt die App voll offline nutzbar –
@@ -246,7 +367,7 @@ class SyncService {
 
   static const _settingsKey = 'app_settings';
   static const _partsCollection = 'sync_parts';
-  static const syncFormat = 2;
+  static const syncFormat = 3;
 
   /// Frist für Lesezugriffe und Schreibvorgänge. Ohne sie hinge ein Upload bei
   /// abgerissener Verbindung endlos (Firestore reiht Schreibvorgänge dann still
@@ -437,7 +558,7 @@ class SyncService {
     var partsNeeded = 1;
     try {
       final db = await DatabaseService.instance.database;
-      final payload = await _buildPayload(db);
+      final payload = await buildSyncPayload(db);
       final raw = utf8.encode(jsonEncode(payload)).length;
       final parts = SyncCodec.encode(payload);
       partsNeeded = parts.length;
@@ -481,30 +602,6 @@ class SyncService {
     }
   }
 
-  /// Der gesamte lokale Datenbestand für den Upload (und die Diagnose).
-  Future<Map<String, dynamic>> _buildPayload(DatabaseClient db) async {
-    return {
-      'modules': (await DatabaseService.modules.find(db)).map((r) => r.value).toList(),
-      'materials': (await DatabaseService.materials.find(db))
-          .map((r) => SyncCodec.stripDeviceLocalMaterialFields(r.value))
-          .toList(),
-      'summaries': (await DatabaseService.summaries.find(db)).map((r) => r.value).toList(),
-      'concepts': (await DatabaseService.concepts.find(db)).map((r) => r.value).toList(),
-      'flashcards': (await DatabaseService.flashcards.find(db)).map((r) => r.value).toList(),
-      'lectureUnits': (await DatabaseService.lectureUnits.find(db)).map((r) => r.value).toList(),
-      'labExperiments': (await DatabaseService.labExperiments.find(db)).map((r) => r.value).toList(),
-      // Verlauf und Statistik – ohne sie finge jedes weitere Gerät bei null
-      // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
-      'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
-      'masterySnapshots': (await DatabaseService.masterySnapshots.find(db)).map((r) => r.value).toList(),
-      'mockExamResults': (await MockExamRepository.loadFrom(db)).map((r) => r.toMap()).toList(),
-      'studyDays': await StudyLogRepository.dayKeysFrom(db),
-      // Heute eingeführte neue Karten – damit ein zweites Gerät am selben Tag
-      // nicht noch einmal das volle Neu-Karten-Budget verteilt.
-      'dailySession': (await DailySessionRepository.loadFrom(db, DateTime.now())).toMap(),
-    };
-  }
-
   Future<String> _push(
     DocumentReference<Map<String, dynamic>> doc, {
     required bool includeApiKey,
@@ -517,10 +614,10 @@ class SyncService {
       throw SyncConflictException('Der Cloud-Stand stammt von einem anderen Gerät.');
     }
     final db = await DatabaseService.instance.database;
-    final payload = await _buildPayload(db);
+    final payload = await buildSyncPayload(db);
     final parts = SyncCodec.encode(payload);
     final pushId = const Uuid().v4();
-    final previousPartCount = (previous.data()?['partCount'] as num?)?.toInt() ?? 0;
+    final previousParts = syncPartIdsOf(previous.data());
 
     final meta = <String, dynamic>{
       'format': syncFormat,
@@ -534,43 +631,54 @@ class SyncService {
       'aiSettings': await _readAiSettings(db, includeApiKey: includeApiKey),
     };
 
+    final written = <String>[];
     if (parts.length == 1) {
       await doc.set({...meta, 'partCount': 0, 'data': Blob(parts.single)}).timeout(_writeTimeout);
     } else {
       try {
         for (var i = 0; i < parts.length; i++) {
+          final id = syncPartId(format: syncFormat, pushId: pushId, index: i);
           await doc
               .collection(_partsCollection)
-              .doc('$i')
+              .doc(id)
               .set({'pushId': pushId, 'data': Blob(parts[i])}).timeout(_writeTimeout);
+          written.add(id);
         }
+        // Erst NACH allen Teilen wird der neue Stand im Hauptdokument in Kraft
+        // gesetzt. Die Teile des bisherigen Stands liegen unter anderen
+        // Kennungen und bleiben bis dahin unberührt.
+        await doc.set({...meta, 'partCount': parts.length}).timeout(_writeTimeout);
       } on FirebaseException catch (e) {
+        await _deleteParts(doc, written);
         if (e.code == 'permission-denied') {
           throw SyncException(
             'Deine Daten sind zu groß für ein einzelnes Cloud-Dokument und werden '
             'jetzt in Teilen hochgeladen – dafür müssen die Firestore-Regeln einmal '
             'aktualisiert werden: Inhalt von firestore.rules in der Firebase-Konsole '
-            '(Firestore → Regeln) einfügen und veröffentlichen.',
+            '(Firestore → Regeln) einfügen und veröffentlichen. In den Einstellungen '
+            'unter "Verbindung prüfen" gibt es dafür "Regeln kopieren".',
           );
         }
         rethrow;
+      } catch (_) {
+        await _deleteParts(doc, written);
+        rethrow;
       }
-      // Erst NACH allen Teilen: ein gleichzeitiger Download sieht so entweder
-      // den alten oder den vollständigen neuen Stand (siehe pushId-Prüfung).
-      await doc.set({...meta, 'partCount': parts.length}).timeout(_writeTimeout);
     }
 
-    // Überzählige Teile eines früheren, größeren Stands entfernen.
-    final firstStale = parts.length == 1 ? 0 : parts.length;
-    for (var i = firstStale; i < previousPartCount; i++) {
-      try {
-        await doc.collection(_partsCollection).doc('$i').delete();
-      } catch (_) {
-        // Aufräumen ist optional – ein übrig gebliebener Teil wird nie
-        // gelesen (partCount/pushId passen nicht).
-      }
-    }
+    // Teile des bisherigen Stands entfernen – erst jetzt, wo der neue gilt.
+    await _deleteParts(doc, previousParts);
     return pushId;
+  }
+
+  /// Löscht Teil-Dokumente. Aufräumen ist optional: ein übrig gebliebener Teil
+  /// wird nie gelesen (das Hauptdokument nennt genau die Teile seines Stands).
+  Future<void> _deleteParts(DocumentReference<Map<String, dynamic>> doc, List<String> ids) async {
+    for (final id in ids) {
+      try {
+        await doc.collection(_partsCollection).doc(id).delete().timeout(const Duration(seconds: 20));
+      } catch (_) {}
+    }
   }
 
   Future<Map<String, dynamic>> _readPayload(
@@ -578,15 +686,15 @@ class SyncService {
     Map<String, dynamic> root,
   ) async {
     checkCloudFormat(root);
-    if (root['format'] != syncFormat) return root; // alter Stand: alles im Hauptdokument
+    final format = (root['format'] as num?)?.toInt() ?? 1;
+    if (format < 2) return root; // alter Stand: alles im Hauptdokument
     final partCount = (root['partCount'] as num?)?.toInt() ?? 0;
     if (partCount == 0) {
       final blob = root['data'];
       if (blob is! Blob) throw SyncException('Der Cloud-Stand ist unvollständig.');
       return SyncCodec.decode([blob.bytes]);
     }
-    final snapshots =
-        await Future.wait([for (var i = 0; i < partCount; i++) _get(doc.collection(_partsCollection).doc('$i'))]);
+    final snapshots = await Future.wait([for (final id in syncPartIdsOf(root)) _get(doc.collection(_partsCollection).doc(id))]);
     final parts = <Uint8List>[];
     for (final snap in snapshots) {
       final data = snap.data();
@@ -618,75 +726,18 @@ class SyncService {
     checkUsablePayload(data);
     final db = await DatabaseService.instance.database;
 
+    // Vorher eine Sicherung auf diesem Gerät: der Download ersetzt alles Lokale.
+    // Schlägt sie fehl, wird lieber nichts heruntergeladen als etwas verloren.
+    try {
+      await SyncBackupService.create(db, kind: SyncBackupService.kindPull, reason: 'Vor dem Herunterladen');
+    } catch (e) {
+      throw SyncException(
+        'Die Sicherung vor dem Herunterladen ist fehlgeschlagen ($e) – es wurde nichts verändert.',
+      );
+    }
+
     await db.transaction((txn) async {
-      final localMaterials = {
-        for (final r in await DatabaseService.materials.find(txn)) r.key: r.value,
-      };
-      await DatabaseService.modules.delete(txn);
-      await DatabaseService.materials.delete(txn);
-      await DatabaseService.summaries.delete(txn);
-      await DatabaseService.concepts.delete(txn);
-      await DatabaseService.flashcards.delete(txn);
-      // Ältere Cloud-Stände (vor Einheiten-Sync) enthalten den Schlüssel
-      // nicht – dann die lokalen Einheiten behalten statt sie ersatzlos zu
-      // löschen.
-      if (data.containsKey('lectureUnits')) await DatabaseService.lectureUnits.delete(txn);
-      // Laborversuche gibt es erst seit kurzem – ältere Stände kennen sie nicht.
-      if (data.containsKey('labExperiments')) await DatabaseService.labExperiments.delete(txn);
-
-      for (final m in (data['modules'] as List? ?? [])) {
-        final module = Module.fromMap(Map<String, dynamic>.from(m as Map));
-        await DatabaseService.modules.record(module.id).put(txn, module.toMap());
-      }
-      for (final m in (data['materials'] as List? ?? [])) {
-        final remote = Map<String, dynamic>.from(m as Map);
-        final item = MaterialItem.fromMap(
-            SyncCodec.withLocalMaterialFields(remote, localMaterials[remote['id']?.toString()]));
-        await DatabaseService.materials.record(item.id).put(txn, item.toMap());
-      }
-      for (final m in (data['summaries'] as List? ?? [])) {
-        final summary = Summary.fromMap(Map<String, dynamic>.from(m as Map));
-        await DatabaseService.summaries.record(summary.id).put(txn, summary.toMap());
-      }
-      for (final m in (data['concepts'] as List? ?? [])) {
-        final concept = Concept.fromMap(Map<String, dynamic>.from(m as Map));
-        await DatabaseService.concepts.record(concept.id).put(txn, concept.toMap());
-      }
-      for (final m in (data['flashcards'] as List? ?? [])) {
-        final card = Flashcard.fromMap(Map<String, dynamic>.from(m as Map));
-        await DatabaseService.flashcards.record(card.id).put(txn, card.toMap());
-      }
-      // Ohne Einheiten würden Materialien/Karten auf dem Zielgerät auf nicht
-      // existierende unitIds zeigen: Materialien unsichtbar im Modul-Detail,
-      // Karten noch nicht behandelter Einheiten sofort im Daily Quiz.
-      for (final u in (data['lectureUnits'] as List? ?? [])) {
-        final unit = LectureUnit.fromMap(Map<String, dynamic>.from(u as Map));
-        await DatabaseService.lectureUnits.record(unit.id).put(txn, unit.toMap());
-      }
-
-      for (final e in (data['labExperiments'] as List? ?? [])) {
-        final experiment = LabExperiment.fromMap(Map<String, dynamic>.from(e as Map));
-        await DatabaseService.labExperiments.record(experiment.id).put(txn, experiment.toMap());
-      }
-
-      await applySyncedHistory(txn, data);
-
-      // Lokale Daten zu Fächern, die es nach dem Download nicht mehr gibt,
-      // würden sonst verwaist liegen bleiben (auch bei älteren Cloud-
-      // Ständen ohne Chat/Probeklausuren, dann bleiben die lokalen).
-      final moduleIds = {
-        for (final m in (data['modules'] as List? ?? [])) (m as Map)['id']?.toString() ?? '',
-      };
-      await DatabaseService.chatMessages.delete(
-        txn,
-        finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-      );
-      await DatabaseService.labExperiments.delete(
-        txn,
-        finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-      );
-      await MockExamRepository.retainModulesIn(txn, moduleIds);
-
+      await applySyncPayload(txn, data);
       final aiSettings = root['aiSettings'] ?? data['aiSettings'];
       await _writeAiSettings(
         txn,

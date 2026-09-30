@@ -18,6 +18,8 @@ import 'repositories/module_repository.dart';
 import 'repositories/settings_repository.dart';
 import 'repositories/summary_repository.dart';
 import 'services/auto_sync_service.dart';
+import 'services/database_service.dart';
+import 'services/sync_backup_service.dart';
 import 'services/reminder_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -62,6 +64,17 @@ Future<void> main() async {
   // je nachdem wie schnell der lokale DB-Read gegen den ersten Frame lief.
   final moduleRepository = ModuleRepository();
   await moduleRepository.load();
+
+  // Tägliche Sicherung des Lernstands auf diesem Gerät (siehe SyncBackupService):
+  // verzögert und im Hintergrund, damit der Start nicht wartet. Fehler dabei
+  // sind unwichtig – die Sicherung vor einem Download ist die entscheidende.
+  unawaited(Future<void>.delayed(const Duration(seconds: 45), () async {
+    try {
+      await SyncBackupService.ensureDaily(await DatabaseService.instance.database);
+    } catch (e) {
+      debugPrint('Tägliche Sicherung fehlgeschlagen ($e).');
+    }
+  }));
 
   runApp(LernenApp(settingsRepository: settingsRepository, moduleRepository: moduleRepository));
 }
