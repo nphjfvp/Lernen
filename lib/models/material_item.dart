@@ -1,3 +1,5 @@
+import 'page_note.dart';
+
 enum MaterialKind { slide, exercise, practiceExam }
 
 /// Standard-Gewichtung (siehe Flashcard.weight) für eine neu erzeugte Karte
@@ -128,6 +130,10 @@ class MaterialItem {
   /// relevanter Kontext an die KI weitergegeben wird.
   final String notes;
 
+  /// Notizen zu einzelnen Seiten, z.B. gespeicherte KI-Antworten aus dem
+  /// Frage-Panel des PDF-Viewers (siehe [PageNote]).
+  final List<PageNote> pageNotes;
+
   /// Welcher Vorlesungseinheit (siehe LectureUnit) dieses Material
   /// zugeordnet ist. Null = keine Einheit gewählt (z.B. ältere Uploads vor
   /// Einführung der Einheiten) – solche Materialien/daraus generierte
@@ -154,6 +160,7 @@ class MaterialItem {
     this.fileBytesBase64,
     this.highlights = const [],
     this.notes = '',
+    this.pageNotes = const [],
     this.unitId,
     this.remotePdfKey,
   });
@@ -180,6 +187,7 @@ class MaterialItem {
   MaterialItem copyWith({
     List<MaterialHighlight>? highlights,
     String? notes,
+    List<PageNote>? pageNotes,
   }) =>
       MaterialItem(
         id: id,
@@ -194,6 +202,7 @@ class MaterialItem {
         fileBytesBase64: fileBytesBase64,
         highlights: highlights ?? this.highlights,
         notes: notes ?? this.notes,
+        pageNotes: pageNotes ?? this.pageNotes,
         unitId: unitId,
         remotePdfKey: remotePdfKey,
       );
@@ -211,6 +220,7 @@ class MaterialItem {
         'fileBytesBase64': fileBytesBase64,
         'highlights': highlights.map((h) => h.toMap()).toList(),
         'notes': notes,
+        'pageNotes': pageNotes.map((n) => n.toMap()).toList(),
         'unitId': unitId,
         'remotePdfKey': remotePdfKey,
       };
@@ -231,6 +241,11 @@ class MaterialItem {
                 .toList() ??
             const [],
         notes: map['notes'] as String? ?? '',
+        pageNotes: (map['pageNotes'] as List?)
+                ?.whereType<Map>()
+                .map((n) => PageNote.fromMap(Map<String, dynamic>.from(n)))
+                .toList() ??
+            const [],
         unitId: map['unitId'] as String?,
         remotePdfKey: map['remotePdfKey'] as String?,
       );

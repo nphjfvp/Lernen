@@ -12,7 +12,7 @@ class HighlightContext {
 
   /// Leerer String, wenn nichts markiert/notiert wurde – nichts anzuhängen.
   static String build(MaterialItem material) {
-    if (material.highlights.isEmpty && material.notes.trim().isEmpty) return '';
+    if (material.highlights.isEmpty && material.notes.trim().isEmpty && material.pageNotes.isEmpty) return '';
 
     final buffer = StringBuffer()
       ..writeln('[Vom Nutzer in "${material.fileName}" als besonders wichtig markiert]');
@@ -22,6 +22,9 @@ class HighlightContext {
     final notes = material.notes.trim();
     if (notes.isNotEmpty) {
       buffer.writeln('Notiz des Nutzers: $notes');
+    }
+    for (final n in material.pageNotes) {
+      buffer.writeln('Notiz zu Seite ${n.page}: ${n.text.trim()}');
     }
     return buffer.toString();
   }

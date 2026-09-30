@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sembast/sembast.dart';
 
 import '../models/material_item.dart';
+import '../models/page_note.dart';
 import '../services/database_service.dart';
 
 class MaterialRepository extends ChangeNotifier {
@@ -90,6 +91,14 @@ class MaterialRepository extends ChangeNotifier {
     // wird beim nächsten Sync neu hochgeladen (siehe PdfCloudSyncService).
     if (filePath != null || fileBytesBase64 != null) update['remotePdfKey'] = null;
     await DatabaseService.materials.record(id).update(db, update);
+    await loadForModule(moduleId);
+  }
+
+  /// Speichert nur die Seitennotizen (siehe PageNote) – sofort, ohne die PDF
+  /// oder Markierungen anzufassen.
+  Future<void> savePageNotes(String id, String moduleId, List<PageNote> notes) async {
+    final db = await DatabaseService.instance.database;
+    await DatabaseService.materials.record(id).update(db, {'pageNotes': notes.map((n) => n.toMap()).toList()});
     await loadForModule(moduleId);
   }
 

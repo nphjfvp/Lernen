@@ -98,6 +98,7 @@ class ModuleExportService {
         fileBytesBase64: base64Encode(bytes),
         highlights: m.highlights,
         notes: m.notes,
+        pageNotes: m.pageNotes,
         unitId: m.unitId,
       ));
     }
@@ -278,6 +279,7 @@ class ModuleExportService {
         fileBytesBase64: m.fileBytesBase64,
         highlights: m.highlights,
         notes: m.notes,
+        pageNotes: m.pageNotes,
         unitId: m.unitId == null ? null : unitIdMap[m.unitId],
       );
     }).toList();

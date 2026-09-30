@@ -15,6 +15,7 @@ import '../../services/fsrs_service.dart';
 import '../../services/html_question_contract.dart';
 import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
+import '../study/explain_chat.dart';
 import '../study/study_aids.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
@@ -883,6 +884,13 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               padding: const EdgeInsets.only(top: 6),
               child: Text(_aiHelpError!, style: TextStyle(fontSize: 12, color: c.danger)),
             ),
+          ExplainChat(
+            question: widget.card.promptText,
+            correctAnswer: _correctAnswerText,
+            userAnswer: _userAnswerText,
+            wasCorrect: _result?.isCorrect,
+            explanation: explanation,
+          ),
           _buildStudyAids(),
         ],
       ),

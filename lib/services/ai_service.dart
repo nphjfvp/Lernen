@@ -2271,6 +2271,78 @@ Antworte in der Sprache der Frage und duze den Lernenden.
           },
         ];
 
+  static const _followUpSystemPrompt = '''
+Du bist ein geduldiger Tutor im Gespräch mit einem Lernenden über EINE
+Lernfrage, die er gerade beantwortet hat. Du bekommst die Frage, die richtige
+Lösung, seine Antwort, ggf. eine schon gegebene Erklärung, ggf. einen Auszug
+aus den Unterlagen und den bisherigen Dialog. Antworte auf seine letzte
+Nachricht.
+Je nach Nachricht:
+1. Rückfrage oder "das habe ich nicht verstanden": beantworte sie direkt und
+   knapp am konkreten Punkt, mit einem kleinen Beispiel, wenn es hilft.
+2. Er erklärt etwas in EIGENEN WORTEN und will wissen, ob das stimmt: beginne
+   mit dem Urteil ("Ja, das stimmt", "Fast", "Nicht ganz"), sag dann, was
+   daran richtig ist, was fehlt oder falsch ist, und gib höchstens einen
+   Hinweis zum Weiterdenken. Sei ehrlich, aber freundlich; lobe nichts, was
+   nicht stimmt, und mach nichts schlechter, als es ist.
+3. Er will "genauer auf einen Punkt eingehen": geh genau auf diesen Punkt
+   tiefer ein (Herleitung, Hintergrund, Beispiel), nicht auf alles.
+Regeln: Widersprich der gegebenen richtigen Lösung nicht. Stützt sich etwas
+nicht auf die gegebenen Angaben und du bist unsicher, sag es. Höchstens 8 Sätze,
+außer er bittet ausdrücklich um mehr. Normaler Fließtext (kein JSON, keine
+Codefences, kein Markdown), Formeln in LaTeX zwischen \$…\$. Antworte in der
+Sprache der Frage und duze den Lernenden.
+''';
+
+  /// Ein Schritt im Gespräch über eine Lernfrage nach dem Beantworten: Rückfragen,
+  /// "stimmt das, was ich verstanden habe?" und "geh genauer auf … ein". [history]
+  /// ist der bisherige Dialog (ohne [message]); [explanation] die schon
+  /// gezeigte KI-Erklärung, [sourceText] ein Auszug aus den Unterlagen.
+  Future<String> followUpAnswer({
+    required String question,
+    required String correctAnswer,
+    String? userAnswer,
+    bool? wasCorrect,
+    String? explanation,
+    String? sourceText,
+    List<({bool isUser, String content})> history = const [],
+    required String message,
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Lernfrage: $question')
+      ..writeln('Richtige Lösung: $correctAnswer');
+    if ((userAnswer ?? '').trim().isNotEmpty) buffer.writeln('Antwort des Lernenden: $userAnswer');
+    if (wasCorrect != null) buffer.writeln(wasCorrect ? 'Die Antwort war richtig.' : 'Die Antwort war falsch.');
+    if ((explanation ?? '').trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Bereits gegebene Erklärung:')
+        ..writeln(_cap(explanation!.trim(), _studyAidSourceCap));
+    }
+    if ((sourceText ?? '').trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Auszug aus den Unterlagen:')
+        ..writeln(_cap(sourceText!.trim(), _studyAidSourceCap));
+    }
+    if (history.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Bisheriger Dialog:');
+      for (final turn in history.length > _socraticHistoryLimit
+          ? history.sublist(history.length - _socraticHistoryLimit)
+          : history) {
+        buffer.writeln('${turn.isUser ? 'Lernender' : 'Tutor'}: ${turn.content}');
+      }
+    }
+    buffer
+      ..writeln()
+      ..writeln('Letzte Nachricht des Lernenden:')
+      ..writeln(_cap(message.trim(), 4000));
+    final raw = await _complete(_followUpSystemPrompt, buffer.toString(), temperature: 0.3);
+    return raw.trim();
+  }
+
   static const _weaknessSystemPrompt = '''
 Du bist ein Lerncoach. Du bekommst die Lernfragen, mit denen sich ein
 Studierender gerade am schwersten tut (jeweils mit richtiger Lösung und wie

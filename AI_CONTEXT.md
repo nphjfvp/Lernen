@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 921 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 933 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -834,6 +834,26 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `firestoreRulesText` (Test hält ihn gleich `firestore.rules`) + Knopf
     "Regeln kopieren". Nicht gelöst (bewusst): echtes Zusammenführen zweier
     Geräte; Cloud-Verlauf früherer Stände.
+44. PDF-Viewer-Panel + Seitennotizen (Nutzer-Screenshot: Frage-Fenster deckte die
+    Seite bei 100 % zu). `PageQaPanel` (`lib/ui/widgets/page_qa_panel.dart`) mit
+    `PageQaController` (Gespräch getrennt vom Widget, bleibt bei Schließen/
+    Wechsel Sheet↔Dock erhalten). Im `MaterialViewerScreen`: ab 900 px Breite
+    angedockt (`_qaPanelOpen`/`_qaDockRight` sind static = Sitzungsgedächtnis),
+    sonst `showModalBottomSheet`; `capturePage` erfasst bei JEDER Frage die
+    aktuelle Seite (Panel bleibt beim Blättern offen; frühere Fragen anderer
+    Seiten stehen als "[Seite N] …" im Verlauf). `PageQuestionSheet` (nur noch
+    PdfPreviewScreen/ungespeicherte Dateien) ist ein dünner Wrapper darum, ohne
+    Notizen. `PageNote` + `MaterialItem.pageNotes` (toMap/fromMap/copyWith, Sync
+    über die Materialien, Export/Import, `HighlightContext`);
+    `MaterialRepository.savePageNotes` schreibt NUR dieses Feld (sofort, ohne die
+    PDF). KI-Texte: `SelectionArea` um `MathText`.
+45. Quiz-Chat (Nutzer: Rückfragen an die KI, in eigenen Worten erklären lassen,
+    genauer eingehen). `ExplainChat` unter der Erklärung in
+    `QuestionAnswerView._buildExplainArea` (nicht im Prüfungsmodus, nur mit
+    API-Key), `AiService.followUpAnswer` (System-Prompt mit drei Fällen:
+    Rückfrage / eigene Worte prüfen mit Urteil zuerst / vertiefen; widerspricht
+    der Lösung nicht; ≤ 8 Sätze). Verlauf nur im Widget (pro Karte). Chips füllen
+    Satzanfänge, "Anderes Beispiel" sendet sofort, Strg+Enter sendet.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

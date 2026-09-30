@@ -332,7 +332,9 @@ class _ChatBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            MathText(message.content, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink)),
+            SelectionArea(
+              child: MathText(message.content, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink)),
+            ),
             if (!isUser && sources != null) ...[
               const SizedBox(height: 6),
               Row(

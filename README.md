@@ -1377,6 +1377,45 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5q. PDF-Viewer: KI-Frage-Panel neben der Seite, Notizen zu Seiten
+
+**"Frage zur Seite"** (Sprechblasen-Symbol oben im Viewer, `lib/ui/widgets/
+page_qa_panel.dart`): auf **breiten Bildschirmen** (ab ca. 900 px, z.B. Windows)
+dockt das Fenster **neben dem PDF** an statt es zu verdecken – bei 50 % Zoom
+passt die Seite daneben, und das Panel kann dauerhaft offen bleiben, während
+man blättert. Jede Frage sieht die Seite, die im Moment des Fragens angezeigt
+wird (plus den Dokumenttext); die Kopfzeile zeigt die aktuelle Seite.
+**Pfeil-Symbol** im Panel: auf die andere Seite (links/rechts) schieben, **X**:
+schließen (das Gespräch bleibt erhalten). Auf schmalen Bildschirmen (Handy)
+kommt es wie bisher als Bottom-Sheet.
+
+- **Antworten speichern:** unter jeder KI-Antwort **"Auf Seite N speichern"**
+  heftet sie als **Seitennotiz** an ihre Seite (`MaterialItem.pageNotes`,
+  sofort gespeichert, reist mit Sync und Fach-Export, fließt als Notiz in
+  spätere KI-Kontexte ein). Der Reiter **"Notizen"** listet sie – die der
+  aktuellen Seite zuerst –, **Seite N** springt dorthin, das Papierkorb-Symbol
+  löscht.
+- **Markieren und kopieren:** alle KI-Texte im Panel (und im Frage-Chat des
+  Fachs) lassen sich mit der Maus/dem Finger markieren; "Antwort kopieren"
+  kopiert eine ganze Antwort.
+
+### 5r. Quiz: mit der KI über die Antwort sprechen
+
+Unter der KI-Erklärung im Quiz (auch im Üben, Sprint usw.) gibt es **"Mit der
+KI besprechen"** (`lib/ui/study/explain_chat.dart`, `AiService.followUpAnswer`):
+ein kleiner Chat, der Frage, richtige Lösung, deine Antwort und die Erklärung
+kennt. Damit kannst du
+- **Rückfragen** stellen ("Das habe ich nicht verstanden: …", "Anderes
+  Beispiel"),
+- **in eigenen Worten erklären** und prüfen lassen ("Ich erkläre es mal in
+  meinen Worten: …") – die KI sagt zuerst, ob es stimmt (Ja / Fast / Nicht
+  ganz), was richtig ist und was fehlt,
+- die KI bitten, **auf einen Punkt genauer einzugehen**.
+Die Chips füllen den Satzanfang vor, gesendet wird mit dem Knopf oder
+**Strg+Enter**. Die KI-Antworten sind markierbar. Das Gespräch gilt für die
+eine Karte; mit "Weiter" ist es weg (die Frage-Chats des Fachs bleiben
+gespeichert).
+
 ### 5p. Laborversuch: Vorbereitung, Durchführung, Bericht
 
 Für Praktika, bei denen du dich **vor dem Versuch vorbereiten**, ihn im Labor

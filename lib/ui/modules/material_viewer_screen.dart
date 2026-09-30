@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/flashcard.dart';
 import '../../models/material_item.dart';
+import '../../models/page_note.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
@@ -22,7 +23,7 @@ import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
 import '../widgets/page_concept_sheet.dart';
 import '../widgets/page_question_creation_sheet.dart';
-import '../widgets/page_question_sheet.dart';
+import '../widgets/page_qa_panel.dart';
 import '../widgets/safe_set_state.dart';
 
 /// Zeigt eine hochgeladene PDF-Folie visuell an und erlaubt es, Textstellen
@@ -105,7 +106,15 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
   bool _suggesting = false;
   String? _suggestError;
 
-  bool _capturingPageQuestion = false;
+  /// KI-Frage-Panel: das Gespräch bleibt erhalten, auch wenn das Panel zu und
+  /// wieder aufgeht. Auf breiten Bildschirmen dockt es neben dem PDF an (die
+  /// Wahl von Seite und offen/zu merkt sich die Sitzung), auf schmalen kommt es
+  /// als Bottom-Sheet.
+  final _qa = PageQaController();
+  static bool _qaPanelOpen = false;
+  static bool _qaDockRight = true;
+  static const _qaDockMinWidth = 900.0;
+  late List<PageNote> _pageNotes;
 
   /// Seite, ab der die nächsten [AppSettings.checkpointQuizPageInterval]
   /// gelesenen Seiten für den nächsten "Lernmodus"-Zwischen-Check zählen
@@ -126,12 +135,14 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
   void initState() {
     super.initState();
     _highlights = List.of(widget.material.highlights);
+    _pageNotes = List.of(widget.material.pageNotes);
     _notesController = TextEditingController(text: widget.material.notes);
     _loadBytes();
   }
 
   @override
   void dispose() {
+    _qa.dispose();
     _notesController.dispose();
     _pdfController.dispose();
     super.dispose();
@@ -321,33 +332,69 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
     }
   }
 
-  /// Öffnet den Frage-Chat zur AKTUELL sichtbaren Seite (siehe
-  /// AiService.answerPageQuestion): erfasst einen Screenshot der Seite,
-  /// merkt sich Seitenzahl/Gesamtseiten vom Controller und zeigt dann das
-  /// Bottom-Sheet mit Text-Eingabe. Der Screenshot wird EINMALIG beim Öffnen
-  /// erfasst und für alle Rückfragen innerhalb desselben Sheets
-  /// wiederverwendet, statt bei jeder Frage neu zu erfassen.
+  /// Seite, Seitenzahl und Bild der AKTUELL sichtbaren Seite für eine Frage an
+  /// die KI (siehe AiService.answerPageQuestion) – bei jeder Frage neu, denn das
+  /// Panel bleibt beim Blättern offen. `null`, wenn sich die Seite nicht
+  /// erfassen ließ.
+  Future<PageCapture?> _capturePage() async {
+    final image = await _capturePageImage();
+    if (image == null) return null;
+    final page = _pdfController.pageNumber;
+    final total = _pdfController.pageCount;
+    return (image: image, page: page < 1 ? 1 : page, total: total < 1 ? 1 : total);
+  }
+
+  PageQaPanel _qaPanel({VoidCallback? onClose, VoidCallback? onSwapSide}) {
+    final total = _pdfController.pageCount;
+    return PageQaPanel(
+      controller: _qa,
+      documentText: widget.material.extractedText,
+      capturePage: _capturePage,
+      currentPage: _currentPage,
+      totalPages: total < 1 ? 1 : total,
+      notes: _pageNotes,
+      onSaveNote: _saveNote,
+      onDeleteNote: _deleteNote,
+      onJumpToPage: (page) => _pdfController.jumpToPage(page),
+      onClose: onClose,
+      onSwapSide: onSwapSide,
+    );
+  }
+
+  Future<void> _saveNote(PageNote note) async {
+    final repo = context.read<MaterialRepository>();
+    setState(() => _pageNotes = [..._pageNotes, note]);
+    _qa.touch();
+    await repo.savePageNotes(widget.material.id, widget.material.moduleId, _pageNotes);
+  }
+
+  Future<void> _deleteNote(PageNote note) async {
+    final repo = context.read<MaterialRepository>();
+    setState(() => _pageNotes = [for (final n in _pageNotes) if (n.id != note.id) n]);
+    _qa.touch();
+    await repo.savePageNotes(widget.material.id, widget.material.moduleId, _pageNotes);
+  }
+
+  /// "Frage zur Seite": auf breiten Bildschirmen das Panel neben dem PDF
+  /// ein-/ausblenden (bleibt dann dauerhaft offen, auch beim Blättern), auf
+  /// schmalen ein Bottom-Sheet.
   Future<void> _askAboutPage() async {
-    if (_capturingPageQuestion) return;
-    setState(() => _capturingPageQuestion = true);
-    final imageBytes = await _capturePageImage();
-    final pageNumber = _pdfController.pageNumber;
-    final totalPages = _pdfController.pageCount;
-    if (!mounted) return;
-    setState(() => _capturingPageQuestion = false);
-    if (imageBytes == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Seite konnte nicht erfasst werden.')));
+    if (MediaQuery.sizeOf(context).width >= _qaDockMinWidth) {
+      setState(() => _qaPanelOpen = !_qaPanelOpen);
       return;
     }
-    await showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => PageQuestionSheet(
-        documentText: widget.material.extractedText,
-        pageNumber: pageNumber < 1 ? 1 : pageNumber,
-        totalPages: totalPages < 1 ? 1 : totalPages,
-        pageImageBytes: imageBytes,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: SizedBox(
+          height: MediaQuery.sizeOf(ctx).height * 0.8,
+          child: ListenableBuilder(
+            listenable: _qa,
+            builder: (_, _) => _qaPanel(onClose: () => Navigator.of(ctx).pop()),
+          ),
+        ),
       ),
     );
   }
@@ -642,12 +689,10 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
               onPressed: (_creatingQuestion || _bytes == null) ? null : _createQuestionFromPage,
             ),
             IconButton(
-              tooltip: 'Frage zur Seite',
-              icon: _capturingPageQuestion
-                  ? const SizedBox(
-                      width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.forum_outlined),
-              onPressed: (_capturingPageQuestion || _bytes == null) ? null : _askAboutPage,
+              key: const ValueKey('viewer-ask'),
+              tooltip: _qaPanelOpen ? 'KI-Fragen ausblenden' : 'Frage zur Seite',
+              icon: Icon(_qaPanelOpen ? Icons.forum : Icons.forum_outlined),
+              onPressed: _bytes == null ? null : _askAboutPage,
             ),
             IconButton(
               tooltip: 'KI-Vorschläge',
@@ -693,7 +738,28 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
                         onTogglePanel: () => setState(() => _bottomPanelOpen = !_bottomPanelOpen),
                       ),
                       Expanded(
-                        child: LayoutBuilder(
+                        child: LayoutBuilder(builder: (context, outer) {
+                          final docked = _qaPanelOpen && outer.maxWidth >= _qaDockMinWidth;
+                          final panelWidth = (outer.maxWidth * 0.34).clamp(340.0, 480.0);
+                          final panel = docked
+                              ? SizedBox(
+                                  key: const ValueKey('qa-docked'),
+                                  width: panelWidth,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      border: Border(
+                                        left: _qaDockRight ? BorderSide(color: c.border) : BorderSide.none,
+                                        right: _qaDockRight ? BorderSide.none : BorderSide(color: c.border),
+                                      ),
+                                    ),
+                                    child: _qaPanel(
+                                      onClose: () => setState(() => _qaPanelOpen = false),
+                                      onSwapSide: () => setState(() => _qaDockRight = !_qaDockRight),
+                                    ),
+                                  ),
+                                )
+                              : null;
+                          final viewer = LayoutBuilder(
                           builder: (context, constraints) => Center(
                             child: SizedBox(
                               width: constraints.maxWidth * _viewerWidthFactor,
@@ -715,7 +781,15 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
                               ),
                             ),
                           ),
-                        ),
+                        );
+                          return Row(
+                            children: [
+                              if (panel != null && !_qaDockRight) panel,
+                              Expanded(child: viewer),
+                              if (panel != null && _qaDockRight) panel,
+                            ],
+                          );
+                        }),
                       ),
                       if (_bottomPanelOpen)
                         _BottomPanel(
