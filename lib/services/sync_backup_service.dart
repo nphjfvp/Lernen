@@ -5,6 +5,7 @@ import 'package:sembast/sembast.dart';
 import 'package:uuid/uuid.dart';
 
 import 'database_service.dart';
+import 'sync_base_store.dart';
 import 'sync_codec.dart';
 import 'sync_service.dart';
 
@@ -65,9 +66,10 @@ class SyncBackupService {
   static const kindPull = 'pull';
   static const kindDaily = 'daily';
   static const kindRestore = 'restore';
+  static const kindMerge = 'merge';
 
   /// Wie viele Sicherungen je Art aufgehoben werden.
-  static const keepPerKind = {kindPull: 5, kindDaily: 3, kindRestore: 2};
+  static const keepPerKind = {kindPull: 5, kindDaily: 3, kindRestore: 2, kindMerge: 5};
 
   /// Frühestens nach so langer Zeit gibt es die nächste tägliche Sicherung.
   static const dailyInterval = Duration(hours: 20);
@@ -130,7 +132,13 @@ class SyncBackupService {
     final data = SyncCodec.decode([Uint8List.fromList(base64Decode(encoded))]);
     checkUsablePayload(data);
     await create(db, kind: kindRestore, reason: 'Vor dem Wiederherstellen', now: now);
-    await db.transaction((txn) => applySyncPayload(txn, data));
+    await db.transaction((txn) async {
+      await applySyncPayload(txn, data);
+      // Ein älterer Stand darf beim nächsten Zusammenführen nichts löschen:
+      // Einträge, die es nur im neueren Stand gab, sähen sonst wie "hier
+      // gelöscht" aus. Ohne Basisstand wird nur ergänzt.
+      await SyncBaseStore.clear(txn);
+    });
   }
 
   /// Legt die tägliche Sicherung an, wenn die letzte länger als

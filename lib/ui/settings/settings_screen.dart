@@ -29,6 +29,7 @@ import '../widgets/question_type_dropdown.dart';
 import '../widgets/update_actions.dart';
 import 'model_picker_sheet.dart';
 import 'sync_backups_dialog.dart';
+import 'sync_cloud_history_dialog.dart';
 import 'sync_diagnosis_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -202,8 +203,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Der Cloud-Stand ersetzt deine aktuell ${counts.modules} lokalen Fächer, '
             '${counts.materials} Materialien, ${counts.concepts} Konzepte und '
             '${counts.flashcards} Karteikarten VOLLSTÄNDIG – kein Zusammenführen. '
-            'Hat ein anderes Gerät zwischenzeitlich offline weitergelernt und das '
-            'noch nicht hochgeladen, geht dieser Fortschritt hier verloren.\n\n'
+            'Hat dieses Gerät zwischenzeitlich weitergelernt und das noch nicht hochgeladen, '
+            'geht dieser Fortschritt verloren – "Abgleichen" behält dagegen beides.\n\n'
             'Vorher legt die App automatisch eine Sicherung auf diesem Gerät an – '
             'sie lässt sich unter "Sicherungen" wiederherstellen.'),
         actions: [
@@ -235,25 +236,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// Vor "Hochladen": liegt in der Cloud ein Stand eines ANDEREN Geräts, den
   /// dieses Gerät nicht kennt, ersetzt der Upload ihn – dann mit Zahlen fragen,
-  /// welcher der bessere Stand ist.
-  Future<bool> _confirmUpload(SyncTarget target) async {
+  /// ob stattdessen abgeglichen (beide Stände behalten) oder bewusst ersetzt
+  /// werden soll.
+  Future<_UploadChoice> _confirmUpload(SyncTarget target) async {
     final CloudSyncMeta? cloud;
     try {
       cloud = await _syncService.cloudMeta(target);
     } catch (_) {
-      return true; // nicht erreichbar: der Upload selbst meldet das
+      return _UploadChoice.replace; // nicht erreichbar: der Upload selbst meldet das
     }
-    if (cloud == null || !mounted) return true;
+    if (cloud == null || !mounted) return _UploadChoice.replace;
     final deviceId = await AutoSyncService.ensureDeviceId(_settingsRepo);
     if (!AutoSyncService.isBlockedByOtherDevice(
       meta: cloud,
       lastSyncedPushId: _settingsRepo.settings.lastSyncedPushId,
       deviceId: deviceId,
     )) {
-      return true;
+      return _UploadChoice.replace;
     }
     final local = await _syncService.localCounts();
-    if (!mounted) return false;
+    if (!mounted) return _UploadChoice.cancel;
     final cloudText = SyncDiagnostics.describeCloudState(
       modules: cloud.modules,
       flashcards: cloud.flashcards,
@@ -261,25 +263,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       fromThisDevice: false,
       now: DateTime.now(),
     );
-    final cloudHasMore = (cloud.flashcards ?? 0) > local.flashcards || (cloud.modules ?? 0) > local.modules;
-    final ok = await showDialog<bool>(
+    final choice = await showDialog<_UploadChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Cloud-Stand eines anderen Geräts ersetzen?'),
+        title: const Text('Ein anderes Gerät war schneller'),
         content: Text(
           'In der Cloud liegt: $cloudText – diesen Stand kennt dieses Gerät nicht.\n'
           'Dieses Gerät hat: ${local.modules} Fächer, ${local.flashcards} Karten.\n\n'
-          '${cloudHasMore ? 'ACHTUNG: In der Cloud liegt MEHR als hier. Vielleicht ist der Cloud-Stand der neuere – '
-              'dann besser erst "Herunterladen".\n\n' : ''}'
-          'Ein Upload ersetzt den Cloud-Stand vollständig; der andere Stand ist danach nicht mehr in der Cloud.',
+          '"Abgleichen" behält von beiden das Neuere und Weitere: neue Fächer und Karten von beiden Seiten, '
+          'bei derselben Karte den späteren Lernstand. Nichts geht verloren.\n\n'
+          '"Cloud ersetzen" lädt nur diesen Stand hoch; der andere ist danach nur noch unter '
+          '"Frühere Cloud-Stände" zu finden.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Cloud ersetzen')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(_UploadChoice.cancel), child: const Text('Abbrechen')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(_UploadChoice.replace), child: const Text('Cloud ersetzen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(_UploadChoice.merge), child: const Text('Abgleichen')),
         ],
       ),
     );
-    return ok == true;
+    return choice ?? _UploadChoice.cancel;
+  }
+
+  /// "Hochladen" mit Rückfrage: je nach Wahl abgleichen, ersetzen oder nichts.
+  Future<void> _uploadWithChoice(SyncTarget target, {String? codeToRemember}) async {
+    final choice = await _confirmUpload(target);
+    if (!mounted) return;
+    switch (choice) {
+      case _UploadChoice.cancel:
+        return;
+      case _UploadChoice.merge:
+        await _merge(target, codeToRemember: codeToRemember);
+      case _UploadChoice.replace:
+        await _push(target, codeToRemember: codeToRemember);
+    }
   }
 
   Future<void> _push(SyncTarget target, {String? codeToRemember}) async {
@@ -311,6 +328,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
       successMessage: 'Hochgeladen.',
     );
+  }
+
+  /// "Abgleichen": führt diesen Stand mit dem der Cloud zusammen (siehe
+  /// SyncService.merge) – beide Seiten behalten, was neu oder weiter ist.
+  Future<void> _merge(SyncTarget target, {String? codeToRemember}) async {
+    final repo = context.read<SettingsRepository>();
+    final autoSync = context.read<AutoSyncService>();
+    final moduleRepo = context.read<ModuleRepository>();
+    final labRepo = context.read<LabExperimentRepository?>();
+    String? message;
+    await _runSync(
+      () async {
+        final deviceId = await AutoSyncService.ensureDeviceId(repo);
+        final store = PdfCloudStore.fromConfig(repo.settings.pdfStorage);
+        if (store != null) {
+          try {
+            await autoSync.runWithoutTrigger(() => PdfCloudSyncService(store).uploadPending());
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('PDF-Speicher: $e')));
+            }
+          }
+        }
+        final outcome = await autoSync.runWithoutTrigger(
+          () => _syncService.merge(target, deviceId: deviceId, alwaysUpload: true),
+        );
+        // Der Abgleich hat die KI-Einstellungen direkt in die DB geschrieben –
+        // erst neu laden (siehe _pull).
+        await repo.load();
+        await repo.update(repo.settings.copyWith(
+          syncCode: codeToRemember,
+          lastSyncAt: DateTime.now(),
+          lastSyncedPushId: outcome.pushId,
+        ));
+        await moduleRepo.load();
+        await labRepo?.loadAll();
+        autoSync.markInSync();
+        message = outcome.message;
+      },
+      successMessage: 'Abgeglichen.',
+    );
+    final done = message;
+    if (done != null && mounted && _syncMessage == 'Abgeglichen.') setState(() => _syncMessage = 'Abgeglichen. $done');
+  }
+
+  /// "Frühere Cloud-Stände": die in der Cloud aufgehobenen Stände ansehen und
+  /// einen davon wiederherstellen.
+  Future<void> _showCloudHistory() async {
+    final target = _accountTarget() ?? _codeTarget();
+    if (target == null) {
+      setState(() => _syncMessage = 'Erst mit einem Konto anmelden oder einen Sync-Code eintragen.');
+      return;
+    }
+    final repo = context.read<SettingsRepository>();
+    final autoSync = context.read<AutoSyncService>();
+    final moduleRepo = context.read<ModuleRepository>();
+    final labRepo = context.read<LabExperimentRepository?>();
+    final deviceId = await AutoSyncService.ensureDeviceId(repo);
+    if (!mounted) return;
+    final pushId = await showDialog<String>(
+      context: context,
+      builder: (_) => SyncCloudHistoryDialog(service: _syncService, target: target, deviceId: deviceId),
+    );
+    if (pushId == null || !mounted) return;
+    await autoSync.runWithoutTrigger(() async {
+      await repo.load();
+      await repo.update(repo.settings.copyWith(lastSyncAt: DateTime.now(), lastSyncedPushId: pushId));
+      await moduleRepo.load();
+      await labRepo?.loadAll();
+    });
+    autoSync.markInSync();
+    if (mounted) setState(() => _syncMessage = 'Cloud-Stand wiederhergestellt.');
   }
 
   Future<void> _pull(SyncTarget target, {String? codeToRemember}) async {
@@ -385,8 +474,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _pushCode() async {
     final target = _codeTarget();
-    if (target == null || !await _confirmUpload(target) || !mounted) return;
-    await _push(target, codeToRemember: target.id);
+    if (target != null) await _uploadWithChoice(target, codeToRemember: target.id);
+  }
+
+  Future<void> _mergeCode() async {
+    final target = _codeTarget();
+    if (target != null) await _merge(target, codeToRemember: target.id);
   }
 
   Future<void> _pullCode() async {
@@ -396,8 +489,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _pushAccount() async {
     final target = _accountTarget();
-    if (target == null || !await _confirmUpload(target) || !mounted) return;
-    await _push(target);
+    if (target != null) await _uploadWithChoice(target);
+  }
+
+  Future<void> _mergeAccount() async {
+    final target = _accountTarget();
+    if (target != null) await _merge(target);
   }
 
   Future<void> _pullAccount() async {
@@ -434,13 +531,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (cloud.pushId != null && cloud.pushId == _settingsRepo.settings.lastSyncedPushId) return;
     final when = cloud.updatedAt == null ? '' : ' (${_formatRelative(cloud.updatedAt!)} hochgeladen)';
     final what = cloud.modules == null ? '' : ' mit ${cloud.modules} Fächern und ${cloud.flashcards} Karten';
-    final download = await _askSync(
-      title: 'Stand aus deinem Konto holen?',
+    final merge = await _askSync(
+      title: 'Mit deinem Konto abgleichen?',
       message: 'In deinem Konto liegt ein Stand$what$when – samt API-Key, Modellwahl und PDF-Speicher, '
-          'falls dort eingetragen. Jetzt auf dieses Gerät holen?',
-      action: 'Herunterladen',
+          'falls dort eingetragen. Jetzt abgleichen? Von beiden Seiten bleibt, was neu oder weiter ist; '
+          'nichts wird überschrieben.',
+      action: 'Abgleichen',
     );
-    if (download) await _pull(target);
+    if (merge) await _merge(target);
   }
 
   Future<bool> _askSync({required String title, required String message, required String action}) async {
@@ -840,11 +938,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'Läuft automatisch über dein Konto '
                       '(${auth.currentUser?.email ?? auth.currentUser?.displayName ?? "angemeldet"}) – '
                       'auf jedem Gerät mit demselben Konto anmelden, dann hier '
-                      'synchronisieren. Kein Code nötig. Überträgt auch API-Key, '
-                      'Modellwahl und PDF-Speicher sowie Lerntage, Probeklausuren und Frage-Chats.',
+                      'abgleichen. Kein Code nötig. "Abgleichen" führt die Stände zusammen: neue Fächer '
+                      'und Karten von beiden Geräten bleiben, bei derselben Karte gilt der spätere '
+                      'Lernstand. Überträgt auch API-Key, Modellwahl und PDF-Speicher sowie Lerntage, '
+                      'Probeklausuren und Frage-Chats.',
                       style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
                     ),
                     const SizedBox(height: 12),
+                    _SoftButton(
+                      icon: Icons.sync,
+                      label: 'Abgleichen (empfohlen)',
+                      onTap: syncLocked ? null : _mergeAccount,
+                    ),
+                    const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
@@ -876,6 +982,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       label: 'Sicherungen (auf diesem Gerät)',
                       onTap: _syncBusy ? null : _showBackups,
                     ),
+                    const SizedBox(height: 10),
+                    _SoftButton(
+                      icon: Icons.history,
+                      label: 'Frühere Cloud-Stände',
+                      onTap: _syncBusy ? null : _showCloudHistory,
+                    ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
                     _AutoSyncTile(enabled: settings.autoSyncEnabled, onChanged: _setAutoSync),
                   ] else ...[
@@ -892,6 +1004,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       decoration: _fieldDecoration(context, label: 'Sync-Code'),
                     ),
                     const SizedBox(height: 12),
+                    _SoftButton(
+                      icon: Icons.sync,
+                      label: 'Abgleichen (empfohlen)',
+                      onTap: syncLocked ? null : _mergeCode,
+                    ),
+                    const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
@@ -922,6 +1040,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.settings_backup_restore_outlined,
                       label: 'Sicherungen (auf diesem Gerät)',
                       onTap: _syncBusy ? null : _showBackups,
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftButton(
+                      icon: Icons.history,
+                      label: 'Frühere Cloud-Stände',
+                      onTap: _syncBusy ? null : _showCloudHistory,
                     ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
                     _AutoSyncTile(enabled: settings.autoSyncEnabled, onChanged: _setAutoSync),
@@ -1628,6 +1752,9 @@ class _PdfStorageSectionState extends State<_PdfStorageSection> {
   }
 }
 
+/// Was nach der Rückfrage beim Hochladen passiert.
+enum _UploadChoice { cancel, merge, replace }
+
 /// Schalter für den automatischen Upload (siehe AutoSyncService) plus
 /// dessen aktueller Zustand.
 class _AutoSyncTile extends StatelessWidget {
@@ -1644,15 +1771,14 @@ class _AutoSyncTile extends StatelessWidget {
     final status = noTarget
         ? 'Noch kein Ziel: mit einem Konto anmelden oder oben einen Sync-Code eintragen und einmal hochladen.'
         : switch (autoSync.status) {
-            AutoSyncStatus.idle => enabled ? 'Alles hochgeladen.' : null,
+            AutoSyncStatus.idle => enabled ? (autoSync.lastMergeMessage ?? 'Alles hochgeladen.') : null,
             AutoSyncStatus.pending => 'Änderungen werden gleich hochgeladen …',
             AutoSyncStatus.syncing => 'Lädt hoch …',
             AutoSyncStatus.retrying =>
               'Upload fehlgeschlagen (${autoSync.lastError ?? 'offline?'}) – wird automatisch wiederholt.',
             AutoSyncStatus.conflict =>
-              'Ein anderes Gerät hat inzwischen hochgeladen. Damit dessen Fortschritt nicht '
-                  'überschrieben wird, lädt dieses Gerät nicht automatisch hoch – erst "Herunterladen" '
-                  '(oder bewusst "Hochladen", um den Cloud-Stand zu ersetzen).',
+              'Ein anderes Gerät lädt gerade ständig hoch, das Zusammenführen ist nicht gelungen. '
+                  'Bitte oben "Abgleichen" drücken.',
           };
     return Padding(
       padding: const EdgeInsets.only(top: 12),
@@ -1663,9 +1789,10 @@ class _AutoSyncTile extends StatelessWidget {
             contentPadding: EdgeInsets.zero,
             value: enabled,
             onChanged: onChanged,
-            title: const Text('Automatisch hochladen'),
+            title: const Text('Automatisch abgleichen'),
             subtitle: Text(
-              'Lädt Änderungen kurz nach dem Lernen selbst hoch; offline wird es später nachgeholt.',
+              'Lädt Änderungen kurz nach dem Lernen selbst hoch und holt beim Öffnen der App, was ein anderes '
+              'Gerät weitergelernt hat; offline wird es später nachgeholt.',
               style: TextStyle(fontSize: 12, color: c.inkMuted),
             ),
           ),

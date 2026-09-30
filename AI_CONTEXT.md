@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 933 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 983 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -807,7 +807,8 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     es auf Windows nicht → Passwort zum Konto hinzufügen); Firestore-Regeln
     (`sync_parts`) nie veröffentlicht, obwohl der Stand über 900 KB komprimiert
     ist; Auto-Sync lädt nur HOCH – Herunterladen bleibt manuell ("Herunterladen"),
-    das ist Absicht (kein stilles Überschreiben lokaler Änderungen).
+    das ist Absicht (kein stilles Überschreiben lokaler Änderungen). [Überholt
+    durch Punkt 46: der Auto-Sync gleicht jetzt selbst ab.]
     Merke: `dart format` ohne `-l 120` bricht die Projektdateien um und
     bläht Diffs auf.
 43. Sync-Verlust (Nutzer: Fortschritt vom PC weg; Android hatte hochgeladen,
@@ -832,8 +833,7 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     mit Cloud-Zahlen vor Pull und – wenn ein fremdes Gerät neuer hochgeladen hat
     (`AutoSyncService.isBlockedByOtherDevice`) – vor manuellem Upload; (e)
     `firestoreRulesText` (Test hält ihn gleich `firestore.rules`) + Knopf
-    "Regeln kopieren". Nicht gelöst (bewusst): echtes Zusammenführen zweier
-    Geräte; Cloud-Verlauf früherer Stände.
+    "Regeln kopieren". [Zusammenführen und Cloud-Verlauf: siehe Punkt 46.]
 44. PDF-Viewer-Panel + Seitennotizen (Nutzer-Screenshot: Frage-Fenster deckte die
     Seite bei 100 % zu). `PageQaPanel` (`lib/ui/widgets/page_qa_panel.dart`) mit
     `PageQaController` (Gespräch getrennt vom Widget, bleibt bei Schließen/
@@ -854,6 +854,48 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Rückfrage / eigene Worte prüfen mit Urteil zuerst / vertiefen; widerspricht
     der Lösung nicht; ≤ 8 Sätze). Verlauf nur im Widget (pro Karte). Chips füllen
     Satzanfänge, "Anderes Beispiel" sendet sofort, Strg+Enter sendet.
+46. Sync: Geräte abgleichen (Nutzer: "alte Stände?" und "das Neueste von beidem
+    nehmen"). (a) `lib/services/sync_merge.dart` – reine 3-Wege-Logik
+    `mergeSyncPayloads(local, remote, base)` über Einträge mit Kennung (`_keyed`:
+    modules, materials, summaries, concepts, flashcards, lectureUnits,
+    labExperiments, chatMessages, masterySnapshots, mockExamResults); Vergleich per
+    `recordHash` (sortierte Schlüssel, 1.0 = 1). Regeln: nur einseitig da → neu,
+    außer im Basisstand unverändert = dort gelöscht; einseitig geändert → diese
+    Fassung; beidseitig → Karten spätere `lastReview` (dann `reps`), Labor mehr
+    eigener Text (`_labWork`), Materialien Union aus highlights/pageNotes/notes,
+    sonst lokal; ohne Basisstand nie löschen; Einträge ohne Fach fallen weg;
+    Lerntage vereinigt. (b) Basisstand = `SyncBaseStore` (Store `sync_base`, Hashes
+    je Sammlung, geräte-lokal): gespeichert nach erfolgreichem Push (`_push`), in
+    der Pull-Transaktion und nach einem Abgleich ohne Upload – NIE nach einem
+    nur lokal angewendeten, nicht hochgeladenen Merge (sonst würde die alte Cloud
+    beim nächsten Mal "gewinnen"); `SyncBackupService.restore` und
+    `restoreCloudState` löschen ihn (sonst sähe Neueres wie "gelöscht" aus).
+    (c) `mergeRemoteIntoLocal` (`sync_merge_apply.dart`): Vorschau, Sicherung
+    `kindMerge` (5) nur bei lokalen Änderungen (scheitert sie → Abbruch), dann
+    EINE Transaktion aus lesen + mergen + `applySyncPayload`; ohne lokale
+    Änderung nur der Daily-Stand. `SyncService.merge(target, deviceId,
+    alwaysUpload)` → `SyncMergeOutcome`: liest Cloud, merged, übernimmt
+    aiSettings nur von einem ANDEREN Gerät (`root['deviceId'] != deviceId`),
+    lädt hoch wenn `changedRemotely>0` oder `alwaysUpload` (`abortIf`: Cloud-
+    `pushId` unverändert seit dem Lesen, sonst `SyncConflictException`).
+    (d) Cloud-Verlauf: `sync_cloud_history.dart` (`CloudStateEntry`,
+    `planCloudHistory`, max 5, Aufheben bei fremdem Gerät / leerem Verlauf / ≥ 24 h
+    Abstand / `force`); `_push` behält die Teile des ersetzten Stands (`history`
+    im Hauptdokument), kopiert einen Ein-Dokument-Stand vorher nach
+    `{pushId}_0`, löscht Teile herausfallender Einträge erst NACH dem
+    Umschalten; `cloudHistory`, `restoreCloudState` (lokal sichern, anwenden,
+    Basis löschen, `_push(forceHistory: true)`); Dialog
+    `SyncCloudHistoryDialog`. (e) `AutoSyncService`: Konflikt beim Upload →
+    `_mergeWithCloud` (statt Status `conflict`; nach 3 gescheiterten Versuchen
+    `conflict`, dann manuell), `checkCloud()` kurz nach Start
+    (`startCheckDelay`) und bei Resume (`isBlockedByOtherDevice` → merge),
+    `onDataChanged` (main.dart lädt Fächer/Labore neu; Tab-Wechsel lädt den
+    Rest), `lastMergeMessage` (`describeMerge`). (f) Einstellungen: Knopf
+    "Abgleichen (empfohlen)" (`alwaysUpload: true`), Rückfrage beim Hochladen mit
+    Abgleichen/Cloud ersetzen, "Frühere Cloud-Stände", Anmeldung bietet Abgleichen
+    statt Herunterladen. Test-Falle: `SyncService` lässt sich mit einer
+    Unterklasse faken (`isAvailable`, `push`, `merge`, `cloudMeta` überschreiben);
+    `AutoSyncService.startCheckDelay` in Tests hochsetzen.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
@@ -863,8 +905,8 @@ Offen / zu beachten:
   Upload nur, solange der komprimierte Bestand unter 900 KB bleibt (die App
   meldet es verständlich).
 - Auto-Sync ist standardmäßig aus (Schalter in den Einstellungen).
-- Auto-Sync-Konfliktlösung ist bewusst einfach (ganzer Stand gewinnt, kein
-  Zusammenführen einzelner Karten).
+- Der Abgleich entscheidet je Eintrag (Karte/Versuch/Material), nicht je Feld;
+  gelöschte Einträge erkennt er nur mit Basisstand (siehe Punkt 46).
 - Zurückgestellt aus dem Audit (Nutzer: gemerkt, vorerst nicht umsetzen):
   H9 (gleichzeitiger Push zweier Geräte ohne Transaktion), H10 (selbst
   gewählte Sync-Codes; Konto-Weg empfohlen).

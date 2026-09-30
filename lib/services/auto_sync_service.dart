@@ -11,6 +11,7 @@ import 'database_service.dart';
 import 'pdf_cloud_store.dart';
 import 'pdf_cloud_sync_service.dart';
 import 'sync_diagnostics.dart';
+import 'sync_merge.dart';
 import 'sync_service.dart';
 
 enum AutoSyncStatus {
@@ -26,8 +27,10 @@ enum AutoSyncStatus {
   /// Upload fehlgeschlagen (z.B. offline) – wird automatisch wiederholt.
   retrying,
 
-  /// Die Cloud hat einen neueren Stand von einem anderen Gerät – ein
-  /// automatischer Upload würde ihn überschreiben, daher erst herunterladen.
+  /// Die Cloud hat einen neueren Stand von einem anderen Gerät und das
+  /// automatische Zusammenführen ist mehrfach nicht gelungen (z.B. weil das
+  /// andere Gerät ständig weiter hochlädt) – dann in den Einstellungen
+  /// "Abgleichen".
   conflict,
 }
 
@@ -39,14 +42,22 @@ enum AutoSyncStatus {
 /// Sync-Code.
 ///
 /// Schutz vor Datenverlust: hat seit dem letzten Abgleich ein ANDERES Gerät
-/// hochgeladen, wird nicht automatisch überschrieben ([AutoSyncStatus.conflict])
-/// – dann erst in den Einstellungen herunterladen.
+/// hochgeladen, wird nichts überschrieben, sondern zusammengeführt (siehe
+/// SyncService.merge): was hier neu oder weiter ist, kommt in die Cloud, was dort
+/// neu oder weiter ist, hierher. Das passiert auch beim Start und beim
+/// Zurückkehren in die App ([checkCloud]), damit der Stand des anderen Geräts
+/// ohne Zutun ankommt.
 class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   AutoSyncService({
     required this._settings,
     required this._auth,
     SyncService? sync,
+    this.onDataChanged,
   }) : _sync = sync ?? SyncService();
+
+  /// Wird aufgerufen, nachdem ein Abgleich lokale Daten verändert hat – die App
+  /// lädt dann Fächerliste, Laborversuche und Einstellungen neu.
+  final Future<void> Function()? onDataChanged;
 
   final SettingsRepository _settings;
   final AuthRepository _auth;
@@ -68,6 +79,12 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   String? _lastError;
   String? get lastError => _lastError;
 
+  /// Was der letzte automatische Abgleich getan hat (siehe describeMerge), z.B.
+  /// "In der Cloud neu oder geändert: 3 Karten." – `null`, wenn er nichts
+  /// zusammenführen musste.
+  String? _lastMergeMessage;
+  String? get lastMergeMessage => _lastMergeMessage;
+
   /// Letzter Fehler beim Hochladen der PDFs in den eigenen Speicher – hält
   /// den Sync der Lerndaten bewusst NICHT auf.
   String? _lastPdfError;
@@ -79,6 +96,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   bool _running = false;
   int _suppressDepth = 0;
   int _retryIndex = 0;
+  int _conflictRetries = 0;
   Database? _db;
 
   /// Die Speicher, deren Änderung einen Upload auslöst. Alles, was in
@@ -113,7 +131,13 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     _settingsSignature = _currentSettingsSignature();
     _settings.addListener(_onSettingsChanged);
     WidgetsBinding.instance.addObserver(this);
+    // Kurz nach dem Start nachsehen, ob ein anderes Gerät weitergelernt hat.
+    unawaited(Future<void>.delayed(startCheckDelay, checkCloud));
   }
+
+  /// Wartezeit vor dem ersten Blick in die Cloud – die App soll erst stehen.
+  @visibleForTesting
+  static Duration startCheckDelay = const Duration(seconds: 4);
 
   String _currentSettingsSignature() =>
       jsonEncode(syncedSettingsOf(_settings.settings, includeSecrets: true));
@@ -161,6 +185,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     _timer?.cancel();
     _dirty = false;
     _retryIndex = 0;
+    _conflictRetries = 0;
     _lastError = null;
     _setStatus(AutoSyncStatus.idle);
   }
@@ -170,7 +195,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   void _markDirty() {
     if (_disposed || _suppressDepth > 0 || !_settings.settings.autoSyncEnabled) return;
     _dirty = true;
-    if (_status == AutoSyncStatus.conflict) return; // wartet auf Download
+    if (_status == AutoSyncStatus.conflict) return; // wartet auf "Abgleichen" in den Einstellungen
     _schedule(debounce);
     if (_status != AutoSyncStatus.retrying) _setStatus(AutoSyncStatus.pending);
   }
@@ -182,7 +207,9 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_dirty || _status == AutoSyncStatus.conflict) return;
+    // Beim Zurückkehren nachsehen, ob ein anderes Gerät weitergelernt hat.
+    if (state == AppLifecycleState.resumed) unawaited(checkCloud());
+    if (!_dirty) return;
     // Beim Verlassen (sonst liefe der Debounce-Timer im Hintergrund evtl. nie
     // ab) und beim Zurückkehren (Nachholen nach Offline-Zeit) sofort.
     if (state == AppLifecycleState.resumed ||
@@ -190,6 +217,61 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
         state == AppLifecycleState.hidden) {
       unawaited(syncNow());
     }
+  }
+
+  /// Sieht in der Cloud nach, ob ein ANDERES Gerät seit dem letzten Abgleich
+  /// hochgeladen hat, und führt dann zusammen. Ohne so einen Stand (oder ohne
+  /// Netz) passiert nichts. Liegen lokale Änderungen an, übernimmt [syncNow]
+  /// – der Upload merkt den fremden Stand ohnehin und führt zusammen.
+  Future<void> checkCloud() async {
+    if (_disposed || _running || !_settings.settings.autoSyncEnabled) return;
+    if (_dirty) return syncNow();
+    final target = this.target;
+    if (target == null || !_sync.isAvailable) return;
+    _running = true;
+    try {
+      final deviceId = await ensureDeviceId(_settings);
+      final meta = await _sync.cloudMeta(target);
+      if (!isBlockedByOtherDevice(
+        meta: meta,
+        lastSyncedPushId: _settings.settings.lastSyncedPushId,
+        deviceId: deviceId,
+      )) {
+        return;
+      }
+      _setStatus(AutoSyncStatus.syncing);
+      final pushId = await _mergeWithCloud(target, deviceId);
+      await _settings.update(_settings.settings.copyWith(lastSyncAt: DateTime.now(), lastSyncedPushId: pushId));
+      _lastError = null;
+      _conflictRetries = 0;
+      _setStatus(_dirty ? AutoSyncStatus.pending : AutoSyncStatus.idle);
+    } catch (_) {
+      // Offline o.ä.: kein Grund zu warnen – beim nächsten Start, Zurückkehren
+      // oder Upload wird es erneut versucht.
+      if (_status == AutoSyncStatus.syncing) _setStatus(AutoSyncStatus.idle);
+    } finally {
+      _running = false;
+    }
+  }
+
+  /// Führt den Stand mit dem der Cloud zusammen und liefert die `pushId`, die
+  /// jetzt als "zuletzt abgeglichen" gilt.
+  Future<String?> _mergeWithCloud(SyncTarget target, String deviceId) async {
+    final outcome = await runWithoutTrigger(() async {
+      final outcome = await _sync.merge(target, deviceId: deviceId);
+      // Der Abgleich schreibt Einstellungen (Key, Modelle …) direkt in die
+      // Datenbank – vor dem nächsten Speichern neu laden, ohne dass die
+      // übernommenen Werte gleich wieder hochgeladen werden.
+      await _settings.load();
+      return outcome;
+    });
+    _settingsSignature = _currentSettingsSignature();
+    final result = outcome.result;
+    _lastMergeMessage = result == null || (result.changedLocally == 0 && result.changedRemotely == 0)
+        ? null
+        : describeMerge(result);
+    if (outcome.changedLocally) await onDataChanged?.call();
+    return outcome.pushId;
   }
 
   /// Lädt sofort hoch, falls Änderungen anstehen und Auto-Sync aktiv ist.
@@ -205,11 +287,19 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
       final lastSynced = _settings.settings.lastSyncedPushId;
       _dirty = false;
       await _uploadPendingPdfs();
-      final pushId = await _sync.push(
-        target,
-        deviceId: deviceId,
-        abortIf: (cloud) => isBlockedByOtherDevice(meta: cloud, lastSyncedPushId: lastSynced, deviceId: deviceId),
-      );
+      String? pushId;
+      try {
+        pushId = await _sync.push(
+          target,
+          deviceId: deviceId,
+          abortIf: (cloud) => isBlockedByOtherDevice(meta: cloud, lastSyncedPushId: lastSynced, deviceId: deviceId),
+        );
+      } on SyncConflictException {
+        // Ein anderes Gerät hat hochgeladen: nichts überschreiben, sondern
+        // abgleichen – beide Stände bleiben erhalten.
+        pushId = await _mergeWithCloud(target, deviceId);
+      }
+      _conflictRetries = 0;
       await _settings.update(_settings.settings.copyWith(lastSyncAt: DateTime.now(), lastSyncedPushId: pushId));
       _retryIndex = 0;
       _lastError = null;
@@ -221,9 +311,17 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
         _setStatus(AutoSyncStatus.idle);
       }
     } on SyncConflictException {
+      // Das andere Gerät hat während des Abgleichs schon wieder hochgeladen.
+      // Ein paar Mal neu versuchen, danach bleibt es beim manuellen "Abgleichen".
       _dirty = true;
       _lastError = null;
-      _setStatus(AutoSyncStatus.conflict);
+      _conflictRetries += 1;
+      if (_conflictRetries <= 3) {
+        _schedule(const Duration(seconds: 20));
+        _setStatus(AutoSyncStatus.pending);
+      } else {
+        _setStatus(AutoSyncStatus.conflict);
+      }
     } catch (e) {
       _dirty = true;
       _lastError = e is SyncException ? e.message : SyncDiagnostics.describeError(e);

@@ -562,7 +562,9 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   30 s nach der letzten Änderung hoch, beim Verlassen der App sofort, offline
   mit wachsenden Abständen erneut und beim Zurückkehren in die App sofort. Hat seit dem letzten
   Abgleich ein anderes Gerät hochgeladen, überschreibt der Auto-Sync das NICHT,
-  sondern bittet erst um "Herunterladen". Auch geänderte Einstellungen, die
+  sondern **führt beide Stände zusammen** (siehe "Abgleichen" unten und Abschnitt
+  5s) – das passiert auch beim Start und beim Zurückkehren in die App, damit
+  der Stand des anderen Geräts ohne Zutun ankommt. Auch geänderte Einstellungen, die
   mitreisen (API-Key, Modelle, PDF-Speicher, Vorlieben), lösen den Auto-Sync
   aus – vorher kamen sie erst mit der nächsten gelernten Karte an. Nach einem
   Download zeigen die Einstellungsfelder sofort die übernommenen Werte (vorher
@@ -598,8 +600,8 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   **Rückfragen mit Zahlen:** vor "Herunterladen" steht, was in der Cloud liegt
   (Fächer, Karten, wann, von welchem Gerät) und was hier überschrieben wird;
   vor "Hochladen" fragt die App, wenn in der Cloud ein Stand eines ANDEREN
-  Geräts liegt, den dieses nicht kennt – mit einer Warnung, wenn dort MEHR
-  liegt als hier.
+  Geräts liegt, den dieses nicht kennt – und bietet dann **"Abgleichen"**
+  (beides behalten) oder bewusst "Cloud ersetzen" an.
   **Abgebrochene Uploads** lassen den Cloud-Stand nicht mehr unlesbar zurück
   (Cloud-Format 3): große Stände werden in Teilen `sync_parts/{pushId}_n`
   unter neuen Kennungen geschrieben, erst das Hauptdokument schaltet den neuen
@@ -608,9 +610,20 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Format-3-Stand "neuere App-Version – bitte aktualisieren". In der
   Diagnose ("Verbindung prüfen") kopiert **"Regeln kopieren"** den Inhalt von
   `firestore.rules` für die Firebase-Konsole.
+- **Abgleichen** (Einstellungen → Cloud-Sync, Knopf "Abgleichen (empfohlen)") –
+  führt den Stand dieses Geräts mit dem der Cloud zusammen, statt einen der
+  beiden zu ersetzen: neue Fächer, Karten, Materialien usw. von BEIDEN Seiten
+  bleiben, bei derselben Karte gilt der spätere Lernstand. Beispiel: auf dem
+  Handy liegt ein neuer Kurs, auf dem PC ein alter, an dem du weiter bist –
+  danach haben beide beides, der Kurs am PC mit dem weiteren Fortschritt. Details
+  und Grenzen: Abschnitt 5s.
+- **Frühere Cloud-Stände** (Knopf "Frühere Cloud-Stände") – lädt ein Gerät hoch
+  und ersetzt dabei den Stand eines anderen, bleibt dieser in der Cloud liegen
+  (die letzten fünf); ein Klick holt ihn zurück. Dazu die lokalen Sicherungen
+  (siehe oben).
 - **Anmelden auf einem neuen Gerät** – direkt nach der Anmeldung fragt die
-  App, ob der Stand aus dem Konto geholt werden soll (mit Anzahl Fächer/
-  Karten; auf einem leeren Gerät ohne zusätzliche Überschreiben-Warnung). Ist
+  App, ob der Stand aus dem Konto abgeglichen werden soll (mit Anzahl Fächer/
+  Karten; nichts wird überschrieben). Ist
   das Konto noch leer, bietet sie stattdessen an, den Stand dieses Geräts
   hochzuladen. "Passwort vergessen?" im Anmeldebildschirm schickt eine
   E-Mail zum Zurücksetzen.
@@ -828,8 +841,8 @@ PDF-Speicher**. Ohne Eintrag passiert nichts.
 Material ohne lokale Datei, wird sie dort bei Bedarf geholt. Gelöschte
 Materialien werden auch im Speicher entfernt. Die Zugangsdaten reisen wie der
 API-Key nur über den Konto-Sync, nie über einen Sync-Code – einmal eintragen
-reicht, die anderen Geräte bekommen sie beim nächsten "Herunterladen" (mit
-Auto-Sync wird die Änderung sofort hochgeladen).
+reicht, die anderen Geräte bekommen sie beim nächsten "Abgleichen" (mit
+Auto-Sync wird die Änderung sofort hochgeladen und beim Öffnen der App geholt).
 
 **Web-Version:** der Browser lässt die Anfragen nur zu, wenn der Speicher
 CORS für die Adresse der App erlaubt. Bei R2/B2 in den Bucket-Einstellungen
@@ -1376,6 +1389,55 @@ die Engine (`flutter_windows.dll`), die Plugin-DLLs und `data/` werden zur
 Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
+
+### 5s. Sync: Geräte abgleichen, frühere Cloud-Stände
+
+**Warum:** vorher gewann bei einem Konflikt immer EIN ganzer Stand – hatte das
+Handy zuletzt hochgeladen, war die Arbeit vom PC weg. Jetzt gilt: nichts
+überschreiben, sondern zusammenführen.
+
+**Wie der Abgleich arbeitet** (`lib/services/sync_merge.dart`,
+`sync_merge_apply.dart`, `SyncService.merge`): drei Stände werden verglichen –
+der lokale, der der Cloud und der **Basisstand** (was beide beim letzten
+Abgleich gemeinsam hatten; je Eintrag ein Hash, nur auf diesem Gerät
+gespeichert, `sync_base_store.dart`).
+- *Nur auf einer Seite vorhanden:* neu → wird übernommen. War es im Basisstand
+  und ist dort unverändert, wurde es auf der anderen Seite gelöscht → fällt
+  auch hier weg. Wurde es hier weiterbearbeitet und dort gelöscht, bleibt es.
+- *Auf einer Seite seit dem Basisstand geändert:* diese Fassung gilt.
+- *Auf beiden Seiten geändert:* Karten – der **spätere Lernstand** (letzte
+  Wiederholung, dann Anzahl Wiederholungen); Laborversuche – der mit mehr
+  eigenem Text; Materialien – Markierungen, Seitennotizen und Notizen beider
+  Seiten bleiben; alles andere – die lokale Fassung. Was dabei nicht gewinnt,
+  steht in der Sicherung.
+- Lerntage werden vereinigt, Probeklausuren und Chats ergänzt, der heutige
+  Daily-Stand zusammengeführt. Einträge, deren Fach wegfällt, gehen mit.
+- **Erster Abgleich** eines Geräts (noch kein Basisstand, oder nach dem
+  Wiederherstellen einer Sicherung): es wird nur ergänzt, nie gelöscht.
+- Ändert sich dabei etwas auf diesem Gerät, entsteht vorher eine **Sicherung**
+  ("Vor dem Zusammenführen", die letzten 5). Das Ergebnis geht anschließend in
+  die Cloud; hat währenddessen ein weiteres Gerät hochgeladen, wird nichts
+  überschrieben, sondern neu abgeglichen.
+
+**Automatisch:** mit Auto-Sync gleicht die App bei einem Konflikt selbst ab,
+kurz nach dem Start und beim Zurückkehren in die App nach, ob ein anderes Gerät
+weitergelernt hat (Status unter dem Schalter: z.B. "In der Cloud neu oder
+geändert: 3 Karten."). Läuft das mehrmals hintereinander in einen Konflikt (ein
+anderes Gerät lädt gerade ständig hoch), bleibt es beim Knopf "Abgleichen".
+
+**Frühere Cloud-Stände** (`sync_cloud_history.dart`): beim Hochladen bleibt der
+ersetzte Stand in der Cloud liegen (Teil-Dokumente `sync_parts/{pushId}_n`, Liste
+`history` im Hauptdokument) – wenn er von einem ANDEREN Gerät stammt (genau dann
+geht fremder Fortschritt verloren), wenn der Verlauf leer ist oder wenn er einen
+Tag älter als der letzte Eintrag ist; es bleiben höchstens fünf. Der Dialog zeigt
+Datum, Umfang und Gerät; "Wiederherstellen" sichert lokal, übernimmt den Stand
+und lädt ihn hoch – der ersetzte Stand landet selbst wieder im Verlauf. Mehr
+Speicher in der Cloud: bis zu fünf zusätzliche komprimierte Stände.
+
+**Grenzen:** zwei Geräte, die dieselbe Karte gleichzeitig ändern, werden nach
+obiger Regel entschieden, nicht Feld für Feld. Ein gelöschter Eintrag wird nur
+erkannt, wenn dieses Gerät schon einmal abgeglichen hat (Basisstand). PDF-Dateien
+selbst laufen weiter über den eigenen PDF-Speicher.
 
 ### 5q. PDF-Viewer: KI-Frage-Panel neben der Seite, Notizen zu Seiten
 

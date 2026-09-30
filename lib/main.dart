@@ -102,7 +102,18 @@ class LernenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ModelCatalogRepository()..loadCached()),
         ChangeNotifierProvider(
           lazy: false,
-          create: (ctx) => AutoSyncService(settings: settingsRepository, auth: ctx.read<AuthRepository>())..start(),
+          create: (ctx) => AutoSyncService(
+            settings: settingsRepository,
+            auth: ctx.read<AuthRepository>(),
+            // Ein Abgleich mit der Cloud hat Daten dieses Geräts verändert: Fächer
+            // und Laborversuche neu laden (die übrigen Ansichten laden beim
+            // Öffnen bzw. beim Tab-Wechsel neu).
+            onDataChanged: () async {
+              final labs = ctx.read<LabExperimentRepository>();
+              await moduleRepository.load();
+              await labs.loadAll();
+            },
+          )..start(),
         ),
       ],
       // Builder statt MaterialApp direkt: liest die gewählte Farbpalette und

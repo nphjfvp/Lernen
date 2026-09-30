@@ -87,13 +87,14 @@ class SyncDiagnostics {
       return const DiagLine(
         DiagLevel.ok,
         'Der Cloud-Stand stammt von diesem Gerät',
-        'Andere Geräte müssen ihn mit „Herunterladen“ holen.',
+        'Andere Geräte holen ihn beim Öffnen der App (Auto-Sync) oder mit „Abgleichen“.',
       );
     }
     return const DiagLine(
       DiagLevel.warn,
       'Ein anderes Gerät hat neuer hochgeladen',
-      'Hier „Herunterladen“ drücken, um diesen Stand zu holen – ein Upload von hier würde ihn ersetzen.',
+      'Hier „Abgleichen“ drücken: das holt diesen Stand und behält, was hier neu ist. '
+      '„Herunterladen“ holt nur ihn, ein Upload von hier würde ihn ersetzen.',
     );
   }
 

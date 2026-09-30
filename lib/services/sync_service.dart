@@ -25,9 +25,13 @@ import '../repositories/mock_exam_repository.dart';
 import '../repositories/study_log_repository.dart';
 import '../services/database_service.dart';
 import 'mock_exam_service.dart';
-import 'sync_codec.dart';
 import 'sync_backup_service.dart';
+import 'sync_base_store.dart';
+import 'sync_cloud_history.dart';
+import 'sync_codec.dart';
 import 'sync_diagnostics.dart';
+import 'sync_merge.dart';
+import 'sync_merge_apply.dart';
 
 class SyncException implements Exception {
   final String message;
@@ -328,6 +332,28 @@ class CloudSyncMeta {
   final int? flashcards;
 }
 
+/// Ergebnis von [SyncService.merge].
+class SyncMergeOutcome {
+  const SyncMergeOutcome({required this.pushId, required this.pushed, this.result});
+
+  /// Die `pushId` des Cloud-Stands nach dem Abgleich (der eigene Upload oder der
+  /// vorhandene, wenn nichts hochzuladen war).
+  final String? pushId;
+
+  /// Ob dabei etwas hochgeladen wurde.
+  final bool pushed;
+
+  /// Was zusammengeführt wurde; `null`, wenn es in der Cloud noch nichts gab.
+  final SyncMergeResult? result;
+
+  /// Ob sich auf diesem Gerät etwas geändert hat (die Ansichten müssen dann neu
+  /// laden).
+  bool get changedLocally => (result?.changedLocally ?? 0) > 0;
+
+  /// Ein Satz für die Anzeige.
+  String get message => result == null ? 'Es lag noch nichts in der Cloud – alles hochgeladen.' : describeMerge(result!);
+}
+
 /// Cloud-Sync über Firestore, auf zwei Wegen erreichbar:
 ///  - Konto-gebunden (empfohlen): Daten liegen unter `users/{uid}`, per
 ///    Firestore-Regel exakt auf `request.auth.uid == uid` beschränkt. Kein
@@ -399,6 +425,48 @@ class SyncService {
     bool Function(CloudSyncMeta? cloud)? abortIf,
   }) =>
       _push(_doc(target), includeApiKey: target.isAccount, deviceId: deviceId, abortIf: abortIf);
+
+  /// Gleicht diesen Stand mit der Cloud ab statt einen der beiden zu ersetzen
+  /// (siehe [mergeSyncPayloads]): was auf einer Seite neu oder weiter ist,
+  /// kommt auf die andere. Das Ergebnis liegt danach auf beiden Seiten.
+  /// [alwaysUpload] lädt auch dann hoch, wenn die Cloud nichts Neues braucht
+  /// (z.B. geänderte Einstellungen) – der Auto-Sync lässt das aus.
+  Future<SyncMergeOutcome> merge(SyncTarget target, {required String deviceId, bool alwaysUpload = false}) =>
+      _merge(_doc(target), includeApiKey: target.isAccount, deviceId: deviceId, alwaysUpload: alwaysUpload);
+
+  /// Die früheren Cloud-Stände (neueste zuerst) neben den Kopfdaten des
+  /// aktuellen – siehe [planCloudHistory].
+  Future<({CloudSyncMeta? current, List<CloudStateEntry> previous})> cloudHistory(SyncTarget target) async {
+    _ensureAvailable();
+    final snapshot = await _get(_doc(target));
+    return (current: _metaOf(snapshot), previous: CloudStateEntry.listFrom(snapshot.data()?['history']));
+  }
+
+  /// Macht einen früheren Cloud-Stand wieder zum aktuellen: erst lokal sichern,
+  /// dann übernehmen und hochladen. Der ersetzte Stand wandert selbst in den
+  /// Verlauf – auch das lässt sich also zurücknehmen. Liefert die neue `pushId`.
+  Future<String> restoreCloudState(SyncTarget target, CloudStateEntry entry, {required String deviceId}) async {
+    _ensureAvailable();
+    final doc = _doc(target);
+    final Map<String, dynamic> data;
+    try {
+      data = await _readPayload(doc, {'format': syncFormat, 'partCount': entry.partCount, 'pushId': entry.pushId});
+    } on SyncException {
+      throw SyncException('Dieser frühere Stand ist in der Cloud nicht mehr vollständig vorhanden.');
+    }
+    checkUsablePayload(data);
+    final db = await DatabaseService.instance.database;
+    try {
+      await SyncBackupService.create(db, kind: SyncBackupService.kindRestore, reason: 'Vor dem Wiederherstellen eines Cloud-Stands');
+    } catch (e) {
+      throw SyncException('Die Sicherung vor dem Wiederherstellen ist fehlgeschlagen ($e) – es wurde nichts verändert.');
+    }
+    await db.transaction((txn) async {
+      await applySyncPayload(txn, data);
+      await SyncBaseStore.clear(txn);
+    });
+    return _push(doc, includeApiKey: target.isAccount, deviceId: deviceId, forceHistory: true);
+  }
 
   /// Ersetzt die lokalen Daten durch den Cloud-Stand. Liefert dessen
   /// `pushId` (null bei einem Cloud-Stand im alten Format).
@@ -503,7 +571,7 @@ class SyncService {
           const DiagLine(
             DiagLevel.warn,
             'Für dieses Ziel liegt in der Cloud noch nichts',
-            'Auf dem Gerät mit den Daten „Hochladen“, danach hier „Herunterladen“.',
+            'Auf dem Gerät mit den Daten „Hochladen“ (oder „Abgleichen“), danach hier „Abgleichen“.',
           ),
         );
       } else {
@@ -602,11 +670,35 @@ class SyncService {
     }
   }
 
+  /// Der bisherige Cloud-Stand als Verlaufs-Eintrag, wenn er aufhebbar ist: seine
+  /// Teile liegen unter `{pushId}_i` (Format 3) oder er steckt in einem Stück im
+  /// Hauptdokument und wird beim Aufheben in ein Teil kopiert.
+  static CloudStateEntry? _archivable(Map<String, dynamic>? root) {
+    if (root == null) return null;
+    final pushId = root['pushId'];
+    if (pushId is! String || pushId.isEmpty) return null;
+    final format = (root['format'] as num?)?.toInt() ?? 1;
+    final partCount = (root['partCount'] as num?)?.toInt() ?? 0;
+    if (partCount == 0 && root['data'] is! Blob) return null;
+    if (partCount > 0 && format < 3) return null;
+    final counts = root['counts'] is Map ? root['counts'] as Map : const {};
+    final updatedAt = root['updatedAt'];
+    return CloudStateEntry(
+      pushId: pushId,
+      partCount: partCount == 0 ? 1 : partCount,
+      deviceId: root['deviceId'] as String?,
+      at: updatedAt is Timestamp ? updatedAt.toDate() : null,
+      modules: (counts['modules'] as num?)?.toInt(),
+      flashcards: (counts['flashcards'] as num?)?.toInt(),
+    );
+  }
+
   Future<String> _push(
     DocumentReference<Map<String, dynamic>> doc, {
     required bool includeApiKey,
     required String deviceId,
     bool Function(CloudSyncMeta? cloud)? abortIf,
+    bool forceHistory = false,
   }) async {
     _ensureAvailable();
     final previous = await _get(doc);
@@ -617,7 +709,33 @@ class SyncService {
     final payload = await buildSyncPayload(db);
     final parts = SyncCodec.encode(payload);
     final pushId = const Uuid().v4();
-    final previousParts = syncPartIdsOf(previous.data());
+    final previousRoot = previous.data();
+    final previousParts = syncPartIdsOf(previousRoot);
+    final existingHistory = CloudStateEntry.listFrom(previousRoot?['history']);
+    var plan = planCloudHistory(
+      existing: existingHistory,
+      previous: _archivable(previousRoot),
+      newDeviceId: deviceId,
+      force: forceHistory,
+    );
+
+    final written = <String>[];
+    // Steckte der bisherige Stand in einem Stück im Hauptdokument, braucht er als
+    // frühere Fassung ein eigenes Teil-Dokument (das Hauptdokument wird gleich
+    // überschrieben). Gelingt das nicht, wird er nicht aufgehoben.
+    final retired = plan.retired;
+    if (retired != null && ((previousRoot?['partCount'] as num?)?.toInt() ?? 0) == 0) {
+      final id = syncPartId(format: syncFormat, pushId: retired.pushId, index: 0);
+      try {
+        await doc
+            .collection(_partsCollection)
+            .doc(id)
+            .set({'pushId': retired.pushId, 'data': previousRoot!['data']}).timeout(_writeTimeout);
+        written.add(id);
+      } catch (_) {
+        plan = planCloudHistory(existing: existingHistory, previous: null, newDeviceId: deviceId);
+      }
+    }
 
     final meta = <String, dynamic>{
       'format': syncFormat,
@@ -628,12 +746,17 @@ class SyncService {
         for (final e in payload.entries)
           if (e.value case final List list) e.key: list.length,
       },
+      'history': [for (final e in plan.keep) e.toMap()],
       'aiSettings': await _readAiSettings(db, includeApiKey: includeApiKey),
     };
 
-    final written = <String>[];
     if (parts.length == 1) {
-      await doc.set({...meta, 'partCount': 0, 'data': Blob(parts.single)}).timeout(_writeTimeout);
+      try {
+        await doc.set({...meta, 'partCount': 0, 'data': Blob(parts.single)}).timeout(_writeTimeout);
+      } catch (_) {
+        await _deleteParts(doc, written);
+        rethrow;
+      }
     } else {
       try {
         for (var i = 0; i < parts.length; i++) {
@@ -666,9 +789,68 @@ class SyncService {
       }
     }
 
-    // Teile des bisherigen Stands entfernen – erst jetzt, wo der neue gilt.
-    await _deleteParts(doc, previousParts);
+    // Aufräumen – erst jetzt, wo der neue Stand gilt: die Teile des bisherigen
+    // Stands (außer er wandert in den Verlauf) und die der Stände, die aus dem
+    // Verlauf herausfallen.
+    if (plan.retired == null) await _deleteParts(doc, previousParts);
+    for (final dropped in plan.drop) {
+      await _deleteParts(doc, [
+        for (var i = 0; i < dropped.partCount; i++) syncPartId(format: syncFormat, pushId: dropped.pushId, index: i),
+      ]);
+    }
+    // Cloud und dieses Gerät sind jetzt gleich – Ausgangspunkt für das nächste
+    // Zusammenführen. Scheitert das, bleibt der ältere Basisstand: das führt nur
+    // zu vorsichtigerem Vergleichen, nie zu Verlust.
+    try {
+      await SyncBaseStore.save(db, payload);
+    } catch (_) {}
     return pushId;
+  }
+
+  Future<SyncMergeOutcome> _merge(
+    DocumentReference<Map<String, dynamic>> doc, {
+    required bool includeApiKey,
+    required String deviceId,
+    required bool alwaysUpload,
+  }) async {
+    _ensureAvailable();
+    final snapshot = await _get(doc);
+    if (!snapshot.exists) {
+      // Noch nichts in der Cloud: einfach hochladen.
+      return SyncMergeOutcome(pushId: await _push(doc, includeApiKey: includeApiKey, deviceId: deviceId), pushed: true);
+    }
+    final root = snapshot.data()!;
+    final cloudPushId = root['pushId'] as String?;
+    final remote = await _readPayload(doc, root);
+    checkUsablePayload(remote);
+    final db = await DatabaseService.instance.database;
+    final result = await mergeRemoteIntoLocal(db, remote);
+
+    // Die Einstellungen des anderen Geräts (Key, Modelle …) kommen mit, aber
+    // nur von einem ANDEREN Gerät – der eigene Stand in der Cloud würde sonst
+    // gerade geänderte, noch nicht hochgeladene Einstellungen zurücksetzen.
+    final aiSettings = root['aiSettings'];
+    if (root['deviceId'] != deviceId && aiSettings is Map) {
+      await _writeAiSettings(
+        db,
+        syncedAiSettingsForPull(Map<String, dynamic>.from(aiSettings), acceptApiKey: includeApiKey),
+      );
+    }
+
+    if (result.changedRemotely > 0 || alwaysUpload) {
+      // Hat inzwischen ein weiteres Gerät hochgeladen, nicht überschreiben –
+      // der nächste Abgleich holt auch das nach.
+      final pushId = await _push(
+        doc,
+        includeApiKey: includeApiKey,
+        deviceId: deviceId,
+        abortIf: (cloud) => cloud?.pushId != cloudPushId,
+      );
+      return SyncMergeOutcome(pushId: pushId, pushed: true, result: result);
+    }
+    // Die Cloud braucht nichts: beide Seiten sind jetzt gleich.
+    await SyncBaseStore.save(db, await buildSyncPayload(db));
+    return SyncMergeOutcome(pushId: cloudPushId, pushed: false, result: result);
   }
 
   /// Löscht Teil-Dokumente. Aufräumen ist optional: ein übrig gebliebener Teil
@@ -743,6 +925,8 @@ class SyncService {
         txn,
         aiSettings == null ? null : syncedAiSettingsForPull(Map<String, dynamic>.from(aiSettings as Map), acceptApiKey: acceptApiKey),
       );
+      // Cloud und dieses Gerät sind jetzt gleich (Ausgangspunkt fürs Zusammenführen).
+      await SyncBaseStore.save(txn, await buildSyncPayload(txn));
     });
     return root['pushId'] as String?;
   }
