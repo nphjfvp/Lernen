@@ -1390,6 +1390,67 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5t. Rechnen mit KI und Berichtsentwurf (Laborversuch)
+
+**Rechnen mit KI** (`lib/ui/calc/calc_screen.dart`) – erreichbar im
+Laborversuch (Durchführung: Knopf **"Rechnen mit KI"** je Versuchsteil und
+**"Rechnen"** je Auswertungsaufgabe; die Messwerte des Teils stehen dann schon
+im Werte-Feld) und im Fach (Abschnitt Laborversuche: **"Rechnen mit KI (Werte
+oder Bilder)"**). Du gibst eine Aufgabe, Werte als Text oder Tabelle und/oder
+**Fotos** (Aufgabenblatt, Messprotokoll, Tabelle, Messgerät, Oszilloskop; bis zu
+6, werden auf 1600 px verkleinert) ein und drückst **"Berechnen"**.
+
+- **Die KI rechnet nicht, die App schon.** Das Modell liest die Werte und stellt
+  einen *Rechenplan* auf (gegebene Größen mit Einheit, Schritte mit Formel,
+  Annahmen); ausgewertet wird er lokal (`lib/services/calc_engine.dart`, ein
+  sicherer Formel-Auswerter ohne `eval`). Sprachmodelle verrechnen sich, ein
+  Auswerter nicht. Erlaubt: Zahlen, Größen, `+ - * / ^`, Klammern und Funktionen
+  wie `sqrt`, `sin`, `ln`, `lg`, `exp`, `hypot`, `pow`, `rad`; über **Messreihen**
+  `mean`, `median`, `stdev`, `min`, `max`, `rms`, `sum` sowie `slope`,
+  `intercept`, `r2` (Ausgleichsgerade). Eine Größe mit mehreren Werten rechnet
+  Zeile für Zeile (Ergebnis als Tabelle).
+- **Rechenweg** je Schritt: Name, Formel (LaTeX), Erklärung, **eingesetzte
+  Werte** (`R = 12,3 V / 0,45 A`) und Ergebnis mit Einheit (deutsches Komma, vier
+  gültige Ziffern, Zehnerpotenz bei sehr großen/kleinen Werten). Ganz oben steht
+  das Ergebnis. Fehler (Division durch 0, unbekannte Größe) stehen am Schritt,
+  unabhängige Schritte rechnen trotzdem.
+- **Gelesene Werte prüfen und korrigieren:** unter "Gegeben – bitte prüfen"
+  steht jeder Wert samt dem, was im Bild stand; unsicher Gelesenes ist markiert.
+  Tippst du einen anderen Wert ein, rechnet die App **sofort neu** – ohne weitere
+  KI-Anfrage. Reihen mit Semikolon.
+- **Anpassen lassen:** "Rechne zusätzlich die Leistung" / "Nimm für R_2 den Wert
+  220 Ω" überarbeitet den Plan (die KI sieht den bisherigen Plan; Bilder nur auf
+  Wunsch erneut). Fehlende Angaben nennt die KI unter "Es fehlt noch" statt zu
+  raten; Annahmen und Plausibilitätshinweise stehen darunter.
+- **Rechenweg kopieren** oder **"In Notizen speichern"** (an die Notizen des
+  Versuchsteils angehängt) – von dort nutzt ihn der Berichtsentwurf.
+- Modell: mit Bildern das **Vision-Modell**, sonst das Fragen-Modell (Einstellungen).
+
+**Berichtsentwurf zur Inspiration** (`lib/ui/lab/lab_draft_screen.dart`) – im
+Reiter Bericht der Knopf **"Entwurf zur Inspiration"** (alle Abschnitte) bzw. je
+Abschnitt (nur dieser). Die KI schreibt aus den Daten des Versuchs (Messwerte,
+Notizen samt Rechenwegen, Antworten, Auszüge aus Skript und Anleitung) einen
+groben Entwurf; **nichts wird erfunden** – Fehlendes steht als
+`[ergänzen: …]` darin, Abbildungen als `[Abbildung: …]`, und eine Liste nennt,
+was noch fehlt.
+
+- **Vorlage und Vorgaben:** eine Berichtsvorlage hochladen (Word, PDF,
+  PowerPoint – wird wie andere Unterlagen im Fach abgelegt und beim Versuch
+  gemerkt), aus dem Fach wählen oder als **Foto** mitgeben, dazu eigene Vorgaben
+  (Umfang, Gliederung, Passiv, Formalia). Die KI folgt Gliederung und Formalia der
+  Vorlage; "Gliederung der Vorlage übernehmen" legt Abschnitte, die nur die
+  Vorlage kennt (z. B. Anhang), als neue Berichtsabschnitte an.
+- **Ausformuliert oder nur Gerüst** (Stichpunkte); die bisherigen eigenen Texte
+  können berücksichtigt werden.
+- **Getrennt vom eigenen Text:** der Entwurf steht in einem eigenen Feld unter
+  dem Abschnitt (markier- und kopierbar), **"In meinen Text übernehmen"** hängt
+  ihn an deinen Text an (und räumt ihn weg), **"Neu erzeugen"** und **Verwerfen**
+  ebenso. Dein Text und das Gegenlesen bleiben unberührt; Entwürfe kommen nicht
+  in den Export.
+- Grenzen: der Entwurf ist keine Abgabe – Zahlen, Aussagen und Quellen prüfst du
+  selbst; ohne Daten (keine Messwerte, keine Notizen) bleibt er dünn und voller
+  Lücken-Hinweise.
+
 ### 5s. Sync: Geräte abgleichen, frühere Cloud-Stände
 
 **Warum:** vorher gewann bei einem Konflikt immer EIN ganzer Stand – hatte das
@@ -1511,9 +1572,13 @@ Hinweise (z.B. "USB-Stick mitbringen"). Alles lässt sich danach von Hand
 - **Bericht**: ein Abschnitt je Versuchsteil plus Einleitung und Fazit – du
   schreibst, die KI liest jeden Abschnitt **gegen**: stimmen Werte mit der
   Tabelle, fehlen Einheiten/Messabweichungen, sind die Fragen beantwortet,
-  trägt der Schluss? Sie schreibt den Text nicht um und liefert keine
-  Formulierungen. Export als PDF/Text (mit den Messwerten im Anhang);
+  trägt der Schluss? Beim Gegenlesen schreibt sie den Text nicht um und liefert
+  keine Formulierungen. Auf Wunsch gibt es zusätzlich einen **groben Entwurf
+  zur Inspiration** (Abschnitt 5t) – getrennt von deinem Text. Export als
+  PDF/Text (mit den Messwerten im Anhang; Entwürfe sind nicht dabei);
   "Abgegeben" abhaken.
+- **Rechnen mit KI**: je Versuchsteil und je Auswertungsaufgabe der Knopf
+  **"Rechnen"** – aus Werten oder Fotos zum Ergebnis mit Rechenweg (Abschnitt 5t).
 - **Lernen**: **"Karten aus dem Skript erstellen"** öffnet Nachbereiten mit
   Theorie-Skript und Anleitung schon eingetragen; **"Meine Antworten als
   Karten"** macht aus deinen Antworten, die beim Gegenlesen *Passt* bekamen,

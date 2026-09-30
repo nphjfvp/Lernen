@@ -18,11 +18,14 @@ import '../../services/card_csv_service.dart';
 import '../../services/lab_context_service.dart';
 import '../../services/lab_export_service.dart';
 import '../../theme/app_colors.dart';
+import '../calc/calc_screen.dart';
 import '../chat/module_chat_screen.dart';
 import '../modules/material_opener.dart';
 import '../review/review_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/math_text.dart';
 import '../widgets/safe_set_state.dart';
+import 'lab_draft_screen.dart';
 import 'lab_widgets.dart';
 
 /// Ein Laborversuch mit vier Reitern: Vorbereitung (Aufgaben mit eigenen
@@ -56,6 +59,13 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
   /// Aufgaben/Abschnitte, die gerade von der KI gelesen werden.
   final Set<String> _busy = {};
   final Map<String, List<LabReference>> _refs = {};
+
+  /// Zählt, wie oft die Notizen eines Teils von außen (Rechenweg) ergänzt wurden –
+  /// das Textfeld baut sich dann mit dem neuen Stand neu auf.
+  final Map<String, int> _notesRevision = {};
+
+  /// Dasselbe für Berichtsabschnitte, wenn ein Entwurf in den Text übernommen wurde.
+  final Map<String, int> _sectionRevision = {};
   String? _batchProgress;
 
   LabExperiment? get _e => _repo.byId(widget.experimentId);
@@ -754,7 +764,12 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
     );
   }
 
-  Widget _questionCard(LabQuestion q, LabExperiment e, {String hint = 'Deine Antwort in eigenen Worten …'}) {
+  Widget _questionCard(
+    LabQuestion q,
+    LabExperiment e, {
+    String hint = 'Deine Antwort in eigenen Worten …',
+    LabPart? calcPart,
+  }) {
     final hasKey = context.watch<SettingsRepository>().settings.hasApiKey;
     return LabQuestionCard(
       question: q,
@@ -768,7 +783,34 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
       onLookup: () => _lookup(q.text, answer: q.answer),
       onEdit: () => _editQuestion(q),
       onDelete: () => _deleteQuestion(q),
+      onCalc: calcPart == null ? null : () => _openCalc(e, calcPart, question: q),
     );
+  }
+
+  // -- Rechnen ----------------------------------------------------------------------
+
+  /// "Rechnen mit KI" für einen Versuchsteil (bzw. eine seiner Aufgaben): die
+  /// Messwerte des Teils stehen schon im Werte-Feld, der Rechenweg lässt sich in
+  /// die Notizen des Teils übernehmen.
+  Future<void> _openCalc(LabExperiment e, LabPart part, {LabQuestion? question}) {
+    return Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => CalcScreen(
+        moduleName: widget.moduleName,
+        experiment: e,
+        part: part,
+        initialTask: question == null ? '' : '${question.number} ${question.text}'.trim(),
+        initialValues: LabContextService.measurementsOf(part),
+        onSaveNote: (text) => _appendToNotes(part.id, text),
+      ),
+    ));
+  }
+
+  Future<void> _appendToNotes(String partId, String text) async {
+    await _update((cur) => cur.updatePart(partId, (p) {
+          final old = p.notes.trim();
+          return p.copyWith(notes: old.isEmpty ? text : '$old\n\n$text');
+        }));
+    if (mounted) setState(() => _notesRevision[partId] = (_notesRevision[partId] ?? 0) + 1);
   }
 
   // -- Reiter: Durchführung ---------------------------------------------------------
@@ -896,18 +938,28 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
           ],
           const SizedBox(height: 12),
           LabAnswerField(
-            key: ValueKey('notes-${part.id}'),
+            key: ValueKey(_notesRevision[part.id] == null ? 'notes-${part.id}' : 'notes-${part.id}-${_notesRevision[part.id]}'),
             initial: part.notes,
             minLines: 2,
             hint: 'Notizen: Einstellungen, Auffälligkeiten, Abweichungen …',
             onSave: (text) => _update((cur) => cur.updatePart(part.id, (p) => p.copyWith(notes: text))),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: ValueKey('calc-${part.id}'),
+              onPressed: () => _openCalc(e, part),
+              icon: const Icon(Icons.calculate_outlined, size: 18),
+              label: const Text('Rechnen mit KI (Werte oder Bilder)'),
+            ),
           ),
           if (part.questions.isNotEmpty) ...[
             const SizedBox(height: 14),
             Text('Auswertung', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted)),
             const SizedBox(height: 8),
             for (final q in part.questions) ...[
-              _questionCard(q, e, hint: 'Deine Beobachtung / Antwort …'),
+              _questionCard(q, e, hint: 'Deine Beobachtung / Antwort …', calcPart: part),
               const SizedBox(height: 10),
             ],
           ],
@@ -939,7 +991,8 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
               const SizedBox(height: 8),
               Text(
                 'Du schreibst den Bericht selbst – die KI liest jeden Abschnitt gegen und prüft ihn an deinen '
-                'Messwerten und dem Skript. Formulierungen bekommst du von ihr nicht.',
+                'Messwerten und dem Skript. Auf Wunsch gibt es zusätzlich einen groben Entwurf als Inspiration; '
+                'er steht getrennt von deinem Text und wird nur übernommen, wenn du es willst.',
                 style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.4),
               ),
               const SizedBox(height: 10),
@@ -952,6 +1005,12 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
                     onPressed: e.reportWritten == 0 ? null : () => _export(report: true),
                     icon: const Icon(Icons.ios_share_outlined, size: 18),
                     label: const Text('Bericht exportieren'),
+                  ),
+                  FilledButton.tonalIcon(
+                    key: const ValueKey('draft-open'),
+                    onPressed: () => _openDraft(),
+                    icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                    label: const Text('Entwurf zur Inspiration'),
                   ),
                   FilterChip(
                     key: const ValueKey('report-finished'),
@@ -1024,7 +1083,7 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
               ),
             ),
           LabAnswerField(
-            key: ValueKey('section-field-${s.id}'),
+            key: ValueKey(_sectionRevision[s.id] == null ? 'section-field-${s.id}' : 'section-field-${s.id}-${_sectionRevision[s.id]}'),
             initial: s.text,
             minLines: 6,
             maxLines: 24,
@@ -1048,8 +1107,19 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
                 icon: const Icon(Icons.menu_book_outlined, size: 18),
                 label: const Text('Im Skript nachschlagen'),
               ),
+              if (s.draft.trim().isEmpty)
+                TextButton.icon(
+                  key: ValueKey('draft-section-${s.id}'),
+                  onPressed: () => _openDraft(sectionId: s.id),
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                  label: const Text('Entwurf zur Inspiration'),
+                ),
             ],
           ),
+          if (s.draft.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _draftPanel(s),
+          ],
           if (s.feedback != null) ...[
             const SizedBox(height: 8),
             LabFeedbackView(
@@ -1062,6 +1132,92 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
         ],
       ),
     );
+  }
+
+  // -- Entwurf ------------------------------------------------------------------------
+
+  Future<void> _openDraft({String? sectionId}) {
+    return Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => LabDraftScreen(experimentId: widget.experimentId, moduleName: widget.moduleName, onlySectionId: sectionId),
+    ));
+  }
+
+  /// Der Entwurf des Abschnitts als eigenes Feld unter dem eigenen Text: markier-
+  /// und kopierbar, mit "In meinen Text übernehmen" und "Verwerfen".
+  Widget _draftPanel(LabReportSection s) {
+    final c = context.colors;
+    return Container(
+      key: ValueKey('draft-panel-${s.id}'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: c.accentSoft.withValues(alpha: 0.45),
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome_outlined, size: 16, color: c.accentOnSoft),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text('Entwurf – KI, nur zur Inspiration',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: c.accentOnSoft)),
+              ),
+              IconButton(
+                key: ValueKey('draft-discard-${s.id}'),
+                tooltip: 'Entwurf verwerfen',
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.close, size: 18, color: c.inkMuted),
+                onPressed: () => _update((cur) => cur.updateSection(s.id, (old) => old.copyWith(clearDraft: true))),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SelectionArea(child: MathText(s.draft.trim(), style: const TextStyle(fontSize: 14, height: 1.45))),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              FilledButton.tonalIcon(
+                key: ValueKey('draft-adopt-${s.id}'),
+                onPressed: () => _adoptDraft(s),
+                icon: const Icon(Icons.playlist_add_outlined, size: 18),
+                label: const Text('In meinen Text übernehmen'),
+              ),
+              TextButton.icon(
+                key: ValueKey('draft-copy-${s.id}'),
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: s.draft.trim()));
+                  if (mounted) _snack('Entwurf kopiert.');
+                },
+                icon: const Icon(Icons.copy_outlined, size: 18),
+                label: const Text('Kopieren'),
+              ),
+              TextButton.icon(
+                onPressed: () => _openDraft(sectionId: s.id),
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Neu erzeugen'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Hängt den Entwurf an den eigenen Text (oder setzt ihn, wenn der leer ist)
+  /// und räumt den Entwurf weg – der Text gehört jetzt dir und wird von Hand
+  /// weiterbearbeitet.
+  Future<void> _adoptDraft(LabReportSection s) async {
+    await _update((cur) => cur.updateSection(s.id, (old) {
+          final own = old.text.trim();
+          final draft = old.draft.trim();
+          return old.copyWith(text: own.isEmpty ? draft : '$own\n\n$draft', clearDraft: true, clearFeedback: true);
+        }));
+    if (mounted) setState(() => _sectionRevision[s.id] = (_sectionRevision[s.id] ?? 0) + 1);
   }
 
   // -- Reiter: Lernen -------------------------------------------------------------------

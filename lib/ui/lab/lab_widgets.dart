@@ -343,6 +343,7 @@ class LabQuestionCard extends StatelessWidget {
     this.onOpenReference,
     this.onEdit,
     this.onDelete,
+    this.onCalc,
     this.hint = 'Deine Antwort in eigenen Worten …',
   });
 
@@ -356,6 +357,9 @@ class LabQuestionCard extends StatelessWidget {
   final ValueChanged<LabReference>? onOpenReference;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+
+  /// "Rechnen mit KI" für diese Aufgabe (nur bei Auswertungsaufgaben).
+  final VoidCallback? onCalc;
   final String hint;
 
   @override
@@ -414,6 +418,13 @@ class LabQuestionCard extends StatelessWidget {
                 icon: const Icon(Icons.menu_book_outlined, size: 18),
                 label: const Text('Im Skript nachschlagen'),
               ),
+              if (onCalc != null)
+                TextButton.icon(
+                  key: ValueKey('calc-question-${question.id}'),
+                  onPressed: onCalc,
+                  icon: const Icon(Icons.calculate_outlined, size: 18),
+                  label: const Text('Rechnen'),
+                ),
             ],
           ),
           if (feedback != null) ...[

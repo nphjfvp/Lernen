@@ -143,4 +143,58 @@ class LabContextService {
           for (final q in part.questions)
             if (q.answered) '${q.number} ${q.text}\nAntwort: ${q.answer.trim()}',
         ].join('\n\n');
+
+  /// Der ganze Versuch als Text für den Berichtsentwurf: je Versuchsteil Ziele,
+  /// Durchführung, Messwerte, Notizen (samt dort gespeicherter Rechenwege) und
+  /// die beantworteten Auswertungsfragen, dazu die beantworteten
+  /// Vorbereitungsaufgaben. Unbeantwortetes bleibt weg.
+  static String reportData(LabExperiment e) {
+    final b = StringBuffer();
+    if (e.hints.isNotEmpty) {
+      b.writeln('Hinweise aus der Anleitung: ${e.hints.join('; ')}');
+      b.writeln();
+    }
+    for (final part in e.parts) {
+      b.writeln('## Versuchsteil: ${part.title}');
+      for (final g in part.goals) {
+        b.writeln('Ziel: $g');
+      }
+      if (part.steps.isNotEmpty) {
+        b.writeln('Durchführung:');
+        for (final (i, step) in part.steps.indexed) {
+          b.writeln('  ${i + 1}. ${step.text}${step.done ? '' : ' (nicht abgehakt)'}');
+        }
+      }
+      final measurements = measurementsOf(part);
+      if (measurements.isNotEmpty) {
+        b.writeln('Messwerte:');
+        b.writeln(measurements);
+      }
+      if (part.notes.trim().isNotEmpty) {
+        b.writeln('Notizen und Rechnungen:');
+        b.writeln(part.notes.trim());
+      }
+      final answers = answersOf(part);
+      if (answers.isNotEmpty) {
+        b.writeln('Beantwortete Auswertungsfragen:');
+        b.writeln(answers);
+      }
+      b.writeln();
+    }
+    final prep = [
+      for (final q in e.prep)
+        if (q.answered) '${q.number} ${q.text}\nAntwort: ${q.answer.trim()}',
+    ];
+    if (prep.isNotEmpty) {
+      b.writeln('## Vorbereitungsaufgaben mit Antworten');
+      b.writeln(prep.join('\n\n'));
+    }
+    return b.toString().trim();
+  }
+
+  /// Die bisherigen eigenen Berichtstexte, je Abschnitt mit Überschrift.
+  static String ownReportTexts(LabExperiment e) => [
+        for (final s in e.report)
+          if (s.text.trim().isNotEmpty) '### ${s.title}\n${s.text.trim()}',
+      ].join('\n\n');
 }

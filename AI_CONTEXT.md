@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 983 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1049 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -896,6 +896,44 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     statt Herunterladen. Test-Falle: `SyncService` lässt sich mit einer
     Unterklasse faken (`isAvailable`, `push`, `merge`, `cloudMeta` überschreiben);
     `AutoSyncService.startCheckDelay` in Tests hochsetzen.
+47. Rechnen mit KI + Berichtsentwurf (Nutzer: "aus Bildern oder Werten alles
+    ausrechnen, inklusive Rechenweg" und "aus Vorlage/Vorgaben einen groben
+    Bericht als Inspiration"). (a) Kernidee: das Modell plant, die App rechnet.
+    `AiService.planCalculation` (Vision-Modell bei Bildern, Temperatur 0) liefert
+    JSON → `CalcPlan.fromJson` (`lib/services/calc_plan.dart`: `CalcGiven`
+    Reihe von Werten in Grundeinheit + `raw` + `uncertain`, `CalcStep` mit
+    `expression`/`latex`/`unit`, `result`, `assumptions`/`notes`/`missing`,
+    tolerantes Parsen mit `problems`); `CalcPlan.evaluate()` rechnet mit
+    `CalcEngine` (`calc_engine.dart`, Rekursiv-Abstieg, KEIN eval; Werte sind
+    `List<double>` mit Broadcasting; Funktionen, Aggregate, `slope/intercept/r2`;
+    kein unsichtbares Malzeichen; NaN/∞ → verständlicher Fehler;
+    `parseNumber` liest 1,5 / 1.234,5 / 1,5·10^-3, `format` = 4 gültige Ziffern,
+    Komma, Zehnerpotenz mit Hochzahl-Zeichen). Ein fehlgeschlagener Schritt
+    blockiert nur abhängige. `asText` = Rechenweg als Text (Kopieren, Notizen).
+    `latex` kommt MIT Dollarzeichen (`escapeLatexInJson` repariert nur $…$),
+    zusätzlich `_repairLatex` gegen Steuerzeichen. (b) UI `CalcScreen`
+    (`lib/ui/calc/`): Aufgabe + Werte + Bilder (`downscaleImage` 1600 px, max. 6),
+    `CalcGivenRow` (Wert korrigieren → `withGiven` → lokal neu rechnen), `CalcStepCard`
+    (Formel per `MathText`, Einsetzen, Reihen als `DataTable`), Überarbeiten mit
+    `previous`+`instruction`, Kopieren, `onSaveNote` → `_appendToNotes` im
+    Versuchsbildschirm (Feld-Schlüssel `_notesRevision`, weil `LabAnswerField` nur
+    `initial` liest). Einstiege: `_partCard` (calc-<partId>), `LabQuestionCard.onCalc`
+    (nur Auswertungsfragen), `LabExperimentsSection` (calc-open, ohne Versuch).
+    (c) Berichtsentwurf: `LabReportSection.draft` (getrennt von `text`, im
+    Sync/`toMap`; `withoutProgress` leert ihn) und `LabExperiment.reportTemplateIds`
+    + `reportSpecs` (`reassigned` übersetzt die Material-IDs).
+    `AiService.draftLabReport` (Temperatur 0.4; Prompt: nichts erfinden,
+    `[ergänzen: …]`, Vorlage geht vor Abschnittsliste, `sectionId` oder null) →
+    `LabReportDraft.fromJson` + `applyTo(experiment, adoptStructure, onlySectionId)`
+    (neue Abschnitte hinter dem zuletzt bedienten, sonst als Unterpunkt; ersetzt
+    alte Entwürfe bzw. nur den einen Abschnitt). Daten: `LabContextService.reportData`
+    / `ownReportTexts`. UI `LabDraftScreen` (Vorlage hochladen → Material `slide`,
+    aus dem Fach wählen, Foto, Vorgaben, Modus, Optionen) und `_draftPanel` im
+    Abschnitt (übernehmen = anhängen + Entwurf/Feedback löschen + `_sectionRevision`).
+    Bewusst: der Entwurf ist getrennt und nie im Export; das Gegenlesen (Punkt 41)
+    bleibt ohne Formulierungen. Test-Fallen: DB-Writes in `testWidgets` brauchen
+    mehrere `pump(Duration)`; `downscaleImage` braucht `runAsync`; PNG-Testbytes
+    müssen gültig sein (sonst Bilddecoder-Fehler).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

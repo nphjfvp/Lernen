@@ -271,6 +271,7 @@ class LabReportSection {
     this.text = '',
     this.feedback,
     this.partId,
+    this.draft = '',
   });
 
   final String id;
@@ -281,6 +282,10 @@ class LabReportSection {
   final String text;
   final LabFeedback? feedback;
 
+  /// Grober Entwurf der KI zur Inspiration (siehe AiService.draftLabReport) –
+  /// bewusst getrennt vom eigenen [text]; der Nutzer übernimmt davon, was er will.
+  final String draft;
+
   /// Der Versuchsteil, zu dem der Abschnitt gehört (Messwerte, Fragen für
   /// das Gegenlesen); null bei Einleitung und Fazit.
   final String? partId;
@@ -289,13 +294,21 @@ class LabReportSection {
   static const writtenThreshold = 40;
   bool get written => text.trim().length >= writtenThreshold;
 
-  LabReportSection copyWith({String? text, LabFeedback? feedback, bool clearFeedback = false}) => LabReportSection(
+  LabReportSection copyWith({
+    String? text,
+    LabFeedback? feedback,
+    bool clearFeedback = false,
+    String? draft,
+    bool clearDraft = false,
+  }) =>
+      LabReportSection(
         id: id,
         title: title,
         hint: hint,
         text: text ?? this.text,
         feedback: clearFeedback ? null : (feedback ?? this.feedback),
         partId: partId,
+        draft: clearDraft ? '' : (draft ?? this.draft),
       );
 
   Map<String, dynamic> toMap() => {
@@ -305,6 +318,7 @@ class LabReportSection {
         'text': text,
         'feedback': feedback?.toMap(),
         'partId': partId,
+        'draft': draft,
       };
 
   factory LabReportSection.fromMap(Map<String, dynamic> map) => LabReportSection(
@@ -314,6 +328,7 @@ class LabReportSection {
         text: (map['text'] ?? '').toString(),
         feedback: LabFeedback.fromMap(map['feedback']),
         partId: map['partId']?.toString(),
+        draft: (map['draft'] ?? '').toString(),
       );
 }
 
@@ -339,6 +354,8 @@ class LabExperiment {
     this.report = const [],
     this.hints = const [],
     this.finished = false,
+    this.reportTemplateIds = const [],
+    this.reportSpecs = '',
   });
 
   final String id;
@@ -364,6 +381,12 @@ class LabExperiment {
 
   /// Bericht abgegeben.
   final bool finished;
+
+  /// Vorlage(n) für den Bericht (MaterialItem.id) und eigene Vorgaben (Umfang,
+  /// Gliederung, Formalia) – Grundlage des Berichtsentwurfs (siehe
+  /// AiService.draftLabReport).
+  final List<String> reportTemplateIds;
+  final String reportSpecs;
 
   // -- Fortschritt ----------------------------------------------------------
 
@@ -425,6 +448,8 @@ class LabExperiment {
     List<LabReportSection>? report,
     List<String>? hints,
     bool? finished,
+    List<String>? reportTemplateIds,
+    String? reportSpecs,
   }) =>
       LabExperiment(
         id: id,
@@ -440,6 +465,8 @@ class LabExperiment {
         report: report ?? this.report,
         hints: hints ?? this.hints,
         finished: finished ?? this.finished,
+        reportTemplateIds: reportTemplateIds ?? this.reportTemplateIds,
+        reportSpecs: reportSpecs ?? this.reportSpecs,
       );
 
   /// Ersetzt die Frage [id] (Vorbereitung oder Auswertung) mit [change].
@@ -503,8 +530,10 @@ class LabExperiment {
               questions: [for (final q in p.questions) q.copyWith(answer: '', clearFeedback: true)],
             ),
         ],
-        report: [for (final s in report) s.copyWith(text: '', clearFeedback: true)],
+        report: [for (final s in report) s.copyWith(text: '', clearFeedback: true, clearDraft: true)],
         hints: hints,
+        reportTemplateIds: reportTemplateIds,
+        reportSpecs: reportSpecs,
       );
 
   /// Für den Fach-Import: neue Kennungen für Versuch, Fach und Materialien
@@ -528,6 +557,8 @@ class LabExperiment {
         report: report,
         hints: hints,
         finished: finished,
+        reportTemplateIds: [for (final m in reportTemplateIds) ?materialIds[m]],
+        reportSpecs: reportSpecs,
       );
 
   // -- Speichern ------------------------------------------------------------
@@ -546,6 +577,8 @@ class LabExperiment {
         'report': [for (final s in report) s.toMap()],
         'hints': hints,
         'finished': finished,
+        'reportTemplateIds': reportTemplateIds,
+        'reportSpecs': reportSpecs,
       };
 
   factory LabExperiment.fromMap(Map<String, dynamic> map) => LabExperiment(
@@ -571,6 +604,8 @@ class LabExperiment {
         ],
         hints: [for (final h in (map['hints'] as List? ?? const [])) h.toString()],
         finished: map['finished'] == true,
+        reportTemplateIds: [for (final e in (map['reportTemplateIds'] as List? ?? const [])) e.toString()],
+        reportSpecs: (map['reportSpecs'] ?? '').toString(),
       );
 
   // -- Aus der KI-Antwort ---------------------------------------------------

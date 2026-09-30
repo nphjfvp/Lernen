@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/lab_experiment.dart';
 import '../../repositories/lab_experiment_repository.dart';
 import '../../theme/app_colors.dart';
+import '../calc/calc_screen.dart';
 import 'lab_create_screen.dart';
 import 'lab_experiment_screen.dart';
 import 'lab_widgets.dart';
@@ -56,6 +57,15 @@ class LabExperimentsSection extends StatelessWidget {
           )),
           icon: const Icon(Icons.add),
           label: const Text('Laborversuch anlegen'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          key: const ValueKey('calc-open'),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => CalcScreen(moduleName: moduleName),
+          )),
+          icon: const Icon(Icons.calculate_outlined),
+          label: const Text('Rechnen mit KI (Werte oder Bilder)'),
         ),
       ],
     );

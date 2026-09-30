@@ -7,6 +7,9 @@ import 'package:http/http.dart' as http;
 import '../models/app_settings.dart';
 import '../models/flashcard.dart' show QuestionType;
 import '../models/lab_experiment.dart' show LabFeedback;
+import 'calc_engine.dart';
+import 'calc_plan.dart';
+import 'lab_report_draft.dart';
 import 'math_markup.dart';
 import 'question_parsing.dart';
 import 'text_chunker.dart';
@@ -3112,4 +3115,327 @@ Sprache des Berichts.
       at: at,
     );
   }
+
+  // -- Rechnen ---------------------------------------------------------------
+
+  static const _calcPlanSystemPrompt = r"""
+Du bist Rechenassistent für Labor- und Übungsaufgaben (Ingenieurwesen,
+Naturwissenschaften). Du bekommst eine Aufgabe, Werte (Text, Tabellen) und/oder
+Bilder (Foto der Aufgabe, einer Tabelle, eines Messprotokolls, Bild eines
+Messgeräts oder Oszilloskops, Schaltplan). Du stellst den RECHENPLAN auf – die
+App rechnet selbst mit einem Formelauswerter. Du gibst deshalb NIE Ergebnisse
+an, nur Gegebenes und Formeln.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
+davor oder danach, in genau diesem Format:
+{
+  "title": "Kurzer Titel der Rechnung",
+  "given": [
+    {"symbol": "R_1", "name": "Widerstand 1", "raw": "4,7 kΩ", "values": [4700],
+     "unit": "Ω", "kind": "given", "uncertain": false}
+  ],
+  "steps": [
+    {"symbol": "R", "name": "Gesamtwiderstand", "latex": "$R = R_1 + R_2$",
+     "expression": "R_1 + R_2", "unit": "Ω", "explanation": "Reihenschaltung: Widerstände addieren sich."}
+  ],
+  "result": ["R"],
+  "assumptions": [],
+  "notes": [],
+  "missing": []
+}
+Regeln:
+1. Werte lesen: Übernimm aus Text UND Bildern alle Werte, die die Aufgabe
+   braucht, Tabellen Zeile für Zeile. "raw" = so, wie es im Bild bzw. Text
+   steht (mit Einheit), damit der Nutzer vergleichen kann. "values" = Zahlen
+   in der GRUNDEINHEIT: Vorsätze umrechnen (4,7 kΩ → 4700 Ω, 250 mV → 0.25 V,
+   12 µs → 1.2e-5 s). Dezimalpunkt in JSON-Zahlen. "unit" = Grundeinheit ohne
+   Vorsatz ("Ω", "V", "s", "m/s"). Mehrere Messungen derselben Größe = EINE
+   Größe mit mehreren "values" in der Reihenfolge der Tabelle (Zeile 1 zuerst),
+   gleich viele Werte wie in den zugehörigen anderen Reihen. Winkel bleiben in
+   der Einheit des Bildes/Textes ("°" oder "rad"); in Formeln rad(x) für
+   Grad → Bogenmaß.
+   Kannst du einen Wert nicht sicher lesen (unscharf, mehrdeutig, geschätzt,
+   abgeschnitten), setze "uncertain": true und schreib in "raw", was du
+   gelesen hast – rate nicht stillschweigend.
+2. Konstanten (Elementarladung, Boltzmann, µ0, ε0, g …) nur, wenn die Aufgabe
+   sie braucht, als "given" mit "kind": "constant", Standardwert und "name".
+   Steht in den Unterlagen ein anderer Wert (z. B. g = 9,81 m/s²), nimm
+   diesen.
+3. Schritte in Rechenreihenfolge, jeder Schritt ist EINE Größe. "symbol": nur
+   Buchstaben, Ziffern und Unterstrich, beginnt mit einem Buchstaben ("R_1",
+   "U_aus", "f_g"), NICHT wie eine Funktion oder Konstante (nicht "pi", "e",
+   "sin", "min", "n", "sum" …). Spätere Schritte dürfen frühere Größen und
+   gegebene verwenden. "expression" ist der Ausdruck zum Rechnen, ausschließlich
+   aus Zahlen (Punkt als Dezimalzeichen), Größen (given und frühere Schritte),
+   + - * / ^, Klammern und diesen Funktionen: {{FUNCTIONS}}.
+   Schreib jedes Mal * für Multiplikation (nicht "2x", nicht "2(x)"); keine
+   Einheiten, keine Wörter, keine Zuweisung, keine Prozentzeichen (Prozent =
+   Faktor 100 *). "latex" = dieselbe Formel als LaTeX zwischen Dollarzeichen für
+   die Anzeige ("$R = \\frac{U}{I}$"). "unit" = Einheit des
+   Ergebnisses. "explanation" = ein Satz: welches Gesetz bzw. warum.
+   Prüfe, dass die Einheiten deiner Formeln zusammenpassen.
+4. Reihen: Ist eine Größe eine Reihe, rechnet die Formel automatisch für jede
+   Zeile. Kennzahlen der Reihe (Mittelwert, Standardabweichung, Steigung einer
+   Ausgleichsgeraden …) als eigene Schritte danach.
+5. Messunsicherheit nur, wenn Unsicherheiten/Toleranzen angegeben sind oder
+   danach gefragt wird: Gaußsche Fehlerfortpflanzung als eigene Schritte
+   (Größen wie "u_R").
+6. "result": die Symbole der Schritte, die die gesuchten Endergebnisse sind.
+   Rechne, was die Aufgabe verlangt; nützliche Zwischengrößen sind Schritte,
+   aber keine Ergebnisse.
+7. Fehlt ein Wert oder eine Angabe, erfinde nichts: nenne es in "missing" ("Die
+   Länge l des Drahts ist nicht angegeben") und plane, was möglich ist.
+   "assumptions": Annahmen, die du triffst (ideale Bauteile, Raumtemperatur …).
+   "notes": höchstens vier kurze Hinweise zur Plausibilität (Größenordnung,
+   auffällige Werte, Einheit prüfen).
+8. Überarbeitung: Bekommst du einen bisherigen Plan und einen Wunsch des
+   Nutzers, gib den KOMPLETTEN neuen Plan aus; übernimm Werte, die der Nutzer
+   korrigiert hat, exakt, und ändere nur, was der Wunsch verlangt.
+Antworte in der Sprache der Aufgabe (Standard: Deutsch).
+""";
+
+  /// Grenzen für die Texte, die die KI beim Rechnen sieht.
+  static const _calcTaskCap = 4000;
+  static const _calcValuesCap = 8000;
+  static const _calcContextCap = 9000;
+
+  /// Stellt den Rechenplan zu einer Aufgabe auf: liest Werte aus [values]
+  /// (Text, Tabellen) und [images] (Fotos, Screenshots) und liefert gegebene
+  /// Größen, Formeln und Annahmen – gerechnet wird in der App
+  /// ([CalcPlan.evaluate]). [context] sind weitere Angaben (z.B. die
+  /// Messwerte des Versuchs). Mit [previous] und [instruction] wird ein Plan
+  /// nach Wunsch überarbeitet. Für Bilder ein Vision-Modell wählen.
+  Future<CalcPlan> planCalculation({
+    String task = '',
+    String values = '',
+    List<Uint8List> images = const [],
+    String context = '',
+    CalcPlan? previous,
+    String instruction = '',
+  }) async {
+    if (task.trim().isEmpty && values.trim().isEmpty && images.isEmpty && previous == null) {
+      throw AiServiceException('Gib eine Aufgabe, Werte oder ein Bild an.');
+    }
+    final buffer = StringBuffer();
+    if (task.trim().isNotEmpty) {
+      buffer
+        ..writeln('Aufgabe / Wunsch:')
+        ..writeln(_cap(task.trim(), _calcTaskCap))
+        ..writeln();
+    }
+    if (values.trim().isNotEmpty) {
+      buffer
+        ..writeln('Werte (vom Nutzer eingegeben):')
+        ..writeln(_cap(values.trim(), _calcValuesCap))
+        ..writeln();
+    }
+    if (context.trim().isNotEmpty) {
+      buffer
+        ..writeln('Weitere Angaben zum Versuch:')
+        ..writeln(_cap(context.trim(), _calcContextCap))
+        ..writeln();
+    }
+    if (previous != null) {
+      buffer
+        ..writeln('Bisheriger Plan (JSON):')
+        ..writeln(jsonEncode(previous.toJson()))
+        ..writeln()
+        ..writeln('Wunsch des Nutzers zur Überarbeitung:')
+        ..writeln(instruction.trim().isEmpty ? 'Prüfe den Plan noch einmal und korrigiere Fehler.' : instruction.trim())
+        ..writeln();
+    }
+    if (images.isNotEmpty) {
+      buffer.writeln('Dem Text folgen ${images.length} Bild${images.length == 1 ? '' : 'er'}.');
+    }
+    final system = _calcPlanSystemPrompt.replaceFirst('{{FUNCTIONS}}', CalcEngine.functionNames);
+    final Object content = images.isEmpty
+        ? buffer.toString()
+        : [
+            {'type': 'text', 'text': buffer.toString()},
+            for (final (i, image) in images.indexed) ...[
+              {'type': 'text', 'text': 'Bild ${i + 1} von ${images.length}:'},
+              {
+                'type': 'image_url',
+                'image_url': {'url': 'data:${_imageMime(image)};base64,${base64Encode(image)}'},
+              },
+            ],
+          ];
+    final raw = await _complete(system, content, temperature: 0);
+    final plan = CalcPlan.fromJson(_parseJsonObject(raw));
+    if (plan.isEmpty && plan.missing.isEmpty) {
+      throw AiServiceException(
+        'Die KI hat keinen brauchbaren Rechenplan geliefert – bitte die Aufgabe genauer beschreiben oder erneut versuchen.',
+        rawResponse: raw,
+      );
+    }
+    return plan;
+  }
+
+  /// Der MIME-Typ eines Bildes nach seinen ersten Bytes (Standard PNG).
+  static String _imageMime(Uint8List b) {
+    if (b.length > 3 && b[0] == 0xFF && b[1] == 0xD8) return 'image/jpeg';
+    if (b.length > 11 && b[0] == 0x52 && b[1] == 0x49 && b[8] == 0x57 && b[9] == 0x45) return 'image/webp';
+    if (b.length > 3 && b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46) return 'image/gif';
+    return 'image/png';
+  }
+
+
+  // -- Berichtsentwurf --------------------------------------------------------
+
+  static const _labDraftSystemPrompt = r"""
+Du hilfst einem Studierenden, einen Laborbericht zu beginnen. Du schreibst einen
+groben ENTWURF, der nur als Inspiration dient: Er soll trotzdem schon gut
+lesbar sein und alles enthalten, was aus den Daten hervorgeht – aber der
+Studierende schreibt seinen Bericht selbst und prüft jede Aussage.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
+davor oder danach, in genau diesem Format:
+{
+  "sections": [
+    {"sectionId": "id eines vorhandenen Abschnitts oder null", "title": "Überschrift", "text": "Entwurf des Abschnitts"}
+  ],
+  "missing": ["Was noch fehlt"]
+}
+Regeln:
+1. Grundlage sind NUR die mitgegebenen Daten: Versuchsbeschreibung, Messwerte,
+   Notizen (auch dort gespeicherte Rechenwege), Antworten des Studierenden,
+   Auszüge aus den Unterlagen. Erfinde keine Messwerte, Geräte, Einstellungen,
+   Ergebnisse, Quellen oder Zitate. Wo eine Angabe fehlt, schreib an die Stelle
+   "[ergänzen: was genau]" und nenne es zusätzlich in "missing".
+2. Vorlage und Vorgaben: Folge der Gliederung der Vorlage (Überschriften,
+   Reihenfolge) und ihren Formalia (Umfang, Zeitform, Passiv/Wir-Form,
+   Beschriftung von Abbildungen und Tabellen, Zitierweise). Ohne Vorlage nutze
+   die vorhandenen Abschnitte. Widerspricht die Vorlage der Abschnittsliste,
+   geht die Vorlage vor.
+3. Zuordnung: Gehört ein Entwurfsabschnitt zu einem vorhandenen Abschnitt, trag
+   dessen "id" als "sectionId" ein (mehrere Einträge dürfen zum selben gehören).
+   Kennt nur die Vorlage den Abschnitt (z.B. "Anhang", "Literatur"), setz
+   "sectionId": null. Steht in der Anfrage, dass die Gliederung der Vorlage NICHT
+   übernommen werden soll, ordne alles den vorhandenen Abschnitten zu.
+4. Stil: sachlich und fachsprachlich, ganze Sätze (im Modus "Gerüst":
+   Stichpunkte mit kurzen Erläuterungen), Durchführung in der Vergangenheit.
+   Formeln in LaTeX zwischen Dollarzeichen ($…$), in JSON jeden Backslash
+   verdoppeln. Zahlen exakt aus den Daten übernehmen, mit Einheit. Rechenwege aus
+   den Notizen einbauen (Formel, eingesetzte Werte, Ergebnis) statt neu zu
+   rechnen.
+5. Messwerte als kurze Textzeile bzw. Tabelle mit "Tabelle 1: …" (Spalten mit
+   | getrennt); wo eine Abbildung hingehört: "[Abbildung: was gezeigt werden
+   soll, Achsen, Beschriftung]".
+6. Diskussion und Fazit: vergleiche mit Erwartung/Theorie nur, wenn Daten oder
+   Unterlagen dazu vorliegen, sonst schreib "[ergänzen: Vergleich mit …]". Nenne
+   mögliche Fehlerquellen nur als Vorschläge ("Mögliche Ursachen: …"), die aus den
+   Daten ableitbar sind.
+7. Eigene Texte des Studierenden (falls mitgegeben): berücksichtige ihre Aussagen
+   und widersprich ihnen nicht ohne Grund, schreib aber trotzdem einen eigenen
+   Entwurf für den Abschnitt.
+8. Länge je Abschnitt so kurz wie möglich, so lang wie nötig (meist 60–250
+   Wörter). Kein Titelblatt und kein Inhaltsverzeichnis, außer die Vorlage
+   verlangt Text dafür.
+9. "missing": höchstens acht kurze Punkte – welche Angaben oder Anlagen
+   (Schaltplan, Diagramme, Geräteliste, Messunsicherheiten, Quellen …) noch
+   fehlen.
+Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
+""";
+
+  static const _labDraftTemplateCap = 14000;
+  static const _labDraftDataCap = 16000;
+  static const _labDraftOwnCap = 12000;
+
+  /// Schreibt einen groben Berichtsentwurf. [sections] sind die vorhandenen
+  /// Berichtsabschnitte (id, Titel, Hinweis, Versuchsteil), [templates] Vorlage
+  /// und Vorgaben als Text (Bezeichnung, Inhalt), [images] Vorlagen als Bild
+  /// (Vision-Modell). [data] ist die Beschreibung des Versuchs mit Messwerten,
+  /// Notizen und Antworten, [context] Auszüge aus den Unterlagen, [ownTexts] die
+  /// bisherigen eigenen Berichtstexte. Mit [onlySectionId] entsteht nur der
+  /// Entwurf dieses Abschnitts; mit [outline] ein Gerüst statt ausformulierter
+  /// Sätze; [adoptStructure] übernimmt die Gliederung der Vorlage.
+  Future<LabReportDraft> draftLabReport({
+    required String experimentTitle,
+    required List<({String id, String title, String hint, String? partTitle})> sections,
+    List<({String label, String text})> templates = const [],
+    List<Uint8List> images = const [],
+    String specs = '',
+    required String data,
+    String context = '',
+    String ownTexts = '',
+    String? onlySectionId,
+    bool outline = false,
+    bool adoptStructure = true,
+  }) async {
+    if (sections.isEmpty && templates.isEmpty && images.isEmpty && specs.trim().isEmpty) {
+      throw AiServiceException('Es gibt weder Berichtsabschnitte noch eine Vorlage, an der sich der Entwurf ausrichten kann.');
+    }
+    final buffer = StringBuffer()
+      ..writeln('Versuch: $experimentTitle')
+      ..writeln('Modus: ${outline ? 'Gerüst (Stichpunkte)' : 'ausformuliert'}');
+    final hasTemplate = templates.any((t) => t.text.trim().isNotEmpty) || images.isNotEmpty || specs.trim().isNotEmpty;
+    if (hasTemplate) {
+      buffer.writeln(
+        adoptStructure
+            ? 'Gliederung: der Vorlage folgen (neue Abschnitte mit "sectionId": null sind erlaubt).'
+            : 'Gliederung: die Gliederung der Vorlage NICHT übernehmen – alles den vorhandenen Abschnitten zuordnen.',
+      );
+    }
+    if (onlySectionId != null) {
+      buffer.writeln('Schreibe NUR den Entwurf für den Abschnitt mit der id $onlySectionId (ein einziger Eintrag in "sections").');
+    }
+    buffer.writeln();
+    for (final t in templates) {
+      if (t.text.trim().isEmpty) continue;
+      buffer
+        ..writeln('=== Vorlage / Vorgaben: ${t.label} ===')
+        ..writeln(_cap(t.text.trim(), _labDraftTemplateCap))
+        ..writeln();
+    }
+    if (specs.trim().isNotEmpty) {
+      buffer
+        ..writeln('=== Vorgaben des Studierenden ===')
+        ..writeln(_cap(specs.trim(), _labContextCap))
+        ..writeln();
+    }
+    buffer.writeln('Vorhandene Abschnitte des Berichts:');
+    for (final s in sections) {
+      buffer.writeln(
+        '- id=${s.id} | ${s.title}${s.hint.trim().isEmpty ? '' : ' | ${s.hint.trim().replaceAll('\n', ' ')}'}'
+        '${s.partTitle == null ? '' : ' | gehört zum Versuchsteil "${s.partTitle}"'}',
+      );
+    }
+    buffer
+      ..writeln()
+      ..writeln('=== Daten des Versuchs ===')
+      ..writeln(_cap(data.trim(), _labDraftDataCap))
+      ..writeln();
+    if (context.trim().isNotEmpty) {
+      buffer
+        ..writeln('=== Auszüge aus den Unterlagen ===')
+        ..writeln(_cap(context.trim(), _labContextCap))
+        ..writeln();
+    }
+    if (ownTexts.trim().isNotEmpty) {
+      buffer
+        ..writeln('=== Bisherige eigene Texte des Studierenden ===')
+        ..writeln(_cap(ownTexts.trim(), _labDraftOwnCap))
+        ..writeln();
+    }
+    if (images.isNotEmpty) {
+      buffer.writeln('Dem Text folgen ${images.length} Bild${images.length == 1 ? '' : 'er'} der Vorlage bzw. Vorgaben.');
+    }
+    final Object content = images.isEmpty
+        ? buffer.toString()
+        : [
+            {'type': 'text', 'text': buffer.toString()},
+            for (final (i, image) in images.indexed) ...[
+              {'type': 'text', 'text': 'Vorlage, Bild ${i + 1} von ${images.length}:'},
+              {
+                'type': 'image_url',
+                'image_url': {'url': 'data:${_imageMime(image)};base64,${base64Encode(image)}'},
+              },
+            ],
+          ];
+    final raw = await _complete(_labDraftSystemPrompt, content, temperature: 0.4);
+    final draft = LabReportDraft.fromJson(_parseJsonObject(raw), knownSectionIds: {for (final s in sections) s.id});
+    if (draft.isEmpty) {
+      throw AiServiceException('Die KI hat keinen brauchbaren Entwurf geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return draft;
+  }
+
 }
