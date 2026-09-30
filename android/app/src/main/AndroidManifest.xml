@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Cloud-Sync, KI-Anfragen und Update-Prüfung. In Release-Builds nicht
+         automatisch dabei (nur in debug/profile) – ausdrücklich angefordert,
+         statt sich darauf zu verlassen, dass ein Plugin sie mitbringt. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Für die tägliche Lernerinnerung (flutter_local_notifications): damit
          geplante Erinnerungen einen Geräte-Neustart überstehen. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>

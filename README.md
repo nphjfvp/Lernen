@@ -568,6 +568,23 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Download zeigen die Einstellungsfelder sofort die übernommenen Werte (vorher
   blieben sie leer und konnten beim Verlassen den gerade geholten API-Key
   wieder überschreiben).
+- **Sync-Diagnose** – Einstellungen → Cloud-Sync → **"Verbindung prüfen"**
+  (`SyncService.diagnose`, `lib/ui/settings/sync_diagnosis_dialog.dart`): geht
+  Schritt für Schritt durch, woran der Sync hängt, und zeigt es als Liste
+  (Kopieren-Knopf für den Support): ist Firebase verbunden, welches **Ziel**
+  nutzt dieses Gerät (Konto mit E-Mail und Kennungsende oder Sync-Code –
+  beide Geräte müssen dasselbe nutzen, ein Konto auf dem einen und ein Code
+  auf dem anderen sehen nie dieselben Daten), liegt dort ein Stand, wann und
+  von welchem Gerät, ist er vollständig lesbar, wie groß ist der lokale Stand
+  (komprimiert, in wie vielen Teilen) und darf dieses Gerät schreiben (eine
+  Schreibprobe legt ein Testdokument an und löscht es sofort). Fehler kommen
+  mit einer Erklärung statt eines nackten Codes (z.B. `permission-denied` →
+  Regeln nicht veröffentlicht oder Sync-Code unter 6 Zeichen; `unavailable` →
+  Firewall/VPN/Port 443). Der Sync liest immer **vom Server** (nie aus dem
+  Firestore-Zwischenspeicher, der offline sonst einen alten Stand als
+  "erfolgreich heruntergeladen" geliefert hätte) und hat Fristen, damit ein
+  Upload bei abgerissener Verbindung nicht endlos hängt und den Auto-Sync
+  blockiert. Auf Android ist `INTERNET` ausdrücklich im Manifest angefordert.
 - **Anmelden auf einem neuen Gerät** – direkt nach der Anmeldung fragt die
   App, ob der Stand aus dem Konto geholt werden soll (mit Anzahl Fächer/
   Karten; auf einem leeren Gerät ohne zusätzliche Überschreiben-Warnung). Ist

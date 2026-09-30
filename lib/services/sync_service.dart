@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Filter;
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:sembast/sembast.dart' hide FieldValue;
 import 'package:uuid/uuid.dart';
 
@@ -23,6 +26,7 @@ import '../repositories/study_log_repository.dart';
 import '../services/database_service.dart';
 import 'mock_exam_service.dart';
 import 'sync_codec.dart';
+import 'sync_diagnostics.dart';
 
 class SyncException implements Exception {
   final String message;
@@ -244,6 +248,21 @@ class SyncService {
   static const _partsCollection = 'sync_parts';
   static const syncFormat = 2;
 
+  /// Frist für Lesezugriffe und Schreibvorgänge. Ohne sie hinge ein Upload bei
+  /// abgerissener Verbindung endlos (Firestore reiht Schreibvorgänge dann still
+  /// in seine Warteschlange ein und meldet erst nach dem Absenden Erfolg) – der
+  /// Auto-Sync bliebe für immer im Zustand "lädt hoch".
+  static const _readTimeout = Duration(seconds: 45);
+  static const _writeTimeout = Duration(minutes: 2);
+
+  /// Liest IMMER vom Server, nie aus dem lokalen Firestore-Zwischenspeicher.
+  /// Der Standard liefert bei fehlender Verbindung stillschweigend einen alten
+  /// Stand aus dem Cache: ein Download "gelingt" dann, bringt aber nichts
+  /// Neues, und ein Upload prüft gegen veraltete Kopfdaten. Mit Server-Zwang
+  /// kommt stattdessen ein sichtbarer Fehler.
+  Future<DocumentSnapshot<Map<String, dynamic>>> _get(DocumentReference<Map<String, dynamic>> ref) =>
+      ref.get(const GetOptions(source: Source.server)).timeout(_readTimeout);
+
   DocumentReference<Map<String, dynamic>> _doc(SyncTarget target) => FirebaseFirestore.instance
       .collection(target.isAccount ? 'users' : 'sync_codes')
       .doc(target.id);
@@ -287,7 +306,7 @@ class SyncService {
   /// der Stand geholt werden soll.
   Future<CloudSyncMeta?> cloudMeta(SyncTarget target) async {
     _ensureAvailable();
-    return _metaOf(await _doc(target).get());
+    return _metaOf(await _get(_doc(target)));
   }
 
   /// Anzahl lokal vorhandener Datensätze je Kategorie – Grundlage für die
@@ -306,26 +325,165 @@ class SyncService {
     );
   }
 
+  /// "Verbindung prüfen": geht die Wege des Syncs einmal durch und sagt, woran
+  /// es hängt – Firebase verbunden? Welches Ziel (Konto oder Sync-Code)? Liegt
+  /// dort ein Stand, ist er lesbar, und darf dieses Gerät schreiben? Ändert
+  /// nichts an den Daten (die Schreibprobe legt ein Testdokument an und löscht
+  /// es sofort wieder).
+  Future<List<DiagLine>> diagnose(
+    SyncTarget? target, {
+    required String deviceId,
+    required String? lastSyncedPushId,
+    String? email,
+  }) async {
+    const wait = Duration(seconds: 25);
+    final lines = <DiagLine>[DiagLine(DiagLevel.info, 'Gerät', kIsWeb ? 'Web' : defaultTargetPlatform.name)];
+    if (!isAvailable) {
+      return [
+        ...lines,
+        const DiagLine(
+          DiagLevel.error,
+          'Firebase ist nicht verbunden',
+          'Die Initialisierung beim App-Start hat nicht geklappt (kein Netz beim Start, zu langsam?). '
+              'App neu starten; besteht das Problem, ist der Cloud-Sync in diesem Build nicht nutzbar.',
+        ),
+      ];
+    }
+    lines.add(DiagLine(DiagLevel.ok, 'Firebase ist verbunden', 'Projekt ${Firebase.app().options.projectId}'));
+    if (target == null) {
+      return [
+        ...lines,
+        const DiagLine(
+          DiagLevel.error,
+          'Kein Sync-Ziel',
+          'Weder ein Konto angemeldet noch ein Sync-Code eingetragen. Alle Geräte müssen dasselbe Ziel '
+              'nutzen: dasselbe Konto ODER denselben Sync-Code.',
+        ),
+      ];
+    }
+    lines.add(
+      DiagLine(
+        DiagLevel.info,
+        'Ziel: ${SyncDiagnostics.targetLabel(isAccount: target.isAccount, id: target.id, email: email)}',
+        target.isAccount
+            ? 'Die anderen Geräte müssen mit demselben Konto angemeldet sein. Wer auf einem Gerät ein Konto '
+                  'nutzt und auf dem anderen einen Sync-Code, sieht nie dieselben Daten.'
+            : 'Die anderen Geräte müssen denselben Sync-Code eingeben (und dürfen nicht mit einem Konto '
+                  'angemeldet sein – dann läuft der Sync über das Konto).',
+      ),
+    );
+
+    final doc = _doc(target);
+    Map<String, dynamic>? root;
+    try {
+      final snapshot = await _get(doc);
+      if (!snapshot.exists) {
+        lines.add(
+          const DiagLine(
+            DiagLevel.warn,
+            'Für dieses Ziel liegt in der Cloud noch nichts',
+            'Auf dem Gerät mit den Daten „Hochladen“, danach hier „Herunterladen“.',
+          ),
+        );
+      } else {
+        root = snapshot.data();
+        final meta = _metaOf(snapshot);
+        final when = meta?.updatedAt == null
+            ? ''
+            : ' · hochgeladen ${SyncDiagnostics.since(meta!.updatedAt!, DateTime.now())}';
+        lines.add(
+          DiagLine(
+            DiagLevel.ok,
+            'Cloud-Stand gefunden',
+            'Fächer: ${meta?.modules ?? '?'} · Karten: ${meta?.flashcards ?? '?'}$when · Format ${root?['format'] ?? 1}',
+          ),
+        );
+        lines.add(
+          SyncDiagnostics.compareWithCloud(
+            cloudPushId: meta?.pushId,
+            cloudDeviceId: meta?.deviceId,
+            lastSyncedPushId: lastSyncedPushId,
+            deviceId: deviceId,
+          ),
+        );
+      }
+    } catch (e) {
+      lines.add(DiagLine(DiagLevel.error, 'Die Cloud lässt sich nicht lesen', SyncDiagnostics.describeError(e)));
+    }
+
+    if (root != null) {
+      try {
+        final data = await _readPayload(doc, root).timeout(const Duration(seconds: 90));
+        checkUsablePayload(data);
+        final parts = (root['partCount'] as num?)?.toInt() ?? 0;
+        lines.add(
+          DiagLine(
+            DiagLevel.ok,
+            'Cloud-Stand vollständig lesbar',
+            parts == 0 ? 'in einem Dokument' : 'aus $parts Teilen',
+          ),
+        );
+      } catch (e) {
+        lines.add(
+          DiagLine(
+            DiagLevel.error,
+            'Cloud-Stand nicht lesbar',
+            e is SyncException ? e.message : SyncDiagnostics.describeError(e),
+          ),
+        );
+      }
+    }
+
+    var partsNeeded = 1;
+    try {
+      final db = await DatabaseService.instance.database;
+      final payload = await _buildPayload(db);
+      final raw = utf8.encode(jsonEncode(payload)).length;
+      final parts = SyncCodec.encode(payload);
+      partsNeeded = parts.length;
+      final compressed = parts.fold<int>(0, (total, p) => total + p.length);
+      lines.add(
+        DiagLine(
+          parts.length == 1 ? DiagLevel.ok : DiagLevel.info,
+          'Lokaler Stand: ${SyncDiagnostics.size(compressed)} komprimiert (${SyncDiagnostics.size(raw)} roh)',
+          parts.length == 1
+              ? 'passt in ein Cloud-Dokument'
+              : 'wird in ${parts.length} Teilen hochgeladen – dafür müssen die Firestore-Regeln (sync_parts) '
+                    'in der Firebase-Konsole veröffentlicht sein.',
+        ),
+      );
+    } catch (e) {
+      lines.add(DiagLine(DiagLevel.error, 'Der lokale Stand lässt sich nicht bündeln', e.toString()));
+    }
+
+    try {
+      final probe = doc.collection(_partsCollection).doc('_probe');
+      await probe.set({'probe': true}).timeout(wait);
+      await probe.delete().timeout(wait);
+      lines.add(const DiagLine(DiagLevel.ok, 'Schreiben in die Cloud funktioniert'));
+    } catch (e) {
+      final denied = e is FirebaseException && e.code == 'permission-denied';
+      lines.add(
+        DiagLine(
+          DiagLevel.error,
+          'Schreiben in die Cloud ist nicht möglich',
+          '${SyncDiagnostics.describeError(e)}'
+              '${denied && partsNeeded > 1 ? '\nDein Stand braucht mehrere Teile – der Upload scheitert daran.' : ''}',
+        ),
+      );
+    }
+    return lines;
+  }
+
   void _ensureAvailable() {
     if (!isAvailable) {
       throw SyncException('Cloud-Sync ist nicht konfiguriert (kein Firebase-Projekt verbunden).');
     }
   }
 
-  Future<String> _push(
-    DocumentReference<Map<String, dynamic>> doc, {
-    required bool includeApiKey,
-    required String deviceId,
-    bool Function(CloudSyncMeta? cloud)? abortIf,
-  }) async {
-    _ensureAvailable();
-    final previous = await doc.get();
-    if (abortIf != null && abortIf(_metaOf(previous))) {
-      throw SyncConflictException('Der Cloud-Stand stammt von einem anderen Gerät.');
-    }
-    final db = await DatabaseService.instance.database;
-
-    final payload = {
+  /// Der gesamte lokale Datenbestand für den Upload (und die Diagnose).
+  Future<Map<String, dynamic>> _buildPayload(DatabaseClient db) async {
+    return {
       'modules': (await DatabaseService.modules.find(db)).map((r) => r.value).toList(),
       'materials': (await DatabaseService.materials.find(db))
           .map((r) => SyncCodec.stripDeviceLocalMaterialFields(r.value))
@@ -345,6 +503,21 @@ class SyncService {
       // nicht noch einmal das volle Neu-Karten-Budget verteilt.
       'dailySession': (await DailySessionRepository.loadFrom(db, DateTime.now())).toMap(),
     };
+  }
+
+  Future<String> _push(
+    DocumentReference<Map<String, dynamic>> doc, {
+    required bool includeApiKey,
+    required String deviceId,
+    bool Function(CloudSyncMeta? cloud)? abortIf,
+  }) async {
+    _ensureAvailable();
+    final previous = await _get(doc);
+    if (abortIf != null && abortIf(_metaOf(previous))) {
+      throw SyncConflictException('Der Cloud-Stand stammt von einem anderen Gerät.');
+    }
+    final db = await DatabaseService.instance.database;
+    final payload = await _buildPayload(db);
     final parts = SyncCodec.encode(payload);
     final pushId = const Uuid().v4();
     final previousPartCount = (previous.data()?['partCount'] as num?)?.toInt() ?? 0;
@@ -362,11 +535,14 @@ class SyncService {
     };
 
     if (parts.length == 1) {
-      await doc.set({...meta, 'partCount': 0, 'data': Blob(parts.single)});
+      await doc.set({...meta, 'partCount': 0, 'data': Blob(parts.single)}).timeout(_writeTimeout);
     } else {
       try {
         for (var i = 0; i < parts.length; i++) {
-          await doc.collection(_partsCollection).doc('$i').set({'pushId': pushId, 'data': Blob(parts[i])});
+          await doc
+              .collection(_partsCollection)
+              .doc('$i')
+              .set({'pushId': pushId, 'data': Blob(parts[i])}).timeout(_writeTimeout);
         }
       } on FirebaseException catch (e) {
         if (e.code == 'permission-denied') {
@@ -381,7 +557,7 @@ class SyncService {
       }
       // Erst NACH allen Teilen: ein gleichzeitiger Download sieht so entweder
       // den alten oder den vollständigen neuen Stand (siehe pushId-Prüfung).
-      await doc.set({...meta, 'partCount': parts.length});
+      await doc.set({...meta, 'partCount': parts.length}).timeout(_writeTimeout);
     }
 
     // Überzählige Teile eines früheren, größeren Stands entfernen.
@@ -410,7 +586,7 @@ class SyncService {
       return SyncCodec.decode([blob.bytes]);
     }
     final snapshots =
-        await Future.wait([for (var i = 0; i < partCount; i++) doc.collection(_partsCollection).doc('$i').get()]);
+        await Future.wait([for (var i = 0; i < partCount; i++) _get(doc.collection(_partsCollection).doc('$i'))]);
     final parts = <Uint8List>[];
     for (final snap in snapshots) {
       final data = snap.data();
@@ -433,7 +609,7 @@ class SyncService {
   /// bleiben erhalten (siehe SyncCodec.withLocalMaterialFields).
   Future<String?> _pull(DocumentReference<Map<String, dynamic>> doc, {required bool acceptApiKey}) async {
     _ensureAvailable();
-    final snapshot = await doc.get();
+    final snapshot = await _get(doc);
     if (!snapshot.exists) {
       throw SyncException('Für dieses Ziel liegen noch keine Cloud-Daten vor.');
     }

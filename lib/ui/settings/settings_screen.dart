@@ -18,6 +18,7 @@ import '../../services/auto_sync_service.dart';
 import '../../services/pdf_cloud_store.dart';
 import '../../services/pdf_cloud_sync_service.dart';
 import '../../services/reminder_service.dart';
+import '../../services/sync_diagnostics.dart';
 import '../../services/sync_service.dart';
 import '../../services/update_checker_service.dart';
 import '../../theme/app_colors.dart';
@@ -27,6 +28,7 @@ import '../widgets/add_password_dialog.dart';
 import '../widgets/question_type_dropdown.dart';
 import '../widgets/update_actions.dart';
 import 'model_picker_sheet.dart';
+import 'sync_diagnosis_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -171,7 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Firestore-/Netzwerkfehler (z.B. Dokument über dem 1-MiB-Limit,
       // fehlende Berechtigung, offline) sind keine SyncException – ohne
       // diesen Zweig verschwände der Fehler kommentarlos.
-      if (mounted) setState(() => _syncMessage = 'Sync fehlgeschlagen: $e');
+      if (mounted) setState(() => _syncMessage = 'Sync fehlgeschlagen: ${SyncDiagnostics.describeError(e)}');
     } finally {
       if (mounted) setState(() => _syncBusy = false);
     }
@@ -267,6 +269,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
       successMessage: 'Heruntergeladen.',
     );
+  }
+
+  /// "Verbindung prüfen": geht Ziel, Cloud-Stand und Schreibzugriff durch und
+  /// zeigt, woran der Sync hängt (siehe SyncService.diagnose).
+  Future<void> _diagnoseSync() async {
+    final repo = context.read<SettingsRepository>();
+    final auth = context.read<AuthRepository>();
+    final target = _accountTarget() ?? _codeTarget();
+    final deviceId = await AutoSyncService.ensureDeviceId(repo);
+    if (!mounted) return;
+    final future = _syncService.diagnose(
+      target,
+      deviceId: deviceId,
+      lastSyncedPushId: repo.settings.lastSyncedPushId,
+      email: auth.currentUser?.email,
+    );
+    await showDialog<void>(context: context, builder: (_) => SyncDiagnosisDialog(future: future));
   }
 
   SyncTarget? _codeTarget() {
@@ -718,15 +737,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   _SectionLabel('Cloud-Sync'),
                   const SizedBox(height: 4),
-                  if (!_syncService.isAvailable)
+                  if (!_syncService.isAvailable) ...[
                     Text(
                       'Nicht konfiguriert: dieser Build hat kein Firebase-Projekt '
                       'verbunden. Die App funktioniert komplett offline. Siehe README '
                       '("flutterfire configure"), um Sync zwischen Windows/iPad/Android '
-                      'zu aktivieren.',
+                      'zu aktivieren. (Ist es bei dir eingerichtet und trotzdem so: App neu starten – '
+                      'die Verbindung zu Firebase kam beim Start nicht zustande.)',
                       style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
-                    )
-                  else if (auth.isSignedIn) ...[
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftButton(icon: Icons.health_and_safety_outlined, label: 'Verbindung prüfen', onTap: _diagnoseSync),
+                  ] else if (auth.isSignedIn) ...[
                     Text(
                       'Läuft automatisch über dein Konto '
                       '(${auth.currentUser?.email ?? auth.currentUser?.displayName ?? "angemeldet"}) – '
@@ -754,6 +776,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftButton(
+                      icon: Icons.health_and_safety_outlined,
+                      label: 'Verbindung prüfen',
+                      onTap: _syncBusy ? null : _diagnoseSync,
                     ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
                     _AutoSyncTile(enabled: settings.autoSyncEnabled, onChanged: _setAutoSync),
@@ -789,6 +817,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftButton(
+                      icon: Icons.health_and_safety_outlined,
+                      label: 'Verbindung prüfen',
+                      onTap: _syncBusy ? null : _diagnoseSync,
                     ),
                     _SyncStatus(busy: _syncBusy, message: _syncMessage, lastSyncAt: settings.lastSyncAt),
                     _AutoSyncTile(enabled: settings.autoSyncEnabled, onChanged: _setAutoSync),

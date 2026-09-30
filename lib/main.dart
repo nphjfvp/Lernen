@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -30,9 +31,14 @@ Future<void> main() async {
   // lädt Firebase sein JS-SDK per dynamischem Import von Googles CDN nach –
   // blockiert das (Firewall, Adblocker, kein Netz), würde die App sonst nie
   // über den Startbildschirm hinauskommen, weil runApp() erst danach läuft.
+  //
+  // Auf Android/Windows/iOS gibt es dieses CDN-Problem nicht und keinen Grund
+  // für eine Frist: läuft die Initialisierung dort einmal länger als 5 Sekunden
+  // (kalter Start, Virenscanner), wäre Firebase beim Start "nicht verbunden" –
+  // der Auto-Sync startet dann für die ganze Sitzung nicht.
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)
-        .timeout(const Duration(seconds: 5));
+    final init = Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await (kIsWeb ? init.timeout(const Duration(seconds: 5)) : init);
   } catch (e) {
     debugPrint('Firebase nicht konfiguriert – Cloud-Sync deaktiviert ($e).');
   }

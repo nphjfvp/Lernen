@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 894 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 906 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -787,6 +787,29 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `test/ui/review_preselect_test.dart`. Grenzen: nur Text (keine Oszillogramm-
     Bilder), keine Diagramme/Messdaten-Auswertung, Quellen je Gruppe auf
     `AiService.labSourceCap` (45 000 Zeichen) gekürzt.
+42. Sync Windows↔Android (Nutzer: "funktioniert nicht", ohne Fehlertext).
+    Statisch geprüft: Windows-Plugin kann Blobs lesen/schreiben (seit
+    cloud_firestore 6.7), die Web-Firebase-Konfiguration für alle Plattformen
+    ist bei FlutterFire für Windows üblich. Gefunden und behoben: (a)
+    `AutoSyncService.watchedStores` kannte `labExperiments` nicht (Lab-Änderungen
+    lösten keinen Upload aus); (b) `Firebase.initializeApp(...).timeout(5 s)`
+    galt auf allen Plattformen – dauerte die Initialisierung länger, war
+    Firebase beim Start "nicht verbunden" und `AutoSyncService.start()` kehrte
+    für die ganze Sitzung zurück; jetzt nur im Web; (c) Firestore-Lesezugriffe
+    ohne `Source.server` lieferten offline still einen alten Cache-Stand,
+    Schreibvorgänge hingen offline endlos (`_running` im Auto-Sync blieb true) –
+    jetzt `SyncService._get` (Server, 45 s) und 2-min-Frist beim Schreiben;
+    (d) `INTERNET` ausdrücklich im Main-Manifest. Neu: `SyncService.diagnose` +
+    `SyncDiagnostics` (Fehlertexte, Ziel-Anzeige ohne ganzen Sync-Code,
+    Vergleich mit dem Cloud-Stand) + Dialog "Verbindung prüfen" in den
+    Einstellungen. Häufigste echte Ursachen, die die Diagnose sichtbar macht:
+    Konto auf dem einen, Sync-Code auf dem anderen Gerät (Google-Anmeldung gibt
+    es auf Windows nicht → Passwort zum Konto hinzufügen); Firestore-Regeln
+    (`sync_parts`) nie veröffentlicht, obwohl der Stand über 900 KB komprimiert
+    ist; Auto-Sync lädt nur HOCH – Herunterladen bleibt manuell ("Herunterladen"),
+    das ist Absicht (kein stilles Überschreiben lokaler Änderungen).
+    Merke: `dart format` ohne `-l 120` bricht die Projektdateien um und
+    bläht Diffs auf.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

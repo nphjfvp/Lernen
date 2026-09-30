@@ -10,6 +10,7 @@ import '../repositories/settings_repository.dart';
 import 'database_service.dart';
 import 'pdf_cloud_store.dart';
 import 'pdf_cloud_sync_service.dart';
+import 'sync_diagnostics.dart';
 import 'sync_service.dart';
 
 enum AutoSyncStatus {
@@ -80,13 +81,19 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
   int _retryIndex = 0;
   Database? _db;
 
-  static final _watchedStores = [
+  /// Die Speicher, deren Änderung einen Upload auslöst. Alles, was in
+  /// SyncService._buildPayload steht und sich unabhängig von Karten ändern
+  /// kann, gehört hierher (sonst bleibt es bis zur nächsten Kartenänderung
+  /// lokal).
+  @visibleForTesting
+  static final watchedStores = [
     DatabaseService.modules,
     DatabaseService.materials,
     DatabaseService.summaries,
     DatabaseService.concepts,
     DatabaseService.flashcards,
     DatabaseService.lectureUnits,
+    DatabaseService.labExperiments,
     DatabaseService.chatMessages,
   ];
 
@@ -100,7 +107,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     if (!_sync.isAvailable) return;
     final db = await DatabaseService.instance.database;
     _db = db;
-    for (final store in _watchedStores) {
+    for (final store in watchedStores) {
       store.addOnChangesListener(db, _onChanges);
     }
     _settingsSignature = _currentSettingsSignature();
@@ -219,7 +226,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
       _setStatus(AutoSyncStatus.conflict);
     } catch (e) {
       _dirty = true;
-      _lastError = e is SyncException ? e.message : e.toString();
+      _lastError = e is SyncException ? e.message : SyncDiagnostics.describeError(e);
       _schedule(retryDelays[_retryIndex.clamp(0, retryDelays.length - 1)]);
       _retryIndex += 1;
       _setStatus(AutoSyncStatus.retrying);
@@ -274,7 +281,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     _timer?.cancel();
     final db = _db;
     if (db != null) {
-      for (final store in _watchedStores) {
+      for (final store in watchedStores) {
         try {
           store.removeOnChangesListener(db, _onChanges);
         } on TypeError {
