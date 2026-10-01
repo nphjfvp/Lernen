@@ -149,4 +149,25 @@ void main() {
       expect(_module().copyWith(weight: 50).weight, Module.maxWeight);
     });
   });
+
+  group('Laborfach', () {
+    test('Standard: kein Laborfach; ältere Datensätze ohne Angabe ebenso', () {
+      expect(_module().isLab, isFalse);
+      final old = Map<String, dynamic>.from(_module().toMap())..remove('isLab');
+      expect(Module.fromMap(old).isLab, isFalse);
+    });
+
+    test('Labor-Abschnitt: nur bei Laborfach – oder wenn es schon Versuche gibt', () {
+      expect(_module().showsLab(hasExperiments: false), isFalse);
+      expect(_module().showsLab(hasExperiments: true), isTrue);
+      expect(_module().copyWith(isLab: true).showsLab(hasExperiments: false), isTrue);
+    });
+
+    test('bleibt beim Speichern, Lesen und Ändern erhalten', () {
+      final lab = _module().copyWith(isLab: true);
+      expect(Module.fromMap(lab.toMap()).isLab, isTrue);
+      expect(lab.copyWith(name: 'Neu').isLab, isTrue);
+      expect(lab.copyWith(isLab: false).isLab, isFalse);
+    });
+  });
 }

@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../calc/calc_screen.dart';
 import 'lab_create_screen.dart';
 import 'lab_experiment_screen.dart';
+import 'lab_photos_screen.dart';
 import 'lab_widgets.dart';
 
 /// Abschnitt "Laborversuche" im Fach: die Versuche mit Stand, dazu der Knopf
@@ -58,6 +59,17 @@ class LabExperimentsSection extends StatelessWidget {
           icon: const Icon(Icons.add),
           label: const Text('Laborversuch anlegen'),
         ),
+        if (experiments.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const ValueKey('lab-photos-open'),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => LabPhotosScreen(moduleId: moduleId, moduleName: moduleName),
+            )),
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            label: const Text('Fotos zuordnen & auslesen'),
+          ),
+        ],
         const SizedBox(height: 8),
         OutlinedButton.icon(
           key: const ValueKey('calc-open'),

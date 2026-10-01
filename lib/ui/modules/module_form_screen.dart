@@ -59,6 +59,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
   DateTime? _examDate;
   late List<LectureSlot> _lectureSlots;
   late double _weight;
+  late bool _isLab;
 
   /// Einmal vergeben: ein zweites "Fach anlegen" (Doppeltippen, solange das
   /// Speichern samt Widget-Aktualisierung noch läuft) legte sonst ein
@@ -76,6 +77,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
     _examDate = existing?.examDate;
     _lectureSlots = List.of(existing?.lectureSlots ?? const []);
     _weight = existing?.weight ?? 1.0;
+    _isLab = existing?.isLab ?? false;
   }
 
   @override
@@ -171,6 +173,7 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
       createdAt: existing?.createdAt ?? DateTime.now(),
       lectureSlots: _lectureSlots.isEmpty ? null : _lectureSlots,
       weight: _weight,
+      isLab: _isLab,
     );
     await repo.save(module);
     if (!mounted) return;
@@ -209,7 +212,20 @@ class _ModuleFormScreenState extends State<ModuleFormScreen> {
             ),
             autofocus: !isEditing,
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            key: const ValueKey('module-is-lab'),
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.science_outlined),
+            title: const Text('Laborfach'),
+            subtitle: const Text(
+              'Schaltet Laborversuche mit Vorbereitung, Durchführung, Bericht, Fotos und '
+              '"Rechnen mit KI" für dieses Fach frei. Ohne den Schalter bleibt das Fach schlank.',
+            ),
+            value: _isLab,
+            onChanged: (v) => setState(() => _isLab = v),
+          ),
+          const SizedBox(height: 12),
           const Text('Icon', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Wrap(

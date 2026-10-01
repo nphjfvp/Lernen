@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1089 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1114 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -987,6 +987,37 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Vorbereiten (Stellen, Fragen/Antworten, Kernkonzepte), Nachbereiten-Vorschau,
     ExplainChat (eigene Nachrichten), Seitennotizen, Laborversuch (Aufgaben,
     Einschätzung, Hinweise), Rechenweg-Erklärung.
+49. Laborfach-Schalter + Fotos zu Versuchen (Nutzer: "beim Fach hinzufügen
+    vorher entscheiden, ob Laborfach – sonst brauch ich die Features nicht";
+    "hochgeladene Fotos den Versuchen zuordnen und Daten extrahieren").
+    (a) `Module.isLab` (Standard false, in toMap/fromMap/copyWith; Schalter
+    `module-is-lab` im ModuleFormScreen; Fach-Import: `isLab || es gibt Versuche`).
+    `Module.showsLab(hasExperiments:)` steuert den Labor-Abschnitt im
+    ModuleDetailScreen: Laborfach ODER schon Versuche vorhanden (Altdaten nie
+    verstecken). Kalender/Startseiten-Hinweis brauchten nichts (ohne Versuche
+    nichts anzuzeigen). (b) Fotos: `LabPhoto` + `LabPhotoRepository` (Store
+    `DatabaseService.labPhotos`, **nur lokal**: nicht in sync_service/
+    auto_sync/Export; `version` zählt Änderungen; Löschen kaskadiert über
+    `LabExperimentRepository.delete` und `ModuleRepository.deleteCascade`;
+    Provider in main.dart, in Tests per `context.read<LabPhotoRepository?>()`
+    optional). `AiService.readLabPhoto` (Vision-Modell, ein Aufruf je Foto;
+    `describeExperimentsForPhoto` = Versuche/Teile/Tabellen, Zeilen/Spalten ab 1,
+    leere Zellen `·`) → `LabPhotoReading.fromJson` (löst Versuch/Teil über
+    Kennung/Präfix/Titel auf, sonst null; Teil nur bei genau einem Teil geraten;
+    Zellen ab 1 → ab 0). `targetFor(e, partId)`: gültige, ausfüllbare Zellen als
+    `LabCellFill` (mit `existing`/`overwrites`), alles andere – und ALLES, wenn
+    das Ziel nicht das der KI ist – als Text für die Notizen. `apply` schreibt
+    Zellen via `LabTable.withCell` und hängt Notizen mit Kopfzeile an.
+    `LabPhotosScreen` (aiFactory/pickImagesHook für Tests; `experimentId` =
+    nur dieser Versuch): Fotos → `prepareImageForAi` → "Auslesen" → Karte je Foto
+    (Versuch/Teil-Dropdowns, Häkchen je Wert, Notiz-Häkchen, "Übernehmen"/"Alle
+    übernehmen"); Übernehmen speichert Versuch und legt das Foto ab.
+    `LabPhotoStrip` im Reiter Durchführung (Groß-Ansicht, Löschen);
+    `LabExperimentScreen._dataRevision` baut Tabellen-/Notizfelder nach der
+    Rückkehr neu auf (Feldschlüssel `notes-<id>-<rev>-<dataRev>`, Tabelle
+    `<part>-<t>-<dataRev>`). Test-Falle: FutureBuilder-Futures im Streifen
+    brauchen `runAsync` + `pump(Duration)`; fromStructure verwirft leere
+    Teile/füllt nur leere Zellen als ausfüllbar (gefüllte sind fest).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

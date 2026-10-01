@@ -37,6 +37,9 @@ class DatabaseService {
   static final chatMessages = stringMapStoreFactory.store('chat_messages');
   static final labExperiments = stringMapStoreFactory.store('lab_experiments');
 
+  /// Fotos zu Laborversuchen – nur lokal, nicht im Cloud-Abgleich (siehe LabPhotoRepository).
+  static final labPhotos = stringMapStoreFactory.store('lab_photos');
+
   /// Lokale Sicherungen des Lernstands (siehe SyncBackupService): Kopfdaten und
   /// – getrennt, damit das Auflisten nicht alles lädt – die Daten selbst.
   static final syncBackups = stringMapStoreFactory.store('sync_backups');

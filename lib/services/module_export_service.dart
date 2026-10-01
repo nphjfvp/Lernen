@@ -242,6 +242,7 @@ class ModuleExportService {
       createdAt: oldModule.createdAt,
       lectureSlots: oldModule.lectureSlots,
       weight: oldModule.weight,
+      isLab: oldModule.isLab || ((json['labExperiments'] as List?)?.isNotEmpty ?? false),
     );
 
     final unitIdMap = <String, String>{};

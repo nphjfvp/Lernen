@@ -26,6 +26,8 @@ import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/math_text.dart';
 import '../widgets/safe_set_state.dart';
 import 'lab_draft_screen.dart';
+import 'lab_photo_strip.dart';
+import 'lab_photos_screen.dart';
 import 'lab_widgets.dart';
 
 /// Ein Laborversuch mit vier Reitern: Vorbereitung (Aufgaben mit eigenen
@@ -67,6 +69,10 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
   /// Dasselbe für Berichtsabschnitte, wenn ein Entwurf in den Text übernommen wurde.
   final Map<String, int> _sectionRevision = {};
   String? _batchProgress;
+
+  /// Steigt, wenn Werte von außen (Fotos auslesen) in Tabellen und Notizen
+  /// geschrieben wurden – die Eingabefelder bauen sich dann neu auf.
+  int _dataRevision = 0;
 
   LabExperiment? get _e => _repo.byId(widget.experimentId);
 
@@ -806,6 +812,14 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
     ));
   }
 
+  Future<void> _openPhotos(LabExperiment e) async {
+    LabAnswerField.flushPending();
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => LabPhotosScreen(moduleId: e.moduleId, moduleName: widget.moduleName, experimentId: e.id),
+    ));
+    if (mounted) setState(() => _dataRevision++);
+  }
+
   Future<void> _appendToNotes(String partId, String text) async {
     LabAnswerField.flushPending();
     await _update((cur) => cur.updatePart(partId, (p) {
@@ -849,6 +863,24 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
                     child: Text('•  $h', style: const TextStyle(fontSize: 13, height: 1.35)),
                   ),
               ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        LabCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LabPhotoStrip(experiment: e),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const ValueKey('lab-photos-experiment'),
+                  onPressed: () => _openPhotos(e),
+                  icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                  label: const Text('Fotos auslesen (Messwerte aus Foto)'),
+                ),
+              ),
             ],
           ),
         ),
@@ -930,7 +962,7 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
           for (var t = 0; t < part.tables.length; t++) ...[
             const SizedBox(height: 12),
             LabTableView(
-              tableKey: '${part.id}-$t',
+              tableKey: '${part.id}-$t-$_dataRevision',
               table: part.tables[t],
               onCell: (row, col, value) => _update((cur) => cur.updatePart(part.id, (p) => p.copyWith(tables: [
                     for (var k = 0; k < p.tables.length; k++)
@@ -940,7 +972,7 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
           ],
           const SizedBox(height: 12),
           LabAnswerField(
-            key: ValueKey(_notesRevision[part.id] == null ? 'notes-${part.id}' : 'notes-${part.id}-${_notesRevision[part.id]}'),
+            key: ValueKey('notes-${part.id}-${_notesRevision[part.id] ?? 0}-$_dataRevision'),
             initial: part.notes,
             minLines: 2,
             hint: 'Notizen: Einstellungen, Auffälligkeiten, Abweichungen …',

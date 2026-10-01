@@ -215,12 +215,12 @@ void main() {
     expect(labs.byId('lab1')!.parts.first.steps.first.done, isTrue);
     expect(find.text('Schritte: 1 von 2 erledigt'), findsOneWidget);
 
-    await tester.enterText(find.byKey(ValueKey('cell-${e.parts.first.id}-0-0-1')).last, '2 V');
+    await tester.enterText(find.byKey(ValueKey('cell-${e.parts.first.id}-0-0-0-1')).last, '2 V');
     await tester.pump(const Duration(seconds: 1));
     expect(labs.byId('lab1')!.parts.first.tables.single.rows[0], ['1 kHz', '2 V']);
     expect(find.text('Messwerte: 1 von 1 Feldern eingetragen'), findsOneWidget);
 
-    await tester.enterText(find.byKey(ValueKey('notes-${e.parts.first.id}')).last, 'Tastkopf 10:1');
+    await tester.enterText(find.byKey(ValueKey('notes-${e.parts.first.id}-0-0')).last, 'Tastkopf 10:1');
     await tester.pump(const Duration(seconds: 1));
     expect(labs.byId('lab1')!.parts.first.notes, 'Tastkopf 10:1');
   });

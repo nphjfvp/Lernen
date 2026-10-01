@@ -67,5 +67,6 @@ class LabExperimentRepository extends ChangeNotifier {
     notifyListeners();
     final db = await _open();
     await DatabaseService.labExperiments.record(id).delete(db);
+    await DatabaseService.labPhotos.delete(db, finder: Finder(filter: Filter.equals('experimentId', id)));
   }
 }

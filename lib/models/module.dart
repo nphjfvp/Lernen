@@ -84,6 +84,16 @@ class Module {
   /// bringt (siehe DailySchedulerService.buildPlan).
   final double weight;
 
+  /// Laborfach: nur dann zeigt das Fach Laborversuche, "Rechnen mit KI" und
+  /// den Versuchs-Kalender. Ältere Fächer ohne Angabe zählen als normales
+  /// Fach (hat eines schon Versuche, bleiben die sichtbar – siehe
+  /// LabExperimentsSection).
+  final bool isLab;
+
+  /// Ob das Fach den Labor-Abschnitt zeigt: als Laborfach markiert, oder es
+  /// hat (z.B. aus früherer Zeit) schon Versuche – die bleiben sichtbar.
+  bool showsLab({required bool hasExperiments}) => isLab || hasExperiments;
+
   const Module({
     required this.id,
     required this.name,
@@ -93,6 +103,7 @@ class Module {
     required this.createdAt,
     this.lectureSlots,
     this.weight = 1.0,
+    this.isLab = false,
   });
 
   /// Erlaubter Bereich für [weight] (siehe dort), wie bei Flashcard.
@@ -129,6 +140,7 @@ class Module {
     List<LectureSlot>? lectureSlots,
     bool clearLectureSlots = false,
     double? weight,
+    bool? isLab,
   }) {
     return Module(
       id: id,
@@ -139,6 +151,7 @@ class Module {
       createdAt: createdAt,
       lectureSlots: clearLectureSlots ? null : (lectureSlots ?? this.lectureSlots),
       weight: weight == null ? this.weight : _sanitizeWeight(weight),
+      isLab: isLab ?? this.isLab,
     );
   }
 
@@ -156,6 +169,7 @@ class Module {
         'createdAt': createdAt.toIso8601String(),
         'lectureSlots': lectureSlots?.map((s) => s.toMap()).toList(),
         'weight': weight,
+        'isLab': isLab,
       };
 
   factory Module.fromMap(Map<String, dynamic> map) => Module(
@@ -170,5 +184,6 @@ class Module {
             .toList(),
         // Ältere Datensätze ohne Gewicht zählen einfach (1.0).
         weight: _sanitizeWeight((map['weight'] as num?)?.toDouble()),
+        isLab: map['isLab'] == true,
       );
 }

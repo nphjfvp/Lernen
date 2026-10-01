@@ -470,8 +470,11 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    LabExperimentsSection(moduleId: module.id, moduleName: module.name),
-                    const SizedBox(height: 20),
+                    if (module.showsLab(
+                        hasExperiments: context.watch<LabExperimentRepository?>()?.forModule(module.id).isNotEmpty ?? false)) ...[
+                      LabExperimentsSection(moduleId: module.id, moduleName: module.name),
+                      const SizedBox(height: 20),
+                    ],
                     _SectionHeader(title: 'Materialien', count: materials.length),
                     const SizedBox(height: 10),
                     OutlinedButton.icon(

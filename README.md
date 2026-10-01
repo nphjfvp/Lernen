@@ -8,8 +8,9 @@ engerem Fokus statt Feature-Fülle.
 
 - **Modul-Verwaltung** – Fächer-Ordner mit Klausurdatum, in denen Folien und
   Übungsaufgaben gesammelt werden.
-- **Laborversuche** – Vorbereitung, Durchführung und Bericht eines
-  Praktikumsversuchs an einem Ort, mit Termin im Kalender; die KI liest
+- **Laborversuche** (nur in Fächern mit Schalter **Laborfach**) – Vorbereitung,
+  Durchführung und Bericht eines Praktikumsversuchs an einem Ort, mit Termin im
+  Kalender, Fotos von Messprotokollen mit automatischem Auslesen; die KI liest
   deine selbst geschriebenen Antworten und Berichtsabschnitte **gegen**
   (sie schreibt nichts für dich), siehe Abschnitt 5p.
 - **Vorbereiten-Modus, zwei Varianten** – Vorlesungsfolien als PDF, Word oder
@@ -1391,6 +1392,38 @@ die Engine (`flutter_windows.dll`), die Plugin-DLLs und `data/` werden zur
 Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
+
+### 5v. Laborfach-Schalter und Fotos zu Versuchen
+
+**Laborfach.** Beim Anlegen (und später unter "Fach bearbeiten") gibt es den
+Schalter **Laborfach**. Nur dann zeigt das Fach den Abschnitt **Laborversuche**
+(Versuche, Fotos, "Rechnen mit KI"); ohne den Schalter bleibt das Fach schlank,
+und Kalender sowie Startseiten-Hinweise für Versuche tauchen dort nicht auf.
+Ältere Fächer zählen als normales Fach – hat eines schon Versuche, bleibt der
+Abschnitt sichtbar. Der Schalter reist mit Sync und Fach-Export (ein importiertes
+Fach mit Versuchen wird zum Laborfach).
+
+**Fotos zuordnen & auslesen** (`lib/ui/lab/lab_photos_screen.dart`) – im Fach
+unter Laborversuche ("Fotos zuordnen & auslesen", sobald es einen Versuch gibt)
+und im Reiter *Durchführung* eines Versuchs ("Fotos auslesen"; dann geht es nur
+um diesen Versuch). Bis zu 10 Fotos auf einmal (Messprotokoll, Geräteanzeige,
+Notizen, Tafel). Je Foto fragt die App das **Bild-Modell**: es erkennt, was zu
+sehen ist, ordnet es einem **Versuch und Versuchsteil** zu (Titel, Größen,
+Einheiten, Spalten der Tabellen; unsicher → keine Zuordnung, die du dann selbst
+wählst) und liest die Werte in die **leeren Messwertfelder** ab. Weitere Werte
+(Einstellungen, Skalen) kommen als Notiz in den Teil, Unleserliches wird nur
+gemeldet, nichts wird erfunden.
+- **Du entscheidest:** Versuch und Teil sind per Auswahl änderbar, jeder
+  erkannte Wert hat ein Häkchen; ersetzt ein Wert etwas, das du schon eingetragen
+  hast, steht das dabei. Erst "Übernehmen" (oder "Alle übernehmen") schreibt in den
+  Versuch. Ändert man das Ziel gegenüber der KI, gehen die Werte als Notiz in den
+  Teil (die Nummerierung der KI passt dann nicht zu den Tabellen).
+- **Fotos bleiben beim Versuch:** abgelegt als Streifen im Reiter *Durchführung*
+  (Antippen = groß mit Zoom, Löschen). Die Bilder liegen **nur auf diesem Gerät**
+  (eigener Speicher, nicht im Cloud-Sync und nicht im Fach-Export); die
+  ausgelesenen Werte stehen im Versuch und reisen mit. Wird ein Versuch oder das
+  Fach gelöscht, verschwinden auch seine Fotos.
+- Gelesene Werte lassen sich danach mit "Rechnen mit KI" weiterverwenden.
 
 ### 5u. Rechenaufgaben an/aus, Modell für Erklärungen, Formeln überall
 

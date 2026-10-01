@@ -6,9 +6,10 @@ import 'package:http/http.dart' as http;
 
 import '../models/app_settings.dart';
 import '../models/flashcard.dart' show QuestionType;
-import '../models/lab_experiment.dart' show LabFeedback;
+import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import 'calc_engine.dart';
 import 'calc_plan.dart';
+import 'lab_photo_reading.dart';
 import 'lab_report_draft.dart';
 import 'math_markup.dart';
 import 'question_parsing.dart';
@@ -3294,6 +3295,101 @@ Antworte in der Sprache der Aufgabe (Standard: Deutsch).
     return 'image/png';
   }
 
+
+  // -- Fotos zu Laborversuchen --------------------------------------------------
+
+  static const _labPhotoSystemPrompt = r"""
+Du hilfst bei einem Laborpraktikum. Du bekommst ein FOTO (Messprotokoll,
+handschriftliche Notizen, Anzeige eines Messgeräts, Oszilloskop, Tafel,
+Versuchsaufbau, Tabelle) und eine Übersicht der Versuche des Fachs mit ihren
+Versuchsteilen und Messwerttabellen. Deine Aufgaben:
+1. Erkenne, was das Foto zeigt, und ordne es dem passenden Versuch und
+   Versuchsteil zu: Titel, Nummern, Bezeichnungen, Größen und Einheiten, Spalten
+   der Tabellen. Bist du nicht sicher, setze "experimentId" auf null; ein Raten
+   ist schlimmer als keine Zuordnung. "confidence": "hoch", "mittel" oder "niedrig".
+2. Lies die Werte genau ab und trage sie in die LEEREN Zellen der passenden
+   Tabelle ein ("cells"). Nummeriert wird ab 1: "table" = Nummer der Tabelle im
+   Versuchsteil, "row" = Zeile OHNE Kopfzeile, "col" = Spalte. "value" so, wie
+   es in der Tabelle stehen soll (Zahl mit Einheit nur, wenn die Spalte die
+   Einheit nicht schon nennt; Komma wie auf dem Foto). Zellen, die schon einen
+   Wert haben, nur nennen, wenn das Foto etwas anderes zeigt.
+3. Alles, was in keine Zelle passt (weitere Messwerte, Geräteeinstellungen,
+   Skalen, Beobachtungen), kurz in "notes" mit Einheiten.
+4. ERFINDE NICHTS. Nicht lesbare oder unsichere Stellen kommen NICHT in "cells",
+   sondern als kurzer Eintrag in "unclear" ("Zeile 3, zweite Spalte: Ziffer
+   unleserlich").
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
+{
+  "description": "Ein Satz: was das Foto zeigt",
+  "experimentId": "Kennung des Versuchs oder null",
+  "partId": "Kennung des Versuchsteils oder null",
+  "confidence": "hoch|mittel|niedrig",
+  "cells": [{"table": 1, "row": 2, "col": 3, "value": "4,7"}],
+  "notes": "weitere Werte als kurzer Text oder leer",
+  "unclear": []
+}
+Antworte in der Sprache der Tabellen (Standard: Deutsch).
+""";
+
+  /// Die Versuche mit Teilen und Tabellen als Text für [readLabPhoto] – Zeilen
+  /// und Spalten ab 1, leere Zellen als "·" (zum Ausfüllen).
+  static String describeExperimentsForPhoto(List<LabExperiment> experiments) {
+    final b = StringBuffer();
+    for (final e in experiments) {
+      b.writeln('VERSUCH ${e.id}: ${e.title}');
+      for (final p in e.parts) {
+        b.writeln('  TEIL ${p.id}: ${p.title}');
+        for (final g in p.goals.take(2)) {
+          b.writeln('    Ziel: ${_cap(g, 160)}');
+        }
+        for (final (t, table) in p.tables.indexed) {
+          b.writeln('    Tabelle ${t + 1}${table.title.trim().isEmpty ? '' : ' (${table.title.trim()})'}:');
+          if (table.columns.isNotEmpty) {
+            b.writeln('      Spalten: ${[for (final (i, c) in table.columns.indexed) '${i + 1}=$c'].join(' | ')}');
+          }
+          for (var r = 0; r < table.rows.length && r < 40; r++) {
+            final cells = [
+              for (var c = 0; c < table.rows[r].length; c++)
+                table.editable[r][c] && table.rows[r][c].trim().isEmpty
+                    ? '·'
+                    : (table.rows[r][c].trim().isEmpty ? '–' : table.rows[r][c].trim()),
+            ];
+            b.writeln('      Zeile ${r + 1}: ${cells.join(' | ')}');
+          }
+        }
+      }
+      b.writeln();
+    }
+    return _cap(b.toString().trim(), _labPhotoOverviewCap);
+  }
+
+  static const _labPhotoOverviewCap = 14000;
+
+  /// Liest ein Foto zu einem Laborversuch: ordnet es einem der [experiments]
+  /// (und Versuchsteil) zu und liest Messwerte für deren leere Tabellenzellen
+  /// ab. Antwort als [LabPhotoReading]; Kennungen sind schon gegen
+  /// [experiments] geprüft. Für Bilder ein Vision-Modell wählen.
+  Future<LabPhotoReading> readLabPhoto({required Uint8List image, required List<LabExperiment> experiments}) async {
+    final text = StringBuffer()
+      ..writeln('Versuche des Fachs:')
+      ..writeln(experiments.isEmpty ? '(noch keine)' : describeExperimentsForPhoto(experiments))
+      ..writeln()
+      ..writeln('Das Foto folgt.');
+    final content = [
+      {'type': 'text', 'text': text.toString()},
+      {
+        'type': 'image_url',
+        'image_url': {'url': 'data:${_imageMime(image)};base64,${base64Encode(image)}'},
+      },
+    ];
+    final raw = await _complete(_labPhotoSystemPrompt, content, temperature: 0);
+    final reading = LabPhotoReading.fromJson(_parseJsonObject(raw), experiments);
+    if (reading.isEmpty) {
+      throw AiServiceException('Die KI konnte auf dem Foto nichts lesen – anderes Foto oder bessere Beleuchtung versuchen.',
+          rawResponse: raw);
+    }
+    return reading;
+  }
 
   // -- Berichtsentwurf --------------------------------------------------------
 
