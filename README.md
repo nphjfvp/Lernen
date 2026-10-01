@@ -1393,6 +1393,23 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5w. Fragen überspringen und auflösen
+
+Im **Daily Quiz**, in **Üben** (auch beim Üben aus dem Fehlertagebuch) und im
+**Sprint** gibt es unter jeder Frage zwei Knöpfe (nicht in der Probeklausur – die
+hat ihr eigenes "Überspringen", das sofort als falsch zählt):
+- **Überspringen** – die Frage wird weggelegt, **nichts wird verbucht** (kein
+  Lernstand, keine Ampel). Sie kommt am **Ende** der Runde noch einmal dran: im
+  Daily Quiz nach der Hauptrunde und vor der Wiederholungsrunde ("⏭ Übersprungen ·
+  noch N"), in Üben und Sprint ganz hinten in der Runde. Wieder überspringen legt
+  sie erneut nach hinten; bei der letzten übrigen Frage gibt es den Knopf nicht
+  mehr (sie käme sofort wieder).
+- **Auflösen** – wer eine Frage gar nicht beantworten will: die richtige Lösung
+  erscheint sofort (Optionen, Lücken, Tabellenzellen, Stellen im Bild, Zuordnung,
+  Rückseite der Karteikarte), die Frage **zählt als falsch** (wie eine falsche
+  Antwort: Ampel, Wiederholungsrunde, Fehler-Leiter). Es gibt keine KI-Prüfung und
+  kein "Als richtig werten"; die Erklärung der KI steht danach wie sonst bereit.
+
 ### 5v. Laborfach-Schalter und Fotos zu Versuchen
 
 **Laborfach.** Beim Anlegen (und später unter "Fach bearbeiten") gibt es den

@@ -26,7 +26,7 @@ import 'question_answer_view.dart';
 /// entfernt wird (statt das anhand von [_DailyQuizScreenState._index]
 /// zurückzuraten, was bei mehreren parallel möglichen Runden mehrdeutig
 /// wäre).
-enum _QuizStage { main, revisit, bonus }
+enum _QuizStage { main, skipped, revisit, bonus }
 
 /// Daily Quiz / Exam-Scheduler: tägliche Lernsession über alle Fächer
 /// hinweg. Fällige Wiederholungen + eine je nach Wissensstand und
@@ -46,6 +46,13 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
   DailyPlan? _plan;
   int _index = 0;
   int _reviewedCount = 0;
+
+  /// Übersprungene Karten der Hauptrunde (Knopf "Überspringen"): kommen nach
+  /// der Hauptrunde noch einmal dran – vor der Wiederholungsrunde. Nichts wird
+  /// verbucht, solange sie nicht beantwortet oder aufgelöst sind. FIFO wie
+  /// [_wrongQueue]; wird eine Karte hier erneut übersprungen, wandert sie ans
+  /// Ende dieser Queue.
+  final List<Flashcard> _skipQueue = [];
 
   /// Wiederholungsrunde für falsch beantwortete Karten der Hauptrunde
   /// (siehe Klassenkommentar unten): FIFO – das erste Element ist die
@@ -96,7 +103,11 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
 
   bool get _sessionFinished {
     final plan = _plan;
-    return plan != null && _index >= plan.total && _wrongQueue.isEmpty && _bonusQueue.isEmpty;
+    return plan != null &&
+        _index >= plan.total &&
+        _skipQueue.isEmpty &&
+        _wrongQueue.isEmpty &&
+        _bonusQueue.isEmpty;
   }
 
   @override
@@ -121,7 +132,9 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     // Mitten in einer Runde wird nicht neu geplant (die aktuelle Karte
     // bliebe sonst nicht stehen); vorher oder nach Abschluss schon – der
     // Tagesfortschritt selbst liegt in [_session] und geht dabei nicht verloren.
-    if (widget.isActive && !oldWidget.isActive && (_answeredSinceLoad == 0 || _sessionFinished)) {
+    if (widget.isActive &&
+        !oldWidget.isActive &&
+        ((_answeredSinceLoad == 0 && _skipQueue.isEmpty) || _sessionFinished)) {
       _loadPlan();
     }
   }
@@ -193,6 +206,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         ..clear()
         ..addAll(session.wrongAttempts);
       _bonusQueue.clear();
+      _skipQueue.clear();
       _lastLoadedDay = DailySessionState.dayOf(now);
     });
   }
@@ -249,6 +263,25 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     }
   }
 
+  /// "Überspringen": nichts wird verbucht. Aus der Hauptrunde kommt die Karte
+  /// in [_skipQueue] (nach der Hauptrunde noch einmal), in den übrigen Runden
+  /// ans Ende der jeweiligen Queue.
+  void _handleSkip(Flashcard card, {required _QuizStage stage}) {
+    setState(() {
+      switch (stage) {
+        case _QuizStage.main:
+          _index += 1;
+          _skipQueue.add(card);
+        case _QuizStage.skipped:
+          _skipQueue.add(_skipQueue.removeAt(0));
+        case _QuizStage.revisit:
+          _wrongQueue.add(_wrongQueue.removeAt(0));
+        case _QuizStage.bonus:
+          _bonusQueue.add(_bonusQueue.removeAt(0));
+      }
+    });
+  }
+
   Future<void> _handleComplete(Flashcard card, {required _QuizStage stage, Grade? selfGrade, bool? isCorrect}) async {
     final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
     final updated = outcome.card;
@@ -266,6 +299,10 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       switch (stage) {
         case _QuizStage.main:
           _index += 1;
+          if (wasWrong) _wrongQueue.add(updated);
+        case _QuizStage.skipped:
+          // Übersprungene Karte, jetzt beantwortet/aufgelöst: vorn in der Queue.
+          _skipQueue.removeAt(0);
           if (wasWrong) _wrongQueue.add(updated);
         case _QuizStage.revisit:
           // Wiederholungsrunde: die gerade abgeschlossene Karte stand vorn in
@@ -323,8 +360,30 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         total: plan.total,
         position: _index + 1,
         isNew: plan.newCards.contains(card),
+        // Die letzte Karte der Hauptrunde käme sofort wieder – dann nicht anbieten.
+        onSkip: _index < plan.total - 1 || _skipQueue.isNotEmpty
+            ? () => _handleSkip(card, stage: _QuizStage.main)
+            : null,
         onComplete: ({selfGrade, isCorrect}) =>
             _handleComplete(card, stage: _QuizStage.main, selfGrade: selfGrade, isCorrect: isCorrect),
+        onImageEdited: (bytes) => saveEditedImage(card, bytes),
+      );
+    } else if (_skipQueue.isNotEmpty) {
+      // Übersprungene Karten der Hauptrunde (siehe _handleSkip).
+      final card = _skipQueue.first;
+      body = _SessionView(
+        key: ValueKey('skipped-${card.id}'),
+        card: card,
+        moduleName: context.read<ModuleRepository>().byId(card.moduleId)?.name ?? '',
+        progress: 1,
+        total: plan.total,
+        position: plan.total,
+        isNew: card.reps == 0,
+        isSkipped: true,
+        revisitRemaining: _skipQueue.length,
+        onSkip: _skipQueue.length > 1 ? () => _handleSkip(card, stage: _QuizStage.skipped) : null,
+        onComplete: ({selfGrade, isCorrect}) =>
+            _handleComplete(card, stage: _QuizStage.skipped, selfGrade: selfGrade, isCorrect: isCorrect),
         onImageEdited: (bytes) => saveEditedImage(card, bytes),
       );
     } else if (_wrongQueue.isNotEmpty) {
@@ -344,6 +403,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         isNew: false,
         isRevisit: true,
         revisitRemaining: _wrongQueue.length,
+        onSkip: _wrongQueue.length > 1 ? () => _handleSkip(card, stage: _QuizStage.revisit) : null,
         onComplete: ({selfGrade, isCorrect}) =>
             _handleComplete(card, stage: _QuizStage.revisit, selfGrade: selfGrade, isCorrect: isCorrect),
         onImageEdited: (bytes) => saveEditedImage(card, bytes),
@@ -363,6 +423,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         isNew: card.reps == 0,
         isBonus: true,
         revisitRemaining: _bonusQueue.length,
+        onSkip: _bonusQueue.length > 1 ? () => _handleSkip(card, stage: _QuizStage.bonus) : null,
         onComplete: ({selfGrade, isCorrect}) =>
             _handleComplete(card, stage: _QuizStage.bonus, selfGrade: selfGrade, isCorrect: isCorrect),
         onImageEdited: (bytes) => saveEditedImage(card, bytes),
@@ -506,8 +567,10 @@ class _SessionView extends StatelessWidget {
     required this.isNew,
     required this.onComplete,
     this.onImageEdited,
+    this.onSkip,
     this.isRevisit = false,
     this.isBonus = false,
+    this.isSkipped = false,
     this.revisitRemaining = 0,
   });
 
@@ -519,6 +582,13 @@ class _SessionView extends StatelessWidget {
   final bool isNew;
   final void Function({Grade? selfGrade, bool? isCorrect}) onComplete;
   final Future<void> Function(Uint8List? bytes)? onImageEdited;
+
+  /// "Überspringen" (null: nicht anbieten, z.B. bei der letzten Karte).
+  final VoidCallback? onSkip;
+
+  /// true, wenn dies die Runde mit den übersprungenen Karten ist (siehe
+  /// [_DailyQuizScreenState._skipQueue]).
+  final bool isSkipped;
 
   /// true, wenn die Hauptrunde bereits durch ist und dies eine
   /// Wiederholungsrunde für zuvor falsch beantwortete Karten ist (siehe
@@ -558,9 +628,11 @@ class _SessionView extends StatelessWidget {
                   Text(
                     isRevisit
                         ? '🔄 Wiederholung · noch $revisitRemaining'
-                        : isBonus
-                            ? '🙋 Freiwillig · noch $revisitRemaining'
-                            : '$position / $total',
+                        : isSkipped
+                            ? '⏭ Übersprungen · noch $revisitRemaining'
+                            : isBonus
+                                ? '🙋 Freiwillig · noch $revisitRemaining'
+                                : '$position / $total',
                     style: TextStyle(fontSize: 12.5, color: c.inkMuted),
                   ),
                   if (moduleName.isNotEmpty)
@@ -584,6 +656,8 @@ class _SessionView extends StatelessWidget {
             isNew: isNew,
             onComplete: onComplete,
             onImageEdited: onImageEdited,
+            onSkip: onSkip,
+            canGiveUp: true,
           ),
         ),
       ],

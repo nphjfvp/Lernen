@@ -42,10 +42,22 @@ class QuestionAnswerView extends StatefulWidget {
     required this.onComplete,
     this.examMode = false,
     this.onImageEdited,
+    this.onSkip,
+    this.canGiveUp = false,
   });
 
   final Flashcard card;
   final bool isNew;
+
+  /// Gesetzt, wenn die Frage übersprungen werden darf: der Knopf
+  /// "Überspringen" ruft das auf, ohne dass etwas verbucht wird – der Aufrufer
+  /// legt die Karte ans Ende der Runde (siehe Daily Quiz, Üben, Sprint). Nicht
+  /// in der Probeklausur (die hat ihr eigenes Überspringen).
+  final VoidCallback? onSkip;
+
+  /// Ob "Auflösen" angeboten wird: die Lösung wird gezeigt und die Frage zählt
+  /// als falsch, ohne dass etwas beantwortet werden muss.
+  final bool canGiveUp;
 
   /// Gesetzt, wenn das Bild der Karte hier bearbeitet werden darf (z.B. eine
   /// verräterische Beschriftung abdecken, sobald sie beim Lernen auffällt) –
@@ -150,6 +162,9 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
   bool _checked = false;
   AnswerCheckResult? _result;
+
+  /// "Auflösen" gedrückt: die Lösung steht da, die Frage zählt als falsch.
+  bool _gaveUp = false;
 
   /// true, während für eine Freitext- oder Lückentext-Antwort auf die
   /// KI-Zweitmeinung gewartet wird (siehe [_checkFreeTextAnswer],
@@ -378,6 +393,74 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       _sourceToCategory.remove(source);
       if (!_pool.contains(source)) _pool.add(source);
     });
+  }
+
+  bool get _canSkipOrGiveUp => !widget.examMode && !_checked && !_submitted && (widget.onSkip != null || widget.canGiveUp);
+
+  /// Frage weglegen, ohne zu antworten: nichts wird verbucht, der Aufrufer
+  /// holt sie später noch einmal.
+  void _skip() {
+    if (_submitted || _aiChecking) return;
+    _submitted = true;
+    widget.onSkip!();
+  }
+
+  /// "Auflösen": Lösung zeigen und als falsch werten – ohne KI-Prüfung und
+  /// ohne dass die Frage beantwortet sein muss. Alle Stellen/Lücken/Zellen
+  /// gelten als falsch, damit überall die richtige Lösung erscheint.
+  void _giveUp() {
+    if (_checked || _aiChecking || _submitted) return;
+    final card = widget.card;
+    final summary = card.answerSummary.trim();
+    setState(() {
+      _gaveUp = true;
+      _checked = true;
+      _showBack = true;
+      _tablePartial = false;
+      _tableRight = 0;
+      _result = AnswerCheckResult(
+        isCorrect: false,
+        correctAnswerLabel: summary.isNotEmpty ? summary : card.back.trim(),
+      );
+      switch (card.type) {
+        case QuestionType.fillBlank:
+          _blankHits = List.filled(_blanks.length, false);
+        case QuestionType.table:
+          _tableHits = List.filled(_tableBlanks.length, false);
+        case QuestionType.diagramLabel:
+          _labelResults = [
+            for (final z in AnswerChecker.diagramLabelZones(card, const {}, tolerant: _labelTyping))
+              (correct: false, allowed: z.allowed),
+          ];
+        default:
+          break;
+      }
+    });
+  }
+
+  /// "Überspringen" und "Auflösen" unter der Frage (nur wo angeboten).
+  Widget _skipRow(AppColors c) {
+    if (!_canSkipOrGiveUp) return const SizedBox.shrink();
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (widget.onSkip != null)
+          TextButton.icon(
+            key: const ValueKey('question-skip'),
+            onPressed: _aiChecking ? null : _skip,
+            icon: const Icon(Icons.skip_next_rounded, size: 18),
+            label: const Text('Überspringen'),
+          ),
+        if (widget.canGiveUp)
+          TextButton.icon(
+            key: const ValueKey('question-give-up'),
+            onPressed: _aiChecking ? null : _giveUp,
+            icon: const Icon(Icons.flag_outlined, size: 18),
+            label: const Text('Auflösen'),
+            style: TextButton.styleFrom(foregroundColor: c.inkMuted),
+          ),
+      ],
+    );
   }
 
   bool get _canCheck {
@@ -644,6 +727,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
   bool get _canAcceptAsCorrect =>
       _checked &&
+      !_gaveUp &&
       !widget.examMode &&
       _result != null &&
       !_result!.isCorrect &&
@@ -933,6 +1017,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
           ),
         if (_webViewLoading) const LinearProgressIndicator(minHeight: 2),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
+        if (!_checked) _skipRow(c),
         if (_checked)
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.45),
@@ -1050,7 +1135,19 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               style: TextStyle(fontSize: 12.5, color: context.colors.inkMuted),
             ),
           ),
-        if (_showBack)
+        if (_showBack && _gaveUp)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 30),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                key: const ValueKey('question-gave-up-next'),
+                onPressed: () => _submit(selfGrade: Grade.again),
+                child: const Text('Weiter'),
+              ),
+            ),
+          )
+        else if (_showBack)
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 30),
             child: Row(
@@ -1086,7 +1183,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             ),
           )
         else
-          const SizedBox(height: 30),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
+            child: _skipRow(c),
+          ),
       ],
     );
   }
@@ -1261,6 +1361,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                   )
                 : Text(widget.examMode ? 'Antwort abgeben' : 'Prüfen'),
           ),
+        if (!_checked) _skipRow(c),
       ],
     );
   }
@@ -1981,12 +2082,17 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     final result = _result!;
     final isTable = widget.card.type == QuestionType.table;
     final fg = result.isCorrect ? c.good : (_tablePartial ? c.warn : c.danger);
-    final title = result.isCorrect
-        ? 'Richtig!'
-        : isTable
-            ? '$_tableRight von ${_tableBlanks.length} Zellen richtig'
-                '${_tablePartial ? ' – fast, zählt als "Schwer".' : '.'}'
-            : 'Nicht ganz.';
+    final String title;
+    if (result.isCorrect) {
+      title = 'Richtig!';
+    } else if (_gaveUp) {
+      title = 'Aufgelöst – zählt als falsch.';
+    } else if (isTable) {
+      title = '$_tableRight von ${_tableBlanks.length} Zellen richtig'
+          '${_tablePartial ? ' – fast, zählt als "Schwer".' : '.'}';
+    } else {
+      title = 'Nicht ganz.';
+    }
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

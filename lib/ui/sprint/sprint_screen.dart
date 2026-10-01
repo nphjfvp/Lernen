@@ -121,6 +121,12 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
     if (_index >= _queue.length) _finish();
   }
 
+  /// Überspringen: die Karte kommt ans Ende der Runde (nichts wird verbucht).
+  void _skip() {
+    if (_phase != _Phase.playing || _index >= _queue.length - 1) return;
+    setState(() => _queue.add(_queue.removeAt(_index)));
+  }
+
   Future<void> _finish() async {
     if (_phase == _Phase.done) return;
     _timer?.cancel();
@@ -180,6 +186,8 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
                         card: _queue[_index],
                         isNew: false,
                         onImageEdited: (bytes) => saveEditedImage(_queue[_index], bytes),
+                        onSkip: _index < _queue.length - 1 ? _skip : null,
+                        canGiveUp: true,
                         onComplete: ({selfGrade, isCorrect}) =>
                             _handleComplete(_queue[_index], selfGrade: selfGrade, isCorrect: isCorrect),
                       ),

@@ -109,6 +109,13 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
     });
   }
 
+  /// Überspringen: die Karte kommt ans Ende der Runde (nichts wird verbucht).
+  void _skip() {
+    final queue = _queue;
+    if (queue == null || _index >= queue.length - 1) return;
+    setState(() => queue.add(queue.removeAt(_index)));
+  }
+
   Future<void> _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
     final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
     if (!mounted) return;
@@ -181,6 +188,9 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
                               card: queue[_index],
                               isNew: queue[_index].reps == 0,
                               onImageEdited: (bytes) => saveEditedImage(queue[_index], bytes),
+                              // Die letzte Karte lässt sich nicht mehr ans Ende legen.
+                              onSkip: _index < queue.length - 1 ? _skip : null,
+                              canGiveUp: true,
                               onComplete: ({selfGrade, isCorrect}) => _handleComplete(
                                 queue[_index],
                                 selfGrade: selfGrade,

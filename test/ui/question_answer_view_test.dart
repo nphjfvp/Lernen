@@ -81,6 +81,7 @@ Widget _harness(Flashcard card, void Function({Grade? selfGrade, bool? isCorrect
 }
 
 void main() {
+  skipAndGiveUpTests();
   group('QuestionAnswerView – flashcard', () {
     testWidgets('zeigt Vorderseite, deckt nach Tippen die Rückseite auf, meldet Selbstbewertung', (tester) async {
       Grade? reportedGrade;
@@ -1032,6 +1033,161 @@ void main() {
       expect(saved, isNot(png));
       final shown = tester.widget<Image>(find.byType(Image).first).image as MemoryImage;
       expect(shown.bytes, same(saved));
+    });
+  });
+}
+
+Widget _skipHarness(
+  Flashcard card, {
+  VoidCallback? onSkip,
+  bool canGiveUp = false,
+  bool examMode = false,
+  required void Function({Grade? selfGrade, bool? isCorrect}) onComplete,
+}) {
+  return MaterialApp(
+    theme: AppTheme.light,
+    home: Scaffold(
+      body: Column(
+        children: [
+          Expanded(
+            child: QuestionAnswerView(
+              key: ValueKey(card.id),
+              card: card,
+              isNew: false,
+              examMode: examMode,
+              onSkip: onSkip,
+              canGiveUp: canGiveUp,
+              onComplete: onComplete,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+void skipAndGiveUpTests() {
+  final choice = _card(
+    type: QuestionType.singleChoice,
+    front: 'Hauptstadt von Frankreich?',
+    options: const [QuizOption(text: 'Paris', isCorrect: true), QuizOption(text: 'Lyon', isCorrect: false)],
+  );
+
+  group('QuestionAnswerView – Überspringen und Auflösen', () {
+    testWidgets('ohne onSkip/canGiveUp gibt es die Knöpfe nicht', (tester) async {
+      await tester.pumpWidget(_skipHarness(choice, onComplete: ({selfGrade, isCorrect}) {}));
+      expect(find.byKey(const ValueKey('question-skip')), findsNothing);
+      expect(find.byKey(const ValueKey('question-give-up')), findsNothing);
+    });
+
+    testWidgets('Überspringen meldet nur onSkip – nichts wird bewertet, doppeltes Tippen zählt einmal', (tester) async {
+      var skipped = 0;
+      var completed = 0;
+      await tester.pumpWidget(_skipHarness(
+        choice,
+        onSkip: () => skipped++,
+        onComplete: ({selfGrade, isCorrect}) => completed++,
+      ));
+      await tester.tap(find.byKey(const ValueKey('question-skip')));
+      await tester.tap(find.byKey(const ValueKey('question-skip')), warnIfMissed: false);
+      await tester.pump();
+      expect(skipped, 1);
+      expect(completed, 0);
+    });
+
+    testWidgets('Auflösen: Lösung steht da, zählt als falsch, kein "Als richtig werten"; Weiter meldet falsch',
+        (tester) async {
+      bool? correct;
+      var completed = 0;
+      await tester.pumpWidget(_skipHarness(
+        choice,
+        canGiveUp: true,
+        onComplete: ({selfGrade, isCorrect}) {
+          correct = isCorrect;
+          completed++;
+        },
+      ));
+      expect(find.byKey(const ValueKey('question-skip')), findsNothing); // nur Auflösen angeboten
+      await tester.tap(find.byKey(const ValueKey('question-give-up')));
+      await tester.pump();
+
+      expect(find.text('Aufgelöst – zählt als falsch.'), findsOneWidget);
+      expect(find.textContaining('Richtige Antwort: Paris'), findsOneWidget);
+      expect(find.text('Als richtig werten'), findsNothing);
+      expect(find.byKey(const ValueKey('question-give-up')), findsNothing);
+      expect(completed, 0); // erst "Weiter" meldet
+
+      await tester.ensureVisible(find.text('Weiter'));
+      await tester.tap(find.text('Weiter'));
+      await tester.pump();
+      expect(correct, isFalse);
+      expect(completed, 1);
+    });
+
+    testWidgets('Auflösen bei Lückentext zeigt die Lösung je Lücke, ohne KI-Anfrage', (tester) async {
+      var completed = 0;
+      bool? correct;
+      final card = _card(type: QuestionType.fillBlank, front: 'Die ___ ist ein ___.', blanks: ['Sonne', 'Stern']);
+      await tester.pumpWidget(_skipHarness(
+        card,
+        canGiveUp: true,
+        onComplete: ({selfGrade, isCorrect}) {
+          correct = isCorrect;
+          completed++;
+        },
+      ));
+      await tester.tap(find.byKey(const ValueKey('question-give-up')));
+      await tester.pump();
+      expect(find.textContaining('Lösung: Sonne'), findsOneWidget);
+      expect(find.textContaining('Lösung: Stern'), findsOneWidget);
+      await tester.ensureVisible(find.text('Weiter'));
+      await tester.tap(find.text('Weiter'));
+      await tester.pump();
+      expect(correct, isFalse);
+      expect(completed, 1);
+    });
+
+    testWidgets('Karteikarte: Auflösen zeigt die Rückseite, Weiter wertet "Nochmal"', (tester) async {
+      Grade? grade;
+      await tester.pumpWidget(_skipHarness(
+        _card(front: 'Was ist Spannung?', back: 'Potentialdifferenz'),
+        onSkip: () {},
+        canGiveUp: true,
+        onComplete: ({selfGrade, isCorrect}) => grade = selfGrade,
+      ));
+      expect(find.byKey(const ValueKey('question-skip')), findsOneWidget);
+      expect(find.text('Potentialdifferenz'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('question-give-up')));
+      await tester.pump();
+      expect(find.text('Potentialdifferenz'), findsOneWidget);
+      // Statt der vier Selbstbewertungen nur "Weiter".
+      expect(find.text('Gut'), findsNothing);
+      expect(find.byKey(const ValueKey('question-skip')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('question-gave-up-next')));
+      await tester.pump();
+      expect(grade, Grade.again);
+    });
+
+    testWidgets('Probeklausur: keine Knöpfe, auch wenn sie angeboten würden', (tester) async {
+      await tester.pumpWidget(_skipHarness(
+        choice,
+        onSkip: () {},
+        canGiveUp: true,
+        examMode: true,
+        onComplete: ({selfGrade, isCorrect}) {},
+      ));
+      expect(find.byKey(const ValueKey('question-skip')), findsNothing);
+      expect(find.byKey(const ValueKey('question-give-up')), findsNothing);
+    });
+
+    testWidgets('nach dem Prüfen sind die Knöpfe weg', (tester) async {
+      await tester.pumpWidget(_skipHarness(choice, onSkip: () {}, canGiveUp: true, onComplete: ({selfGrade, isCorrect}) {}));
+      await tester.tap(find.text('Paris'));
+      await tester.pump();
+      await tester.tap(find.text('Prüfen'));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('question-skip')), findsNothing);
+      expect(find.byKey(const ValueKey('question-give-up')), findsNothing);
     });
   });
 }

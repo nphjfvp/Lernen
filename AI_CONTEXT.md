@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1114 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1123 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1018,6 +1018,30 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `<part>-<t>-<dataRev>`). Test-Falle: FutureBuilder-Futures im Streifen
     brauchen `runAsync` + `pump(Duration)`; fromStructure verwirft leere
     Teile/füllt nur leere Zellen als ausfüllbar (gefüllte sind fest).
+50. Überspringen/Auflösen im Quiz (Nutzer: "in Quizzen Fragen skippen, die
+    kommen ans Ende; wer gar nicht antworten will: direkt auflösen und als falsch
+    werten"). `QuestionAnswerView` hat `onSkip` (VoidCallback?) und `canGiveUp`
+    (bool); `_skipRow` zeigt "Überspringen" (`question-skip`) und "Auflösen"
+    (`question-give-up`) nur ohne `examMode` und vor dem Prüfen. `_skip` meldet nur
+    `onSkip` (Doppeltipp-Sperre über `_submitted`), verbucht nichts. `_giveUp` setzt
+    `_gaveUp/_checked/_showBack` und `_result = isCorrect:false` mit
+    `answerSummary` (nie KI): Lücken `_blankHits`, Tabelle `_tableHits`, Bildstellen
+    `_labelResults` (diagramLabelZones mit leeren Antworten, alle falsch) – damit
+    zeigen die bestehenden Ansichten die Lösung; Auswahl/Zuordnen/Markieren
+    zeigen sie ohnehin nach `_checked`. Feedback "Aufgelöst – zählt als falsch.",
+    kein "Als richtig werten" (`_canAcceptAsCorrect` hat `!_gaveUp`). Karteikarten/
+    Lernaufgaben: Rückseite + Knopf `question-gave-up-next` → `Grade.again`.
+    Daily Quiz: `_QuizStage.skipped`, `_skipQueue` (nach Hauptrunde, vor
+    `_wrongQueue`), `_handleSkip` (main → `_index+1` + `_skipQueue`; sonst ans Ende
+    der jeweiligen Queue); Skip bei der letzten Hauptrundenkarte nur, wenn
+    `_skipQueue` nicht leer (sonst käme sie sofort wieder), in den Queues nur bei
+    > 1 Karte; `_sessionFinished`/Tab-Neuplanung berücksichtigen `_skipQueue`;
+    nicht persistiert (unverbuchte Karten sind morgen/bei "Aktualisieren" ohnehin
+    wieder fällig). Üben/Sprint: Karte in `_queue` ans Ende
+    (`queue.add(queue.removeAt(_index))`), Knopf nicht bei der letzten. Probeklausur
+    unverändert (eigenes Überspringen = sofort falsch). Tests: question_answer_view_test
+    (Gruppe "Überspringen und Auflösen"), quiz_skip_test (Üben + Daily mit echter
+    DB; am Ende `drain` gegen Timer-Reste). Der Sprint hat keinen eigenen Bildschirmtest.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
