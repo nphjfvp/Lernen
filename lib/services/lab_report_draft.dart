@@ -25,19 +25,42 @@ class LabReportDraft {
   bool get isEmpty => sections.isEmpty;
 
   /// Liest die KI-Antwort: `sections` (je `sectionId`, `title`, `text`) und
-  /// `missing`. Eine `sectionId`, die es nicht gibt, gilt als "neuer Abschnitt".
-  factory LabReportDraft.fromJson(Map<String, dynamic> json, {required Set<String> knownSectionIds}) {
+  /// `missing`. Die KI gibt die langen Kennungen nicht immer exakt zurück – eine
+  /// unbekannte `sectionId` wird deshalb über den Anfang der Kennung (mind. 8
+  /// Zeichen, eindeutig) und dann über den Titel ([sectionTitles]: Kennung →
+  /// Titel) zugeordnet; erst was dann noch unbekannt ist, gilt als "neuer
+  /// Abschnitt".
+  factory LabReportDraft.fromJson(
+    Map<String, dynamic> json, {
+    required Set<String> knownSectionIds,
+    Map<String, String> sectionTitles = const {},
+  }) {
     String text(Object? v) => (v ?? '').toString().trim();
+    String? resolve(String id, String title) {
+      if (knownSectionIds.contains(id)) return id;
+      if (id.length >= 8) {
+        final byPrefix = [for (final k in knownSectionIds) if (k.startsWith(id) || id.startsWith(k)) k];
+        if (byPrefix.length == 1) return byPrefix.single;
+      }
+      final wanted = normalizeTitle(title);
+      if (wanted.isEmpty) return null;
+      final byTitle = [
+        for (final e in sectionTitles.entries)
+          if (knownSectionIds.contains(e.key) && normalizeTitle(e.value) == wanted) e.key,
+      ];
+      return byTitle.length == 1 ? byTitle.single : null;
+    }
+
     final sections = <LabDraftSection>[];
     final raw = json['sections'] ?? json['abschnitte'];
     for (final e in (raw is List ? raw : const [])) {
       if (e is! Map) continue;
       final body = text(e['text'] ?? e['content']);
       if (body.isEmpty) continue;
-      final id = text(e['sectionId'] ?? e['id']);
+      final title = text(e['title'] ?? e['titel']);
       sections.add(LabDraftSection(
-        sectionId: knownSectionIds.contains(id) ? id : null,
-        title: text(e['title'] ?? e['titel']),
+        sectionId: resolve(text(e['sectionId'] ?? e['id']), title),
+        title: title,
         text: body,
       ));
     }
@@ -52,11 +75,24 @@ class LabReportDraft {
     );
   }
 
+  /// Titel zum Vergleichen: klein, ohne Nummerierung ("2.1 "), Satzzeichen und
+  /// doppelte Leerzeichen.
+  static String normalizeTitle(String title) => title
+      .toLowerCase()
+      .replaceFirst(RegExp(r'^[\d.\s)]+'), '')
+      .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
+      .trim();
+
   /// Legt den Entwurf in [experiment] ab. Ohne [onlySectionId] ersetzt er alle
-  /// bisherigen Entwürfe, sonst nur den dieses Abschnitts. Mit [adoptStructure]
-  /// entstehen für Abschnitte, die nur die Vorlage kennt, neue Berichts-
-  /// abschnitte (hinter dem zuletzt bedienten); ohne wandern sie als Unterpunkt in
-  /// den davor. Der eigene Text und Einschätzungen bleiben unberührt.
+  /// bisherigen Entwürfe, sonst nur den dieses Abschnitts – dorthin kommt dann
+  /// alles, was die KI geliefert hat, auch wenn sie die Kennung nicht genau
+  /// getroffen hat (sie sollte ja nur diesen einen Abschnitt schreiben). Mit
+  /// [adoptStructure] entstehen für Abschnitte, die nur die Vorlage kennt, neue
+  /// Berichtsabschnitte an der Stelle der Vorlage (vor dem ersten bekannten,
+  /// sonst hinter dem zuletzt bedienten); gibt es schon einen gleichnamigen
+  /// (z.B. aus einem früheren Entwurf), wird er wiederverwendet. Ohne
+  /// [adoptStructure] wandern sie als Unterpunkt in den Abschnitt davor. Der
+  /// eigene Text und Einschätzungen bleiben unberührt.
   LabExperiment applyTo(
     LabExperiment experiment, {
     bool adoptStructure = true,
@@ -64,9 +100,19 @@ class LabReportDraft {
     String Function()? newId,
   }) {
     final id = newId ?? () => const Uuid().v4();
-    var report = [
-      for (final s in experiment.report) onlySectionId == null || s.id == onlySectionId ? s.copyWith(clearDraft: true) : s,
-    ];
+
+    if (onlySectionId != null) {
+      if (!experiment.report.any((r) => r.id == onlySectionId) || sections.isEmpty) return experiment;
+      final matching = [for (final s in sections) if (s.sectionId == onlySectionId) s];
+      final chosen = matching.isNotEmpty ? matching : sections;
+      final body = [
+        for (final (i, s) in chosen.indexed)
+          i == 0 || s.title.isEmpty || chosen.length == 1 ? s.text : '${s.title}\n${s.text}',
+      ].join('\n\n');
+      return experiment.updateSection(onlySectionId, (old) => old.copyWith(draft: body.trim()));
+    }
+
+    var report = [for (final s in experiment.report) s.copyWith(clearDraft: true)];
     // Abschnitt-Kennung → Entwurf, in Reihenfolge des Entstehens.
     final drafts = <String, StringBuffer>{};
     var anchor = -1; // Index des zuletzt bedienten Abschnitts in [report]
@@ -81,17 +127,22 @@ class LabReportDraft {
     for (final s in sections) {
       final existing = s.sectionId;
       if (existing != null) {
-        if (onlySectionId != null && existing != onlySectionId) continue;
         final index = report.indexWhere((r) => r.id == existing);
         if (index < 0) continue;
         addTo(existing, s.title, s.text, asSubsection: false);
         anchor = index;
         continue;
       }
-      if (onlySectionId != null) continue;
       if (adoptStructure) {
+        final wanted = normalizeTitle(s.title);
+        final sameName = wanted.isEmpty ? -1 : report.indexWhere((r) => normalizeTitle(r.title) == wanted);
+        if (sameName >= 0) {
+          addTo(report[sameName].id, s.title, s.text, asSubsection: false);
+          anchor = sameName;
+          continue;
+        }
         final section = LabReportSection(id: id(), title: s.title.isEmpty ? 'Weiterer Abschnitt' : s.title);
-        anchor = anchor < 0 ? report.length : anchor + 1;
+        anchor = anchor + 1; // -1 → ganz vorne (die Vorlage nennt ihn vor allen bekannten)
         report = [...report.sublist(0, anchor), section, ...report.sublist(anchor)];
         addTo(section.id, s.title, s.text, asSubsection: false);
       } else if (anchor >= 0) {

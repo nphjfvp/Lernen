@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1049 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1089 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -934,6 +934,59 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     bleibt ohne Formulierungen. Test-Fallen: DB-Writes in `testWidgets` brauchen
     mehrere `pump(Duration)`; `downscaleImage` braucht `runAsync`; PNG-Testbytes
     müssen gültig sein (sonst Bilddecoder-Fehler).
+48. Review-Fixes + Rechenaufgaben-Schalter + Hilfe-Modell + LaTeX (Nutzer:
+    Code-Review "gern"; "LaTeX wird ab und zu nicht gerendert"; "die KI für
+    Erklärungen ändern"; "Toggle, ob Rechenaufgaben drankommen, aufgeschobene
+    später höher gewichten"). (a) Review: `CalcEngine.substitute` wirft nie
+    (unlesbar → Ausdruck unverändert) und setzt negative Werte bzw. Werte mit
+    Einheit an Potenzen in Klammern; `evaluate` macht aus jedem Fehler eine
+    `CalcException` (min/max ohne Wert, round mit ∞/großen Stellen);
+    `CalcPlan.evaluate` fängt zusätzlich alles je Schritt; Funktionsnamen sind als
+    Größe erlaubt (`reservedNames` = nur Konstanten, `functionNameSet` für den
+    Rest); `parseNumber(germanGrouping:)` für Eingaben ("4.700" = 4700);
+    `prepareImageForAi` (image_crop.dart: kleines JPEG/WebP unverändert, sonst
+    stufenweise verkleinern bis ≤ 1,5 MB – ein JPEG-Encoder hätte archive 3→4
+    erzwungen); `LabReportDraft.fromJson` ordnet unbekannte Kennungen über Präfix
+    (≥ 8 Zeichen) und Titel (`normalizeTitle`) zu, `applyTo` bei `onlySectionId`
+    nimmt alles Gelieferte für diesen Abschnitt (alter Entwurf bleibt, wenn nichts
+    kam), legt Vorlagen-Abschnitte vor dem ersten bekannten nach vorne und
+    verwendet gleichnamige wieder; `LabAnswerField.flushPending()` vor
+    `_adoptDraft`/`_appendToNotes`. (b) Rechenaufgaben: `Flashcard.needsCalculator`
+    (bool?, KI/Hand; null = `CalcTaskDetector.looksLikeCalc`) und
+    `calcDeferredAt` (durch alle expliziten Kopien gefädelt; `copyWithReview`
+    löscht es; Export/Import nimmt beide mit, `resetLearningState` nur das erste).
+    `AiService._calcFlagRule` in allen Erzeugungs-/Import-Prompts,
+    `QuestionParsing.parseCalcFlag` (auch im Karteikarten-Fallback von
+    normalize), gesetzt in review_screen, page_question_creation_sheet,
+    material_viewer (Zwischen-Check), pdf_question_import_service.
+    `AppSettings.includeCalcTasks` (geräte-lokal, NICHT in `syncedSettingsOf`).
+    `DailySchedulerService.buildPlan(includeCalcTasks:)`: aus → Plan ohne
+    Rechenaufgaben + `deferredCalc` (= Rechenaufgaben des Plans mit an), die
+    DailyQuizScreen per `updateAll` mit `calcDeferredAt` markiert; an → zurückgestellte
+    zuerst sortiert und als Bonus aufs Budget (`maxCalcCatchUpPerModule` = 10,
+    `calcCatchUp`), beim Kürzen nach Priorität. `buildExtraBatch` ebenso.
+    UI: `CalcTasksToggle` (lib/ui/widgets) im Daily Quiz (über dem Inhalt, nur
+    wenn es Rechenaufgaben gibt; Umschalten → `_loadPlan`), Üben (über der
+    Ampel-Auswahl; Filter + aufgehobene zuerst), Sprint (Intro, `_loadPool`);
+    Speedrun übt Konzepte (keine Karten), Probeklausur bewusst alles. Kartenliste
+    zeigt "Rechenaufgabe", CardEditScreen Automatisch/Ja/Nein. (c) Hilfe-Modell:
+    `AppSettings.helpModelId` (null = wie Fragen-Modell, `effectiveHelpModelId`),
+    Sync als '' = zurücksetzen / fehlend = lokal behalten; genutzt in
+    QuestionAnswerView (`_helpAiOrNull`: Tipps, Erklärung), ExplainChat,
+    study_aids (ohne Bild), ModuleChatScreen, WeaknessScreen, MockExam-Erklärung,
+    Laborversuch-Gegenlesen; Einstellungen: Kachel "Erklärungen & Hilfe" mit
+    Zurücksetzen. (d) LaTeX: `MathMarkup.split` erkennt Formeln ohne Begrenzer
+    (`_bareMath`: Token-Folgen mit bekanntem Befehl aus `latexCommands` bzw. `^{`/
+    `_{`, je Zeile, Satzzeichen beendet die Formel; Pfade wie `C:\Users` nicht),
+    Backtick-Formeln und `$ … $` mit Leerzeichen nur bei `looksLikeLatex`;
+    `escapeLatexInJson` verdoppelt außerhalb von Formeln `\f`/`\b` vor Buchstaben
+    immer und `\t`/`\n`/`\r` nur vor bekannten Befehlen (> 2 Zeichen). MathText hat
+    `maxLines`/`overflow`; ersetzt Text in QuestionAnswerView (Zuordnen,
+    Kategorien, Bild-Lösung), Kartenliste (Titel, Optionen, Lücken, Paare, html),
+    Probeklausur-/Fehlertagebuch-Liste, Konzepte (Fach), Zusammenfassung,
+    Vorbereiten (Stellen, Fragen/Antworten, Kernkonzepte), Nachbereiten-Vorschau,
+    ExplainChat (eigene Nachrichten), Seitennotizen, Laborversuch (Aufgaben,
+    Einschätzung, Hinweise), Rechenweg-Erklärung.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

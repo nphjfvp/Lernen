@@ -77,8 +77,8 @@ class _ExplainChatState extends State<ExplainChat> {
       _error = null;
     });
     try {
-      final ai = ExplainChat.aiFactory?.call(settings.openRouterApiKey!, settings.questionModelId) ??
-          AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final ai = ExplainChat.aiFactory?.call(settings.openRouterApiKey!, settings.effectiveHelpModelId) ??
+          AiService(apiKey: settings.openRouterApiKey!, model: settings.effectiveHelpModelId);
       final answer = await ai.followUpAnswer(
         question: widget.question,
         correctAnswer: widget.correctAnswer,
@@ -168,7 +168,7 @@ class _ExplainChatState extends State<ExplainChat> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: m.isUser
-                          ? Text(m.content, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink))
+                          ? MathText(m.content, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink))
                           : MathText(m.content, style: TextStyle(fontSize: 13.5, height: 1.45, color: c.ink)),
                     ),
                   ),

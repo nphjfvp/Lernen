@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../widgets/math_text.dart';
 import '../../models/app_settings.dart';
 import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
@@ -911,14 +912,14 @@ class _PreviewView extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [const Text('•  '), Expanded(child: Text(k))],
+                        children: [const Text('•  '), Expanded(child: MathText(k))],
                       ),
                     )),
                 const SizedBox(height: 16),
               ],
               Text('Zusammenfassung', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              Text(result['overview']?.toString() ?? ''),
+              MathText(result['overview']?.toString() ?? ''),
             ],
           ),
         ),
@@ -1037,7 +1038,7 @@ class _SessionView extends StatelessWidget {
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Text(h.text, style: const TextStyle(fontSize: 12.5)),
+                                                MathText(h.text, style: const TextStyle(fontSize: 12.5)),
                                                 if (h.reason != null && h.reason!.isNotEmpty)
                                                   Text(h.reason!, style: TextStyle(fontSize: 11, color: c.inkMuted)),
                                               ],
@@ -1064,9 +1065,9 @@ class _SessionView extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(t.question, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                        MathText(t.question, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 4),
-                        Text(t.answer, style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.4)),
+                        MathText(t.answer, style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.4)),
                       ],
                     ),
                   )),

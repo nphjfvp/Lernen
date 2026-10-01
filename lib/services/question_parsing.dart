@@ -224,6 +224,7 @@ class QuestionParsing {
       if (raw['conceptTitle'] != null) 'conceptTitle': raw['conceptTitle'].toString(),
       if (raw['level'] != null) 'level': raw['level'],
       if (raw['group'] != null) 'group': raw['group'],
+      if (parseCalcFlag(raw) != null) 'calc': parseCalcFlag(raw),
       // Die KI wollte hier einen präziseren Typ (single_choice/free_text/
       // html/…), aber die Antwort war unvollständig – markiert, damit der
       // Import das nicht stumm verschluckt, sondern anzeigt/nachfragt statt
@@ -232,6 +233,18 @@ class QuestionParsing {
       if (type != QuestionType.flashcard) 'typeDowngraded': true,
       if (type != QuestionType.flashcard) 'requestedType': type.name,
     };
+  }
+
+  /// Ob die KI die Frage als Rechenaufgabe markiert hat ("calc", siehe
+  /// AiService._calcFlagRule); `null` ohne Angabe – dann entscheidet später die
+  /// Erkennung im Text (CalcTaskDetector).
+  static bool? parseCalcFlag(Map<String, dynamic> raw) {
+    final value = raw['calc'] ?? raw['needsCalculator'] ?? raw['calculator'] ?? raw['rechenaufgabe'];
+    if (value is bool) return value;
+    final text = value?.toString().trim().toLowerCase();
+    if (text == 'true' || text == 'ja' || text == 'yes' || text == '1') return true;
+    if (text == 'false' || text == 'nein' || text == 'no' || text == '0') return false;
+    return null;
   }
 
   static Object? _first(Map<String, dynamic> raw, List<String> keys) {

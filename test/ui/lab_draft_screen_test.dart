@@ -309,6 +309,25 @@ void main() {
     expect(labs.byId('lab1')!.report[1].text, '');
   });
 
+  testWidgets('Übernehmen direkt nach dem Tippen: Getipptes UND Entwurf bleiben', (tester) async {
+    var e = _experiment();
+    e = e.updateSection(e.report[0].id, (s) => s.copyWith(draft: 'Der Entwurf.'));
+    await pump(tester, LabExperimentScreen(experimentId: 'lab1', moduleName: 'ET'), experiment: e);
+    await tester.tap(find.text('Bericht'));
+    await tester.pumpAndSettle();
+
+    final field = find.descendant(of: find.byKey(ValueKey('section-field-${e.report[0].id}')), matching: find.byType(TextField));
+    await tester.enterText(field, 'Gerade getippt');
+    // Sofort übernehmen – die Pause von 700 ms ist noch nicht um.
+    await tester.ensureVisible(find.byKey(ValueKey('draft-adopt-${e.report[0].id}')));
+    await tester.tap(find.byKey(ValueKey('draft-adopt-${e.report[0].id}')));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    expect(labs.byId('lab1')!.report[0].text, 'Gerade getippt\n\nDer Entwurf.');
+    expect(labs.byId('lab1')!.report[0].draft, '');
+  });
+
   testWidgets('Entwurf kopieren legt den Text in die Zwischenablage', (tester) async {
     var e = _experiment();
     e = e.updateSection(e.report[0].id, (s) => s.copyWith(draft: 'Nur zum Kopieren'));

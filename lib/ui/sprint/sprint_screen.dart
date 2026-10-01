@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/calc_tasks_toggle.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../services/calc_task_detector.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/stage_gate_service.dart';
@@ -44,6 +46,7 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
   bool _isNewBest = false;
   bool _usedYellowFallback = false;
   Timer? _timer;
+  bool _hasCalcCards = false;
 
   @override
   void initState() {
@@ -62,9 +65,13 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
     // Nur die gerade freigeschaltete Stufe je Gruppe (siehe StageGate).
     // Lernaufgaben sind zu lang für die Sekunden-Runde – sie bleiben im
     // normalen Lernen und im Aufgaben-Ordner.
-    final cards = StageGate.learnable(await context.read<FlashcardRepository>().loadAll())
-        .where((c) => c.type != QuestionType.learn)
+    final includeCalc = CalcTasksToggle.includeOf(context);
+    final all = StageGate.learnable(await context.read<FlashcardRepository>().loadAll());
+    // Schalter "Rechenaufgaben" (siehe CalcTasksToggle): aus → ohne sie.
+    final cards = all
+        .where((c) => c.type != QuestionType.learn && (includeCalc || !CalcTaskDetector.isCalcTask(c)))
         .toList();
+    _hasCalcCards = all.any(CalcTaskDetector.isCalcTask);
     final mastery = MasteryService();
     var pool = cards.where((c) => mastery.levelFor(c) == MasteryLevel.red).toList();
     var usedFallback = false;
@@ -139,11 +146,22 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
       body: SafeArea(
         child: switch (_phase) {
           _Phase.loading => const Center(child: CircularProgressIndicator()),
-          _Phase.intro => _IntroView(
-              count: _queue.length,
-              usedYellowFallback: _usedYellowFallback,
-              bestScore: bestScore,
-              onStart: _queue.length >= _minPoolSize ? _start : null,
+          _Phase.intro => Column(
+              children: [
+                if (_hasCalcCards)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: CalcTasksToggle(onChanged: (_) => _loadPool()),
+                  ),
+                Expanded(
+                  child: _IntroView(
+                    count: _queue.length,
+                    usedYellowFallback: _usedYellowFallback,
+                    bestScore: bestScore,
+                    onStart: _queue.length >= _minPoolSize ? _start : null,
+                  ),
+                ),
+              ],
             ),
           _Phase.playing => _index >= _queue.length
               ? const SizedBox.shrink()

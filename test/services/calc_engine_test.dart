@@ -120,10 +120,42 @@ void main() {
       expect(CalcEngine.isValidSymbol('R_1'), isTrue);
       expect(CalcEngine.isValidSymbol('Δt'), isTrue);
       expect(CalcEngine.isValidSymbol('1R'), isFalse);
-      expect(CalcEngine.isValidSymbol('sqrt'), isFalse);
+      // Funktionsnamen sind als Größe erlaubt (n = Drehzahl, rad, exp …) –
+      // der Aufruf erkennt sich an der Klammer. Nur Konstanten nicht.
+      expect(CalcEngine.isValidSymbol('n'), isTrue);
+      expect(CalcEngine.isValidSymbol('sqrt'), isTrue);
       expect(CalcEngine.isValidSymbol('pi'), isFalse);
+      expect(CalcEngine.isValidSymbol('e'), isFalse);
       expect(CalcEngine.isValidSymbol('a b'), isFalse);
       expect(CalcEngine.isValidSymbol(''), isFalse);
+    });
+
+    test('Größe mit Funktionsnamen: als Wert gelesen, mit Klammer als Funktion', () {
+      expect(_one('n * 60', {'n': [25.0]}), 1500);
+      expect(_one('n(x)', {'x': [1.0, 2.0, 3.0]}), 3); // Anzahl
+      expect(_one('exp + 1', {'exp': [2.0]}), 3);
+      expect(_one('exp(0) + exp', {'exp': [2.0]}), 3);
+      expect(CalcEngine.variablesOf('n * 60 + count(x)'), {'n', 'x'});
+    });
+
+    test('Ausnahmen werden zu Meldungen: min/max ohne Wert, round mit unendlich vielen Stellen', () {
+      expect(() => _one('max()'), throwsA(isA<CalcException>()));
+      expect(() => _one('min()'), throwsA(isA<CalcException>()));
+      expect(() => _one('round(2.5; 1/0)'), throwsA(isA<CalcException>()));
+      expect(_one('round(3.14159; 400)'), closeTo(3.14159, 1e-9)); // Stellen begrenzt
+    });
+
+    test('Einsetzen: negative Werte und Werte mit Einheit an Potenzen in Klammern', () {
+      expect(CalcEngine.substitute('x^2', {'x': '-3'}), '(-3)^2');
+      expect(CalcEngine.substitute('a - b', {'a': '5', 'b': '-2'}), '5 - (-2)');
+      expect(CalcEngine.substitute('l^2', {'l': '3 m'}), '(3 m)^2');
+      expect(CalcEngine.substitute('2^k', {'k': '3'}), '2^3');
+      expect(CalcEngine.substitute('U / I', {'U': '12,3 V', 'I': '0,45 A'}), '12,3 V / 0,45 A');
+    });
+
+    test('Einsetzen scheitert nie an einem unlesbaren Ausdruck', () {
+      expect(CalcEngine.substitute('U / I %', {'U': '1'}), 'U / I %');
+      expect(CalcEngine.substitute('x²', const {}), 'x²');
     });
 
     test('Einsetzen: Zahlen statt Größen, Malpunkt, deutsches Komma', () {
@@ -154,6 +186,17 @@ void main() {
       expect(CalcEngine.parseNumber('2,2 × 10⁻⁶'), closeTo(2.2e-6, 1e-18));
       expect(CalcEngine.parseNumber('3*10^8'), 3e8);
       expect(CalcEngine.parseNumber('4.7E3'), 4700);
+    });
+
+    test('Eingaben in der App: Punkt vor drei Ziffern ist der Tausendertrenner', () {
+      expect(CalcEngine.parseNumber('4.700', germanGrouping: true), 4700);
+      expect(CalcEngine.parseNumber('1.234.567', germanGrouping: true), 1234567);
+      expect(CalcEngine.parseNumber('1.234,5', germanGrouping: true), 1234.5);
+      expect(CalcEngine.parseNumber('0.450', germanGrouping: true), 0.45); // führende Null: Dezimalpunkt
+      expect(CalcEngine.parseNumber('4.7', germanGrouping: true), 4.7);
+      expect(CalcEngine.parseNumber('4,7', germanGrouping: true), 4.7);
+      // Werte der KI: Punkt = Dezimalpunkt.
+      expect(CalcEngine.parseNumber('4.700'), 4.7);
     });
 
     test('keine Zahl → null (Einheiten gehören nicht dazu)', () {

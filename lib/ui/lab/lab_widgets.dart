@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../widgets/math_text.dart';
 import '../../models/lab_experiment.dart';
 import '../../services/lab_context_service.dart';
 import '../../theme/app_colors.dart';
@@ -103,12 +104,29 @@ class LabAnswerField extends StatefulWidget {
 
   @override
   State<LabAnswerField> createState() => _LabAnswerFieldState();
+
+  static final Set<_LabAnswerFieldState> _active = {};
+
+  /// Speichert sofort, was in irgendeinem Feld noch auf die Pause wartet – vor
+  /// Änderungen, die den gespeicherten Text von außen fortschreiben (z.B. einen
+  /// Entwurf übernehmen), damit danach kein veralteter Stand zurückgeschrieben wird.
+  static void flushPending() {
+    for (final state in [..._active]) {
+      state._flush();
+    }
+  }
 }
 
 class _LabAnswerFieldState extends State<LabAnswerField> {
   late final TextEditingController _controller = TextEditingController(text: widget.initial);
   late String _saved = widget.initial;
   Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    LabAnswerField._active.add(this);
+  }
 
   void _schedule(String _) {
     _timer?.cancel();
@@ -124,6 +142,7 @@ class _LabAnswerFieldState extends State<LabAnswerField> {
 
   @override
   void dispose() {
+    LabAnswerField._active.remove(this);
     _timer?.cancel();
     // Noch nicht Gespeichertes geht nicht verloren – aber erst nach dem Aufräumen
     // des Baums: Speichern benachrichtigt die Oberfläche, und das darf nicht
@@ -277,7 +296,7 @@ class LabFeedbackView extends StatelessWidget {
           ),
           if (feedback.summary.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(feedback.summary, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink)),
+            MathText(feedback.summary, style: TextStyle(fontSize: 13.5, height: 1.4, color: c.ink)),
           ],
           if (feedback.missing.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -322,7 +341,7 @@ class _Bullet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('•  '),
-            Expanded(child: Text(text, style: const TextStyle(fontSize: 13, height: 1.35))),
+            Expanded(child: MathText(text, style: const TextStyle(fontSize: 13, height: 1.35))),
           ],
         ),
       );
@@ -383,7 +402,7 @@ class LabQuestionCard extends StatelessWidget {
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.accentOnSoft)),
                 ),
               Expanded(
-                child: Text(question.text,
+                child: MathText(question.text,
                     style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, height: 1.35)),
               ),
               if (onEdit != null || onDelete != null)

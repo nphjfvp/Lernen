@@ -56,7 +56,7 @@ void main() {
     test('Unbrauchbares fällt weg und steht in den Problemen', () {
       final plan = CalcPlan.fromJson({
         'given': [
-          {'symbol': 'sqrt', 'value': 1}, // reservierter Name
+          {'symbol': 'pi', 'value': 1}, // Konstante – als Name nicht erlaubt
           {'symbol': 'a', 'value': 'viel'}, // keine Zahl
           {'symbol': 'b', 'value': 2},
           {'symbol': 'b', 'value': 3}, // doppelt
@@ -147,8 +147,59 @@ void main() {
     });
 
     test('ungültiger Name eines Schritts wird gemeldet, nicht gerechnet', () {
-      final plan = CalcPlan(steps: const [CalcStep(symbol: 'sqrt', expression: '1 + 1')]);
+      final plan = CalcPlan(steps: const [CalcStep(symbol: 'pi', expression: '1 + 1')]);
       expect(plan.evaluate().single.error, contains('kein gültiger Name'));
+    });
+  });
+
+  group('Robust gegen unbrauchbare Formeln der KI', () {
+    test('ein unlesbarer Schritt scheitert allein; Rechenweg als Text bricht nicht ab', () {
+      final plan = CalcPlan.fromJson({
+        'given': [
+          {'symbol': 'U', 'value': 10, 'unit': 'V'},
+          {'symbol': 'I', 'value': 2, 'unit': 'A'},
+        ],
+        'steps': [
+          {'symbol': 'R', 'expression': 'U / I %', 'name': 'Prozent'},
+          {'symbol': 'Q', 'expression': 'x²', 'name': 'Hochzahl'},
+          {'symbol': 'M', 'expression': 'max()', 'name': 'leer'},
+          {'symbol': 'P', 'expression': 'U * I', 'unit': 'W'},
+        ],
+      });
+      final results = plan.evaluate();
+      expect(results.take(3).every((r) => !r.ok), isTrue);
+      expect(results[3].values, [20.0]);
+      final text = plan.asText(results);
+      expect(text, contains('R = U / I % – nicht berechenbar'));
+      expect(text, contains('Q = x² – nicht berechenbar'));
+      expect(text, contains('P = U · I = 10 V · 2 A = 20 W'));
+    });
+
+    test('Größe "n" (Drehzahl) wird angenommen und rechnet', () {
+      final plan = CalcPlan.fromJson({
+        'given': [
+          {'symbol': 'n', 'value': 25, 'unit': '1/s', 'name': 'Drehzahl'},
+        ],
+        'steps': [
+          {'symbol': 'omega', 'expression': '2 * pi * n', 'unit': '1/s'},
+        ],
+      });
+      expect(plan.problems, isEmpty);
+      expect(plan.evaluate().single.values!.single, closeTo(157.08, 1e-2));
+    });
+
+    test('negative Werte stehen im Rechenweg in Klammern', () {
+      final plan = CalcPlan.fromJson({
+        'given': [
+          {'symbol': 'x', 'value': -3},
+        ],
+        'steps': [
+          {'symbol': 'y', 'expression': 'x^2'},
+        ],
+      });
+      final r = plan.evaluate().single;
+      expect(r.values, [9.0]);
+      expect(r.substitution, '(-3)^2');
     });
   });
 

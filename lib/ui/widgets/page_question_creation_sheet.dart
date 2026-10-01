@@ -162,6 +162,7 @@ List<List<Flashcard>> buildPageQuestionCards(
         // Daily Quiz auftauchen statt hinter einem Altbestand zu warten
         // (siehe Flashcard.priorityIntroduction).
         priorityIntroduction: true,
+        needsCalculator: QuestionParsing.parseCalcFlag(fixed),
         options: QuestionParsing.parseOptions(fixed['options']),
         correctText: fixed['correctText'] as String?,
         blanks: QuestionParsing.parseBlanks(fixed['blanks']),
@@ -240,6 +241,7 @@ Flashcard mergeTiersIntoChain(List<Flashcard> tiers) {
     pendingVariants: pending,
     unitId: base.unitId,
     priorityIntroduction: base.priorityIntroduction,
+    needsCalculator: base.needsCalculator,
     sourceMaterialId: base.sourceMaterialId,
     sourcePage: base.sourcePage,
     miniLesson: base.miniLesson,

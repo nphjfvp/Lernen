@@ -32,7 +32,7 @@ class _CalcGivenRowState extends State<CalcGivenRow> {
 
   void _edited(String text) {
     final parts = text.split(RegExp(r'[;\n]')).map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
-    final values = [for (final p in parts) CalcEngine.parseNumber(p)];
+    final values = [for (final p in parts) CalcEngine.parseNumber(p, germanGrouping: true)];
     if (parts.isEmpty || values.contains(null)) {
       setState(() => _error = parts.isEmpty ? 'Bitte einen Wert eingeben.' : 'Das ist keine Zahl.');
       return;
@@ -153,7 +153,7 @@ class CalcStepCard extends StatelessWidget {
           if (step.explanation.trim().isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(step.explanation.trim(), style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.35)),
+              child: MathText(step.explanation.trim(), style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.35)),
             ),
           const SizedBox(height: 8),
           if (!result.ok)

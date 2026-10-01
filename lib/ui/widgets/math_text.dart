@@ -9,17 +9,19 @@ import '../../services/math_markup.dart';
 /// Formel, die sich nicht setzen lässt, erscheint als Rohtext statt die
 /// Karte unbenutzbar zu machen.
 class MathText extends StatelessWidget {
-  const MathText(this.text, {super.key, this.style, this.textAlign});
+  const MathText(this.text, {super.key, this.style, this.textAlign, this.maxLines, this.overflow});
 
   final String text;
   final TextStyle? style;
   final TextAlign? textAlign;
+  final int? maxLines;
+  final TextOverflow? overflow;
 
   @override
   Widget build(BuildContext context) {
     final segments = MathMarkup.split(text);
     if (!segments.any((s) => s.isMath)) {
-      return Text(text, style: style, textAlign: textAlign);
+      return Text(text, style: style, textAlign: textAlign, maxLines: maxLines, overflow: overflow);
     }
     final effective = DefaultTextStyle.of(context).style.merge(style);
     final spans = <InlineSpan>[];
@@ -47,6 +49,12 @@ class MathText extends StatelessWidget {
         spans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, baseline: TextBaseline.alphabetic, child: math));
       }
     }
-    return Text.rich(TextSpan(children: spans), style: style, textAlign: textAlign);
+    return Text.rich(
+      TextSpan(children: spans),
+      style: style,
+      textAlign: textAlign,
+      maxLines: maxLines,
+      overflow: overflow,
+    );
   }
 }

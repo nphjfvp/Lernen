@@ -288,7 +288,7 @@ class _PageQaPanelState extends State<PageQaPanel> {
                 children: [
                   Text('Seite ${t.page}', style: TextStyle(fontSize: 11, color: c.inkMuted)),
                   const SizedBox(height: 2),
-                  Text(t.question, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.35)),
+                  MathText(t.question, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.35)),
                   const SizedBox(height: 4),
                   MathText(t.answer, style: TextStyle(fontSize: 13.5, color: c.ink, height: 1.45)),
                   const SizedBox(height: 4),
@@ -391,7 +391,7 @@ class _PageQaPanelState extends State<PageQaPanel> {
               if (n.question.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 2, bottom: 4),
-                  child: Text(n.question, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.35)),
+                  child: MathText(n.question, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.35)),
                 ),
               MathText(n.text, style: TextStyle(fontSize: 13, color: c.ink, height: 1.45)),
             ],

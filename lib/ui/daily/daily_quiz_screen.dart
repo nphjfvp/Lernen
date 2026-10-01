@@ -10,11 +10,13 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/daily_session_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../services/calc_task_detector.dart';
 import '../../services/daily_scheduler_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/home_widget_service.dart';
 import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/calc_tasks_toggle.dart';
 import '../widgets/floating_nav_bar.dart';
 import 'card_review_mixin.dart';
 import 'question_answer_view.dart';
@@ -89,6 +91,9 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
   /// den Plan neu berechnen, ohne eine laufende Karte zu unterbrechen.
   int _answeredSinceLoad = 0;
 
+  /// Gibt es überhaupt Rechenaufgaben? Nur dann steht der Schalter da.
+  bool _hasCalcCards = false;
+
   bool get _sessionFinished {
     final plan = _plan;
     return plan != null && _index >= plan.total && _wrongQueue.isEmpty && _bonusQueue.isEmpty;
@@ -135,6 +140,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     final modules = context.read<ModuleRepository>().modules;
     final flashcardRepo = context.read<FlashcardRepository>();
     final lectureUnitRepo = context.read<LectureUnitRepository>();
+    final includeCalc = CalcTasksToggle.includeOf(context);
     final allCards = await flashcardRepo.loadAll();
     final unitCoveredById = await lectureUnitRepo.loadAllCoveredById();
     final now = DateTime.now();
@@ -146,7 +152,15 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       allCards: allCards,
       unitCoveredById: unitCoveredById,
       introducedTodayByModule: introducedToday,
+      includeCalcTasks: includeCalc,
     );
+    // Heute zurückgestellte Rechenaufgaben merken – sobald sie wieder dabei sind,
+    // kommen sie zuerst und zusätzlich dran (siehe DailySchedulerService).
+    final toMark = [
+      for (final card in plan.deferredCalc)
+        if (card.calcDeferredAt == null) card.copyWithCalcDeferred(now),
+    ];
+    if (toMark.isNotEmpty) unawaited(flashcardRepo.updateAll(toMark));
     unawaited(HomeWidgetService().refresh(
       modules: modules,
       allCards: allCards,
@@ -157,6 +171,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     final plannedIds = {for (final c in plan.allCards) c.id};
     setState(() {
       _plan = plan;
+      _hasCalcCards = allCards.any(CalcTaskDetector.isCalcTask);
       _session = session;
       _index = 0;
       _answeredSinceLoad = 0;
@@ -168,7 +183,11 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         ..clear()
         ..addAll([
           for (final id in session.wrongIds)
-            if (cardsById[id] != null && !plannedIds.contains(id) && !stages.containsKey(id)) cardsById[id]!,
+            if (cardsById[id] != null &&
+                !plannedIds.contains(id) &&
+                !stages.containsKey(id) &&
+                (includeCalc || !CalcTaskDetector.isCalcTask(cardsById[id]!)))
+              cardsById[id]!,
         ]);
       _wrongAttempts
         ..clear()
@@ -216,6 +235,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       allCards: allCards,
       unitCoveredById: unitCoveredById,
       excludeIds: excludeIds,
+      includeCalcTasks: CalcTasksToggle.includeOf(context),
     );
     if (!mounted) return;
     setState(() {
@@ -357,10 +377,37 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         loading: _bonusLoading,
       );
     }
+    if (_hasCalcCards && plan != null) {
+      body = Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: CalcTasksToggle(
+              note: _calcNote(plan),
+              // Umschalten plant den Tag neu – der Tagesfortschritt (beantwortete,
+              // heute eingeführte Karten) bleibt dabei erhalten.
+              onChanged: (_) => _loadPlan(),
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      );
+    }
     // Der Daily-Quiz-Tab liegt unter der schwebenden Navigationsleiste (siehe
     // RootShell): ohne freien Platz darunter verschwänden "Weiter" und die
     // Antwortknöpfe hinter ihr und ließen sich nicht antippen.
     return Material(color: c.bg, child: SafeArea(child: FloatingNavClearance(child: body)));
+  }
+
+  String? _calcNote(DailyPlan plan) {
+    final deferred = plan.deferredCalc.length;
+    if (deferred > 0) {
+      return '$deferred Rechenaufgabe${deferred == 1 ? '' : 'n'} heute aufgehoben – kommt am Schreibtisch bevorzugt dran.';
+    }
+    if (plan.calcCatchUp > 0) {
+      return '${plan.calcCatchUp} aufgehobene Rechenaufgabe${plan.calcCatchUp == 1 ? '' : 'n'} heute zusätzlich dabei.';
+    }
+    return null;
   }
 }
 

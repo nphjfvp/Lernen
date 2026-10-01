@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../widgets/math_text.dart';
 import '../../models/app_settings.dart';
 import '../../models/concept.dart';
 import '../../models/flashcard.dart';
@@ -1054,6 +1055,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         due: now,
         type: type,
         unitId: unitId,
+        needsCalculator: QuestionParsing.parseCalcFlag(f),
         options: QuestionParsing.parseOptions(f['options']),
         correctText: f['correctText'] as String?,
         blanks: QuestionParsing.parseBlanks(f['blanks']),
@@ -1695,13 +1697,13 @@ class _PreviewView extends StatelessWidget {
               const SizedBox(height: 16),
               ...concepts.map((c) => Card(
                     child: ExpansionTile(
-                      title: Text((c['title'] ?? '').toString()),
+                      title: MathText((c['title'] ?? '').toString()),
                       children: [
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: Text((c['explanation'] ?? '').toString()),
+                            child: MathText((c['explanation'] ?? '').toString()),
                           ),
                         ),
                       ],
@@ -1720,11 +1722,11 @@ class _PreviewView extends StatelessWidget {
                 return Card(
                   child: ListTile(
                     leading: Icon(_iconFor(type)),
-                    title: Text((f['front'] ?? '').toString()),
+                    title: MathText((f['front'] ?? '').toString()),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('${type.label} · ${_answerPreview(f, type)}'),
+                        MathText('${type.label} · ${_answerPreview(f, type)}'),
                         if (QuestionParsing.parseStageLevel(f['level']) case final level?)
                           Text(
                             f['variantOf'] != null

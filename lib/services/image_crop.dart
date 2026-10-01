@@ -69,3 +69,29 @@ Future<Uint8List?> downscaleImage(Uint8List bytes, {int maxSide = 1280}) async {
     return null;
   }
 }
+
+/// Größe, bis zu der ein Bild unverändert an die KI geht.
+const aiImageMaxBytes = 1500 * 1024;
+
+/// Bereitet ein Foto für eine KI-Anfrage vor: ein JPEG/WebP (Handyfoto), das
+/// klein genug ist, geht unverändert mit – es neu als PNG zu speichern, machte es
+/// nur größer. Sonst wird verkleinert (1600, 1280, 1024, 800 px längste Seite),
+/// bis die Datei unter [maxBytes] liegt; mehrere große PNGs würden die Anfrage
+/// sonst über die Grenzen der Modelle treiben.
+Future<Uint8List> prepareImageForAi(Uint8List bytes, {int maxBytes = aiImageMaxBytes}) async {
+  final compressed = bytes.length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 ||
+      bytes.length > 11 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[8] == 0x57 && bytes[9] == 0x45;
+  if (compressed && bytes.length <= maxBytes) return bytes;
+  if (!compressed && bytes.length <= maxBytes) {
+    final size = await imageSizeOf(bytes);
+    if (size == null || max(size.width, size.height) <= 1600) return bytes;
+  }
+  Uint8List best = bytes;
+  for (final side in const [1600, 1280, 1024, 800]) {
+    final resized = await downscaleImage(bytes, maxSide: side);
+    if (resized == null) break;
+    if (resized.length < best.length) best = resized;
+    if (resized.length <= maxBytes) return resized;
+  }
+  return best;
+}

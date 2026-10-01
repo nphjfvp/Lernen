@@ -110,7 +110,7 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> with SafeSetState<M
           '"Mit Materialien" aus, um allgemein zu fragen.');
       return;
     }
-    final modelInfo = context.read<ModelCatalogRepository>().byId(settings.questionModelId);
+    final modelInfo = context.read<ModelCatalogRepository>().byId(settings.effectiveHelpModelId);
     final history = chatRepo.forModule(widget.moduleId);
     final recentHistory = history.length > 12 ? history.sublist(history.length - 12) : history;
     final historyTurns = [
@@ -135,7 +135,7 @@ class _ModuleChatScreenState extends State<ModuleChatScreen> with SafeSetState<M
     _scrollToBottom();
 
     try {
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.effectiveHelpModelId);
 
       String? materialsContext;
       // Dateinamen der tatsächlich als Kontext genutzten Materialien – null,

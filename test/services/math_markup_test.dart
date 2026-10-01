@@ -31,6 +31,47 @@ void main() {
       ]);
     });
 
+    test('Formeln ohne Dollarzeichen werden erkannt, Fließtext bleibt Text', () {
+      expect(MathMarkup.split(r'Es gilt U = R \cdot I. Danach weiter.'), [
+        const MathSegment.text('Es gilt '),
+        const MathSegment.inline(r'U = R \cdot I'),
+        const MathSegment.text('. Danach weiter.'),
+      ]);
+      expect(MathMarkup.split(r'Der Widerstand ist \frac{U}{I} = 5 \Omega'), [
+        const MathSegment.text('Der Widerstand ist '),
+        const MathSegment.inline(r'\frac{U}{I} = 5 \Omega'),
+      ]);
+      expect(MathMarkup.split('Fläche x^{2} rechnen'), [
+        const MathSegment.text('Fläche '),
+        const MathSegment.inline('x^{2}'),
+        const MathSegment.text(' rechnen'),
+      ]);
+      // Zeilen bleiben getrennt.
+      final lines = MathMarkup.split('Erst \\alpha\nDann Text');
+      expect(lines.where((s) => s.isMath).single.content, r'\alpha');
+      expect(lines.last, const MathSegment.text('\nDann Text'));
+    });
+
+    test('kein Fehlalarm: Pfade, normale Sätze, Hochkomma-Formeln ohne Befehl', () {
+      expect(MathMarkup.containsMath(r'Datei unter C:\Users\name\skript.pdf'), isFalse);
+      expect(MathMarkup.containsMath('Die Spannung U ist 5 V.'), isFalse);
+      expect(MathMarkup.containsMath('Siehe Seite 3 von 10'), isFalse);
+    });
+
+    test('Formel in Backticks und mit Leerzeichen innen', () {
+      expect(MathMarkup.split(r'Formel: `\sqrt{a^2+b^2}`'), [
+        const MathSegment.text('Formel: '),
+        const MathSegment.inline(r'\sqrt{a^2+b^2}'),
+      ]);
+      expect(MathMarkup.split(r'Also $ U = R \cdot I $ gilt.'), [
+        const MathSegment.text('Also '),
+        const MathSegment.inline(r' U = R \cdot I '),
+        const MathSegment.text(' gilt.'),
+      ]);
+      // Code ohne LaTeX bleibt Code-Text.
+      expect(MathMarkup.containsMath('Befehl `ls -la` ausführen'), isFalse);
+    });
+
     test('Geldbeträge sind keine Formeln', () {
       expect(MathMarkup.containsMath(r'Das kostet 5 $ bis 10 $.'), isFalse);
       expect(MathMarkup.containsMath(r'Zwischen $5 und $10 am Tag'), isFalse);
@@ -43,6 +84,16 @@ void main() {
   });
 
   group('MathMarkup.escapeLatexInJson', () {
+    test('LaTeX ohne Dollarzeichen in JSON wird nicht zu Steuerzeichen', () {
+      final decoded = jsonDecode(MathMarkup.escapeLatexInJson(r'{"a": "Es gilt \frac{U}{I} und \beta, \theta, \nabla, \rho"}'));
+      expect(decoded['a'], r'Es gilt \frac{U}{I} und \beta, \theta, \nabla, \rho');
+    });
+
+    test('echte Zeilenumbrüche und Tabs außerhalb von Formeln bleiben', () {
+      final decoded = jsonDecode(MathMarkup.escapeLatexInJson(r'{"a": "Zeile 1\nund weiter\tab\nnur"}'));
+      expect(decoded['a'], 'Zeile 1\nund weiter\tab\nnur');
+    });
+
     test(r'einfache Backslashes in Formeln werden gerettet (\frac, \theta, \nabla)', () {
       const raw = r'{"front": "Was ist $\frac{a}{b}$ bei $\theta$ und $\nabla f$?"}';
       final decoded = jsonDecode(MathMarkup.escapeLatexInJson(raw)) as Map;

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../widgets/math_text.dart';
 import '../../models/concept.dart';
 import '../../models/flashcard.dart';
 import '../../models/lecture_unit.dart';
@@ -326,7 +327,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                                 data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                                 child: ExpansionTile(
                                   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-                                  title: Text(concept.title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+                                  title: MathText(concept.title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
                                   iconColor: c.inkMuted,
                                   collapsedIconColor: c.inkMuted,
                                   children: [
@@ -334,7 +335,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                                       child: Align(
                                         alignment: Alignment.centerLeft,
-                                        child: Text(concept.explanation, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5)),
+                                        child: MathText(concept.explanation, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5)),
                                       ),
                                     ),
                                     Padding(

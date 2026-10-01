@@ -166,7 +166,7 @@ class _LabDraftScreenState extends State<LabDraftScreen> with SafeSetState<LabDr
     if (picked.isEmpty) return;
     final prepared = <({String name, Uint8List bytes})>[];
     for (final p in picked.take(4 - _images.length)) {
-      prepared.add((name: p.name, bytes: await downscaleImage(p.bytes, maxSide: 1600) ?? p.bytes));
+      prepared.add((name: p.name, bytes: await prepareImageForAi(p.bytes)));
     }
     setState(() => _images.addAll(prepared));
   }

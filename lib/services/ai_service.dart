@@ -127,6 +127,15 @@ beantworten können:
      Formulierung ablesen (z.B. kein Lückenwort, das im selben Satz steht).
 ''';
 
+  /// Markierung von Rechenaufgaben (Schalter "Rechenaufgaben" beim Lernen, siehe
+  /// CalcTaskDetector) – in allen Prompts, die Fragen erzeugen oder übernehmen.
+  static const _calcFlagRule = '''
+RECHENAUFGABEN MARKIEREN: Setze bei jeder Frage "calc": true, wenn man zum
+Lösen echt rechnen muss (Taschenrechner, mehrere Rechenschritte, Formeln mit
+Messwerten, Einheiten umrechnen) – sonst "calc": false. Kopfrechnen wie 2·3,
+das Nennen einer Formel oder reines Wissen ist KEINE Rechenaufgabe.
+''';
+
   static const externalJsonPromptTemplate = '''
 Du hilfst mir, Lernmaterial für die App "Lernen" aufzubereiten. Ich füge dir
 unten den Text eines Dokuments an (Klausur, Übungsblatt, Folien o.ä.).
@@ -207,6 +216,7 @@ sondern möglichst den spezifischsten:
          Desktop statt Android/iOS).
 
 $_noGiveawayRule
+$_calcFlagRule
 JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
 enthalten (siehe Beispiele oben) – ein Eintrag mit nur "front" und sonst
 nichts ist ungültig und wird von der App verworfen. Enthält das Dokument zu
@@ -479,6 +489,7 @@ Tabelle) behalten diese Form. Wähle pro Frage den zum Inhalt passenden Typ:
      Geräten ohne WebView-Unterstützung (z.B. Windows-Desktop).
 
 $_noGiveawayRule
+$_calcFlagRule
 JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
 enthalten (siehe Beispiele unten) – ein Eintrag mit nur "front" und sonst
 nichts ist ungültig und wird verworfen.
@@ -624,6 +635,7 @@ im "front" als "___" markiert, "blanks" mit den Lösungen), "free_text"
 ist Pflicht) – wie im Hauptformat des Nachbereiten-Modus.
 
 $_noGiveawayRule
+$_calcFlagRule
 
 Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 \$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
@@ -759,6 +771,7 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {"flashcards": [
   {"type": "single_choice", "front": "Originalfrage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
 ]}
+$_calcFlagRule
 Übernimm ALLE im Dokument vorhandenen Fragen mit erkennbarer Lösung, auch
 wenn es viele sind. Antworte in der Sprache der Vorlage.
 ''';
@@ -878,6 +891,7 @@ Text davor oder danach:
 "pages" nennt JEDE gezeigte Seite mit der Zahl der Aufgaben, die du dort
 gefunden hast (auch 0) – so lässt sich prüfen, dass du alle Seiten gelesen
 hast. Stehen auf den Seiten keine passenden Fragen: "questions": [].
+$_calcFlagRule
 Antworte in der Sprache des Dokuments.
 ''';
 
@@ -1317,6 +1331,7 @@ Typ der Varianten:
 {{TYPE_RULES}}
 
 $_noGiveawayRule
+$_calcFlagRule
 Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 \$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
 (z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
@@ -1488,6 +1503,7 @@ Stufe hat möglichst einen anderen Typ als die übrigen Stufen derselben
 Frage.
 
 $_noGiveawayRule
+$_calcFlagRule
 Formatvorgaben der Fragetypen:
 {{TYPE_RULES}}
 
@@ -3431,7 +3447,11 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
             ],
           ];
     final raw = await _complete(_labDraftSystemPrompt, content, temperature: 0.4);
-    final draft = LabReportDraft.fromJson(_parseJsonObject(raw), knownSectionIds: {for (final s in sections) s.id});
+    final draft = LabReportDraft.fromJson(
+      _parseJsonObject(raw),
+      knownSectionIds: {for (final s in sections) s.id},
+      sectionTitles: {for (final s in sections) s.id: s.title},
+    );
     if (draft.isEmpty) {
       throw AiServiceException('Die KI hat keinen brauchbaren Entwurf geliefert – bitte erneut versuchen.', rawResponse: raw);
     }

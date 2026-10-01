@@ -11,6 +11,7 @@ import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../services/calc_task_detector.dart';
 import '../../services/ai_service.dart';
 import '../../services/answer_checker.dart';
 import '../../services/card_csv_service.dart';
@@ -1110,6 +1111,7 @@ class _FlashcardTile extends StatelessWidget {
       if (stage != StageStatus.active) stage.label,
       if (stage == StageStatus.active) card.reps == 0 ? 'Neu' : 'fällig ${_formatDate(card.due)}',
       if (card.weight != 1.0 && !card.isMuted) '${formatWeight(card.weight)}× gewichtet',
+      if (CalcTaskDetector.isCalcTask(card)) card.calcDeferredAt != null ? 'Rechenaufgabe · aufgehoben' : 'Rechenaufgabe',
       if (card.hasScript) 'Erklärung im Skript, S. ${card.scriptPage}',
       if ((card.type == QuestionType.dragDrop || card.type == QuestionType.dragCategory) &&
           AnswerChecker.isTrivialDrag(card))
@@ -1135,7 +1137,7 @@ class _FlashcardTile extends StatelessWidget {
         ListTile(
           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
           leading: Checkbox(value: selected, onChanged: (_) => onToggleSelected()),
-          title: Text(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+          title: MathText(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
           subtitle: Text(statusParts.join(' · '), style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
           onTap: onToggleSelected,
         ),
@@ -1150,7 +1152,7 @@ class _FlashcardTile extends StatelessWidget {
           child: ExpansionTile(
             shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
             leading: MasteryDot(level: level),
-            title: Text(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+            title: MathText(card.front, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
             subtitle: Text(
               statusParts.join(' · '),
               style: TextStyle(fontSize: 11.5, color: c.inkMuted),
@@ -1389,7 +1391,7 @@ class _AnswerDetail extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
+                          child: MathText(
                             o.text,
                             style: TextStyle(
                               fontSize: 12.5,
@@ -1420,7 +1422,7 @@ class _AnswerDetail extends StatelessWidget {
           children: blanks
               .asMap()
               .entries
-              .map((e) => Text(
+              .map((e) => MathText(
                     'Lücke ${e.key + 1}: ${e.value}',
                     style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.4),
                   ))
@@ -1438,7 +1440,7 @@ class _AnswerDetail extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: pairs
-              .map((p) => Text(
+              .map((p) => MathText(
                     '${p.source} → ${p.target}',
                     style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.4),
                   ))
@@ -1446,7 +1448,7 @@ class _AnswerDetail extends StatelessWidget {
         );
 
       case QuestionType.html:
-        return Text(
+        return MathText(
           card.back.isEmpty ? '(Interaktive Seite – Antwort-Prüfung steckt im HTML-Inhalt.)' : card.back,
           style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5),
         );

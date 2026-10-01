@@ -72,7 +72,7 @@ class _WeaknessScreenState extends State<WeaknessScreen> {
       _analysisError = null;
     });
     try {
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.effectiveHelpModelId);
       final items = [
         for (final w in _visible.take(_batchSize))
           (
@@ -221,7 +221,7 @@ class _WeakCardTile extends StatelessWidget {
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             leading: MasteryDot(level: weak.level),
-            title: Text(card.front, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
+            title: MathText(card.front, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
             subtitle: Text(
               [if (moduleName.isNotEmpty) moduleName, card.type.label, ...weak.reasons].join(' · '),
               style: TextStyle(fontSize: 11.5, color: c.inkMuted),

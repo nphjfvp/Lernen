@@ -43,7 +43,7 @@ class MathMarkup {
 
     void flushText() {
       if (buffer.isEmpty) return;
-      segments.add(MathSegment.text(buffer.toString()));
+      segments.addAll(_bareMath(buffer.toString()));
       buffer.clear();
     }
 
@@ -85,6 +85,19 @@ class MathMarkup {
         i += 2;
         continue;
       }
+      if (ch == '`' && next != '`') {
+        // Formel in Code-Backticks (Markdown der KI): `\frac{a}{b}`.
+        final end = text.indexOf('`', i + 1);
+        if (end != -1) {
+          final content = text.substring(i + 1, end).trim();
+          if (!content.contains('\n') && looksLikeLatex(content)) {
+            flushText();
+            segments.add(MathSegment.inline(content.replaceAll(RegExp(r'^\$+|\$+$'), '').trim()));
+            i = end + 1;
+            continue;
+          }
+        }
+      }
       if (ch == '\$') {
         final end = _findInlineClose(text, i);
         if (end != -1) {
@@ -104,7 +117,10 @@ class MathMarkup {
   static int _findInlineClose(String text, int open) {
     if (open + 1 >= text.length) return -1;
     final first = text[open + 1];
-    if (first.trim().isEmpty || first == '\$') return -1;
+    if (first == '\$') return -1;
+    // Leerzeichen innen ("$ U = R \cdot I $") nur, wenn es eindeutig eine Formel
+    // ist – sonst bliebe "5 $ bis 10 $" kein Geldbetrag.
+    final spacedOpen = first.trim().isEmpty;
     for (var j = open + 1; j < text.length; j++) {
       final c = text[j];
       if (c == '\n') return -1;
@@ -115,11 +131,121 @@ class MathMarkup {
       if (c != '\$') continue;
       final before = text[j - 1];
       final after = j + 1 < text.length ? text[j + 1] : '';
-      if (before.trim().isEmpty) return -1;
+      final spaced = spacedOpen || before.trim().isEmpty;
+      if (spaced && !looksLikeLatex(text.substring(open + 1, j))) return -1;
       if (after.isNotEmpty && RegExp(r'[0-9]').hasMatch(after)) return -1;
       return j;
     }
     return -1;
+  }
+
+  /// Befehle, an denen LaTeX ohne Begrenzer sicher erkannt wird (ein Pfad wie
+  /// `C:\Users` zählt nicht).
+  static const latexCommands = {
+    'frac', 'dfrac', 'tfrac', 'sqrt', 'cdot', 'times', 'div', 'pm', 'mp', 'approx', 'neq', 'ne', 'leq', 'le',
+    'geq', 'ge', 'll', 'gg', 'equiv', 'propto', 'sim', 'infty', 'partial', 'nabla', 'sum', 'prod', 'int', 'iint',
+    'oint', 'lim', 'log', 'ln', 'lg', 'exp', 'sin', 'cos', 'tan', 'cot', 'arcsin', 'arccos', 'arctan', 'sinh',
+    'cosh', 'tanh', 'max', 'min', 'vec', 'hat', 'bar', 'dot', 'ddot', 'overline', 'underline', 'tilde', 'mathrm',
+    'mathbf', 'mathit', 'mathcal', 'text', 'textbf', 'operatorname', 'left', 'right', 'big', 'Big', 'to',
+    'rightarrow', 'leftarrow', 'Rightarrow', 'Leftarrow', 'leftrightarrow', 'Leftrightarrow', 'mapsto', 'degree',
+    'circ', 'angle', 'perp', 'parallel', 'cdots', 'ldots', 'dots', 'forall', 'exists', 'in', 'notin', 'subset',
+    'subseteq', 'cup', 'cap', 'emptyset', 'land', 'lor', 'neg', 'oplus', 'otimes', 'binom', 'quad', 'qquad',
+    'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta', 'vartheta', 'iota',
+    'kappa', 'lambda', 'mu', 'nu', 'xi', 'pi', 'rho', 'sigma', 'tau', 'upsilon', 'phi', 'varphi', 'chi', 'psi',
+    'omega', 'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Phi', 'Psi', 'Omega', 'hbar', 'ell',
+    'Re', 'Im', 'det', 'deg', 'arg',
+  };
+
+  static final _command = RegExp(r'\\([A-Za-z]+)');
+
+  /// Ob [text] erkennbar LaTeX enthält: ein bekannter Befehl (`\frac`, `\alpha` …)
+  /// oder Hoch-/Tiefstellung mit Klammern (`x^{2}`, `U_{0}`).
+  static bool looksLikeLatex(String text) {
+    for (final m in _command.allMatches(text)) {
+      if (latexCommands.contains(m.group(1))) return true;
+    }
+    return RegExp(r'[\^_]\{').hasMatch(text);
+  }
+
+  static final _token = RegExp(r'\S+');
+  static final _trailingPunctuation = RegExp(r'[.,;:!?]+$');
+  static final _operatorToken = RegExp(r'^[=+\-*/<>≤≥≈≠±·×÷:()\[\]{}|]+$');
+  static final _simpleToken = RegExp(r'^([A-Za-z][0-9]*|[-+]?\d+([.,]\d+)?)$');
+  static final _powerToken = RegExp(r'^[A-Za-z0-9()]+\^[-+]?[A-Za-z0-9()]+$');
+
+  /// Formeln ohne Begrenzer – die KI vergisst die Dollarzeichen öfter
+  /// ("Es gilt U = R \cdot I."). Je Zeile werden Folgen von Formel-Stücken
+  /// (LaTeX-Befehle, Hochstellungen, Operatoren, einzelne Buchstaben, Zahlen)
+  /// gesucht, die mindestens einen LaTeX-Befehl enthalten, und als Formel
+  /// gesetzt. Fließtext bleibt Text.
+  static List<MathSegment> _bareMath(String text) {
+    if (!looksLikeLatex(text)) return [MathSegment.text(text)];
+    final result = <MathSegment>[];
+    final plain = StringBuffer();
+    void addPlain(String t) => plain.write(t);
+    void flushPlain() {
+      if (plain.isEmpty) return;
+      result.add(MathSegment.text(plain.toString()));
+      plain.clear();
+    }
+
+    final lines = text.split('\n');
+    for (var l = 0; l < lines.length; l++) {
+      final line = lines[l];
+      if (l > 0) addPlain('\n');
+      if (!looksLikeLatex(line)) {
+        addPlain(line);
+        continue;
+      }
+      final tokens = _token.allMatches(line).toList();
+      // Je Token: Kern ohne Satzzeichen am Ende, und ob er zur Formel passt.
+      final cores = <String>[];
+      final isMath = <bool>[];
+      final isTrigger = <bool>[];
+      for (final t in tokens) {
+        var core = t.group(0)!;
+        if (!core.endsWith(r'\,') && !core.endsWith(r'\;')) core = core.replaceFirst(_trailingPunctuation, '');
+        final trigger = looksLikeLatex(core);
+        cores.add(core);
+        isTrigger.add(trigger);
+        isMath.add(core.isNotEmpty &&
+            (trigger || _operatorToken.hasMatch(core) || _simpleToken.hasMatch(core) || _powerToken.hasMatch(core)));
+      }
+      var cursor = 0;
+      var i = 0;
+      while (i < tokens.length) {
+        if (!isMath[i]) {
+          i++;
+          continue;
+        }
+        var j = i;
+        var hasTrigger = false;
+        while (j < tokens.length && isMath[j]) {
+          hasTrigger |= isTrigger[j];
+          // Satzzeichen am Token-Ende beendet die Formel.
+          if (cores[j] != tokens[j].group(0)) {
+            j++;
+            break;
+          }
+          j++;
+        }
+        if (!hasTrigger) {
+          i = j;
+          continue;
+        }
+        final start = tokens[i].start;
+        final last = tokens[j - 1];
+        final end = last.start + cores[j - 1].length;
+        addPlain(line.substring(cursor, start));
+        flushPlain();
+        result.add(MathSegment.inline(line.substring(start, end)));
+        cursor = end;
+        i = j;
+      }
+      addPlain(line.substring(cursor));
+    }
+    flushPlain();
+    return result;
   }
 
   /// Repariert LaTeX in KI-JSON, BEVOR es dekodiert wird: Modelle schreiben
@@ -176,8 +302,21 @@ class MathMarkup {
         final bool double;
         if (isMathDelimiter || !validJsonEscapes.contains(next)) {
           double = true; // sonst ungültiges JSON
-        } else if (!inMath || next == '/') {
+        } else if (next == '/') {
           double = false;
+        } else if (!inMath) {
+          // Außerhalb einer Formel: \f und \b vor Buchstaben (Seitenvorschub,
+          // Rückschritt) kommen in Text nie vor – das ist \frac, \beta, \bar …;
+          // \t, \n, \r nur, wenn das Wort ein bekannter LaTeX-Befehl ist
+          // (\theta, \nabla, \rho), sonst bleibt es ein Tab/Zeilenumbruch.
+          final word = RegExp(r'^[A-Za-z]+').stringMatch(json.substring(i + 1)) ?? '';
+          if (next == 'f' || next == 'b') {
+            double = _isLetter(afterNext);
+          } else if (next == 't' || next == 'n' || next == 'r') {
+            double = latexCommands.contains(word) && word.length > 2;
+          } else {
+            double = false;
+          }
         } else if (next == 'u') {
           // \u00e4 ist ein echtes Unicode-Escape, \underline ein LaTeX-Befehl.
           double = !_isUnicodeEscape(json, i + 2);

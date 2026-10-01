@@ -69,6 +69,9 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'themeModePreference': settings.themeModePreference,
       'pageQuestionTierTypes': settings.pageQuestionTierTypes,
       'favoriteModelIds': settings.favoriteModelIds,
+      // Leer heißt "wie das Fragen-Modell" – als '' statt null, damit ein
+      // älterer Stand (Feld fehlt) von einer bewussten Wahl unterscheidbar bleibt.
+      'helpModelId': settings.helpModelId ?? '',
     };
 
 /// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
@@ -106,6 +109,9 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     // vorhandene, auch leere Angabe ist eine bewusste Einstellung.
     pageQuestionTierTypes: AppSettings.parseTierTypes(synced['pageQuestionTierTypes']),
     favoriteModelIds: AppSettings.parseModelIds(synced['favoriteModelIds']),
+    // Fehlt das Feld (älterer Stand), bleibt der lokale Wert; '' = wie das Fragen-Modell.
+    helpModelId: (synced['helpModelId'] as String?)?.trim().isNotEmpty == true ? synced['helpModelId'] as String : null,
+    clearHelpModel: synced['helpModelId'] is String && (synced['helpModelId'] as String).trim().isEmpty,
   );
 }
 

@@ -124,6 +124,25 @@ void main() {
     });
   });
 
+  group('Zuordnung, wenn die KI die Kennung nicht genau trifft', () {
+    test('verkürzte Kennung und Titel werden erkannt, Unbekanntes bleibt neu', () {
+      const long = '3f2a9c1e-7b44-4d2a-9a51-0c1d2e3f4a5b';
+      final draft = LabReportDraft.fromJson({
+        'sections': [
+          {'sectionId': '3f2a9c1e', 'title': 'Einleitung', 'text': 'A'},
+          {'sectionId': 'einleitung-xyz', 'title': '2.1 Grundeinstellungen', 'text': 'B'},
+          {'sectionId': 'x', 'title': 'Anhang', 'text': 'C'},
+        ],
+      }, knownSectionIds: {long, 's2'}, sectionTitles: {long: 'Einleitung und Versuchsziel', 's2': 'Grundeinstellungen'});
+      expect(draft.sections.map((s) => s.sectionId), [long, 's2', null]);
+    });
+
+    test('Titel vergleichen ohne Nummerierung und Satzzeichen', () {
+      expect(LabReportDraft.normalizeTitle('2.1 Grundeinstellungen:'), 'grundeinstellungen');
+      expect(LabReportDraft.normalizeTitle('Diskussion & Fazit'), 'diskussion fazit');
+    });
+  });
+
   group('LabReportDraft.applyTo', () {
     var n = 0;
     String newId() => 'neu${++n}';
@@ -173,6 +192,45 @@ void main() {
       expect(result.report[2].draft, 'Neu 2');
       expect(result.report[3].draft, 'T');
       expect(result.report[1].text, '');
+    });
+
+    test('ein Abschnitt, den die Vorlage vor allen bekannten nennt, kommt nach vorne', () {
+      final e = _experiment();
+      final ids = e.report.map((s) => s.id).toList();
+      final result = LabReportDraft(sections: [
+        const LabDraftSection(title: 'Abstract', text: 'Kurzfassung'),
+        LabDraftSection(sectionId: ids[0], title: 'Einleitung', text: 'E'),
+        const LabDraftSection(title: 'Anhang', text: 'A'),
+      ]).applyTo(e, newId: newId);
+      expect(result.report.map((s) => s.title), [
+        'Abstract',
+        'Einleitung und Versuchsziel',
+        'Anhang',
+        'Grundeinstellungen',
+        'Diskussion und Fazit',
+      ]);
+    });
+
+    test('ein zweiter Entwurf legt gleichnamige Abschnitte nicht doppelt an', () {
+      final e = _experiment();
+      const draft = LabReportDraft(sections: [LabDraftSection(title: 'Anhang', text: 'erst')]);
+      final first = draft.applyTo(e, newId: newId);
+      final second = const LabReportDraft(sections: [LabDraftSection(title: 'Anhang', text: 'dann')]).applyTo(first, newId: newId);
+      expect(second.report.where((s) => s.title == 'Anhang'), hasLength(1));
+      expect(second.report.firstWhere((s) => s.title == 'Anhang').draft, 'dann');
+    });
+
+    test('Einzelabschnitt: auch bei falscher Kennung landet der Text dort (nie leer)', () {
+      var e = _experiment();
+      final target = e.report[1].id;
+      e = e.updateSection(target, (s) => s.copyWith(draft: 'alt'));
+      final result = const LabReportDraft(sections: [LabDraftSection(title: 'Grundeinstellungen', text: 'neu')])
+          .applyTo(e, onlySectionId: target, newId: newId);
+      expect(result.report[1].draft, 'neu');
+      expect(result.report, hasLength(3));
+      // Ohne brauchbaren Inhalt bleibt der alte Entwurf.
+      final empty = const LabReportDraft().applyTo(e, onlySectionId: target, newId: newId);
+      expect(empty.report[1].draft, 'alt');
     });
 
     test('ohne Gliederung der Vorlage wandern neue Abschnitte als Unterpunkt in den davor', () {

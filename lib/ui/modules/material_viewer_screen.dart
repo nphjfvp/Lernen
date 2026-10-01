@@ -517,6 +517,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
         // gerade beim Lesen aufgedeckte Lücke soll nicht am Einheiten-
         // "behandelt"-Gate hängen bleiben (siehe Flashcard.priorityIntroduction).
         priorityIntroduction: true,
+        needsCalculator: QuestionParsing.parseCalcFlag(fixed),
         options: QuestionParsing.parseOptions(fixed['options']),
         correctText: fixed['correctText'] as String?,
         blanks: QuestionParsing.parseBlanks(fixed['blanks']),

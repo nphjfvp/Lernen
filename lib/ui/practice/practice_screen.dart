@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
+import '../../repositories/settings_repository.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../services/calc_task_detector.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import '../daily/card_review_mixin.dart';
 import '../daily/question_answer_view.dart';
+import '../widgets/calc_tasks_toggle.dart';
 import '../widgets/mastery_dot.dart';
 
 enum _Filter { all, red, yellow, green, neu }
@@ -81,13 +84,23 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
     return level == null || _mastery.levelFor(card) == level;
   }
 
+  /// Schalter "Rechenaufgaben" (siehe CalcTasksToggle): aus → ohne sie.
+  List<Flashcard> _calcFiltered(List<Flashcard> cards) => CalcTasksToggle.includeOf(context)
+      ? cards
+      : [for (final c in cards) if (!CalcTaskDetector.isCalcTask(c)) c];
+
   void _start(_Filter filter) {
     // Nur die gerade freigeschaltete Stufe je Gruppe (Leicht → Mittel →
     // Schwer, siehe StageGate) – wie im Daily Quiz.
-    final cards = StageGate.learnable(context.read<FlashcardRepository>().forModule(widget.moduleId))
+    final shuffled = _calcFiltered(StageGate.learnable(context.read<FlashcardRepository>().forModule(widget.moduleId)))
         .where((c) => _matches(c, filter))
         .toList()
       ..shuffle();
+    // Aufgehobene Rechenaufgaben (Schalter war aus) zuerst nachholen.
+    final cards = [
+      ...shuffled.where((c) => c.calcDeferredAt != null && CalcTaskDetector.isCalcTask(c)),
+      ...shuffled.where((c) => c.calcDeferredAt == null || !CalcTaskDetector.isCalcTask(c)),
+    ];
     setState(() {
       _filter = filter;
       _queue = cards;
@@ -111,6 +124,19 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
     });
   }
 
+  /// Auswahl der Ampel-Stufe; gibt es Rechenaufgaben, darüber der Schalter.
+  Widget _pickerWithToggle(List<Flashcard> learnable) {
+    context.watch<SettingsRepository?>();
+    final picker = _FilterPicker(cards: _calcFiltered(learnable), mastery: _mastery, onStart: _start);
+    if (!learnable.any(CalcTaskDetector.isCalcTask)) return picker;
+    return Column(
+      children: [
+        const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: CalcTasksToggle()),
+        Expanded(child: picker),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -120,11 +146,7 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
       appBar: AppBar(title: Text('Üben · ${widget.moduleName}')),
       body: SafeArea(
         child: queue == null
-            ? _FilterPicker(
-                cards: StageGate.learnable(context.watch<FlashcardRepository>().forModule(widget.moduleId)),
-                mastery: _mastery,
-                onStart: _start,
-              )
+            ? _pickerWithToggle(StageGate.learnable(context.watch<FlashcardRepository>().forModule(widget.moduleId)))
             : queue.isEmpty
                 ? _EmptyView(filter: _filter, onBack: () => setState(() => _queue = null))
                 : _index >= queue.length

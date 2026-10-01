@@ -517,10 +517,12 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von
   OpenRouter abgerufen (Cache in der lokalen DB, wöchentlicher Refresh) statt
   fest in der App hinterlegt zu sein – neue Modelle stehen so automatisch
-  zur Verfügung. Getrennte Modell-Einstellungen für drei Rollen:
-  **Fragenerstellen**, **Vision** (bildfähige Modelle, z.B. für gescannte
-  Foliensätze) und **Crosscheck** (bewusst ein zweites Modell, das die
-  Ergebnisse des ersten gegenprüft). Große Foliensätze/Übungsaufgaben werden
+  zur Verfügung. Getrennte Modell-Einstellungen für vier Rollen:
+  **Fragenerstellen**, **Erklärungen & Hilfe** (Erklär mir das, Tipps, Rückfragen
+  im Quiz, Lerneinheit, Sokrates, Frage-Chat, Fehlertagebuch, Gegenlesen im
+  Laborversuch – ohne eigene Wahl wie Fragenerstellen), **Vision** (bildfähige
+  Modelle, z.B. für gescannte Foliensätze) und **Crosscheck** (bewusst ein
+  zweites Modell, das die Ergebnisse des ersten gegenprüft). Große Foliensätze/Übungsaufgaben werden
   automatisch in mehrere Anfragen zerlegt ("Rolling-Context-Chunking" –
   jeder weitere Abschnitt bekommt die bereits erfassten Kernkonzepte als
   Kontext, um Wiederholungen zu vermeiden); Vorbereiten/Nachbereiten
@@ -1389,6 +1391,43 @@ die Engine (`flutter_windows.dll`), die Plugin-DLLs und `data/` werden zur
 Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
+
+### 5u. Rechenaufgaben an/aus, Modell für Erklärungen, Formeln überall
+
+**Schalter "Rechenaufgaben"** – oben im Daily Quiz, in "Üben" (vor dem Start)
+und im Sprint: **an** am Schreibtisch, **aus**, wenn gerade kein
+Taschenrechner zur Hand ist (Handy im Bett). Der Schalter gilt nur auf diesem
+Gerät (am PC an, auf dem Handy aus – wird nicht synchronisiert).
+- **Was als Rechenaufgabe zählt:** beim Erstellen und Importieren markiert die
+  KI jede Frage (`"calc": true/false` – echtes Rechnen mit Taschenrechner, nicht
+  2·3 oder eine Formel nennen). Für ältere Karten ohne Markierung erkennt die App
+  es am Text (`lib/services/calc_task_detector.dart`): eine Rechenaufforderung
+  ("Berechne", "Wie groß ist …") oder eine Zahl mit Einheit als Lösung, dazu
+  mehrere echte Größen in der Aufgabe (Zahlen mit Einheit, Kommazahlen,
+  Zehnerpotenzen). In der Kartenliste steht "Rechenaufgabe" dabei; in
+  "Bearbeiten" lässt es sich je Karte festlegen (Automatisch / Ja / Nein).
+- **Aus:** Rechenaufgaben kommen im Daily Quiz nicht dran (auch nicht in der
+  Wiederholungsrunde und bei "freiwillig weiterlernen"); die App merkt sich, welche
+  heute dran gewesen wären ("3 Rechenaufgaben heute aufgehoben").
+- **Wieder an:** aufgehobene Rechenaufgaben kommen **zuerst und zusätzlich** zum
+  normalen Tagesbudget dran (höchstens 10 extra je Fach und Tag), überfällige
+  Wiederholungen ohnehin. In "Üben" stehen sie vorne. Beim Beantworten verschwindet
+  die Markierung "aufgehoben". Die Probeklausur nimmt bewusst immer alles.
+
+**Modell für Erklärungen & Hilfe** – Einstellungen → KI-Modelle: eigener Eintrag
+"Erklärungen & Hilfe". Ohne Wahl gilt das Fragen-Modell; wählst du dort dasselbe,
+folgt es ihm wieder (Rückgängig-Knopf). Gilt für "Erklär mir das", Tipps, Rückfragen
+im Quiz, Lerneinheit, Sokrates-Dialog, Frage-Chat, Fehlertagebuch und das
+Gegenlesen im Laborversuch; Antwortprüfung (Freitext, Lücken) und Fragenerstellung
+bleiben beim Fragen-Modell, Bild-Fragen beim Vision-Modell. Reist mit dem Sync.
+
+**Formeln (LaTeX) überall:** auch in Zuordnen-Begriffen, Kategorien, Optionen und
+Lösungen der Kartenliste, Konzepten, Zusammenfassungen, Vorschauen beim Erstellen,
+Probeklausur- und Fehlertagebuch-Listen, Seitennotizen, Rückfragen und im
+Laborversuch. Außerdem erkennt die App Formeln, bei denen die KI die Dollarzeichen
+vergessen hat ("Es gilt U = R \cdot I"), Formeln in Backticks und `$ … $` mit
+Leerzeichen; `\frac`, `\beta`, `\theta` u.ä. ohne Dollarzeichen werden beim Einlesen
+nicht mehr zu Steuerzeichen.
 
 ### 5t. Rechnen mit KI und Berichtsentwurf (Laborversuch)
 

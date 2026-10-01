@@ -467,7 +467,7 @@ class _ReviewTileState extends State<_ReviewTile> {
       _error = null;
     });
     try {
-      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.effectiveHelpModelId);
       final text = await ai.explainAnswer(
         question: widget.card.promptText,
         correctAnswer: _answer,
@@ -503,7 +503,7 @@ class _ReviewTileState extends State<_ReviewTile> {
               widget.correct ? Icons.check_circle_rounded : Icons.cancel_rounded,
               color: widget.correct ? c.good : c.danger,
             ),
-            title: Text(widget.card.front, maxLines: 2, overflow: TextOverflow.ellipsis),
+            title: MathText(widget.card.front, maxLines: 2, overflow: TextOverflow.ellipsis),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             expandedCrossAxisAlignment: CrossAxisAlignment.start,
             children: [

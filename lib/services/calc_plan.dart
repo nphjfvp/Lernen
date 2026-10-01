@@ -184,6 +184,10 @@ class CalcPlan {
       } on CalcException catch (e) {
         failed.add(step.symbol);
         results.add(CalcStepResult(step: step, error: e.message));
+      } catch (_) {
+        // Darf nie die ganze Rechnung kosten – nur diesen Schritt.
+        failed.add(step.symbol);
+        results.add(CalcStepResult(step: step, error: 'Dieser Schritt lässt sich nicht berechnen.'));
       }
     }
     return results;

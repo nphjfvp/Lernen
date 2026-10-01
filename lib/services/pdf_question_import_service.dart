@@ -675,6 +675,7 @@ class PdfQuestionImportService {
         type: q.type,
         unitId: unitId,
         priorityIntroduction: true,
+        needsCalculator: QuestionParsing.parseCalcFlag(f),
         options: QuestionParsing.parseOptions(f['options']),
         correctText: f['correctText'] as String?,
         blanks: QuestionParsing.parseBlanks(f['blanks']),

@@ -82,7 +82,7 @@ AiService? _ai(BuildContext context, Flashcard card) {
   // Mit Bild braucht die KI das Vision-Modell.
   return AiService(
     apiKey: settings.openRouterApiKey!,
-    model: card.imageBase64 != null ? settings.visionModelId : settings.questionModelId,
+    model: card.imageBase64 != null ? settings.visionModelId : settings.effectiveHelpModelId,
   );
 }
 

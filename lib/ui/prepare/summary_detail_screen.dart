@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/summary.dart';
 import '../../repositories/summary_repository.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/math_text.dart';
 
 /// Zeigt eine Zusammenfassung aus dem Vorbereiten-Modus an, mit einem
 /// einfachen Bearbeiten-Modus (Titel/Kernkonzepte/Zusammenfassung als
@@ -137,7 +138,7 @@ class _SummaryDetailScreenState extends State<SummaryDetailScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text('•  '),
-                              Expanded(child: Text(k)),
+                              Expanded(child: MathText(k)),
                             ],
                           ),
                         ))
@@ -149,7 +150,7 @@ class _SummaryDetailScreenState extends State<SummaryDetailScreen> {
         ],
         Text('Zusammenfassung', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        Text(_summary.overview),
+        MathText(_summary.overview),
       ],
     );
   }

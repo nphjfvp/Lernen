@@ -97,6 +97,23 @@ class AppSettings {
   /// erstellen" mit einem Tipp wählbar, ohne sie jedes Mal zu suchen.
   final List<String> favoriteModelIds;
 
+  /// Modell für Erklärungen und Hilfe beim Lernen: "Erklär mir das", Tipps,
+  /// Lerneinheit, Sokrates-Dialog, Rückfragen im Quiz, Frage-Chat,
+  /// Fehlertagebuch und das Gegenlesen im Laborversuch. `null` = wie
+  /// [questionModelId] (bis jemand bewusst ein anderes wählt).
+  final String? helpModelId;
+
+  /// Rechenaufgaben (Taschenrechner nötig, siehe Flashcard.needsCalculator) in
+  /// Daily Quiz, Üben, Sprint und Speedrun mitnehmen. Bewusst geräte-lokal: am
+  /// Schreibtisch-PC an, auf dem Handy im Bett aus – wird nicht synchronisiert.
+  final bool includeCalcTasks;
+
+  /// Das tatsächlich genutzte Modell für Erklärungen und Hilfe.
+  String get effectiveHelpModelId {
+    final id = helpModelId?.trim();
+    return id == null || id.isEmpty ? questionModelId : id;
+  }
+
   static const defaultQuestionModel = 'deepseek/deepseek-chat';
   static const defaultVisionModel = 'google/gemini-2.5-flash';
   static const defaultCrosscheckModel = 'anthropic/claude-3.5-haiku';
@@ -126,6 +143,8 @@ class AppSettings {
     this.themeModePreference = defaultThemeModePreference,
     this.pageQuestionTierTypes = const {},
     this.favoriteModelIds = const [],
+    this.helpModelId,
+    this.includeCalcTasks = true,
   });
 
   bool get hasApiKey =>
@@ -167,6 +186,9 @@ class AppSettings {
     String? themeModePreference,
     Map<String, String>? pageQuestionTierTypes,
     List<String>? favoriteModelIds,
+    String? helpModelId,
+    bool clearHelpModel = false,
+    bool? includeCalcTasks,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -189,6 +211,8 @@ class AppSettings {
       themeModePreference: themeModePreference ?? this.themeModePreference,
       pageQuestionTierTypes: pageQuestionTierTypes ?? this.pageQuestionTierTypes,
       favoriteModelIds: favoriteModelIds ?? this.favoriteModelIds,
+      helpModelId: clearHelpModel ? null : (helpModelId ?? this.helpModelId),
+      includeCalcTasks: includeCalcTasks ?? this.includeCalcTasks,
     );
   }
 
@@ -213,6 +237,8 @@ class AppSettings {
         'themeModePreference': themeModePreference,
         'pageQuestionTierTypes': pageQuestionTierTypes,
         'favoriteModelIds': favoriteModelIds,
+        'helpModelId': helpModelId,
+        'includeCalcTasks': includeCalcTasks,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -245,6 +271,8 @@ class AppSettings {
         themeModePreference: map['themeModePreference'] as String? ?? defaultThemeModePreference,
         pageQuestionTierTypes: parseTierTypes(map['pageQuestionTierTypes']) ?? const {},
         favoriteModelIds: parseModelIds(map['favoriteModelIds']) ?? const [],
+        helpModelId: (map['helpModelId'] as String?)?.trim().isEmpty ?? true ? null : map['helpModelId'] as String,
+        includeCalcTasks: map['includeCalcTasks'] as bool? ?? true,
       );
 
   bool isFavoriteModel(String id) => favoriteModelIds.contains(id);

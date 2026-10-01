@@ -143,6 +143,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await repo.update(repo.settings.copyWith(visionModelId: picked));
       case 'crosscheck':
         await repo.update(repo.settings.copyWith(crosscheckModelId: picked));
+      case 'help':
+        // Dasselbe wie das Fragen-Modell = "folgt ihm" (ändert sich dann mit).
+        await repo.update(picked == repo.settings.questionModelId
+            ? repo.settings.copyWith(clearHelpModel: true)
+            : repo.settings.copyWith(helpModelId: picked));
     }
   }
 
@@ -730,6 +735,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               title: 'Modell für Fragenerstellen',
                               models: catalog.models,
                               selectedId: settings.questionModelId,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _ModelSelectorTile(
+                            key: const ValueKey('model-help'),
+                            label: 'Erklärungen & Hilfe',
+                            sublabel: settings.helpModelId == null
+                                ? 'Erklärungen, Tipps, Rückfragen, Frage-Chat, Gegenlesen – zurzeit wie Fragenerstellen'
+                                : 'Erklärungen, Tipps, Rückfragen, Frage-Chat, Gegenlesen',
+                            selectedId: settings.effectiveHelpModelId,
+                            catalog: catalog,
+                            trailing: settings.helpModelId == null
+                                ? null
+                                : IconButton(
+                                    key: const ValueKey('model-help-reset'),
+                                    tooltip: 'Wie Fragenerstellen',
+                                    icon: Icon(Icons.undo, size: 18, color: c.inkMuted),
+                                    onPressed: () => context
+                                        .read<SettingsRepository>()
+                                        .update(settings.copyWith(clearHelpModel: true)),
+                                  ),
+                            onTap: () => _pickModel(
+                              role: 'help',
+                              title: 'Modell für Erklärungen & Hilfe',
+                              models: catalog.models,
+                              selectedId: settings.effectiveHelpModelId,
                             ),
                           ),
                           const SizedBox(height: 10),
@@ -1442,11 +1473,13 @@ class _AccountSectionState extends State<_AccountSection> {
 
 class _ModelSelectorTile extends StatelessWidget {
   const _ModelSelectorTile({
+    super.key,
     required this.label,
     required this.sublabel,
     required this.selectedId,
     required this.catalog,
     required this.onTap,
+    this.trailing,
   });
 
   final String label;
@@ -1454,6 +1487,7 @@ class _ModelSelectorTile extends StatelessWidget {
   final String selectedId;
   final ModelCatalogRepository catalog;
   final VoidCallback onTap;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1489,6 +1523,7 @@ class _ModelSelectorTile extends StatelessWidget {
                 ],
               ),
             ),
+            ?trailing,
             Icon(Icons.chevron_right_rounded, color: c.inkMuted, size: 18),
           ],
         ),

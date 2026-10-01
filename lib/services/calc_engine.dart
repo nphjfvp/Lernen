@@ -90,10 +90,10 @@ class CalcEngine {
 
   static const _regressions = {'slope', 'intercept', 'r2', 'corr'};
 
-  /// Alle Namen, die als Funktion oder Konstante belegt sind (keine Größe darf
-  /// so heißen).
-  static final Set<String> reservedNames = {
-    ...constants.keys,
+  /// Alle Namen, die als Funktion belegt sind. Eine Größe DARF so heißen (`n`,
+  /// `rad`, `exp` …): ein Funktionsaufruf erkennt der Auswerter an der Klammer
+  /// dahinter, eine Größe steht nie direkt vor einer Klammer.
+  static final Set<String> functionNameSet = {
     ..._elementwise1.keys,
     ..._elementwise2.keys,
     ..._aggregates,
@@ -103,6 +103,10 @@ class CalcEngine {
     'round',
     'log',
   };
+
+  /// Namen, die keine Größe tragen darf: die Konstanten (eine Größe "pi" wäre
+  /// eine Falle beim Lesen des Rechenwegs).
+  static final Set<String> reservedNames = {...constants.keys};
 
   /// Für die Aufgabenbeschreibung an die KI.
   static const functionNames =
@@ -211,9 +215,17 @@ class CalcEngine {
 
   /// Der Ausdruck mit Zahlen statt Größen, z.B. `U / I` → `12,3 V / 0,45 A`
   /// ([replacements] nennt je Größe den Text) – für den Rechenweg. Malzeichen
-  /// werden als `·` gesetzt.
+  /// werden als `·` gesetzt. Negative Werte und Werte mit Einheit an einer Potenz
+  /// kommen in Klammern (`(-3)^2`, `5 - (-2)`, `(3 m)^2`). Lässt sich
+  /// [expression] nicht lesen, kommt sie unverändert zurück – der Rechenweg soll
+  /// nie an der Anzeige scheitern.
   static String substitute(String expression, Map<String, String> replacements) {
-    final tokens = _tokenize(expression);
+    final List<_Token> tokens;
+    try {
+      tokens = _tokenize(expression);
+    } on CalcException {
+      return expression.trim();
+    }
     final out = StringBuffer();
     _Token? previous;
     for (var i = 0; i < tokens.length; i++) {
@@ -221,8 +233,17 @@ class CalcEngine {
       if (t.kind == _Kind.end) break;
       switch (t.kind) {
         case _Kind.ident:
-          final isCall = i + 1 < tokens.length && tokens[i + 1].kind == _Kind.open;
-          out.write(!isCall && replacements.containsKey(t.text) ? replacements[t.text] : t.text);
+          final next = i + 1 < tokens.length ? tokens[i + 1] : null;
+          final isCall = next?.kind == _Kind.open;
+          final replacement = isCall ? null : replacements[t.text];
+          if (replacement == null) {
+            out.write(t.text);
+            break;
+          }
+          final atPower = (next?.kind == _Kind.op && next!.text == '^') ||
+              (previous?.kind == _Kind.op && previous!.text == '^');
+          final needsParens = replacement.trimLeft().startsWith('-') || (atPower && replacement.contains(' '));
+          out.write(needsParens ? '($replacement)' : replacement);
         case _Kind.number:
           out.write(t.text.replaceAll('.', ','));
         case _Kind.op:
@@ -253,11 +274,18 @@ class CalcEngine {
 
   // -- Auswerten ------------------------------------------------------------------
 
-  /// Wertet [expression] mit den Größen [vars] aus. Wirft [CalcException].
+  /// Wertet [expression] mit den Größen [vars] aus. Wirft nur [CalcException] –
+  /// auch unerwartete Fehler (z.B. aus der Rundung) werden zu einer Meldung.
   static CalcVec evaluate(String expression, Map<String, CalcVec> vars) {
     if (expression.trim().isEmpty) throw CalcException('Der Ausdruck ist leer.');
-    final parser = _Parser(_tokenize(expression), vars, expression);
-    final result = parser.parse();
+    final CalcVec result;
+    try {
+      result = _Parser(_tokenize(expression), vars, expression).parse();
+    } on CalcException {
+      rethrow;
+    } catch (e) {
+      throw CalcException('Der Ausdruck „$expression“ lässt sich nicht berechnen.');
+    }
     for (final v in result) {
       if (v.isNaN || v.isInfinite) {
         throw CalcException(
@@ -285,7 +313,11 @@ class CalcEngine {
   /// Liest eine Zahl, wie Menschen sie schreiben: `1,5`, `1.5`, `-3`, `1e-3`,
   /// `1,5·10^-3`, `2,2 × 10⁻⁶`, `1.234,5`, `1,234.5`. `null`, wenn es keine
   /// Zahl ist (Einheiten bleiben draußen).
-  static double? parseNumber(Object? raw) {
+  ///
+  /// Mit [germanGrouping] (Eingaben in der App) gilt ein Punkt vor genau drei
+  /// Ziffern als Tausendertrenner: `4.700` = 4700, `1.234.567` = 1234567 – so wie
+  /// man es auf Deutsch schreibt. Ohne (Werte der KI) ist `4.700` = 4,7.
+  static double? parseNumber(Object? raw, {bool germanGrouping = false}) {
     if (raw is num) return raw.isFinite ? raw.toDouble() : null;
     if (raw == null) return null;
     var s = raw.toString().trim();
@@ -296,15 +328,15 @@ class CalcEngine {
     double? mantissa;
     var exponent = 0;
     if (power != null) {
-      mantissa = _plainNumber(power.group(1)!);
+      mantissa = _plainNumber(power.group(1)!, germanGrouping: germanGrouping);
       exponent = int.tryParse(power.group(2)!) ?? 0;
     } else {
       final sci = RegExp(r'^([+-]?[\d.,]+)[eE]([+-]?\d+)$').firstMatch(s);
       if (sci != null) {
-        mantissa = _plainNumber(sci.group(1)!);
+        mantissa = _plainNumber(sci.group(1)!, germanGrouping: germanGrouping);
         exponent = int.tryParse(sci.group(2)!) ?? 0;
       } else {
-        mantissa = _plainNumber(s);
+        mantissa = _plainNumber(s, germanGrouping: germanGrouping);
       }
     }
     if (mantissa == null) return null;
@@ -312,10 +344,13 @@ class CalcEngine {
     return value.isFinite ? value : null;
   }
 
-  static double? _plainNumber(String s) {
+  static double? _plainNumber(String s, {bool germanGrouping = false}) {
     final sign = s.startsWith('-') ? -1 : 1;
     var body = s.replaceFirst(RegExp(r'^[+-]'), '');
     if (body.isEmpty || !RegExp(r'^[\d.,]+$').hasMatch(body)) return null;
+    if (germanGrouping && RegExp(r'^[1-9]\d{0,2}(\.\d{3})+$').hasMatch(body)) {
+      body = body.replaceAll('.', '');
+    }
     final lastComma = body.lastIndexOf(',');
     final lastDot = body.lastIndexOf('.');
     if (lastComma >= 0 && lastDot >= 0) {
@@ -521,11 +556,13 @@ class _Parser {
         if (args.length == 1) return [for (final v in args[0]) v.roundToDouble()];
         arity(2);
         return _zip(args[0], args[1], (x, digits) {
-          final f = math.pow(10, digits.round()).toDouble();
+          if (!digits.isFinite || !x.isFinite) return double.nan;
+          final f = math.pow(10, digits.round().clamp(-15, 15)).toDouble();
           return (x * f).roundToDouble() / f;
         });
       case 'min' || 'max':
         final isMin = name == 'min';
+        if (args.isEmpty) throw CalcException('„$name“ braucht mindestens einen Wert.');
         if (args.length == 1) {
           if (args[0].isEmpty) throw CalcException('„$name“ braucht mindestens einen Wert.');
           return [args[0].reduce((a, b) => (isMin ? b < a : b > a) ? b : a)];

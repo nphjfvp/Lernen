@@ -125,8 +125,8 @@ class _CalcScreenState extends State<CalcScreen> with SafeSetState<CalcScreen> {
     }
     final prepared = <({String name, Uint8List bytes})>[];
     for (final p in picked.take(room)) {
-      // Fotos vom Handy sind mehrere MB groß – für das Ablesen reichen 1600 px.
-      prepared.add((name: p.name, bytes: await downscaleImage(p.bytes, maxSide: 1600) ?? p.bytes));
+      // Große Fotos verkleinern, damit die Anfrage nicht über die Grenzen der Modelle geht.
+      prepared.add((name: p.name, bytes: await prepareImageForAi(p.bytes)));
     }
     if (!mounted) return;
     setState(() => _images.addAll(prepared));

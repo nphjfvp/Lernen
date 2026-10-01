@@ -1,3 +1,4 @@
+import 'calc_task_detector.dart';
 import 'calendar_days.dart';
 import '../models/flashcard.dart';
 import '../models/module.dart';
@@ -11,10 +12,19 @@ class DailyPlan {
   final List<Flashcard> newCards;
   final Map<String, int> newCardBudgetByModule;
 
+  /// Rechenaufgaben, die heute dran gewesen wären, aber wegen des Schalters
+  /// "Rechenaufgaben aus" zurückgestellt sind (siehe [DailySchedulerService.buildPlan]).
+  final List<Flashcard> deferredCalc;
+
+  /// Wie viele zurückgestellte Rechenaufgaben heute zusätzlich nachgeholt werden.
+  final int calcCatchUp;
+
   const DailyPlan({
     required this.dueCards,
     required this.newCards,
     required this.newCardBudgetByModule,
+    this.deferredCalc = const [],
+    this.calcCatchUp = 0,
   });
 
   /// Session-Reihenfolge: fällige und neue Karten zusammengeführt und über
@@ -59,6 +69,10 @@ class DailySchedulerService {
   /// Greift NICHT im reinen Wiederholungs-Endspurt kurz vor der Klausur
   /// (dort ist `budget = 0` weiterhin bewusst gewollt, siehe unten).
   static const int minDailyNewCardsPerModule = 10;
+
+  /// So viele zurückgestellte neue Rechenaufgaben kommen je Fach höchstens
+  /// zusätzlich zum Tagesbudget dran, sobald Rechenaufgaben wieder dabei sind.
+  static const int maxCalcCatchUpPerModule = 10;
 
   /// Mischt Karten aus verschiedenen Fächern per Round-Robin durch
   /// (Interleaving statt Blockübung, siehe Rohrer & Taylor 2007: Durchmischen
@@ -130,17 +144,79 @@ class DailySchedulerService {
   /// Session oder ein App-Neustart nicht ein zweites volles Budget vergibt.
   /// Gezielt selbst erstellte Fragen ([Flashcard.priorityIntroduction])
   /// kommen trotzdem immer noch heute dran.
+  ///
+  /// [includeCalcTasks] (Schalter "Rechenaufgaben", siehe CalcTaskDetector):
+  /// aus → Rechenaufgaben kommen heute nicht dran; welche es gewesen wären, steht
+  /// in [DailyPlan.deferredCalc] (die Oberfläche merkt sie sich als
+  /// zurückgestellt). An → zurückgestellte Rechenaufgaben ([Flashcard.calcDeferredAt])
+  /// kommen bei den neuen Karten zuerst und zusätzlich zum Budget (höchstens
+  /// [maxCalcCatchUpPerModule] je Fach); überfällige Wiederholungen sind ohnehin
+  /// fällig und stehen vorne.
   DailyPlan buildPlan({
     required List<Module> modules,
     required List<Flashcard> allCards,
     Map<String, bool> unitCoveredById = const {},
     Map<String, int> introducedTodayByModule = const {},
     DateTime? now,
+    bool includeCalcTasks = true,
+    bool Function(Flashcard card)? isCalcTask,
+  }) {
+    final isCalc = isCalcTask ?? CalcTaskDetector.isCalcTask;
+    if (!includeCalcTasks) {
+      final full = buildPlan(
+        modules: modules,
+        allCards: allCards,
+        unitCoveredById: unitCoveredById,
+        introducedTodayByModule: introducedTodayByModule,
+        now: now,
+        isCalcTask: isCalc,
+      );
+      final calcIds = {for (final c in allCards) if (isCalc(c)) c.id};
+      final withoutCalc = _build(
+        modules: modules,
+        allCards: allCards,
+        exclude: calcIds,
+        unitCoveredById: unitCoveredById,
+        introducedTodayByModule: introducedTodayByModule,
+        now: now,
+        isCalc: isCalc,
+        catchUp: false,
+      );
+      return DailyPlan(
+        dueCards: withoutCalc.dueCards,
+        newCards: withoutCalc.newCards,
+        newCardBudgetByModule: withoutCalc.newCardBudgetByModule,
+        deferredCalc: [for (final c in full.allCards) if (calcIds.contains(c.id)) c],
+      );
+    }
+    return _build(
+      modules: modules,
+      allCards: allCards,
+      exclude: const {},
+      unitCoveredById: unitCoveredById,
+      introducedTodayByModule: introducedTodayByModule,
+      now: now,
+      isCalc: isCalc,
+      catchUp: true,
+    );
+  }
+
+  DailyPlan _build({
+    required List<Module> modules,
+    required List<Flashcard> allCards,
+    required Set<String> exclude,
+    required Map<String, bool> unitCoveredById,
+    required Map<String, int> introducedTodayByModule,
+    required DateTime? now,
+    required bool Function(Flashcard) isCalc,
+    required bool catchUp,
   }) {
     final today = now ?? DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
 
-    final eligibleCards = _eligible(modules, allCards, unitCoveredById);
+    final eligibleCards = _eligible(modules, allCards, unitCoveredById).where((c) => !exclude.contains(c.id)).toList();
+    bool deferredCalc(Flashcard c) => catchUp && c.calcDeferredAt != null && isCalc(c);
+    var calcCatchUp = 0;
 
     final endOfToday = DateTime(today.year, today.month, today.day + 1);
     final dueCards = eligibleCards
@@ -161,6 +237,11 @@ class DailySchedulerService {
           if (a.priorityIntroduction != b.priorityIntroduction) {
             return a.priorityIntroduction ? -1 : 1;
           }
+          // Zurückgestellte Rechenaufgaben (Schalter war aus) als Nächstes –
+          // die am längsten wartenden zuerst.
+          final da = deferredCalc(a), db = deferredCalc(b);
+          if (da != db) return da ? -1 : 1;
+          if (da && db) return a.calcDeferredAt!.compareTo(b.calcDeferredAt!);
           return a.createdAt.compareTo(b.createdAt);
         });
       if (notIntroduced.isEmpty) {
@@ -219,6 +300,16 @@ class DailySchedulerService {
         budget = weighted.clamp(0, notIntroduced.length).clamp(0, maxNewCardsPerModulePerDay);
       }
 
+      // Nachholen: zurückgestellte Rechenaufgaben kommen ZUSÄTZLICH dran (sie
+      // stehen oben in [notIntroduced] und belegen diese Plätze zuerst).
+      final backlog = notIntroduced.where(deferredCalc).length;
+      if (backlog > 0 && introductionWindowDays > 0) {
+        final bonus = backlog.clamp(0, maxCalcCatchUpPerModule);
+        final widened = (budget + bonus).clamp(0, notIntroduced.length);
+        calcCatchUp += widened - budget;
+        budget = widened;
+      }
+
       newCardBudget[module.id] = budget;
       final remaining = budget - (introducedTodayByModule[module.id] ?? 0);
       final priority = notIntroduced.where((c) => c.priorityIntroduction).toList();
@@ -238,7 +329,8 @@ class DailySchedulerService {
       final remainingSlots = (maxSessionSize - dueCards.length).clamp(0, maxSessionSize);
       trimmedNew = [
         ...newCards.where((c) => c.priorityIntroduction),
-        ...interleaveByModule(newCards.where((c) => !c.priorityIntroduction).toList()),
+        ...newCards.where((c) => !c.priorityIntroduction && deferredCalc(c)),
+        ...interleaveByModule(newCards.where((c) => !c.priorityIntroduction && !deferredCalc(c)).toList()),
       ].take(remainingSlots).toList();
     }
 
@@ -246,6 +338,7 @@ class DailySchedulerService {
       dueCards: dueCards,
       newCards: trimmedNew,
       newCardBudgetByModule: newCardBudget,
+      calcCatchUp: calcCatchUp,
     );
   }
 
@@ -265,12 +358,21 @@ class DailySchedulerService {
     Map<String, bool> unitCoveredById = const {},
     DateTime? now,
     int batchSize = 10,
+    bool includeCalcTasks = true,
+    bool Function(Flashcard card)? isCalcTask,
   }) {
-    final eligibleCards =
-        _eligible(modules, allCards, unitCoveredById).where((c) => !excludeIds.contains(c.id)).toList();
+    final isCalc = isCalcTask ?? CalcTaskDetector.isCalcTask;
+    final eligibleCards = _eligible(modules, allCards, unitCoveredById)
+        .where((c) => !excludeIds.contains(c.id) && (includeCalcTasks || !isCalc(c)))
+        .toList();
+    bool deferredCalc(Flashcard c) => includeCalcTasks && c.calcDeferredAt != null && isCalc(c);
 
     final freshNew = eligibleCards.where((c) => c.reps == 0).toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      ..sort((a, b) {
+        final da = deferredCalc(a), db = deferredCalc(b);
+        if (da != db) return da ? -1 : 1;
+        return a.createdAt.compareTo(b.createdAt);
+      });
     final newCards = freshNew.take(batchSize).toList();
 
     final remainingSlots = batchSize - newCards.length;

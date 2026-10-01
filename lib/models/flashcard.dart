@@ -478,6 +478,19 @@ class Flashcard {
   /// nach Tagen drankommt.
   final bool priorityIntroduction;
 
+  /// Rechenaufgabe: zur Lösung braucht man Taschenrechner bzw. echtes Rechnen
+  /// (nicht 2·3). `true`/`false` = von der KI beim Erstellen gesetzt oder von
+  /// Hand festgelegt; `null` = unbekannt, dann entscheidet die Erkennung im
+  /// Text (siehe CalcTaskDetector). Grundlage für den Schalter "Rechenaufgaben"
+  /// in Daily Quiz, Üben, Sprint und Speedrun.
+  final bool? needsCalculator;
+
+  /// Seit wann diese Rechenaufgabe zurückgestellt ist, weil ohne Rechenaufgaben
+  /// gelernt wurde (Schalter aus). Sobald sie wieder dabei sind, kommen solche
+  /// Karten zuerst und zusätzlich zum Tagesbudget dran; beim Beantworten wird
+  /// das Feld wieder gelöscht.
+  final DateTime? calcDeferredAt;
+
   /// Wo die Frage in den Lernunterlagen steht: Material (siehe MaterialItem)
   /// und Seite (1-basiert) – gesetzt, wenn die Karte aus einer bestimmten
   /// Seite entstanden ist (Frage erstellen, PDF-Import) oder die Stelle
@@ -568,6 +581,8 @@ class Flashcard {
     this.lastReview,
     this.unitId,
     this.priorityIntroduction = false,
+    this.needsCalculator,
+    this.calcDeferredAt,
     this.sourceMaterialId,
     this.sourcePage,
     this.scriptMaterialId,
@@ -674,6 +689,8 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      needsCalculator: needsCalculator,
+      calcDeferredAt: null,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       scriptMaterialId: scriptMaterialId,
@@ -757,6 +774,8 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      needsCalculator: needsCalculator,
+      calcDeferredAt: calcDeferredAt,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       scriptMaterialId: scriptMaterialId,
@@ -817,6 +836,14 @@ class Flashcard {
   /// Einer Vorlesungseinheit zuordnen (null = keine), z.B. per
   /// Sammel-Bearbeiten in der Kartenliste. Lernstand bleibt.
   Flashcard copyWithUnit(String? unitId) => Flashcard.fromMap({...toMap(), 'unitId': unitId});
+
+  /// Rechenaufgabe festlegen (`null` = wieder automatisch erkennen).
+  Flashcard copyWithCalculator(bool? needsCalculator) =>
+      Flashcard.fromMap({...toMap(), 'needsCalculator': needsCalculator});
+
+  /// Als zurückgestellte Rechenaufgabe markieren bzw. (`null`) die Markierung löschen.
+  Flashcard copyWithCalcDeferred(DateTime? at) =>
+      Flashcard.fromMap({...toMap(), 'calcDeferredAt': at?.toIso8601String()});
 
   /// Gespeicherte KI-Hilfestellungen ersetzen (siehe [aiHints]).
   Flashcard copyWithHints(List<String> hints) => Flashcard.fromMap({...toMap(), 'aiHints': hints});
@@ -921,6 +948,8 @@ class Flashcard {
         lastReview: lastReview,
         unitId: unitId,
         priorityIntroduction: priorityIntroduction,
+        needsCalculator: needsCalculator,
+        calcDeferredAt: calcDeferredAt,
         sourceMaterialId: sourceMaterialId,
         sourcePage: sourcePage,
         scriptMaterialId: scriptMaterialId,
@@ -985,6 +1014,8 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      needsCalculator: needsCalculator,
+      calcDeferredAt: calcDeferredAt,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       scriptMaterialId: scriptMaterialId,
@@ -1064,6 +1095,8 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      needsCalculator: needsCalculator,
+      calcDeferredAt: calcDeferredAt,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       scriptMaterialId: scriptMaterialId,
@@ -1165,6 +1198,8 @@ class Flashcard {
       lastReview: lastReview,
       unitId: unitId,
       priorityIntroduction: priorityIntroduction,
+      needsCalculator: needsCalculator,
+      calcDeferredAt: calcDeferredAt,
       sourceMaterialId: sourceMaterialId,
       sourcePage: sourcePage,
       scriptMaterialId: scriptMaterialId,
@@ -1215,6 +1250,8 @@ class Flashcard {
         'lastReview': lastReview?.toIso8601String(),
         'unitId': unitId,
         'priorityIntroduction': priorityIntroduction,
+        'needsCalculator': needsCalculator,
+        'calcDeferredAt': calcDeferredAt?.toIso8601String(),
         'sourceMaterialId': sourceMaterialId,
         'sourcePage': sourcePage,
         'scriptMaterialId': scriptMaterialId,
@@ -1271,6 +1308,8 @@ class Flashcard {
         lastReview: DateTime.tryParse(map['lastReview']?.toString() ?? ''),
         unitId: map['unitId'] as String?,
         priorityIntroduction: map['priorityIntroduction'] as bool? ?? false,
+        needsCalculator: map['needsCalculator'] is bool ? map['needsCalculator'] as bool : null,
+        calcDeferredAt: DateTime.tryParse('${map['calcDeferredAt'] ?? ''}'),
         sourceMaterialId: map['sourceMaterialId'] as String?,
         sourcePage: (map['sourcePage'] as num?)?.toInt(),
         scriptMaterialId: map['scriptMaterialId'] as String?,

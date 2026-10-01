@@ -259,7 +259,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       return;
     }
     if (mounted) setState(() => _ladderHints = List.of(hints));
-    final ai = _aiOrNull();
+    final ai = _helpAiOrNull();
     if (ai == null) return;
     final repo = context.read<FlashcardRepository?>();
     final answer = _correctAnswerText;
@@ -658,6 +658,13 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     return AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
   }
 
+  /// Für Tipps und Erklärungen: das Modell "Erklärungen & Hilfe" (Einstellungen).
+  AiService? _helpAiOrNull() {
+    final settings = context.read<SettingsRepository?>()?.settings;
+    if (settings == null || !settings.hasApiKey) return null;
+    return AiService(apiKey: settings.openRouterApiKey!, model: settings.effectiveHelpModelId);
+  }
+
   bool get _aiHelpAvailable => context.read<SettingsRepository?>()?.settings.hasApiKey ?? false;
 
   /// Die richtige Lösung als Text – Grundlage für Tipp und Erklärung.
@@ -716,7 +723,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   }
 
   Future<void> _loadHint() async {
-    final ai = _aiOrNull();
+    final ai = _helpAiOrNull();
     if (ai == null) return;
     setState(() {
       _hintLoading = true;
@@ -733,7 +740,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   }
 
   Future<void> _loadExplanation({bool simpler = false}) async {
-    final ai = _aiOrNull();
+    final ai = _helpAiOrNull();
     if (ai == null) return;
     setState(() {
       _explanationLoading = true;
@@ -1698,7 +1705,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             if (_labelResults?.elementAtOrNull(zone)?.correct == false)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text(
+                child: MathText(
                   'Stelle ${zone + 1}: richtig ist ${_zoneSolution(zone)}',
                   style: TextStyle(fontSize: 12.5, color: c.good, fontWeight: FontWeight.w600),
                 ),
@@ -1849,7 +1856,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         color: selected ? c.accentSolid : c.accentSoft,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
+      child: MathText(
         _pairs[source].source,
         style: TextStyle(fontSize: 13, color: selected ? c.accentInk : c.accentOnSoft, fontWeight: FontWeight.w600),
       ),
@@ -1872,7 +1879,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(color: color ?? c.surface, borderRadius: BorderRadius.circular(20)),
-      child: Text(_pairs[source].source, style: TextStyle(fontSize: 12.5, color: c.ink)),
+      child: MathText(_pairs[source].source, style: TextStyle(fontSize: 12.5, color: c.ink)),
     );
     if (_checked) return chip;
     return Draggable<int>(
@@ -1921,7 +1928,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         onTap: selected == null || _checked ? null : () => _placeOnZone(selected, zone),
         child: Row(
           children: [
-            Expanded(child: Text(_pairs[zone].target, style: const TextStyle(fontWeight: FontWeight.w600))),
+            Expanded(child: MathText(_pairs[zone].target, style: const TextStyle(fontWeight: FontWeight.w600))),
             if (assigned != null) _assignedChip(c, assigned),
           ],
         ),
@@ -1948,7 +1955,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(category, style: const TextStyle(fontWeight: FontWeight.w600)),
+            MathText(category, style: const TextStyle(fontWeight: FontWeight.w600)),
             if (assigned.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(

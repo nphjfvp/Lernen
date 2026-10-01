@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/flashcard.dart';
+import '../../services/calc_task_detector.dart';
 import '../../services/question_parsing.dart';
 
 /// Öffnet den Editor für den Inhalt einer Karte (jeder Fragetyp) und liefert
@@ -56,6 +57,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
   final List<TextEditingController> _blanks = [];
   final List<List<_TableEditCell>> _table = [];
   String? _error;
+  final _scroll = ScrollController();
+
+  /// Rechenaufgabe: null = automatisch erkennen, sonst fest (siehe CalcTaskDetector).
+  late bool? _needsCalculator = widget.card.needsCalculator;
 
   QuestionType get _type => widget.card.type;
   bool get _isChoice => _type == QuestionType.singleChoice || _type == QuestionType.multipleChoice;
@@ -133,6 +138,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
 
   @override
   void dispose() {
+    _scroll.dispose();
     _front.dispose();
     _back.dispose();
     _correctText.dispose();
@@ -152,9 +158,17 @@ class _CardEditScreenState extends State<CardEditScreen> {
     super.dispose();
   }
 
+  /// Zeigt [message] oben im Formular und scrollt dorthin.
+  void _fail(String message) {
+    setState(() => _error = message);
+    if (_scroll.hasClients && _scroll.offset > 0) {
+      _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+  }
+
   void _save() {
     final front = _front.text.trim();
-    if (front.isEmpty) return setState(() => _error = 'Die Frage darf nicht leer sein.');
+    if (front.isEmpty) return _fail('Die Frage darf nicht leer sein.');
     List<QuizOption>? options;
     List<DragPair>? pairs;
     List<String>? blanks;
@@ -166,11 +180,11 @@ class _CardEditScreenState extends State<CardEditScreen> {
           if (o.controller.text.trim().isNotEmpty) QuizOption(text: o.controller.text.trim(), isCorrect: o.isCorrect),
       ];
       final correct = options.where((o) => o.isCorrect).length;
-      if (options.length < 2) return setState(() => _error = 'Mindestens zwei Antwortoptionen eintragen.');
+      if (options.length < 2) return _fail('Mindestens zwei Antwortoptionen eintragen.');
       if (_type == QuestionType.singleChoice && correct != 1) {
-        return setState(() => _error = 'Bei Single-Choice genau eine Option als richtig markieren.');
+        return _fail('Bei Single-Choice genau eine Option als richtig markieren.');
       }
-      if (correct == 0) return setState(() => _error = 'Mindestens eine Option als richtig markieren.');
+      if (correct == 0) return _fail('Mindestens eine Option als richtig markieren.');
     }
     if (_isDrag) {
       pairs = [
@@ -178,19 +192,19 @@ class _CardEditScreenState extends State<CardEditScreen> {
           if (p.source.text.trim().isNotEmpty && p.target.text.trim().isNotEmpty)
             DragPair(source: p.source.text.trim(), target: p.target.text.trim()),
       ];
-      if (pairs.length < 2) return setState(() => _error = 'Mindestens zwei vollständige Paare eintragen.');
+      if (pairs.length < 2) return _fail('Mindestens zwei vollständige Paare eintragen.');
     }
     if (_type == QuestionType.fillBlank) {
       blanks = [for (final b in _blanks) b.text.trim()];
-      if (blanks.isEmpty) return setState(() => _error = 'Markiere die Lücken im Text mit ___ (drei Unterstriche).');
-      if (blanks.any((b) => b.isEmpty)) return setState(() => _error = 'Für jede Lücke eine Lösung eintragen.');
+      if (blanks.isEmpty) return _fail('Markiere die Lücken im Text mit ___ (drei Unterstriche).');
+      if (blanks.any((b) => b.isEmpty)) return _fail('Für jede Lücke eine Lösung eintragen.');
     }
     if (_type == QuestionType.learn && _back.text.trim().isEmpty) {
-      return setState(() => _error = 'Eine Erklärung bzw. den Lösungsweg eintragen.');
+      return _fail('Eine Erklärung bzw. den Lösungsweg eintragen.');
     }
     if (_type == QuestionType.freeText) {
       correctText = _correctText.text.trim();
-      if (correctText.isEmpty) return setState(() => _error = 'Eine Musterantwort eintragen.');
+      if (correctText.isEmpty) return _fail('Eine Musterantwort eintragen.');
     }
     List<List<QuestionTableCell>>? tableRows;
     if (_type == QuestionType.table) {
@@ -200,10 +214,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
             [for (final c in row) QuestionTableCell(text: c.controller.text.trim(), given: c.given)],
       ];
       if (!tableRows.any((r) => r.any((c) => !c.given && c.text.isNotEmpty))) {
-        return setState(() => _error = 'Mindestens eine Zelle zum Ausfüllen (mit Lösung) anlegen.');
+        return _fail('Mindestens eine Zelle zum Ausfüllen (mit Lösung) anlegen.');
       }
     }
-    Navigator.of(context).pop(widget.card.copyWithContent(
+    final edited = widget.card.copyWithContent(
       front: front,
       back: _back.text.trim(),
       options: options,
@@ -211,7 +225,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
       blanks: blanks,
       dragPairs: pairs,
       tableRows: tableRows,
-    ));
+    );
+    Navigator.of(context).pop(
+      edited.needsCalculator == _needsCalculator ? edited : edited.copyWithCalculator(_needsCalculator),
+    );
   }
 
   String get _backLabel => switch (_type) {
@@ -233,8 +250,15 @@ class _CardEditScreenState extends State<CardEditScreen> {
         ],
       ),
       body: ListView(
+        controller: _scroll,
         padding: const EdgeInsets.all(16),
         children: [
+          // Oben, damit die Meldung nach "Speichern" (in der Kopfzeile) sofort sichtbar ist.
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+            ),
           TextField(
             key: const ValueKey('card-edit-front'),
             controller: _front,
@@ -282,11 +306,33 @@ class _CardEditScreenState extends State<CardEditScreen> {
                 style: theme.textTheme.bodySmall,
               ),
             ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-            ),
+          const SizedBox(height: 20),
+          Text('Rechenaufgabe (Taschenrechner nötig)', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 6),
+          SegmentedButton<int>(
+            key: const ValueKey('card-edit-calc'),
+            segments: [
+              ButtonSegment(
+                value: 0,
+                label: Text(
+                    'Automatisch (${CalcTaskDetector.looksLikeCalc(widget.card.copyWithText(front: _front.text, back: _back.text)) ? 'ja' : 'nein'})'),
+              ),
+              const ButtonSegment(value: 1, label: Text('Ja')),
+              const ButtonSegment(value: 2, label: Text('Nein')),
+            ],
+            selected: {_needsCalculator == null ? 0 : (_needsCalculator! ? 1 : 2)},
+            onSelectionChanged: (v) => setState(() => _needsCalculator = switch (v.first) {
+                  1 => true,
+                  2 => false,
+                  _ => null,
+                }),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Rechenaufgaben lassen sich beim Lernen ausblenden (Schalter "Rechenaufgaben") und werden dann später '
+            'bevorzugt nachgeholt.',
+            style: theme.textTheme.bodySmall,
+          ),
         ],
       ),
     );

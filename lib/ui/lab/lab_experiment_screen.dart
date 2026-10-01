@@ -90,8 +90,9 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
   AiService? _ai() {
     final settings = context.read<SettingsRepository>().settings;
     if (!settings.hasApiKey) return null;
-    return LabExperimentScreen.aiFactory?.call(settings.openRouterApiKey!, settings.questionModelId) ??
-        AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+    // Gegenlesen ist Hilfe beim Lernen – Modell "Erklärungen & Hilfe".
+    return LabExperimentScreen.aiFactory?.call(settings.openRouterApiKey!, settings.effectiveHelpModelId) ??
+        AiService(apiKey: settings.openRouterApiKey!, model: settings.effectiveHelpModelId);
   }
 
   List<MaterialItem> _materials(LabExperiment e) => context.read<MaterialRepository>().forModule(e.moduleId);
@@ -806,6 +807,7 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
   }
 
   Future<void> _appendToNotes(String partId, String text) async {
+    LabAnswerField.flushPending();
     await _update((cur) => cur.updatePart(partId, (p) {
           final old = p.notes.trim();
           return p.copyWith(notes: old.isEmpty ? text : '$old\n\n$text');
@@ -1063,7 +1065,7 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
           if (s.hint.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2, bottom: 8),
-              child: Text(s.hint, style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.4)),
+              child: MathText(s.hint, style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.4)),
             ),
           if (measurements.isNotEmpty)
             Theme(
@@ -1212,6 +1214,9 @@ class _LabExperimentScreenState extends State<LabExperimentScreen> with SafeSetS
   /// und räumt den Entwurf weg – der Text gehört jetzt dir und wird von Hand
   /// weiterbearbeitet.
   Future<void> _adoptDraft(LabReportSection s) async {
+    // Erst gerade Getipptes speichern – sonst schriebe das alte Feld beim
+    // Abbauen seinen Stand über den übernommenen Text.
+    LabAnswerField.flushPending();
     await _update((cur) => cur.updateSection(s.id, (old) {
           final own = old.text.trim();
           final draft = old.draft.trim();
