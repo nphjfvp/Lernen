@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/app_settings.dart';
 import '../models/flashcard.dart' show QuestionType;
+import '../models/formula_sheet.dart';
 import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import 'calc_engine.dart';
 import 'calc_plan.dart';
@@ -403,6 +404,102 @@ Antworte in der Sprache der Vorlage.
       'overview': overviewParts.join('\n\n'),
       'key_points': keyPoints,
     };
+  }
+
+  static const _formulaSheetSystemPrompt = r'''
+Du bist ein Lernassistent für Studierende und erstellst eine FORMELSAMMLUNG zu
+Vorlesungsfolien (möglicherweise nur ein Abschnitt eines längeren Foliensatzes)
+– so, wie man sie beim Rechnen von Aufgaben und in der Klausur neben sich legt.
+Sammle die Formeln, Sätze, Regeln und Verfahrensschritte, die man für dieses
+Thema braucht, und ordne JEDEN Eintrag einer Stufe zu ("level"):
+- "kern": was in diesen Folien neu eingeführt oder zentral behandelt wird
+  (Definitionen, Sätze, Stammfunktionen, Integrationsregeln, Verfahren …). Führt
+  die Folie eine Regel neu ein, ist sie "kern" – auch wenn sie in einem anderen
+  Zusammenhang eine Hilfsregel wäre.
+- "hilfsregel": Regeln aus früheren Themen, die man für die Aufgaben dieses
+  Themas anwenden können muss, die die Folien aber NICHT neu einführen. Beispiel:
+  Ableitungsregeln (Produkt-, Ketten-, Quotientenregel), weil man sie für
+  partielle Integration und Substitution braucht.
+- "rechenregel": elementare Rechenregeln, auf denen alles aufbaut: Bruchrechnung,
+  Potenz- und Wurzelgesetze, Logarithmusgesetze, binomische Formeln,
+  trigonometrische Grundidentitäten.
+Denke an die Aufgaben, die zu diesem Thema gestellt werden könnten: Welche
+Regeln braucht man, um sie zu lösen? Was dafür nötig ist, aber in den Folien
+fehlt, ergänzt du mit "source": "ergaenzt" – aber NUR allgemein bekannte,
+sicher gültige Standardregeln. Was auf den Folien steht: "source": "folien".
+ERFINDE NICHTS: keine Spezialformeln, keine Zahlenwerte, die du nicht sicher
+weißt; bist du bei einer Formel nicht sicher, lass sie weg. Gib jede Formel nur
+einmal an.
+Gruppiere die Einträge in Abschnitte nach Themen ("sections", z.B.
+"Grundintegrale", "Integrationsregeln", "Ableitungsregeln", "Potenzgesetze").
+"formula" ist reines LaTeX OHNE umgebende Dollarzeichen; verdopple in JSON jeden
+Backslash (z.B. "\\frac{a}{b}"). "note" nennt in einem kurzen Satz Bedingungen
+oder wann man die Regel anwendet (darf leer sein).
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
+davor oder danach:
+{
+  "title": "Kurzer Titel, z.B. Formelsammlung Integralrechnung",
+  "sections": [
+    {"title": "Integrationsregeln",
+     "entries": [
+       {"name": "Partielle Integration", "formula": "\\int u\\,v'\\,dx = u\\,v - \\int u'\\,v\\,dx",
+        "note": "u, v stetig differenzierbar", "level": "kern", "source": "folien"}
+     ]}
+  ]
+}
+Wenn bereits erfasste Formeln aus vorherigen Abschnitten genannt werden,
+wiederhole diese NICHT, sondern nimm nur Neues auf.
+Antworte in der Sprache der Vorlage.
+''';
+
+  /// Formelsammlung aus Vorlesungsfolien (Vorbereiten-Modus). Die KI ordnet jeden
+  /// Eintrag einer Stufe zu (Kernstoff, Hilfsregel, Rechenregel, siehe
+  /// [FormulaLevel]); welche davon sichtbar sind, bestimmt erst die gewählte
+  /// Genauigkeit ([FormulaDetail]) – die Sammlung enthält deshalb immer alles
+  /// und lässt sich später ohne neue Anfrage grober oder feiner stellen.
+  ///
+  /// Lange Foliensätze werden wie bei [generateSummary] abschnittsweise
+  /// verarbeitet; jeder weitere Abschnitt bekommt die schon erfassten Formeln,
+  /// und die Ergebnisse werden zusammengeführt (gleiche Formeln nur einmal).
+  Future<({String title, FormulaSheet sheet})> generateFormulaSheet(
+    String slidesText, {
+    ChunkGranularity granularity = ChunkGranularity.auto,
+    bool rollingContext = true,
+    FormulaDetail detail = FormulaDetail.mittel,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final chunks = _chunksFor(slidesText, granularity);
+    var sheet = FormulaSheet(detail: detail);
+    String? title;
+    final rawResponses = <String>[];
+
+    for (var i = 0; i < chunks.length; i++) {
+      final known = [for (final s in sheet.sections) for (final e in s.entries) e.name];
+      final contextNote = chunks.length > 1 && rollingContext && known.isNotEmpty
+          ? '\n\nBereits erfasste Formeln aus vorherigen Abschnitten (NICHT wiederholen):\n'
+              '- ${known.take(_rollingContextLimit * 3).join('\n- ')}'
+          : '';
+      final header = chunks.length == 1
+          ? 'Vorlesungsfolien:\n\n'
+          : 'Dies ist Abschnitt ${i + 1} von ${chunks.length} eines längeren Foliensatzes.'
+              '$contextNote\n\nAbschnitt-Text:\n\n';
+      final raw = await _complete(_formulaSheetSystemPrompt, '$header${chunks[i]}', temperature: 0.2);
+      rawResponses.add(raw);
+      final parsed = _parseJsonObject(raw);
+      final chunkTitle = parsed['title']?.toString().trim() ?? '';
+      if (chunkTitle.isNotEmpty) title ??= chunkTitle;
+      sheet = sheet.merged(FormulaSheet.fromMap({...parsed, 'detail': detail.name}));
+      onProgress?.call(i + 1, chunks.length);
+    }
+
+    if (sheet.totalCount == 0) {
+      throw AiServiceException(
+        'Die KI hat in den Folien keine Formeln gefunden – enthalten sie keine Formeln, '
+        'oder das Modell hat nicht im erwarteten Format geantwortet. Bitte erneut versuchen.',
+        rawResponse: rawResponses.join('\n\n'),
+      );
+    }
+    return (title: (title == null || title.isEmpty) ? 'Formelsammlung' : title, sheet: sheet);
   }
 
   static const _conceptsSystemPrompt = '''

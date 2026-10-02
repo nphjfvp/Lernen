@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../widgets/math_text.dart';
 import '../../models/app_settings.dart';
+import '../../models/formula_sheet.dart';
 import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
 import '../../models/summary.dart';
@@ -28,8 +29,9 @@ import '../widgets/ocr_notice.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
 import '../widgets/safe_set_state.dart';
+import 'formula_sheet_view.dart';
 
-enum _Mode { kurz, ausfuehrlich }
+enum _Mode { kurz, ausfuehrlich, formeln }
 
 enum _Step { modeSelect, pick, extracting, ready, generating, preview, preparingSession, session }
 
@@ -71,10 +73,18 @@ class _PickedFile {
 ///    Frage wird dabei als "hier hakte es" gewertet und automatisch als
 ///    Merkpunkt an die gewählte Einheit angehängt (siehe LectureUnit.notes),
 ///    damit man beim nächsten Mal genau dort ansetzen kann.
+///  - "Formelsammlung": die KI sammelt die Formeln und Regeln der Folien (und
+///    was man dafür sonst noch braucht) und ordnet sie nach Stufen; die
+///    Genauigkeit Grob/Mittel/Fein bestimmt, was sichtbar ist (siehe
+///    FormulaSheet) und lässt sich auch nach dem Speichern noch ändern.
 class PrepareScreen extends StatefulWidget {
   const PrepareScreen({super.key, required this.moduleId});
 
   final String moduleId;
+
+  /// Nur für Tests: KI-Zugang (API-Key, Modell) für die Formelsammlung.
+  @visibleForTesting
+  static AiService Function(String apiKey, String model)? aiFactory;
 
   @override
   State<PrepareScreen> createState() => _PrepareScreenState();
@@ -89,6 +99,11 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
   String? _rawResponse;
 
   String _unitChoice = '';
+
+  // -- Formelsammlung-Zustand ----------------------------------------------
+  FormulaDetail _formulaDetail = FormulaDetail.mittel;
+  FormulaSheet? _formulaSheet;
+  String _formulaTitle = '';
 
   /// Sperrt "Speichern"/"Fertig & speichern" während des Speicherns – ein
   /// zweites Tippen legte sonst alles doppelt an.
@@ -305,6 +320,50 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
     }
   }
 
+  // -- Formelsammlung ---------------------------------------------------------
+
+  Future<void> _generateFormulas() async {
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) {
+      setState(() {
+        _error = 'Kein OpenRouter-API-Key hinterlegt. Bitte zuerst in den Einstellungen eintragen.';
+        _step = _Step.ready;
+      });
+      return;
+    }
+    setState(() {
+      _step = _Step.generating;
+      _error = null;
+      _rawResponse = null;
+    });
+    try {
+      final ai = PrepareScreen.aiFactory?.call(settings.openRouterApiKey!, settings.questionModelId) ??
+          AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final result = await ai.generateFormulaSheet(
+        _combinedText,
+        granularity: settings.chunkGranularity,
+        rollingContext: settings.rollingContextEnabled,
+        detail: _formulaDetail,
+      );
+      setState(() {
+        _formulaSheet = result.sheet;
+        _formulaTitle = result.title;
+        _step = _Step.preview;
+      });
+    } on AiServiceException catch (e) {
+      setState(() {
+        _error = e.message;
+        _rawResponse = e.rawResponse;
+        _step = _Step.ready;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Unerwarteter Fehler: $e';
+        _step = _Step.ready;
+      });
+    }
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     setState(() => _saving = true);
@@ -316,7 +375,8 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
   }
 
   Future<void> _saveSummary() async {
-    final result = _result!;
+    final sheet = _mode == _Mode.formeln ? _formulaSheet : null;
+    final result = sheet == null ? _result! : const <String, dynamic>{};
     final now = DateTime.now();
     final unitId = _unitChoice.isEmpty ? null : _unitChoice;
     // Wiederverwendetes Material (existingMaterialId gesetzt, siehe
@@ -355,13 +415,16 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
         ...materials.map((m) => m.id),
         ..._files.map((f) => f.existingMaterialId).whereType<String>(),
       ],
-      title: (result['title']?.toString().trim() ?? '').isNotEmpty
-          ? result['title'].toString().trim()
-          : _files.first.fileName,
+      title: sheet != null
+          ? (_formulaTitle.trim().isNotEmpty ? _formulaTitle.trim() : _files.first.fileName)
+          : (result['title']?.toString().trim() ?? '').isNotEmpty
+              ? result['title'].toString().trim()
+              : _files.first.fileName,
       overview: result['overview']?.toString() ?? '',
       keyPoints: (result['key_points'] as List?)?.map((e) => e.toString()).toList() ?? [],
       createdAt: now,
       unitId: unitId,
+      formulaSheet: sheet,
     );
 
     // Auch wenn der Screen währenddessen verlassen wird, vollständig
@@ -540,7 +603,9 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
       message: _mode == _Mode.ausfuehrlich
           ? 'Die KI-Markierungen und deine Fragen samt Antworten sind noch nicht gespeichert '
               '("Fertig & speichern").'
-          : 'Die erstellte Zusammenfassung ist noch nicht gespeichert.',
+          : _mode == _Mode.formeln
+              ? 'Die erstellte Formelsammlung ist noch nicht gespeichert.'
+              : 'Die erstellte Zusammenfassung ist noch nicht gespeichert.',
       child: Scaffold(
         appBar: AppBar(title: const Text('Vorbereiten-Modus')),
         body: Padding(
@@ -579,14 +644,36 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
           onAddExisting: _pickExisting,
           onRemove: _removeFile,
           onApplyRecommendation: _applyRecommendation,
-          onGenerate: _mode == _Mode.kurz ? _generate : _startSession,
+          onGenerate: switch (_mode!) {
+            _Mode.kurz => _generate,
+            _Mode.ausfuehrlich => _startSession,
+            _Mode.formeln => _generateFormulas,
+          },
+          formulaDetail: _formulaDetail,
+          onFormulaDetailChanged: (d) => setState(() => _formulaDetail = d),
           units: units,
           selectedUnitChoice: _unitChoice,
           onUnitChanged: _handleUnitChanged,
         );
       case _Step.generating:
-        return const _LoadingView(label: 'KI erstellt Zusammenfassung …');
+        return _LoadingView(
+            label: _mode == _Mode.formeln ? 'KI erstellt Formelsammlung …' : 'KI erstellt Zusammenfassung …');
       case _Step.preview:
+        if (_mode == _Mode.formeln && _formulaSheet != null) {
+          return _FormulaPreviewView(
+            title: _formulaTitle,
+            sheet: _formulaSheet!,
+            onDetailChanged: (d) => setState(() {
+              _formulaDetail = d;
+              _formulaSheet = _formulaSheet!.withDetail(d);
+            }),
+            onSave: _saving ? null : _save,
+            onDiscard: () => setState(() {
+              _step = _Step.ready;
+              _formulaSheet = null;
+            }),
+          );
+        }
         return _PreviewView(result: _result!, onSave: _saving ? null : _save, onDiscard: () {
           setState(() {
             _step = _Step.ready;
@@ -640,9 +727,19 @@ class _ModeSelectView extends StatelessWidget {
               'zur Einheit gespeichert – für spätere Vertiefung.',
           onTap: () => onChoose(_Mode.ausfuehrlich),
         ),
+        const SizedBox(height: 12),
+        _ModeOption(
+          key: const ValueKey('mode-formeln'),
+          icon: Icons.functions,
+          title: 'Formelsammlung erstellen',
+          subtitle: 'Die KI sammelt die Formeln und Regeln der Folien – auf Wunsch auch, was man dafür sonst '
+              'noch braucht (Ableitungs-, Bruch-, Potenzregeln). Genauigkeit: Grob, Mittel oder Fein, '
+              'später jederzeit änderbar.',
+          onTap: () => onChoose(_Mode.formeln),
+        ),
         const SizedBox(height: 16),
         Text(
-          'Beide Modi legen die hochgeladenen Folien als Material im Fach ab.',
+          'Alle Modi legen die hochgeladenen Folien als Material im Fach ab.',
           style: TextStyle(fontSize: 12, color: c.inkMuted),
         ),
       ],
@@ -651,7 +748,7 @@ class _ModeSelectView extends StatelessWidget {
 }
 
 class _ModeOption extends StatelessWidget {
-  const _ModeOption({required this.icon, required this.title, required this.subtitle, required this.onTap});
+  const _ModeOption({super.key, required this.icon, required this.title, required this.subtitle, required this.onTap});
   final IconData icon;
   final String title;
   final String subtitle;
@@ -780,6 +877,8 @@ class _ReadyView extends StatelessWidget {
     required this.onRemove,
     required this.onApplyRecommendation,
     required this.onGenerate,
+    required this.formulaDetail,
+    required this.onFormulaDetailChanged,
     required this.units,
     required this.selectedUnitChoice,
     required this.onUnitChanged,
@@ -794,6 +893,8 @@ class _ReadyView extends StatelessWidget {
   final void Function(int index) onRemove;
   final void Function(ChunkGranularity granularity) onApplyRecommendation;
   final VoidCallback onGenerate;
+  final FormulaDetail formulaDetail;
+  final void Function(FormulaDetail detail) onFormulaDetailChanged;
   final List<LectureUnit> units;
   final String selectedUnitChoice;
   final void Function(String? choice) onUnitChanged;
@@ -873,11 +974,37 @@ class _ReadyView extends StatelessWidget {
           currentGranularity: settings.chunkGranularity,
           onApply: () => onApplyRecommendation(analysis.recommendedGranularity),
         ),
+        if (mode == _Mode.formeln) ...[
+          const SizedBox(height: 16),
+          Text('Genauigkeit', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          SegmentedButton<FormulaDetail>(
+            key: const ValueKey('formula-detail-pick'),
+            showSelectedIcon: false,
+            segments: [
+              for (final d in FormulaDetail.values) ButtonSegment(value: d, label: Text(d.label)),
+            ],
+            selected: {formulaDetail},
+            onSelectionChanged: (v) => onFormulaDetailChanged(v.first),
+          ),
+          const SizedBox(height: 8),
+          Text(formulaDetail.description,
+              style: TextStyle(fontSize: 12.5, height: 1.4, color: context.colors.inkMuted)),
+        ],
         const SizedBox(height: 24),
         FilledButton.icon(
+          key: const ValueKey('prepare-generate'),
           onPressed: onGenerate,
-          icon: Icon(mode == _Mode.kurz ? Icons.auto_awesome_outlined : Icons.travel_explore_outlined),
-          label: Text(mode == _Mode.kurz ? 'Zusammenfassung erstellen' : 'Ausführlich vorbereiten starten'),
+          icon: Icon(switch (mode) {
+            _Mode.kurz => Icons.auto_awesome_outlined,
+            _Mode.ausfuehrlich => Icons.travel_explore_outlined,
+            _Mode.formeln => Icons.functions,
+          }),
+          label: Text(switch (mode) {
+            _Mode.kurz => 'Zusammenfassung erstellen',
+            _Mode.ausfuehrlich => 'Ausführlich vorbereiten starten',
+            _Mode.formeln => 'Formelsammlung erstellen',
+          }),
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
@@ -932,6 +1059,53 @@ class _PreviewView extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: FilledButton(onPressed: onSave, child: const Text('Speichern')),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _FormulaPreviewView extends StatelessWidget {
+  const _FormulaPreviewView({
+    required this.title,
+    required this.sheet,
+    required this.onDetailChanged,
+    required this.onSave,
+    required this.onDiscard,
+  });
+
+  final String title;
+  final FormulaSheet sheet;
+  final void Function(FormulaDetail detail) onDetailChanged;
+  final VoidCallback? onSave;
+  final VoidCallback onDiscard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              FormulaSheetView(sheet: sheet, onDetailChanged: onDetailChanged),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: OutlinedButton(onPressed: onDiscard, child: const Text('Verwerfen'))),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                key: const ValueKey('prepare-save'),
+                onPressed: onSave,
+                child: const Text('Speichern'),
+              ),
             ),
           ],
         ),

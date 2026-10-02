@@ -1393,6 +1393,43 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5x. Formelsammlung aus Vorlesungen (Grob / Mittel / Fein)
+
+Im **Vorbereiten-Modus** gibt es neben "Kurz" und "Ausführlich" den dritten Weg
+**Formelsammlung erstellen**: Folien hochladen (oder "Vorhandenes Material
+verwenden"), **Genauigkeit wählen**, die KI sammelt die Formeln und Regeln. Das
+Ergebnis liegt im Fach unter **Zusammenfassungen** (Funktions-Symbol,
+"Formelsammlung · Mittel · 14 Formeln").
+
+Die KI ordnet jeden Eintrag einer Stufe zu – die Genauigkeit entscheidet dann,
+welche sichtbar sind (am Beispiel Integralrechnung):
+- **Fein** – alles, was man braucht: der Stoff selbst (Stammfunktionen,
+  Integrationsregeln, partielle Integration, Substitution) **plus** die Regeln aus
+  früheren Themen (Produkt-, Ketten-, Quotientenregel) **plus** die elementaren
+  Rechenregeln (Bruch-, Potenz-, Wurzel-, Logarithmusgesetze, binomische Formeln).
+- **Mittel** – die Rechenregeln fallen weg, der Rest bleibt (also auch die
+  Ableitungsregeln, weil man sie für partielle Integration und Substitution braucht).
+- **Grob** – auch die Ableitungsregeln fallen weg, **solange sie nichts Neues
+  sind**: führen die Folien eine Regel selbst neu ein, bleibt sie auch bei Grob.
+
+**Alles wird gespeichert, die Genauigkeit ist nur die Ansicht:** über dem Inhalt
+steht der Umschalter Grob/Mittel/Fein ("3 von 5 Formeln"), du kannst jederzeit –
+auch Wochen später – umstellen, ohne die KI noch einmal zu fragen (die Wahl wird
+gespeichert). Die Formeln werden als LaTeX gesetzt.
+- **Ergänztes ist markiert:** Was nicht in den Folien steht, sondern von der KI als
+  Standardregel ergänzt wurde (vor allem Hilfs- und Rechenregeln), trägt die Marke
+  "ergänzt – bitte prüfen". Die KI soll nur allgemein bekannte, sichere Regeln
+  ergänzen und nichts erfinden – prüfen solltest du trotzdem.
+- **Bearbeiten:** Stift-Symbol → jeden Eintrag ändern (Name, LaTeX mit Vorschau,
+  Hinweis, "gehört zu" Kernstoff/Hilfsregel/Rechenregel), löschen oder je Abschnitt
+  "Formel hinzufügen". Änderungen werden sofort gespeichert; der Titel lässt sich
+  ändern ("Fertig").
+- **Kopieren:** Knopf oben rechts legt die Sammlung bei der gewählten Genauigkeit
+  als Markdown mit `$$…$$` in die Zwischenablage (zum Einfügen in ein Dokument).
+- Lange Foliensätze werden abschnittsweise verarbeitet und zusammengeführt (gleiche
+  Formeln nur einmal); es gilt das Fragen-Modell aus den Einstellungen. Die
+  Sammlung reist mit dem Cloud-Sync und dem Fach-Export.
+
 ### 5w. Fragen überspringen und auflösen
 
 Im **Daily Quiz**, in **Üben** (auch beim Üben aus dem Fehlertagebuch) und im

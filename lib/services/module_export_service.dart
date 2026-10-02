@@ -297,6 +297,7 @@ class ModuleExportService {
               keyPoints: s.keyPoints,
               createdAt: s.createdAt,
               unitId: s.unitId == null ? null : unitIdMap[s.unitId],
+              formulaSheet: s.formulaSheet,
             ))
         .toList();
 

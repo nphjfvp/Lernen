@@ -4,6 +4,7 @@ import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/lecture_unit.dart';
 import 'package:lernen/models/material_item.dart';
 import 'package:lernen/models/module.dart';
+import 'package:lernen/models/formula_sheet.dart';
 import 'package:lernen/models/summary.dart';
 import 'package:lernen/services/database_service.dart';
 import 'package:lernen/services/module_export_service.dart';
@@ -217,6 +218,38 @@ void main() {
       expect(s.unitId, imported.lectureUnits.single.id);
       expect(s.sourceMaterialIds, [imported.materials.single.id]);
       expect(s.title, 'Überblick');
+    });
+
+    test('eine Formelsammlung reist mit (alle Stufen, gewählte Genauigkeit)', () {
+      final sheet = Summary(
+        id: 'sheet1',
+        moduleId: 'mod1',
+        sourceMaterialIds: const ['mat1'],
+        title: 'Formelsammlung',
+        overview: '',
+        keyPoints: const [],
+        createdAt: DateTime(2026, 1, 8),
+        formulaSheet: FormulaSheet(detail: FormulaDetail.grob, sections: [
+          FormulaSection(title: 'Regeln', entries: [
+            const FormulaEntry(name: 'Kern', formula: r'a+b', level: FormulaLevel.kern),
+            const FormulaEntry(name: 'Rechen', formula: r'\frac{a}{b}', level: FormulaLevel.rechenregel, supplemented: true),
+          ]),
+        ]),
+      );
+      final imported = ModuleExportService.parse(ModuleExportService.buildPayload(
+        module: module,
+        lectureUnits: [unit],
+        materialsWithBytes: [material],
+        concepts: [concept],
+        flashcards: [flashcard],
+        summaries: [sheet],
+      ));
+      final s = imported.summaries.single;
+      expect(s.isFormulaSheet, isTrue);
+      expect(s.formulaSheet!.detail, FormulaDetail.grob);
+      expect(s.formulaSheet!.totalCount, 2);
+      expect(s.formulaSheet!.visibleCount(), 1);
+      expect(s.formulaSheet!.sections.single.entries.last.supplemented, isTrue);
     });
 
     test('ältere Exportdateien ohne Zusammenfassungen bleiben lesbar', () {

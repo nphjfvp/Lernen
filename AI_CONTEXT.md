@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1123 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1154 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1042,6 +1042,45 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     unverändert (eigenes Überspringen = sofort falsch). Tests: question_answer_view_test
     (Gruppe "Überspringen und Auflösen"), quiz_skip_test (Üben + Daily mit echter
     DB; am Ende `drain` gegen Timer-Reste). Der Sprint hat keinen eigenen Bildschirmtest.
+51. Formelsammlung (Nutzer: "beim Hochladen von Vorlesungen eine Formelsammlung
+    erstellen, Genauigkeit Grob/Mittel/Fein – Fein alles inkl. Bruch-/Potenzregeln und
+    Ableitungsregeln, Mittel ohne Rechenregeln, Grob auch ohne Ableitung, solange es
+    nichts Neues ist"). Kein neuer Speicher: `Summary.formulaSheet` (FormulaSheet?;
+    `isFormulaSheet`; overview/keyPoints leer) – reist damit durch Sync/Merge/Export/
+    Fach-Löschen ohne Zusatzcode (nur `module_export_service` fädelt es beim Neu-
+    Anlegen durch; `SummaryDetailScreen._save` und `Summary.copyWith` ebenfalls).
+    `lib/models/formula_sheet.dart`: `FormulaLevel` (kern/hilfsregel/rechenregel,
+    `parse`: unbekannt → kern, damit nichts verloren geht), `FormulaDetail`
+    (grob/mittel/fein; `includes(level)`: grob = kern, mittel = ≠ rechenregel, fein =
+    alles), `FormulaEntry` (name, formula = reines LaTeX ohne Begrenzer,
+    `stripMathDelimiters`, note, level, supplemented ← `source: ergaenzt`),
+    `FormulaSection`, `FormulaSheet` (detail = nur die ANSICHT; gespeichert wird immer
+    alles → `withDetail` ohne neue KI-Anfrage; `visibleSections/visibleCount`, `merged`
+    für Folienabschnitte: Abschnitte gleichen Titels zusammen, Formeln über
+    `dedupeKey` (ohne Leerzeichen/\left\right/\cdot) einmal, bei Doppelung höhere Stufe und
+    "folien" vor "ergänzt"; `asText` = Markdown zum Kopieren). Die Zuordnung zu den
+    Stufen macht die KI (`AiService._formulaSheetSystemPrompt`: kern = in den Folien
+    neu/zentral, auch eine sonst frühere Regel, wenn die Folien sie neu einführen;
+    hilfsregel = frühere Themen, die man für die Aufgaben braucht; rechenregel =
+    Elementares; Ergänztes mit source "ergaenzt", nur sichere Standardregeln, NICHT
+    erfinden); die App filtert deterministisch. `generateFormulaSheet(text, detail,
+    granularity, rollingContext, onProgress)` → `({title, sheet})`: Chunking wie
+    `generateSummary` (ab Abschnitt 2 "Bereits erfasste Formeln"), temperature 0.2,
+    wirft bei null Formeln mit Rohantwort; LaTeX-Backslash-Reparatur über
+    `_parseJsonObject`. UI: `PrepareScreen` `_Mode.formeln` (Karte `mode-formeln`;
+    ReadyView: SegmentedButton `formula-detail-pick` + Erklärungstext; `_generateFormulas`;
+    `PrepareScreen.aiFactory` für Tests; Vorschau `_FormulaPreviewView`, Speichern
+    `prepare-save` legt Material + Summary mit `formulaSheet` an, Titel aus der KI),
+    `lib/ui/prepare/formula_sheet_view.dart` (`FormulaSheetView`: SegmentedButton
+    `formula-detail`, Zähler `formula-count` "n von m Formeln", Marken "Hilfsregel/
+    Rechenregel/ergänzt – bitte prüfen"; Bearbeiten-Modus mit Stift/Papierkorb je Eintrag
+    und `formula-add-<Abschnitt>`; Rückrufe bekommen die GLEICHE Eintrags-Instanz →
+    `SummaryDetailScreen._replaceEntry` per `identical`; `showFormulaEntryDialog` mit
+    Formelvorschau), `SummaryDetailScreen._buildSheet` (Umschalter speichert sofort;
+    `formula-copy`), Fachliste: Icon `Icons.functions`, "Formelsammlung · Mittel · n
+    Formeln". Test-Fallen: Dart-Strings mit `''` (Strich) – in `r'…'` beendet das den
+    String; `find.text` findet auch den Inhalt von TextFields (Dialog beim Schließen) –
+    auf Eintrags-Schlüssel (`formula-edit-<Name>`) warten und `pumpAndSettle`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

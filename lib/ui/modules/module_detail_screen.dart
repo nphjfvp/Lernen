@@ -292,14 +292,17 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     _SectionHeader(title: 'Zusammenfassungen', count: summaries.length),
                     const SizedBox(height: 10),
                     if (summaries.isEmpty)
-                      const _HintText('Noch keine Zusammenfassung – starte den Vorbereiten-Modus.')
+                      const _HintText('Noch keine Zusammenfassung oder Formelsammlung – starte den Vorbereiten-Modus.')
                     else
                       ...summaries.map((s) => Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: _SoftRow(
-                              icon: Icons.description_outlined,
+                              icon: s.isFormulaSheet ? Icons.functions : Icons.description_outlined,
                               title: s.title,
-                              subtitle: '${s.keyPoints.length} Kernkonzepte',
+                              subtitle: s.isFormulaSheet
+                                  ? 'Formelsammlung · ${s.formulaSheet!.detail.label} · '
+                                      '${s.formulaSheet!.visibleCount()} Formeln'
+                                  : '${s.keyPoints.length} Kernkonzepte',
                               onTap: () => Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => SummaryDetailScreen(summary: s)),
                               ),
