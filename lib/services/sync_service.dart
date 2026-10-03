@@ -286,6 +286,14 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );
   await MockExamRepository.retainModulesIn(txn, moduleIds);
+  // Fotos zu Versuchen, die es nach dem Abgleich nicht mehr gibt (auf einem
+  // anderen Gerät gelöscht), blieben sonst als ungesehene Altlast liegen –
+  // Fotos selbst werden nicht synchronisiert und können groß sein.
+  final labIds = (await DatabaseService.labExperiments.findKeys(txn)).toList();
+  await DatabaseService.labPhotos.delete(
+    txn,
+    finder: Finder(filter: Filter.not(Filter.inList('experimentId', labIds))),
+  );
 }
 
 /// Wohin synchronisiert wird: an ein Firebase-Konto gebunden oder über

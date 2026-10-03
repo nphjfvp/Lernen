@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1154 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1168 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1081,6 +1081,29 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Formeln". Test-Fallen: Dart-Strings mit `''` (Strich) – in `r'…'` beendet das den
     String; `find.text` findet auch den Inhalt von TextFields (Dialog beim Schließen) –
     auf Eintrags-Schlüssel (`formula-edit-<Name>`) warten und `pumpAndSettle`.
+52. Zweite Code-Analyse (Nutzer: "Mach eine erneute codeanalyse"), siehe
+    `CODE_ANALYSE.md` ab "Zweite Prüfung". Kein hoher Befund; Nr. 52–56: (52)
+    `CalcException`-Texte kürzen den Ausdruck (`_shorten`, 80 Zeichen) – vorher
+    stand ein 20.000-Zeichen-Ausdruck komplett in der Meldung; (53)
+    `QuestionParsing.aiTypeName` mit `orElse` (flashcard), Test: jeder
+    `QuestionType` rundet über `parseType`; (54) `LabPhotoReading.fromJson`: `cells`
+    keine Liste → ignorieren statt Typfehler, `_resolvePart` mit leerem
+    Vergleichsnamen trifft nichts; (55) `applySyncPayload` löscht am Ende Fotos
+    (`labPhotos`) zu Versuchen, die es nicht mehr gibt (Fotos sind nur lokal;
+    `Filter.not(Filter.inList('experimentId', ids))`, leere Liste = alle weg);
+    (56) `CalcScreen._run`/`LabDraftScreen._create` fangen auch Nicht-
+    `AiServiceException` ab und zeigen eine Meldung. Wächter-Test
+    `test/models/flashcard_copy_integrity_test.dart`: jede `copyWith…`-Methode von
+    `Flashcard` muss ALLE Felder behalten – bei einem NEUEN Feld dort mit ergänzen.
+    Regressionstests: `test/services/analysis2_regression_test.dart`,
+    `test/services/lab_photo_orphan_sync_test.dart`. Erkenntnis: Screens mit
+    `SafeSetState` (Calc, LabDraft, LabPhotos, Prepare, Review, Chat, Import,
+    Sokrates, Seitenfragen, Viewer) ignorieren `setState` nach `dispose` – dort
+    keine zusätzlichen `mounted`-Prüfungen nötig; ein Test "Screen verlassen
+    während die KI antwortet" lässt sich deshalb nicht als Regressionstest bauen
+    (er ginge auch ohne Fix grün). Test-Falle: `MaterialApp(home: …)` austauschen
+    ersetzt die Route NICHT (Screen bleibt gemountet) – zum Entfernen
+    `pumpWidget(const SizedBox.shrink())`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

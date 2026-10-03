@@ -167,7 +167,7 @@ class QuestionParsing {
   /// Gegenstück zu [parseType]: der snake_case-Name eines Typs im KI-JSON
   /// (z.B. für Prompts, die einen bestimmten Typ verlangen).
   static String aiTypeName(QuestionType type) =>
-      _aiTypeAliases.entries.firstWhere((e) => e.value == type).key;
+      _aiTypeAliases.entries.firstWhere((e) => e.value == type, orElse: () => const MapEntry('flashcard', QuestionType.flashcard)).key;
 
   /// Prüft einen von der KI generierten Karteikarten-Eintrag auf
   /// Vollständigkeit für seinen deklarierten Typ und repariert ihn bei

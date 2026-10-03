@@ -192,3 +192,101 @@ Nachgewiesen mit `TZ=Europe/Berlin`; die CI testet jetzt ebenfalls so.
   - Entfernen einer Markierung nach Speichern und Neu-Öffnen (Syncfusion),
   - interaktive Fragen,
   - Termine und Erinnerung über die Zeitumstellung.
+
+---
+
+# Zweite Prüfung (Oktober 2026)
+
+Neue Durchsicht nach den Erweiterungen seit der ersten Analyse: Rechnen mit der
+KI, Berichtsentwurf, Laborfach-Schalter, Fotos zu Versuchen, Überspringen und
+Auflösen im Quiz, Formelsammlung, Sync mit Zusammenführen (3-Wege-Merge) und
+Auto-Sync – rund 27.000 neue Zeilen in über 130 Dateien.
+
+**Ergebnis:** Kein hoher oder blockierender Befund. Fünf kleinere Befunde
+(Nr. 52–56) sind behoben und haben Regressionstests; die großen neuen
+Bausteine (Sync-Merge, Planer, Stufen-Gating, Überspringen, Rechner)
+hielten der Prüfung stand. Neu sind 2 Testdateien mit Regressionstests und
+eine Absicherung, die kontrolliert, dass keine Kopier-Methode von `Flashcard`
+ein Feld verliert. 1154 → 1168 Tests, alle grün, auch mit
+`TZ=Europe/Berlin`; `flutter analyze` ist sauber, der Web-Build erfolgreich.
+
+## Vorgehen
+
+1. **Feld-Verlust-Test** (`flashcard_copy_integrity_test.dart`): Jede
+   `copyWith…`-Methode von `Flashcard` muss alle Felder behalten – sonst
+   gehen beim Beantworten, Befördern oder Zurückstufen stillschweigend
+   Inhalte verloren. Ergebnis: Kein Verlust; der Test bleibt als Wächter, falls
+   später ein neues Feld dazukommt.
+2. **Sync und Datenverlust**: `sync_merge`, `sync_merge_apply`,
+   `sync_service` (Push, Pull, Merge, Anwenden), `auto_sync_service`,
+   Sicherungen. Gelesen mit der Frage „kann eine Antwort oder ein Text
+   verloren gehen?“. Kein Pfad gefunden; die Sicherung vor dem Zusammenführen
+   und die Transaktion beim Anwenden greifen.
+3. **Lernabläufe**: `DailySchedulerService` (Budget, Rechenaufgaben
+   zurückstellen und nachholen), `StageGateService`, `ReviewService`, die
+   Warteschlangen im Daily Quiz (Haupt-, Übersprungen-, Wiederholungs- und
+   Zusatzrunde), Üben und Sprint.
+4. **Rechnen und Labor**: `CalcEngine` mit absichtlich bösartigen Eingaben,
+   `CalcPlan` (Einlesen, Rechnen, Zurückschreiben), Fotos auslesen
+   (`LabPhotoReading`), Berichtsentwurf.
+5. **Muster-Suche**: Zugriffe nach `await` (Skript über alle Screens),
+   `firstWhere` ohne Rückfallwert, harte Casts auf KI-Antworten,
+   `catch`-Zweige, die Fehler verschlucken.
+
+**Belastungsprobe des Rechners:** 20.000 verschachtelte Klammern,
+200.000-Glieder-Summe, 5.000-stellige Zahlen, `1e999999999`,
+`2^2^2^2^2^2`, 100.000-elementige Messreihen, Division durch 0, ungleich
+lange Reihen, fremde Ziffern. Nichts hängt, nichts stürzt ab, nichts liefert
+`NaN` oder `∞` als Ergebnis; die längste Rechnung dauerte 249 ms.
+
+## Befunde und Fixes
+
+Schwere: **M** mittel · **N** niedrig.
+
+| Nr | | Problem | Fix |
+|---|---|---|---|
+| 52 | N | Rechner: Bei einem sehr langen (z.B. von der KI gelieferten) Ausdruck stand der **ganze Ausdruck** in der Fehlermeldung – bei 20.000 Zeichen eine seitenlange Meldung. | Der Ausdruck steht gekürzt (80 Zeichen) in allen Meldungen. |
+| 53 | N | `QuestionParsing.aiTypeName` warf einen `StateError`, falls je ein Fragetyp ohne KI-Namen dazukäme; die Beförderung einer Karte (`applyPromotion`) und der Prompt für Stufenvorgaben hängen daran. | Rückfallwert `flashcard`; ein Test prüft, dass jeder Fragetyp einen Namen hat, den `parseType` wieder versteht. |
+| 54 | M | Fotos auslesen: Lieferte die KI `cells` als Text oder Objekt statt als Liste, brach das Einlesen mit einem Typfehler ab („type 'String' is not a subtype of type 'List'“) – ohne dass die übrigen Angaben des Fotos (Beschreibung, Notizen, Zuordnung) ankamen. Zusätzlich traf ein Teil-Name aus lauter Sonderzeichen einen Teil mit leerem Namen. | Falsche Form wird ignoriert, der Rest bleibt; ein leerer Vergleichsname trifft nichts. |
+| 55 | M | **Verwaiste Fotos:** Fotos liegen nur auf dem Gerät. Wurde ein Versuch auf einem anderen Gerät gelöscht oder durch eine Wiederherstellung entfernt, blieben seine Fotos hier dauerhaft liegen (Bilder, also viel Speicher), ohne dass sie je wieder zu sehen waren. | Nach jedem Anwenden eines Sync- oder Sicherungs-Stands (`applySyncPayload`) werden Fotos zu nicht mehr vorhandenen Versuchen gelöscht. |
+| 56 | N | Rechnen und Berichtsentwurf: Ein unerwarteter Fehler (alles außer einem KI-Fehler, z.B. ein unpassendes Feld in der Antwort) stoppte die Anzeige „arbeitet …“, aber **es erschien keine Meldung** – es sah aus, als sei nichts passiert. | Eine allgemeine Fehlermeldung („Rechnen fehlgeschlagen: …“, „Entwurf fehlgeschlagen: …“). |
+
+## Geprüft, ohne Befund
+
+- **Zugriffe nach `await`:** Alle KI-Bildschirme (Rechnen, Entwurf, Fotos,
+  Vorbereiten, Nachbereiten, Import, Chat, Sokrates) nutzen `SafeSetState` und
+  ignorieren eine Antwort, die nach dem Verlassen ankommt. Die übrigen
+  Fundstellen des Skripts (Einstellungen, Kartenliste, Fach-Formular,
+  Bild-Editor) wurden stichprobenartig angesehen: Sie liegen in dauerhaft
+  offenen Tabs oder warten auf Dialoge, die das Verlassen blockieren.
+- **Kopier-Methoden von `Flashcard`:** alle Felder bleiben erhalten (siehe oben).
+- **Rechenplan:** Zahlen aus der KI werden auf endliche Werte geprüft, ein
+  fehlgeschlagener Schritt steckt nur Folgeschritte an, `toJson` kann nie an
+  `NaN` scheitern.
+- **Überspringen / Auflösen:** Eine übersprungene Karte wird nicht verbucht,
+  kommt nach der Hauptrunde zurück, und der letzte Eintrag einer Runde kann
+  nicht mehr übersprungen werden (kein Endlosspiel). Auflösen zählt als falsch
+  und läuft durch denselben `ReviewService` wie jede andere Antwort.
+
+## Offene Hinweise (bewusst nicht umgesetzt)
+
+- **Zusammenführen und Inhalt gegen Antworten:** Haben beide Geräte dieselbe
+  Karte geändert, gilt die mit dem weiteren Lernstand. Wurde auf einem Gerät der
+  Fragetext verbessert und auf dem anderen die Karte danach noch einmal
+  beantwortet, gewinnt die Antwort – die Korrektur des Textes geht verloren.
+  Besser wäre ein Zusammenführen je Feld; das lohnt erst, wenn es im Alltag
+  auffällt.
+- **Laborversuche** werden als Ganzes verglichen (der mit mehr eigenem Text
+  gewinnt). Bearbeiten zwei Geräte *denselben* Versuch gleichzeitig, bleibt einer
+  der beiden Stände; der andere ist über die Sicherung vor dem Zusammenführen
+  bzw. die früheren Cloud-Stände wiederherstellbar.
+- **Auto-Sync beobachtet nicht alle Speicher** (zum Beispiel Lerntage und
+  Ampel-Verlauf): Eine Änderung dort allein löst keinen Upload aus, sie reist
+  erst mit dem nächsten Upload mit.
+- **Fotos zu Versuchen** werden nicht synchronisiert (zu groß für Firestore);
+  die ausgelesenen Werte reisen im Versuch mit. Auf dem zweiten Gerät fehlen
+  die Bilder selbst.
+- **Rechner:** Ein Dezimalkomma im Ausdruck (`1,5*2`) wird nicht als Zahl
+  gelesen, weil `,` und `;` Funktionsargumente trennen; Werte *in der
+  Wertetabelle* dürfen mit Komma geschrieben werden. Die Fehlermeldung nennt
+  die Stelle.

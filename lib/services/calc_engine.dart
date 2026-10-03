@@ -189,7 +189,7 @@ class CalcEngine {
         case ',' || ';':
           tokens.add(_Token(_Kind.comma, ',', at: i));
         default:
-          throw CalcException('Unerwartetes Zeichen „$ch“ im Ausdruck „$src“.');
+          throw CalcException('Unerwartetes Zeichen „$ch“ im Ausdruck „${_shorten(src)}“.');
       }
       i++;
     }
@@ -284,7 +284,7 @@ class CalcEngine {
     } on CalcException {
       rethrow;
     } catch (e) {
-      throw CalcException('Der Ausdruck „$expression“ lässt sich nicht berechnen.');
+      throw CalcException('Der Ausdruck „${_shorten(expression)}“ lässt sich nicht berechnen.');
     }
     for (final v in result) {
       if (v.isNaN || v.isInfinite) {
@@ -433,7 +433,7 @@ class _Parser {
   CalcVec parse() {
     final result = _expression();
     if (_peek.kind != _Kind.end) {
-      throw CalcException('Unerwartetes „${_peek.text}“ im Ausdruck „$_source“.');
+      throw CalcException('Unerwartetes „${_peek.text}“ im Ausdruck „${_shorten(_source)}“.');
     }
     return result;
   }
@@ -514,14 +514,16 @@ class _Parser {
         if (constant != null) return [constant];
         throw CalcException('Unbekannte Größe „${t.text}“.');
       case _Kind.end:
-        throw CalcException('Der Ausdruck „$_source“ endet unerwartet.');
+        throw CalcException('Der Ausdruck „${_shorten(_source)}“ endet unerwartet.');
       default:
-        throw CalcException('Unerwartetes „${t.text}“ im Ausdruck „$_source“.');
+        throw CalcException('Unerwartetes „${t.text}“ im Ausdruck „${_shorten(_source)}“.');
     }
   }
 
   void _expectClose() {
-    if (_peek.kind != _Kind.close) throw CalcException('Eine Klammer im Ausdruck „$_source“ wird nicht geschlossen.');
+    if (_peek.kind != _Kind.close) {
+      throw CalcException('Eine Klammer im Ausdruck „${_shorten(_source)}“ wird nicht geschlossen.');
+    }
     _pos++;
   }
 
@@ -649,4 +651,11 @@ class _Parser {
     }
     throw CalcException('Unbekannte Funktion „$name“.');
   }
+}
+
+/// Kürzt einen Ausdruck für Fehlermeldungen, damit auch ein riesiger Ausdruck
+/// (z.B. von der KI geliefert) keine seitenlange Meldung erzeugt.
+String _shorten(String source, {int max = 80}) {
+  final s = source.trim();
+  return s.length <= max ? s : '${s.substring(0, max)} …';
 }

@@ -219,6 +219,8 @@ class _LabDraftScreenState extends State<LabDraftScreen> with SafeSetState<LabDr
         _error = err.message;
         _raw = err.rawResponse;
       });
+    } catch (err) {
+      setState(() => _error = 'Entwurf fehlgeschlagen: $err');
     } finally {
       setState(() {
         _busy = false;

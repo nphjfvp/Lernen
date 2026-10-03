@@ -1393,6 +1393,27 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5y. Zweite Code-Analyse (Oktober 2026)
+
+Neue Durchsicht der Erweiterungen seit der ersten Analyse (Rechnen mit der KI,
+Berichtsentwurf, Laborfach und Fotos, Überspringen/Auflösen, Formelsammlung,
+Sync mit Zusammenführen). **Kein hoher oder blockierender Befund**; fünf kleine
+Befunde sind behoben und haben Regressionstests (Nr. 52–56 in `CODE_ANALYSE.md`):
+
+- Fehlermeldungen des Rechners zeigen einen sehr langen Ausdruck nur gekürzt.
+- Ein Fragetyp ohne KI-Namen wirft nicht mehr, wenn eine Karte befördert wird.
+- Fotos auslesen: Liefert die KI die Zellen in falscher Form, kommt der Rest
+  des Fotos (Beschreibung, Notizen, Zuordnung) trotzdem an.
+- **Fotos zu gelöschten Versuchen** (auf einem anderen Gerät gelöscht oder durch
+  eine Wiederherstellung entfernt) werden nach dem Abgleich aufgeräumt statt als
+  unsichtbarer Speicher liegen zu bleiben.
+- Rechnen und Berichtsentwurf melden auch unerwartete Fehler.
+
+Neu ist außerdem ein Wächter-Test, der prüft, dass keine Kopier-Methode einer
+Karte ein Feld verliert. Die offenen Hinweise (Zusammenführen je Eintrag statt
+je Feld, Fotos nur lokal, Dezimalkomma im Ausdruck) stehen am Ende von
+`CODE_ANALYSE.md`.
+
 ### 5x. Formelsammlung aus Vorlesungen (Grob / Mittel / Fein)
 
 Im **Vorbereiten-Modus** gibt es neben "Kurz" und "Ausführlich" den dritten Weg

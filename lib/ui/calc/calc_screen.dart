@@ -164,6 +164,8 @@ class _CalcScreenState extends State<CalcScreen> with SafeSetState<CalcScreen> {
         _error = e.message;
         _raw = e.rawResponse;
       });
+    } catch (e) {
+      setState(() => _error = 'Rechnen fehlgeschlagen: $e');
     } finally {
       setState(() => _busy = false);
     }

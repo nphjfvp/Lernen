@@ -64,7 +64,8 @@ class LabPhotoReading {
     final experiment = _resolveExperiment(json['experimentId'] ?? json['experiment'], experiments);
     final part = experiment == null ? null : _resolvePart(json['partId'] ?? json['part'], experiment);
     final cells = <({int table, int row, int col, String value})>[];
-    for (final raw in (json['cells'] as List? ?? const [])) {
+    final rawCells = json['cells'];
+    for (final raw in (rawCells is List ? rawCells : const [])) {
       if (raw is! Map) continue;
       final table = _int(raw['table']), row = _int(raw['row']), col = _int(raw['col'] ?? raw['column']);
       final value = (raw['value'] ?? '').toString().trim();
@@ -187,7 +188,7 @@ class LabPhotoReading {
         if (byPrefix.length == 1) return byPrefix.first;
       }
       final n = _norm(id);
-      final byTitle = e.parts.where((p) => _norm(p.title) == n).toList();
+      final byTitle = n.isEmpty ? const <LabPart>[] : e.parts.where((p) => _norm(p.title) == n).toList();
       if (byTitle.length == 1) return byTitle.first;
     }
     return e.parts.length == 1 ? e.parts.first : null;
