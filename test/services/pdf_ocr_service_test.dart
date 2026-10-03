@@ -99,4 +99,27 @@ void main() {
     expect(text, contains('Erste Seite'));
     expect(text, contains('Erkannter Text der Scan-Seite'));
   });
+
+  test('recognizePages: Text je Seite, die Reihenfolge und Leerstellen bleiben (Grundlage fürs Kürzen)', () async {
+    final client = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'choices': [
+            {
+              'message': {'content': '<<<SEITE 1>>>\nErkannter Text der Scan-Seite'},
+            },
+          ],
+        }),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final ocr = PdfOcrService(visionAi: AiService(apiKey: 'k', model: 'vision', client: client));
+    final bytes = _pdf(['Erste Seite mit ausreichend viel Text darauf.', null, 'Dritte Seite mit ebenfalls genug Text.']);
+    final pages = await ocr.recognizePages(bytes, PdfService().extractPageTexts(bytes));
+    expect(pages, hasLength(3));
+    expect(pages[0], contains('Erste Seite'));
+    expect(pages[1], 'Erkannter Text der Scan-Seite');
+    expect(pages[2], contains('Dritte Seite'));
+  });
 }

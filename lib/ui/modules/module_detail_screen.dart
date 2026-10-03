@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../condense/condense_screen.dart';
 import '../widgets/math_text.dart';
 import '../../models/concept.dart';
 import '../../models/flashcard.dart';
@@ -456,7 +457,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           label: const Text('Einheit anlegen'),
                         ),
                         if (context.watch<SettingsRepository>().settings.hasApiKey &&
-                            materials.any((m) => m.unitId == null || !units.any((u) => u.id == m.unitId)))
+                            materials.any((m) =>
+                                m.kind != MaterialKind.condensed && (m.unitId == null || !units.any((u) => u.id == m.unitId))))
                           OutlinedButton.icon(
                             onPressed: _suggestingUnits ? null : () => _suggestUnits(materials, units),
                             icon: _suggestingUnits
@@ -480,10 +482,23 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     ],
                     _SectionHeader(title: 'Materialien', count: materials.length),
                     const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: _uploadMaterials,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Material hochladen'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _uploadMaterials,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Material hochladen'),
+                        ),
+                        if (materials.any((m) => m.kind == MaterialKind.slide))
+                          OutlinedButton.icon(
+                            key: const ValueKey('module-condense'),
+                            onPressed: _condense,
+                            icon: const Icon(Icons.content_cut),
+                            label: const Text('Vorlesung kürzen'),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     if (materials.isEmpty)
@@ -571,10 +586,13 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                   (m.hasRemotePdf && context.watch<SettingsRepository>().settings.pdfStorage.isConfigured)
               ? () => _openMaterial(m)
               : null,
-          onRecognizeText: m.hasViewablePdf && context.watch<SettingsRepository>().settings.hasApiKey
-              ? () => _recognizeScannedPages(m)
-              : null,
-          onImportQuestions: m.hasViewablePdf && m.fileName.toLowerCase().endsWith('.pdf')
+          onRecognizeText:
+              m.hasViewablePdf && m.kind != MaterialKind.condensed && context.watch<SettingsRepository>().settings.hasApiKey
+                  ? () => _recognizeScannedPages(m)
+                  : null,
+          onCondense: m.kind == MaterialKind.slide ? () => _condense(m) : null,
+          onShowText: m.kind == MaterialKind.condensed ? () => showCondensedTextDialog(context, m) : null,
+          onImportQuestions: m.hasViewablePdf && m.kind != MaterialKind.condensed && m.fileName.toLowerCase().endsWith('.pdf')
               ? () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => PdfQuestionImportScreen(moduleId: m.moduleId, material: m),
@@ -584,6 +602,13 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           onAttachPdf: !m.hasViewablePdf && !m.hasRemotePdf && m.fileName.toLowerCase().endsWith('.pdf')
               ? () => _attachPdf(m)
               : null,
+        ),
+      );
+
+  /// Öffnet "Kürzen" – mit [lecture] vorgewählt, falls angegeben.
+  Future<void> _condense([MaterialItem? lecture]) => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CondenseScreen(moduleId: widget.moduleId, lectureId: lecture?.id),
         ),
       );
 
@@ -714,7 +739,9 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     final settings = context.read<SettingsRepository>().settings;
     if (!settings.hasApiKey) return;
     final unitIds = {for (final u in units) u.id};
-    final unassigned = materials.where((m) => m.unitId == null || !unitIds.contains(m.unitId)).toList();
+    final unassigned = materials
+        .where((m) => m.kind != MaterialKind.condensed && (m.unitId == null || !unitIds.contains(m.unitId)))
+        .toList();
     if (unassigned.isEmpty) return;
     setState(() => _suggestingUnits = true);
     List<({String title, List<String> materialIds})> suggestions;
@@ -1264,6 +1291,8 @@ class _MaterialRow extends StatelessWidget {
     this.onRecognizeText,
     this.onImportQuestions,
     this.onAttachPdf,
+    this.onCondense,
+    this.onShowText,
   });
   final MaterialItem material;
   final ValueChanged<bool> onToggleCovered;
@@ -1272,6 +1301,8 @@ class _MaterialRow extends StatelessWidget {
   final VoidCallback? onRecognizeText;
   final VoidCallback? onImportQuestions;
   final VoidCallback? onAttachPdf;
+  final VoidCallback? onCondense;
+  final VoidCallback? onShowText;
 
   @override
   Widget build(BuildContext context) {
@@ -1299,6 +1330,7 @@ class _MaterialRow extends StatelessWidget {
                     MaterialKind.slide => Icons.slideshow_outlined,
                     MaterialKind.exercise => Icons.assignment_outlined,
                     MaterialKind.practiceExam => Icons.school_outlined,
+                    MaterialKind.condensed => Icons.content_cut,
                   },
                   size: 16,
                   color: c.inkMuted,
@@ -1323,6 +1355,9 @@ class _MaterialRow extends StatelessWidget {
                             : 'Folien',
                         MaterialKind.exercise => 'Übungsaufgabe',
                         MaterialKind.practiceExam => 'Übungsklausur (Stil-Referenz)',
+                        MaterialKind.condensed => material.condensed == null
+                            ? 'Gekürzt'
+                            : 'Gekürzt · ${material.condensed!.shareText} · aus ${material.condensed!.sourceName}',
                       },
                       style: TextStyle(fontSize: 12, color: c.inkMuted),
                     ),
@@ -1339,12 +1374,35 @@ class _MaterialRow extends StatelessWidget {
                   ),
                   // Seltenere Aktionen im Menü – nebeneinander wird die Zeile
                   // auf dem Handy zu schmal für den Dateinamen.
-                  if (onImportQuestions != null || onRecognizeText != null || onAttachPdf != null)
+                  if (onImportQuestions != null ||
+                      onRecognizeText != null ||
+                      onAttachPdf != null ||
+                      onCondense != null ||
+                      onShowText != null)
                     PopupMenuButton<VoidCallback>(
                       tooltip: 'Weitere Aktionen',
                       icon: Icon(Icons.more_vert, size: 18, color: c.inkMuted),
                       onSelected: (action) => action(),
                       itemBuilder: (_) => [
+                        if (onCondense != null)
+                          PopupMenuItem(
+                            value: onCondense,
+                            child: const ListTile(
+                              leading: Icon(Icons.content_cut),
+                              title: Text('Kürzen …'),
+                              subtitle: Text('Nur, was für Übungsaufgaben nötig ist'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        if (onShowText != null)
+                          PopupMenuItem(
+                            value: onShowText,
+                            child: const ListTile(
+                              leading: Icon(Icons.notes),
+                              title: Text('Text ansehen und kopieren'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
                         if (onImportQuestions != null)
                           PopupMenuItem(
                             value: onImportQuestions,

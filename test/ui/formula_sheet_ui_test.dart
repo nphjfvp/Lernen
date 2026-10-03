@@ -17,6 +17,7 @@ import 'package:lernen/repositories/summary_repository.dart';
 import 'package:lernen/services/ai_service.dart';
 import 'package:lernen/services/database_service.dart';
 import 'package:lernen/theme/app_colors.dart';
+import 'package:lernen/ui/condense/condense_screen.dart';
 import 'package:lernen/ui/prepare/prepare_screen.dart';
 import 'package:lernen/ui/prepare/summary_detail_screen.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -374,5 +375,19 @@ void main() {
       expect(find.text('Kernkonzepte'), findsOneWidget);
       expect(find.byKey(const ValueKey('formula-copy')), findsNothing);
     });
+  });
+
+  testWidgets('Vorbereiten: die Karte "Vorlesung kürzen" öffnet Kürzen statt eines weiteren Vorbereiten-Weges', (tester) async {
+    await pumpPrepare(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('mode-kuerzen')));
+    await tester.tap(find.byKey(const ValueKey('mode-kuerzen')));
+    await tester.pumpAndSettle();
+    expect(find.byType(CondenseScreen), findsOneWidget);
+    // Ersetzt den Vorbereiten-Bildschirm: zurück geht es zum Fach, nicht in die Moduswahl.
+    expect(find.byType(PrepareScreen), findsNothing);
+    expect(find.byKey(const ValueKey('condense-lecture')), findsOneWidget);
+    // Der Vorbereiten-Bildschirm hat beim Start die Datenbank geöffnet – in der Test-Uhr; echte Zeit
+    // lassen, sonst bleibt das Öffnen hängen und blockiert die Tests dahinter.
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
   });
 }

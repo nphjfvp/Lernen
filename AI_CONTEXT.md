@@ -468,7 +468,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1168 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1239 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1104,6 +1104,65 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (er ginge auch ohne Fix grün). Test-Falle: `MaterialApp(home: …)` austauschen
     ersetzt die Route NICHT (Screen bleibt gemountet) – zum Entfernen
     `pumpWidget(const SizedBox.shrink())`.
+53. Kürzen (Nutzer: "eine hochgeladene Vorlesung wählen, Übungsaufgaben hochladen und einen
+    Prompt eingeben wie 'alles um diese Übungsaufgaben zu lösen'; die Vorlesung wird (mit
+    Rolling-Kontext) durchgegangen, mit oder ohne weitere Beispielaufgaben, alle Erklärungen
+    bleiben, der Rest fällt weg; Ergebnis ein gekürztes Dokument, auf Wunsch mit Markierungen,
+    wo auf der Seite der relevante Teil beginnt"). Grundprinzip: die KI WÄHLT NUR AUS, sie
+    schreibt nichts um. `lib/models/condense.dart`: `CondenseBlock` (Kennung "Seite.Nr", z.B.
+    "12.3"), `CondensePage` (label Seite/Folie/Abschnitt), `CondenseSection` (title, kind
+    erklaerung|beispiel, why, blockIds, covers = Anforderungs-Kennungen n1…), `CondensePlan`
+    (tasks, needs), `CondenseSelection` (sections, skipped, plan; `visible(includeExamples)`,
+    `uncovered`), `CondenseStrictness` (knapp/ausgewogen/grosszuegig), `CondensedInfo`
+    (am Material gespeichert: sourceMaterialId/Name, prompt, exerciseNames, pages = behaltene
+    Original-Seiten, totalPages, label, includeExamples, markers, notFound, skipped;
+    `condensePageRanges` → "Seiten 3, 5–9"). `lib/services/condense_service.dart` (rein):
+    `blocksOfPage` (Zeilen bis ~240 Zeichen, Überschrift nach fertigem Satz beginnt Block),
+    `pagesFromPageTexts` (PDF; leere Seiten behalten ihre Nummer), `pagesFromText` (PPTX-
+    "--- Folie N ---"-Marken, sonst Pseudo-Abschnitte), `group` (Seiten zu KI-Abschnitten, eine
+    große Seite bleibt allein), `render` ("[12.3] Text"), `parseBlockRefs` (Kennungen, Bereiche
+    auch über Seitengrenzen "11.2-12.1", ganze Seiten "12"/"11-12"; nur Kennungen DIESES
+    Aufrufs gelten; ohne Bindestrich sind mehrere Zahlen eine Aufzählung), `parseSection`,
+    `keptBlocks` (Dokumentreihenfolge, erster Abschnitt gibt den Titel), `keptPageNumbers`,
+    `runsByPage` (zusammenhängende behaltene Stücke je Seite = Stellen der Markierung; eine
+    ganz behaltene Seite bekommt keine), `textDocument`, `mergeNeeds`. `condense_pdf.dart`
+    (syncfusion): `CondensePdf.build` = `PdfService.extractPages` auf die behaltenen Seiten,
+    dann je Lauf `HighlightMatcher.findLineRange` auf den ersten Zeilen des Blocks →
+    `PdfTextMarkupAnnotation` (gelb, setAppearance, nur die ersten 2 Zeilen), dazu Stempel
+    "Original: S. N" oben rechts (ASCII, die Standardschrift kann keine Umlaute; Text wird VOR
+    dem Stempel gelesen). KI (`AiService`): `analyzeCondenseTasks` (Aufgaben → needs;
+    Aufgabentext abschnittsweise mit Rolling-Kontext, wirft bei Aufgaben ohne needs),
+    `condenseLecture` (Auswertung, dann je Abschnitt `_condenseSelectSystemPrompt`; Rolling-
+    Kontext "Schon erklärt: n1 / Noch nicht gefunden: n2 / Bisher behaltene Abschnitte";
+    unlesbare Antwort wird einmal wiederholt; ohne einen einzigen Abschnitt Fehler mit
+    Rohantwort; unbekannte `covers` fallen weg; Chunkgröße über `TextChunker.chunkSizeFor`).
+    Die KI markiert Beispielaufgaben mit kind "beispiel" – der Schalter in der Vorschau filtert
+    lokal (kein neuer Aufruf). `PdfOcrService.recognizePages` (Text je Seite) für gescannte
+    Vorlesungen. UI `lib/ui/condense/condense_screen.dart` (`CondenseScreen`, Hooks `aiFactory`
+    und `pickFilesHook`; Schritte setup/running/preview; Keys `condense-lecture/-upload/
+    -existing/-prompt/-strictness/-start/-cancel/-summary/-pages/-examples/-markers/
+    -notfound/-section-<i>/-skipped/-save/-copy/-back/-error`; `DiscardGuard` in der Vorschau;
+    hochgeladene Aufgaben werden als `MaterialKind.exercise` im Fach abgelegt; Abbrechen zählt
+    `_run` hoch, ein Ergebnis eines alten Laufs wird verworfen). Speichern: neues
+    `MaterialKind.condensed` (`MaterialItem.condensed`, in toMap/fromMap/copyWith, Export und
+    Import – dort wird `sourceMaterialId` auf die neue Kennung des Originals umgebogen), Name
+    "<Vorlesung> – gekürzt(.pdf)", `extractedText` = Textfassung, `unitId` des Originals. Das
+    gekürzte Material zählt NICHT als Skript (`kind != slide`), fehlt im Frage-Chat
+    (`ChatContextBuilder._excludingPracticeExam`) und bei den Einheiten-Vorschlägen. Einstiege:
+    Knopf `module-condense` + Menü "Kürzen …" an Folien + "Text ansehen und kopieren" am
+    gekürzten Dokument (`ModuleDetailScreen`), Karte `mode-kuerzen` im Vorbereiten (pushReplacement
+    auf den Bildschirm). Tests: `condense_service_test`, `condense_pdf_test`, `condense_ai_test`,
+    `condense_material_test`, `condense_screen_test`, `condense_entry_test`. Test-Fallen:
+    `getApplicationDocumentsPath` im Fake-Pfadanbieter überschreiben (MaterialFileStore.store);
+    im Test braucht der Start-Bildschirm ein `Scaffold`, sonst zeigt sich die SnackBar nach
+    dem Pop nirgends; ausstehende `.timeout`-Timer nach einem Abbruch brauchen genug
+    `runAsync`/`pump`-Runden, bis die laufenden Anfragen fertig sind; ein Test, der den
+    Vorbereiten-Bildschirm nur mit `pump` öffnet, startet das Öffnen der echten Datenbank in der
+    Test-Uhr und lässt es hängen – die Tests DAHINTER in derselben Datei blockieren dann ewig
+    (`formula_sheet_ui_test`: so einen Test ans Ende stellen und mit `runAsync`-Wartezeit
+    abschließen). Offene Grenzen:
+    Markierungen setzen nur auf PDFs mit Textebene (gescannt: nur Stempel); die Auswahl ist so
+    gut wie das gewählte Modell – die Vorschau zeigt Begründung und lässt Abschnitte abwählen.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

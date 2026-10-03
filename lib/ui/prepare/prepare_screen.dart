@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../condense/condense_screen.dart';
 import '../widgets/math_text.dart';
 import '../../models/app_settings.dart';
 import '../../models/formula_sheet.dart';
@@ -619,7 +620,12 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
   Widget _buildBody() {
     switch (_step) {
       case _Step.modeSelect:
-        return _ModeSelectView(onChoose: _chooseMode);
+        return _ModeSelectView(
+          onChoose: _chooseMode,
+          onCondense: () => Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => CondenseScreen(moduleId: widget.moduleId)),
+          ),
+        );
       case _Step.pick:
         return _PickView(
           error: _error,
@@ -699,8 +705,12 @@ class _PrepareScreenState extends State<PrepareScreen> with SafeSetState<Prepare
 }
 
 class _ModeSelectView extends StatelessWidget {
-  const _ModeSelectView({required this.onChoose});
+  const _ModeSelectView({required this.onChoose, required this.onCondense});
   final void Function(_Mode mode) onChoose;
+
+  /// "Kürzen" arbeitet mit schon hochgeladenen Vorlesungen und hat einen eigenen
+  /// Bildschirm.
+  final VoidCallback onCondense;
 
   @override
   Widget build(BuildContext context) {
@@ -736,6 +746,16 @@ class _ModeSelectView extends StatelessWidget {
               'noch braucht (Ableitungs-, Bruch-, Potenzregeln). Genauigkeit: Grob, Mittel oder Fein, '
               'später jederzeit änderbar.',
           onTap: () => onChoose(_Mode.formeln),
+        ),
+        const SizedBox(height: 12),
+        _ModeOption(
+          key: const ValueKey('mode-kuerzen'),
+          icon: Icons.content_cut,
+          title: 'Vorlesung kürzen',
+          subtitle: 'Eine schon hochgeladene Vorlesung auf das kürzen, was man für bestimmte Übungsaufgaben '
+              'braucht – mit allen Erklärungen, ohne den Rest. Als PDF, auf Wunsch mit Markierungen, wo der '
+              'relevante Teil auf der Seite beginnt.',
+          onTap: onCondense,
         ),
         const SizedBox(height: 16),
         Text(

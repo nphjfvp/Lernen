@@ -65,8 +65,11 @@ class ChatContextBuilder {
   /// Stil-Referenz für die KI-Generierung (siehe AiService.examContext-
   /// Parameter), sind aber kein normaler Fach-Stoff – im Frage-Chat würde
   /// "Behandelt/Noch nicht behandelt" für sie ohnehin keinen Sinn ergeben.
-  static List<MaterialItem> _excludingPracticeExam(List<MaterialItem> materials) =>
-      materials.where((m) => m.kind != MaterialKind.practiceExam).toList();
+  /// Gekürzte Fassungen ([MaterialKind.condensed]) bestehen aus Text ihres
+  /// Originals: sie doppelten nur dessen Inhalt im Kontext.
+  static List<MaterialItem> _excludingPracticeExam(List<MaterialItem> materials) => materials
+      .where((m) => m.kind != MaterialKind.practiceExam && m.kind != MaterialKind.condensed)
+      .toList();
 
   static String build(List<MaterialItem> materials, {required int charBudget}) {
     final relevant = _excludingPracticeExam(materials);

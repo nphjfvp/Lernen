@@ -1,6 +1,10 @@
+import 'condense.dart';
 import 'page_note.dart';
 
-enum MaterialKind { slide, exercise, practiceExam }
+/// [condensed] ist eine mit "Kürzen" erzeugte, gekürzte Fassung einer
+/// Vorlesung (siehe [MaterialItem.condensed]) – abgeleitet, also weder Skript
+/// noch Übungsblatt.
+enum MaterialKind { slide, exercise, practiceExam, condensed }
 
 /// Standard-Gewichtung (siehe Flashcard.weight) für eine neu erzeugte Karte
 /// je nach Art ihrer Quelle: Übungsaufgaben aus Übungsblättern kommen öfter
@@ -147,6 +151,12 @@ class MaterialItem {
   /// Gerät die PDF beim Öffnen von dort holen kann.
   final String? remotePdfKey;
 
+  /// Nur bei [MaterialKind.condensed]: woraus und wofür gekürzt wurde, welche
+  /// Seiten behalten wurden (siehe CondenseScreen). [extractedText] ist dann
+  /// die Textfassung des gekürzten Dokuments, die PDF (falls vorhanden) hat
+  /// nur die behaltenen Seiten.
+  final CondensedInfo? condensed;
+
   const MaterialItem({
     required this.id,
     required this.moduleId,
@@ -163,6 +173,7 @@ class MaterialItem {
     this.pageNotes = const [],
     this.unitId,
     this.remotePdfKey,
+    this.condensed,
   });
 
   /// Ob dieses Material eine visuelle PDF-Ansicht mit Markier-Funktion
@@ -205,6 +216,7 @@ class MaterialItem {
         pageNotes: pageNotes ?? this.pageNotes,
         unitId: unitId,
         remotePdfKey: remotePdfKey,
+        condensed: condensed,
       );
 
   Map<String, dynamic> toMap() => {
@@ -223,6 +235,7 @@ class MaterialItem {
         'pageNotes': pageNotes.map((n) => n.toMap()).toList(),
         'unitId': unitId,
         'remotePdfKey': remotePdfKey,
+        'condensed': condensed?.toMap(),
       };
 
   factory MaterialItem.fromMap(Map<String, dynamic> map) => MaterialItem(
@@ -248,5 +261,6 @@ class MaterialItem {
             const [],
         unitId: map['unitId'] as String?,
         remotePdfKey: map['remotePdfKey'] as String?,
+        condensed: CondensedInfo.fromMap(map['condensed']),
       );
 }

@@ -1393,6 +1393,43 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5z. Vorlesung kürzen (anhand von Übungsaufgaben)
+
+Aus einer **schon hochgeladenen Vorlesung** wird eine gekürzte Fassung, die nur
+noch enthält, was man für bestimmte Übungsaufgaben braucht – mit allen
+Erklärungen dazu, ohne den Rest. Einstieg: im Fach **„Vorlesung kürzen“** (unter
+„Material hochladen“), im Menü einer Folie **„Kürzen …“** oder beim Vorbereiten
+die Karte **„Vorlesung kürzen“**.
+
+1. **Vorlesung wählen**, **Übungsaufgaben** hochladen oder aus dem Fach wählen
+   (optional – ohne Aufgaben richtet sich die KI nur nach dem Auftrag) und den
+   **Auftrag** eingeben, z.B. „Alles, was man braucht, um diese Übungsaufgaben
+   zu lösen“. Die **Strenge** (Knapp / Ausgewogen / Großzügig) steuert, wie
+   viel Zusammenhang mitkommt.
+2. Die KI wertet zuerst die Aufgaben aus („was muss man können?“) und geht dann
+   die Vorlesung **abschnittsweise durch** (Rolling-Kontext: spätere Abschnitte
+   wissen, was schon erklärt ist, was noch fehlt und welche Überschriften schon
+   behalten wurden). Sie **schreibt nichts um**: die Vorlesung ist in Blöcke
+   zerlegt, die KI nennt nur die Kennungen der Blöcke, die bleiben – das
+   gekürzte Dokument besteht also immer aus dem Originaltext, es kann nichts
+   erfunden werden.
+3. **Vorschau**: wie viele Seiten bleiben („3 von 40 Seiten, 8 %“), die
+   behaltenen Abschnitte mit Begründung (einzeln abwählbar), was weggelassen
+   wurde, und was **die Vorlesung nicht erklärt** („für Aufgabe 3 fehlt die
+   Laplace-Transformation“). Zwei Schalter wirken sofort, ohne neue
+   KI-Anfrage: **Beispielaufgaben der Vorlesung mitnehmen** (die Erklärungen
+   bleiben in jedem Fall) und **Markierungen setzen**.
+4. **Speichern** legt im Fach ein Material „<Name> – gekürzt.pdf“ ab: eine PDF
+   mit nur den behaltenen Seiten – auf Wunsch mit einem **gelben Streifen dort,
+   wo der relevante Teil auf der Seite beginnt** (und klein in der Ecke „Original:
+   S. 12“, damit man mit dem Skript abgleichen kann) – plus die **Textfassung**
+   (Menü „Text ansehen und kopieren“). Bei einer Vorlesung ohne PDF auf diesem
+   Gerät (oder PowerPoint/Word) entsteht nur die Textfassung.
+
+Gescannte Seiten ohne Textebene liest die App vorher per KI (Texterkennung), die
+Markierungen entfallen dort mangels Text. Das gekürzte Dokument zählt nicht als
+Skript (keine Doppelung im Frage-Chat und bei der „Im Skript“-Suche).
+
 ### 5y. Zweite Code-Analyse (Oktober 2026)
 
 Neue Durchsicht der Erweiterungen seit der ersten Analyse (Rechnen mit der KI,

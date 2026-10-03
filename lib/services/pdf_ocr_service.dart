@@ -65,6 +65,17 @@ class PdfOcrService {
     List<String> pageTexts, {
     void Function(int done, int total)? onProgress,
   }) async {
+    final result = await recognizePages(pdfBytes, pageTexts, onProgress: onProgress);
+    return result.where((t) => t.trim().isNotEmpty).join('\n\n').trim();
+  }
+
+  /// Wie [recognize], liefert aber den Text je Seite (Index 0 = Seite 1) –
+  /// wo die Seitenzuordnung zählt (Kürzen).
+  Future<List<String>> recognizePages(
+    Uint8List pdfBytes,
+    List<String> pageTexts, {
+    void Function(int done, int total)? onProgress,
+  }) async {
     final result = List<String>.of(pageTexts);
     final groups = pagesNeedingOcr(pageTexts);
     for (var g = 0; g < groups.length; g++) {
@@ -77,6 +88,6 @@ class PdfOcrService {
       }
     }
     onProgress?.call(groups.length, groups.length);
-    return result.where((t) => t.trim().isNotEmpty).join('\n\n').trim();
+    return result;
   }
 }

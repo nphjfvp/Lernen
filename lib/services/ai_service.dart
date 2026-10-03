@@ -5,11 +5,13 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import '../models/app_settings.dart';
+import '../models/condense.dart';
 import '../models/flashcard.dart' show QuestionType;
 import '../models/formula_sheet.dart';
 import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import 'calc_engine.dart';
 import 'calc_plan.dart';
+import 'condense_service.dart';
 import 'lab_photo_reading.dart';
 import 'lab_report_draft.dart';
 import 'math_markup.dart';
@@ -500,6 +502,250 @@ Antworte in der Sprache der Vorlage.
       );
     }
     return (title: (title == null || title.isEmpty) ? 'Formelsammlung' : title, sheet: sheet);
+  }
+
+  // -- Kürzen -----------------------------------------------------------------
+
+  static const _condenseAnalysisSystemPrompt = r'''
+Du hilfst Studierenden, eine Vorlesung auf das Nötige zu kürzen. Du bekommst
+Übungsaufgaben (möglicherweise nur einen Teil davon) und/oder einen Auftrag des
+Studierenden. Stelle fest, WAS man wissen und können muss, um diese Aufgaben zu
+lösen bzw. den Auftrag zu erfüllen: Verfahren, Definitionen, Sätze, Formeln,
+Begriffe, Rechenregeln und Grundlagen aus früheren Themen, die die Aufgaben
+stillschweigend voraussetzen (z.B. Ableitungsregeln für die partielle
+Integration).
+- Eine Anforderung ist ein kurzer Satz, z.B. "Partielle Integration: Formel und
+  wann man sie anwendet".
+- Eine Anforderung pro Sache, keine Dopplungen; nicht zu fein (keine
+  Einzelschritte einer Rechnung) und nicht zu grob ("Mathematik").
+- Erfinde keine Aufgaben. Gibt es keine Aufgaben, leite die Anforderungen aus
+  dem Auftrag ab.
+"tasks" nennt jede Aufgabe in einer Zeile (z.B. "Aufgabe 2: ∫ x·eˣ dx
+berechnen"); bei sehr vielen Aufgaben fasse sie zusammen.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
+davor oder danach:
+{"tasks": ["Aufgabe 1: …"], "needs": ["Partielle Integration: Formel und wann man sie anwendet"]}
+Wenn bereits erfasste Anforderungen genannt werden, wiederhole sie NICHT.
+Antworte in der Sprache der Aufgaben.
+''';
+
+  static const _condenseSelectSystemPrompt = r'''
+Du hilfst Studierenden, eine Vorlesung zu KÜRZEN: Das gekürzte Skript soll nur
+noch enthalten, was man braucht, um bestimmte Übungsaufgaben zu lösen – alle
+Erklärungen dazu vollständig, den Rest nicht. Du bekommst einen Abschnitt der
+Vorlesung in Blöcken ("[12.3] Text" ist Block 3 der Seite 12) sowie, was die
+Aufgaben verlangen.
+Du schreibst NICHTS um und erfindest nichts: Du wählst nur Blöcke aus, die
+behalten werden.
+Behalte ("kind": "erklaerung"), was zum Verstehen und Lösen nötig ist, und zwar
+so vollständig, dass die Erklärung für sich lesbar bleibt: Definitionen und
+Schreibweisen, Begründungen und Herleitungen, Sätze und Formeln samt
+Voraussetzungen, Verfahren Schritt für Schritt, Hinweise auf typische Fehler.
+Reiße keine Formel aus ihrem Zusammenhang – nimm den Block mit, der ihre
+Bezeichnungen erklärt. Ein Beispiel, das man braucht, um das Verfahren zu
+verstehen, ist "erklaerung".
+Beispielaufgaben und Musterlösungen der Vorlesung, die in die Richtung der
+Aufgaben gehen, die man zum Verstehen aber nicht braucht, bekommen
+"kind": "beispiel" (der Studierende entscheidet später, ob sie mitkommen).
+Lasse weg: Organisatorisches, Inhaltsverzeichnisse, Motivation, Geschichte und
+Ausblicke, reine Wiederholungen und Zusammenfassungen, Stoff ohne Bezug zu den
+Aufgaben, Literaturhinweise.
+Fasse zusammenhängende Blöcke zu Abschnitten mit kurzer Überschrift ("title")
+zusammen. "why" sagt in einem kurzen Satz, wofür der Abschnitt gebraucht wird
+(z.B. "Aufgabe 2 braucht die Substitution"). "covers" nennt die Kennungen der
+Anforderungen ("n1", "n2" …), die der Abschnitt erklärt. "blocks" ist eine Liste
+von Kennungen oder Bereichen ("12.1-12.4", auch über Seiten hinweg:
+"12.3-13.2") – NUR Kennungen aus DIESEM Abschnitt der Vorlesung. "skipped" nennt
+in Stichworten, was du in diesem Abschnitt bewusst weggelassen hast.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
+davor oder danach:
+{"sections": [{"title": "Partielle Integration", "kind": "erklaerung",
+  "why": "Aufgabe 2 und 4", "blocks": ["12.1-12.4", "13.2"], "covers": ["n1"]}],
+ "skipped": ["Organisatorisches", "Geschichte der Integralrechnung"]}
+Ist in diesem Abschnitt nichts Relevantes, antworte mit {"sections": [], "skipped": [...]}.
+Antworte in der Sprache der Vorlesung.
+''';
+
+  static String _strictnessText(CondenseStrictness strictness) => switch (strictness) {
+        CondenseStrictness.knapp =>
+          'Strenge: KNAPP – behalte nur, was die Aufgaben direkt brauchen; im Zweifel weglassen.',
+        CondenseStrictness.ausgewogen =>
+          'Strenge: AUSGEWOGEN – behalte das Nötige samt dem Zusammenhang, den man zum Verstehen braucht; Randthemen weglassen.',
+        CondenseStrictness.grosszuegig =>
+          'Strenge: GROSSZÜGIG – im Zweifel behalten, damit nichts fehlt, was beim Lösen helfen könnte.',
+      };
+
+  /// Was man können muss, um die Übungsaufgaben ([exercisesText], darf leer
+  /// sein) bzw. den Auftrag ([task]) zu erfüllen – Grundlage der Auswahl in
+  /// [condenseLecture]. Lange Aufgabentexte werden abschnittsweise ausgewertet
+  /// und die Anforderungen zusammengeführt.
+  Future<CondensePlan> analyzeCondenseTasks({
+    required String task,
+    String exercisesText = '',
+    ChunkGranularity granularity = ChunkGranularity.auto,
+    bool rollingContext = true,
+  }) async {
+    final chunks = exercisesText.trim().isEmpty ? [''] : _chunksFor(exercisesText, granularity);
+    final needTexts = <String>[];
+    final tasks = <String>[];
+    final raws = <String>[];
+    for (var i = 0; i < chunks.length; i++) {
+      final known = CondenseService.mergeNeeds(needTexts);
+      final b = StringBuffer();
+      if (task.trim().isNotEmpty) b.writeln('Auftrag des Studierenden: ${task.trim()}\n');
+      if (chunks[i].trim().isEmpty) {
+        b.writeln('Es wurden keine Übungsaufgaben hochgeladen.');
+      } else {
+        if (chunks.length > 1) {
+          b.writeln('Dies ist Abschnitt ${i + 1} von ${chunks.length} der Übungsaufgaben.');
+          if (rollingContext && known.isNotEmpty) {
+            b.writeln('Bereits erfasste Anforderungen (NICHT wiederholen):');
+            for (final n in known.take(_rollingContextLimit * 2)) {
+              b.writeln('- ${n.text}');
+            }
+          }
+          b.writeln();
+        }
+        b.writeln('Übungsaufgaben:\n\n${chunks[i]}');
+      }
+      final raw = await _complete(_condenseAnalysisSystemPrompt, b.toString(), temperature: 0.1);
+      raws.add(raw);
+      final parsed = _parseJsonObject(raw);
+      List<String> strings(Object? v) => [
+            if (v is List)
+              for (final e in v)
+                if (e is Map ? '${e['text'] ?? e['title'] ?? ''}'.trim().isNotEmpty : '$e'.trim().isNotEmpty)
+                  e is Map ? '${e['text'] ?? e['title']}'.trim() : '$e'.trim(),
+          ];
+      needTexts.addAll(strings(parsed['needs'] ?? parsed['anforderungen']));
+      tasks.addAll(strings(parsed['tasks'] ?? parsed['aufgaben']));
+    }
+    final needs = CondenseService.mergeNeeds(needTexts);
+    if (needs.isEmpty && exercisesText.trim().isNotEmpty) {
+      throw AiServiceException(
+        'Aus den Übungsaufgaben ließ sich nicht ableiten, was man dafür können muss – '
+        'das Modell hat nicht im erwarteten Format geantwortet. Bitte erneut versuchen.',
+        rawResponse: raws.join('\n\n'),
+      );
+    }
+    return CondensePlan(tasks: tasks.take(40).toList(), needs: needs);
+  }
+
+  /// Geht die Vorlesung ([pages], siehe CondenseService) abschnittsweise durch
+  /// und wählt die Blöcke aus, die man für die Aufgaben braucht. Die KI schreibt
+  /// nichts um – das gekürzte Dokument besteht aus Originaltext. Jeder weitere
+  /// Abschnitt bekommt (Rolling-Kontext) die schon abgedeckten und die noch
+  /// offenen Anforderungen sowie die bisher behaltenen Überschriften, damit
+  /// nichts doppelt behalten wird und die KI gezielt nach Fehlendem sucht.
+  ///
+  /// [plan] aus [analyzeCondenseTasks]; ohne Plan wird er hier erstellt.
+  Future<CondenseSelection> condenseLecture({
+    required List<CondensePage> pages,
+    required String task,
+    String exercisesText = '',
+    CondensePlan? plan,
+    CondenseStrictness strictness = CondenseStrictness.ausgewogen,
+    ChunkGranularity granularity = ChunkGranularity.auto,
+    bool rollingContext = true,
+    void Function(String what, int done, int total)? onProgress,
+  }) async {
+    final totalLength = pages.fold<int>(0, (sum, p) => sum + p.length);
+    final chunks = CondenseService.group(pages, TextChunker.chunkSizeFor(granularity, totalLength));
+    if (chunks.isEmpty) {
+      throw AiServiceException('In der Vorlesung wurde kein Text gefunden (gescannt ohne Text-Ebene?).');
+    }
+
+    onProgress?.call('Übungsaufgaben auswerten', 0, chunks.length);
+    final analysis = plan ??
+        await analyzeCondenseTasks(
+          task: task,
+          exercisesText: exercisesText,
+          granularity: granularity,
+          rollingContext: rollingContext,
+        );
+
+    final sections = <CondenseSection>[];
+    final skipped = <String>[];
+    final raws = <String>[];
+    final covered = <String>{};
+    final validNeeds = {for (final n in analysis.needs) n.id};
+
+    for (var i = 0; i < chunks.length; i++) {
+      final group = chunks[i];
+      final range = group.length == 1
+          ? '${group.first.label} ${group.first.number}'
+          : '${group.first.label} ${group.first.number}–${group.last.number}';
+      onProgress?.call('Vorlesung durchgehen: $range', i, chunks.length);
+
+      final b = StringBuffer()..writeln(_strictnessText(strictness))..writeln();
+      if (task.trim().isNotEmpty) b.writeln('Auftrag des Studierenden: ${task.trim()}\n');
+      if (analysis.needs.isNotEmpty) {
+        b.writeln('Was die Aufgaben verlangen:');
+        for (final n in analysis.needs) {
+          b.writeln('${n.id}: ${n.text}');
+        }
+        b.writeln();
+      }
+      if (chunks.length > 1) {
+        b.writeln('Dies ist Abschnitt ${i + 1} von ${chunks.length} der Vorlesung ($range).');
+        if (rollingContext && i > 0) {
+          final done = [for (final n in analysis.needs) if (covered.contains(n.id)) n.id];
+          final open = [for (final n in analysis.needs) if (!covered.contains(n.id)) n.id];
+          if (done.isNotEmpty) b.writeln('Schon in früheren Abschnitten erklärt: ${done.join(', ')}.');
+          if (open.isNotEmpty) b.writeln('Noch nicht gefunden: ${open.join(', ')} – suche gezielt danach.');
+          final titles = [for (final s in sections) s.title];
+          if (titles.isNotEmpty) {
+            b.writeln('Bisher behaltene Abschnitte: ${titles.reversed.take(_rollingContextLimit).toList().reversed.join('; ')}.');
+          }
+        }
+        b.writeln();
+      }
+      b.writeln('Vorlesung:\n\n${CondenseService.render(group)}');
+
+      final ordered = CondenseService.idsOf(group);
+      Map<String, dynamic> parsed;
+      try {
+        final raw = await _complete(_condenseSelectSystemPrompt, b.toString(), temperature: 0.1);
+        raws.add(raw);
+        parsed = _parseJsonObject(raw);
+      } on AiServiceException {
+        // Ein Abschnitt, der nicht lesbar war, wird einmal wiederholt.
+        final raw = await _complete(_condenseSelectSystemPrompt, b.toString(), temperature: 0.1);
+        raws.add(raw);
+        parsed = _parseJsonObject(raw);
+      }
+      final rawSections = parsed['sections'] ?? parsed['abschnitte'];
+      for (final entry in (rawSections is List ? rawSections : const [])) {
+        final section = CondenseService.parseSection(entry, ordered);
+        if (section == null) continue;
+        final checked = CondenseSection(
+          title: section.title,
+          kind: section.kind,
+          why: section.why,
+          blockIds: section.blockIds,
+          covers: [for (final c in section.covers) if (validNeeds.contains(c)) c],
+        );
+        sections.add(checked);
+        covered.addAll(checked.covers);
+      }
+      final rawSkipped = parsed['skipped'] ?? parsed['weggelassen'];
+      if (rawSkipped is List) {
+        for (final e in rawSkipped) {
+          final t = '$e'.trim();
+          if (t.isNotEmpty && !skipped.contains(t)) skipped.add(t);
+        }
+      }
+      onProgress?.call('Vorlesung durchgehen: $range', i + 1, chunks.length);
+    }
+
+    if (sections.isEmpty) {
+      throw AiServiceException(
+        'Die KI hat in der Vorlesung nichts gefunden, was zu den Aufgaben passt – oder nicht im erwarteten '
+        'Format geantwortet. Prüfe die Aufgaben und den Auftrag, oder stelle die Strenge auf "Großzügig".',
+        rawResponse: raws.join('\n\n'),
+      );
+    }
+    return CondenseSelection(sections: sections, skipped: skipped.take(30).toList(), plan: analysis);
   }
 
   static const _conceptsSystemPrompt = '''

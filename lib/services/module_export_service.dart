@@ -100,6 +100,7 @@ class ModuleExportService {
         notes: m.notes,
         pageNotes: m.pageNotes,
         unitId: m.unitId,
+        condensed: m.condensed,
       ));
     }
     return result;
@@ -283,8 +284,20 @@ class ModuleExportService {
         notes: m.notes,
         pageNotes: m.pageNotes,
         unitId: m.unitId == null ? null : unitIdMap[m.unitId],
+        condensed: m.condensed,
       );
     }).toList();
+    // Eine gekürzte Fassung verweist auf ihr Original – das hat jetzt eine neue Kennung.
+    for (var i = 0; i < materials.length; i++) {
+      final info = materials[i].condensed;
+      final mapped = info == null ? null : materialIdMap[info.sourceMaterialId];
+      if (info != null && mapped != null) {
+        materials[i] = MaterialItem.fromMap({
+          ...materials[i].toMap(),
+          'condensed': {...info.toMap(), 'sourceMaterialId': mapped},
+        });
+      }
+    }
 
     final summaries = ((json['summaries'] as List?) ?? const [])
         .map((e) => Summary.fromMap(Map<String, dynamic>.from(e as Map)))

@@ -9,6 +9,7 @@ String _kindLabel(MaterialKind kind) => switch (kind) {
       MaterialKind.slide => 'Folie',
       MaterialKind.exercise => 'Übungsaufgabe',
       MaterialKind.practiceExam => 'Übungsklausur',
+      MaterialKind.condensed => 'Gekürzt',
     };
 
 /// PDF-Bytes übernommener Materialien (für "Folie ansehen") – auf
