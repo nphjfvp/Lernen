@@ -1393,6 +1393,48 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5za. Rechenwege und Terminierung interaktiv üben
+
+Zwei neue Aufgabentypen, bei denen **die App selbst nachrechnet** – die KI
+liefert nur die Struktur und die erwarteten Antworten:
+
+- **Rechenweg** (z.B. Differentialgleichungen, Integrale, Werkstoff- oder
+  BWL-Rechnungen): **Schritt für Schritt** – je Schritt eine Auswahl oder ein
+  Formelfeld (`-1/u`, `x - sqrt(12 - 2*x)`, `pi*sqrt(3)/8` …, mit Hilfstasten
+  und „So lese ich es“-Vorschau). Jede gleichwertige Schreibweise zählt, bei
+  Integrationskonstanten jede Form derselben Lösungsschar. Typische Fehler
+  bekommen eine eigene Rückmeldung („Prüf den Vorfaktor“, „Die Konstante C
+  fehlt“), dazu gestufte **Tipps** und „Schritt zeigen“. Oder **Nur Ergebnis**:
+  auf Papier rechnen, Ergebnis eintippen – die **Probe** (DGL und Anfangswert
+  an mehreren Stellen eingesetzt) zeigt, wo es nicht passt. Wer auf Papier
+  gerechnet hat, kann den Rechenweg **fotografieren und prüfen lassen**: die KI
+  liest Zeile für Zeile und markiert Fehler und Folgefehler, das Endergebnis
+  rechnet die App selbst nach; ab dem ersten Fehler geht es in der App Schritt
+  für Schritt weiter.
+- **Terminierung** (Vorwärts-/Rückwärtsterminierung): Balken im
+  **Gantt-Diagramm** setzen (Tag antippen, mit ◀ ▶ / Ziehen / Pfeiltasten
+  verschieben), Start, Ende, Liegezeiten bzw. Puffer eintragen („Start/Ende aus
+  Diagramm“ übernimmt die eigenen Balken). Rückmeldung **sofort** oder **erst am
+  Ende**; **Folgefehler** werden erkannt (passt zum eigenen Diagramm, obwohl
+  davor etwas falsch war). Tipp, Lösung zeigen mit „So rechnet man“, und
+  „Mit anderen Zahlen üben“. Zählweise wie im Skript (Tage einschließlich oder
+  Zeitpunkte). Am breiten Bildschirm: Aufgabe links, Diagramm rechts.
+
+**Aufgabe übernehmen**: im Fach „Rechenweg / Terminierung übernehmen“, im
+Aufgaben-Ordner „Interaktiv üben“ an jeder Aufgabe (Text, Erklärung, Bild und
+Quelle vorbelegt) oder im PDF-Viewer eines Übungsblatts der Knopf ƒ (aktuelle
+Seite als Bild, markierter Text). Aufgabentext und/oder Fotos eingeben (bei
+einem Seitenfoto reicht „Aufgabe 2b“), optional die vorhandene Lösung. Die KI
+schlägt die Aufgabe vor, die App prüft die Musterlösung sofort („Musterlösung
+von der App nachgerechnet“ oder die gefundenen Unstimmigkeiten) bzw. rechnet
+die Terminierung selbst aus. Alles ist bearbeitbar (Schritte, erwartete
+Antworten, Teile, Dauern, Termine, Zählweise, was gefragt ist), „Ausprobieren“
+zeigt die Aufgabe wie im Quiz. Passt eine Aufgabe nicht (z.B. Zeichnen), sagt
+die KI warum – man kann es trotzdem als Rechenweg oder Terminierung versuchen.
+Gespeicherte Aufgaben kommen bald im Lernplan dran, zählen in der Probeklausur
+(dort nur das Ergebnis, ohne Hilfen) und lassen sich in der Kartenliste
+bearbeiten.
+
 ### 5z. Vorlesung kürzen (anhand von Übungsaufgaben)
 
 Aus einer **schon hochgeladenen Vorlesung** wird eine gekürzte Fassung, die nur

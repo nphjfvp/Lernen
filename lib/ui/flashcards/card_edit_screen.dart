@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../models/flashcard.dart';
+import '../../models/gantt_task.dart';
+import '../../models/step_task.dart';
 import '../../services/calc_task_detector.dart';
+import '../../services/gantt_scheduler.dart';
 import '../../services/question_parsing.dart';
+import '../../services/stage_gate_service.dart';
+import '../tasks/gantt_task_editor.dart';
+import '../tasks/step_task_editor.dart';
 
 /// Öffnet den Editor für den Inhalt einer Karte (jeder Fragetyp) und liefert
 /// die geänderte Karte – oder `null` bei Abbruch. Lernstand, Typ und
@@ -61,6 +67,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
 
   /// Rechenaufgabe: null = automatisch erkennen, sonst fest (siehe CalcTaskDetector).
   late bool? _needsCalculator = widget.card.needsCalculator;
+
+  /// Rechenweg bzw. Terminierung (nur bei diesen Typen, sonst null).
+  late StepTask? _steps = _type == QuestionType.steps ? StepTask.fromMap(widget.card.taskData) : null;
+  late GanttTask? _gantt = _type == QuestionType.gantt ? GanttTask.fromMap(widget.card.taskData) : null;
 
   QuestionType get _type => widget.card.type;
   bool get _isChoice => _type == QuestionType.singleChoice || _type == QuestionType.multipleChoice;
@@ -217,14 +227,34 @@ class _CardEditScreenState extends State<CardEditScreen> {
         return _fail('Mindestens eine Zelle zum Ausfüllen (mit Lösung) anlegen.');
       }
     }
+    Map<String, dynamic>? taskData;
+    var back = _back.text.trim();
+    if (_type == QuestionType.steps) {
+      final steps = _steps;
+      if (steps == null || !steps.isUsable) {
+        return _fail('Jeder Schritt braucht ein Eingabefeld oder eine richtige Auswahl-Antwort.');
+      }
+      taskData = steps.toMap();
+    }
+    if (_type == QuestionType.gantt) {
+      final gantt = _gantt;
+      if (gantt == null || !gantt.isValid) {
+        return _fail('Die Teile passen nicht zusammen (fehlende Arbeitsgänge oder ein Kreis in der Reihenfolge).');
+      }
+      if (!gantt.drawChart && gantt.questions.isEmpty) return _fail('Wähle, was gefragt ist, oder lass das Diagramm zeichnen.');
+      taskData = gantt.confirmed().toMap();
+      // Den Lösungsweg schreibt bei der Terminierung die App.
+      back = GanttScheduler.solutionText(gantt);
+    }
     final edited = widget.card.copyWithContent(
       front: front,
-      back: _back.text.trim(),
+      back: back,
       options: options,
       correctText: correctText,
       blanks: blanks,
       dragPairs: pairs,
       tableRows: tableRows,
+      taskData: taskData,
     );
     Navigator.of(context).pop(
       edited.needsCalculator == _needsCalculator ? edited : edited.copyWithCalculator(_needsCalculator),
@@ -234,6 +264,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   String get _backLabel => switch (_type) {
         QuestionType.flashcard => 'Rückseite',
         QuestionType.learn => 'Erklärung / Lösungsweg',
+        QuestionType.steps => 'Lösungsweg als Text (für „Lösung ansehen“)',
         QuestionType.markImage => 'Was ist dort zu sehen? (optional)',
         QuestionType.html => 'Antwort (wenn die Seite nicht angezeigt werden kann)',
         _ => 'Erklärung (optional)',
@@ -264,7 +295,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
             controller: _front,
             maxLines: null,
             decoration: InputDecoration(
-              labelText: _type == QuestionType.learn ? 'Aufgabe (wie im Dokument)' : 'Frage',
+              labelText: _type == QuestionType.learn || StageGate.isTaskType(_type) ? 'Aufgabe (wie im Dokument)' : 'Frage',
               helperText: _type == QuestionType.fillBlank ? 'Lücken mit ___ (drei Unterstriche) markieren.' : null,
               border: const OutlineInputBorder(),
             ),
@@ -274,6 +305,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
           if (_isDrag) ..._buildPairs(theme),
           if (_type == QuestionType.fillBlank) ..._buildBlanks(),
           if (_type == QuestionType.table) ..._buildTable(theme),
+          if (_steps != null) ...[
+            StepTaskEditor(task: _steps!, onChanged: (t) => setState(() => _steps = t)),
+            const SizedBox(height: 16),
+          ],
+          if (_gantt != null) ...[
+            GanttTaskEditor(task: _gantt!, onChanged: (t) => setState(() => _gantt = t)),
+            const SizedBox(height: 16),
+          ],
           if (_type == QuestionType.freeText) ...[
             TextField(
               key: const ValueKey('card-edit-correct-text'),
@@ -283,7 +322,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
             ),
             const SizedBox(height: 16),
           ],
-          if (_type != QuestionType.diagramLabel)
+          if (_type != QuestionType.diagramLabel && _type != QuestionType.gantt)
             TextField(
               key: const ValueKey('card-edit-back'),
               controller: _back,

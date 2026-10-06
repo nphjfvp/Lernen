@@ -79,6 +79,11 @@ typedef StageListEntry = ({Flashcard? card, StageFolder? folder});
 class StageGate {
   const StageGate._();
 
+  /// Aufgaben statt Fragen (Lernen, Rechenweg, Terminierung): keine Stufen,
+  /// keine Ordner.
+  static bool isTaskType(QuestionType type) =>
+      type == QuestionType.learn || type == QuestionType.steps || type == QuestionType.gantt;
+
   /// Stufe aus dem Fragetyp, wenn keine gesetzt ist: Wiedererkennen ist
   /// leicht, Ergänzen/Zuordnen mittel, frei Formulieren schwer.
   static StageLevel levelOfType(QuestionType type) => switch (type) {
@@ -89,7 +94,13 @@ class StageGate {
         QuestionType.diagramLabel ||
         QuestionType.flashcard =>
           StageLevel.mittel,
-        QuestionType.freeText || QuestionType.html || QuestionType.table || QuestionType.learn => StageLevel.schwer,
+        QuestionType.freeText ||
+        QuestionType.html ||
+        QuestionType.table ||
+        QuestionType.learn ||
+        QuestionType.steps ||
+        QuestionType.gantt =>
+          StageLevel.schwer,
       };
 
   static StageLevel? levelFromIndex(int? index) =>
@@ -101,8 +112,9 @@ class StageGate {
 
   /// Gruppenschlüssel oder null (eigene Gruppe). Pro Fach getrennt.
   static String? groupOf(Flashcard card) {
-    // Lernaufgaben stehen für sich: sie sind keine Stufe eines Sachverhalts.
-    if (card.type == QuestionType.learn) return null;
+    // Lern-, Rechenweg- und Terminierungsaufgaben stehen für sich: sie sind
+    // keine Stufe eines Sachverhalts.
+    if (isTaskType(card.type)) return null;
     final chain = card.variantChain;
     if (chain != null && chain.length > 1) return null;
     final key = (card.stageGroup ?? card.conceptId)?.trim();
@@ -171,7 +183,7 @@ class StageGate {
   /// zeitnah erstellt) beieinander steht – die KI sieht sie in Portionen.
   static List<Flashcard> assignable(List<Flashcard> cards) => [
         for (final c in cards)
-          if ((c.variantChain?.length ?? 0) < 2 && c.type != QuestionType.learn) c,
+          if ((c.variantChain?.length ?? 0) < 2 && !isTaskType(c.type)) c,
       ]..sort((a, b) {
           final byConcept = (a.conceptId ?? '').compareTo(b.conceptId ?? '');
           return byConcept != 0 ? byConcept : a.createdAt.compareTo(b.createdAt);

@@ -25,6 +25,7 @@ Flashcard _full() {
     tableRows: const [
       [QuestionTableCell(text: 'a'), QuestionTableCell(text: 'b', given: false)],
     ],
+    taskData: const {'kind': 'steps', 'domainNote': 'für x < 6'},
     variantChain: const [QuestionType.singleChoice, QuestionType.fillBlank, QuestionType.freeText],
     variantLevel: 1,
     variantBox: 2,
@@ -102,6 +103,7 @@ void main() {
       expect(_diff(card, changedQuestion), {'front', 'aiHints'});
       expect(changedQuestion.aiHints, isNull);
       expect(_diff(card, card.copyWithContent(clearImage: true)), {'imageBase64'});
+      expect(_diff(card, card.copyWithContent(taskData: const {'kind': 'gantt'})), {'taskData'});
     });
 
     test('Ein-Feld-Kopien ändern genau ein Feld', () {

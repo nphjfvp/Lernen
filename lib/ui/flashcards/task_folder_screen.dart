@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import '../../services/mastery_service.dart';
 import '../../services/task_folder_service.dart';
 import '../../theme/app_colors.dart';
 import '../study/study_aids.dart';
+import '../tasks/task_import_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/mastery_dot.dart';
 import '../widgets/math_text.dart';
@@ -39,7 +41,19 @@ class TaskFolderScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: AppBar(title: Text('Aufgaben-Ordner · $moduleName')),
+      appBar: AppBar(
+        title: Text('Aufgaben-Ordner · $moduleName'),
+        actions: [
+          IconButton(
+            key: const ValueKey('task-folder-import'),
+            tooltip: 'Rechenweg / Terminierung übernehmen',
+            icon: const Icon(Icons.functions),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => TaskImportScreen(moduleId: moduleId, moduleName: moduleName)),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -154,6 +168,36 @@ class _TaskTile extends StatelessWidget {
     await repo.update(stored.copyWithContent(front: edited.front, back: edited.back));
   }
 
+  /// Die Aufgabe als Rechenweg oder Terminierung übernehmen – Text, Erklärung
+  /// (als Lösung), Bild und Quelle werden vorbelegt.
+  Future<void> _practice(BuildContext context) async {
+    final image = task.imageBase64;
+    Uint8List? bytes;
+    if (image != null) {
+      try {
+        bytes = base64Decode(image);
+      } catch (_) {
+        bytes = null;
+      }
+    }
+    final moduleName = context.read<ModuleRepository?>()?.byId(task.moduleId)?.name ?? '';
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TaskImportScreen(
+          moduleId: task.moduleId,
+          moduleName: moduleName,
+          initialText: task.front,
+          initialSolution: task.back,
+          initialImages: [?bytes],
+          sourceMaterialId: task.sourceMaterialId,
+          sourcePage: task.sourcePage,
+          unitId: task.unitId,
+          replaceCard: task,
+        ),
+      ),
+    );
+  }
+
   Future<void> _delete(BuildContext context) async {
     final ok = await confirmDelete(
       context,
@@ -248,6 +292,12 @@ class _TaskTile extends StatelessWidget {
               children: [
                 if (task.sourceMaterialId != null || task.hasScript) SourceLinkButton(card: task, script: true),
                 if (task.sourceMaterialId != null && isWorksheetQuestion(context, task)) SourceLinkButton(card: task),
+                TextButton.icon(
+                  key: ValueKey('task-practice-${task.id}'),
+                  onPressed: () => _practice(context),
+                  icon: const Icon(Icons.functions, size: 16),
+                  label: const Text('Interaktiv üben'),
+                ),
                 TextButton.icon(
                   onPressed: () => _edit(context),
                   icon: const Icon(Icons.edit_outlined, size: 16),

@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/flashcard.dart';
+import '../../models/gantt_task.dart';
+import '../../models/step_task.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
@@ -17,6 +19,8 @@ import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
 import '../study/explain_chat.dart';
 import '../study/study_aids.dart';
+import '../tasks/gantt_task_view.dart';
+import '../tasks/step_task_view.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
 import '../widgets/relative_image.dart';
@@ -468,6 +472,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     switch (widget.card.type) {
       case QuestionType.flashcard:
       case QuestionType.learn:
+      case QuestionType.steps:
+      case QuestionType.gantt:
         return false;
       case QuestionType.singleChoice:
         return _selectedIndex != null;
@@ -533,6 +539,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.flashcard:
       case QuestionType.learn:
       case QuestionType.html:
+      case QuestionType.steps:
+      case QuestionType.gantt:
         return null; // eigene build()-Zweige.
     }
   }
@@ -802,6 +810,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.flashcard:
       case QuestionType.learn:
       case QuestionType.html:
+      case QuestionType.steps:
+      case QuestionType.gantt:
         return null;
     }
   }
@@ -991,6 +1001,29 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    // Rechenweg und Terminierung haben eigene Ansichten (prüfen selbst).
+    if (_answerable && widget.card.type == QuestionType.steps) {
+      return StepTaskView(
+        card: widget.card,
+        task: StepTask.fromMap(widget.card.taskData)!,
+        isNew: widget.isNew,
+        examMode: widget.examMode,
+        onComplete: _submit,
+        onSkip: widget.onSkip,
+        canGiveUp: widget.canGiveUp,
+      );
+    }
+    if (_answerable && widget.card.type == QuestionType.gantt) {
+      return GanttTaskView(
+        card: widget.card,
+        task: GanttTask.fromMap(widget.card.taskData)!,
+        isNew: widget.isNew,
+        examMode: widget.examMode,
+        onComplete: _submit,
+        onSkip: widget.onSkip,
+        canGiveUp: widget.canGiveUp,
+      );
+    }
     if (widget.card.type == QuestionType.flashcard || widget.card.type == QuestionType.learn || !_answerable) {
       return _buildFlashcard(c);
     }
@@ -1371,6 +1404,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.flashcard:
       case QuestionType.learn:
       case QuestionType.html:
+      case QuestionType.steps:
+      case QuestionType.gantt:
         return const SizedBox.shrink(); // eigene build()-Zweige.
       case QuestionType.singleChoice:
         return _buildChoiceOptions(c, multiple: false);

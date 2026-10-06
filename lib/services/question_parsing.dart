@@ -1,4 +1,6 @@
 import '../models/flashcard.dart';
+import '../models/gantt_task.dart';
+import '../models/step_task.dart';
 import 'html_question_contract.dart';
 
 /// Gemeinsame Parsing-Hilfen für von der KI generierte Fragen-JSON-Objekte
@@ -69,6 +71,8 @@ class QuestionParsing {
     'mark_image': QuestionType.markImage,
     'table': QuestionType.table,
     'learn': QuestionType.learn,
+    'steps': QuestionType.steps,
+    'gantt': QuestionType.gantt,
   };
 
   /// Wandelt den von der KI gelieferten "type"-String (snake_case, siehe
@@ -150,6 +154,23 @@ class QuestionParsing {
     'explain': 'learn',
     'explanation': 'learn',
     'verstehen': 'learn',
+    'rechenweg': 'steps',
+    'step_by_step': 'steps',
+    'stepbystep': 'steps',
+    'schritte': 'steps',
+    'schritt_fuer_schritt': 'steps',
+    'schritt_für_schritt': 'steps',
+    'rechenaufgabe_schritte': 'steps',
+    'terminierung': 'gantt',
+    'gantt_chart': 'gantt',
+    'ganttchart': 'gantt',
+    'gantt_diagramm': 'gantt',
+    'scheduling': 'gantt',
+    'vorwaertsterminierung': 'gantt',
+    'vorwärtsterminierung': 'gantt',
+    'rueckwaertsterminierung': 'gantt',
+    'rückwärtsterminierung': 'gantt',
+    'durchlaufterminierung': 'gantt',
   };
 
   static QuestionType? _parseTypeOrNull(String? value) {
@@ -363,6 +384,23 @@ class QuestionParsing {
 
     fill('htmlContent', _first(raw, const ['html']));
 
+    // Interaktive Aufgaben: die Daten unter "taskData" (oder flach im
+    // Eintrag: "steps" bzw. "items").
+    final task = _first(raw, const ['taskData', 'task_data', 'stepTask', 'ganttTask']);
+    if (task is Map) {
+      fill('taskData', Map<String, dynamic>.from(task));
+    } else if (raw['steps'] is List && (declared == null || declared == QuestionType.steps)) {
+      fill('taskData', {
+        for (final key in const ['steps', 'probe', 'domainNote', 'finalLabel'])
+          if (raw[key] != null) key: raw[key],
+      });
+    } else if (raw['items'] is List && (declared == null || declared == QuestionType.gantt)) {
+      fill('taskData', {
+        for (final key in const ['items', 'start', 'due', 'direction', 'counting', 'questions', 'drawChart'])
+          if (raw[key] != null) key: raw[key],
+      });
+    }
+
     // Typ: tolerant lesen, sonst aus der Struktur ableiten.
     final type = declared ?? _inferType(entry, raw);
     entry['type'] = aiTypeName(type);
@@ -460,6 +498,8 @@ class QuestionParsing {
   /// Typ aus dem, was der Eintrag enthält, wenn "type" fehlt oder unbekannt ist.
   static QuestionType _inferType(Map<String, dynamic> entry, Map<String, dynamic> raw) {
     if ((entry['htmlContent'] ?? '').toString().contains(htmlAnswerChannelName)) return QuestionType.html;
+    if (StepTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.steps;
+    if (GanttTask.fromMap(entry['taskData']) != null) return QuestionType.gantt;
     if (_hasFillableCell(tableRowsIn(raw))) return QuestionType.table;
     final targets = imageTargetsIn(raw);
     if (targets != null && targets.isNotEmpty) {
@@ -574,6 +614,10 @@ class QuestionParsing {
             for (final row in tableRowsIn(entry) ?? const <List<QuestionTableCell>>[]) [for (final c in row) c.toMap()],
           ],
         };
+      case QuestionType.steps:
+        return {...entry, 'taskData': StepTask.fromMap(entry['taskData'])!.toMap()};
+      case QuestionType.gantt:
+        return {...entry, 'taskData': GanttTask.fromMap(entry['taskData'])!.toMap()};
       case QuestionType.flashcard:
       case QuestionType.learn:
       case QuestionType.freeText:
@@ -634,6 +678,10 @@ class QuestionParsing {
         return (imageTargetsIn(raw) ?? const []).isNotEmpty;
       case QuestionType.table:
         return _hasFillableCell(tableRowsIn(raw));
+      case QuestionType.steps:
+        return StepTask.fromMap(raw['taskData'])?.isUsable ?? false;
+      case QuestionType.gantt:
+        return GanttTask.fromMap(raw['taskData']) != null;
       case QuestionType.html:
         final html = (raw['htmlContent'] ?? '').toString();
         // Grobe Vertragsprüfung: die Seite muss den JS-Rückkanal tatsächlich

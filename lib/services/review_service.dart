@@ -213,6 +213,7 @@ class ReviewService {
       blanks: QuestionParsing.parseBlanks(fixed['blanks']),
       dragPairs: QuestionParsing.parseDragPairs(fixed['dragPairs']),
       tableRows: parseTableRows(fixed['tableRows']),
+      taskData: parseTaskData(fixed['taskData']),
       imageBase64: card.imageBase64,
     );
     return FsrsService().restartForNewStage(promoted, now: now);

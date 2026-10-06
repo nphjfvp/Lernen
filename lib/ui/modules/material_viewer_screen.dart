@@ -17,10 +17,12 @@ import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/fsrs_service.dart' show FsrsService, Grade;
 import '../../services/highlight_matcher.dart';
+import '../../services/image_crop.dart';
 import '../../services/material_file_store.dart';
 import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
+import '../tasks/task_import_screen.dart';
 import '../widgets/page_concept_sheet.dart';
 import '../widgets/page_question_creation_sheet.dart';
 import '../widgets/page_qa_panel.dart';
@@ -617,6 +619,34 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
     }
   }
 
+  /// Übungsaufgabe auf der sichtbaren Seite als Rechenweg oder Terminierung
+  /// übernehmen (TaskImportScreen) – mit Seitenbild und ausgewähltem Text.
+  Future<void> _taskFromPage() async {
+    if (_bytes == null) return;
+    final selected = (_pdfViewerKey.currentState?.getSelectedTextLines() ?? const []).map((l) => l.text).join(' ').trim();
+    final page = _currentPage;
+    final image = await _capturePageImage();
+    if (!mounted) return;
+    if (image == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seite konnte nicht erfasst werden.')));
+      return;
+    }
+    final prepared = await prepareImageForAi(image);
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TaskImportScreen(
+          moduleId: widget.material.moduleId,
+          initialText: selected,
+          initialImages: [prepared],
+          sourceMaterialId: widget.material.id,
+          sourcePage: page,
+          unitId: widget.material.unitId,
+        ),
+      ),
+    );
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -689,6 +719,13 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
                   : const Icon(Icons.quiz_outlined),
               onPressed: (_creatingQuestion || _bytes == null) ? null : _createQuestionFromPage,
             ),
+            if (widget.material.kind == MaterialKind.exercise || widget.material.kind == MaterialKind.practiceExam)
+              IconButton(
+                key: const ValueKey('viewer-task-import'),
+                tooltip: 'Als Rechenweg / Terminierung üben',
+                icon: const Icon(Icons.functions),
+                onPressed: _bytes == null ? null : _taskFromPage,
+              ),
             IconButton(
               key: const ValueKey('viewer-ask'),
               tooltip: _qaPanelOpen ? 'KI-Fragen ausblenden' : 'Frage zur Seite',

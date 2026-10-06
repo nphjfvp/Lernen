@@ -88,9 +88,10 @@ Befehle (Flutter liegt in dieser Umgebung unter `/home/user/flutter-sdk/flutter/
 **`Flashcard`** (`lib/models/flashcard.dart`) – Frage + eigener SR-Zustand:
 - Inhalt: `front`, `back`, `type` (`QuestionType`: flashcard, singleChoice,
   multipleChoice, freeText, fillBlank, dragDrop, dragCategory, html,
-  diagramLabel, markImage, table, learn), je nach Typ
+  diagramLabel, markImage, table, learn, steps, gantt), je nach Typ
   `options`/`correctText`/`blanks`/`dragPairs`/`htmlContent`/`imageTargets`/
-  `tableRows`;
+  `tableRows`/`taskData` (Map, bei steps = `StepTask`, bei gantt = `GanttTask`,
+  siehe Punkt 54);
   `imageBase64` (Seiten-Screenshot/Bild, nur wenn für die Frage nötig).
 - Bildfragen: `imageTargets` (`List<ImageTarget>`, Koordinaten relativ zum
   Bild 0..1; `group` = austauschbare Stellen, geprüft über
@@ -468,7 +469,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1239 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1317 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1163,6 +1164,82 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     abschließen). Offene Grenzen:
     Markierungen setzen nur auf PDFs mit Textebene (gescannt: nur Stempel); die Auswahl ist so
     gut wie das gewählte Modell – die Vorschau zeigt Begründung und lässt Abschnitte abwählen.
+54. Interaktive Aufgaben: Rechenweg (`QuestionType.steps`, Label "Rechenweg") und
+    Terminierung (`QuestionType.gantt`, "Terminierung") (Nutzer: DGL-Aufgaben Schritt für
+    Schritt bzw. nur Ergebnis, Papier-Rechnung per Foto prüfen; Vorwärts-/Rückwärts-
+    terminierung im Gantt-Diagramm; beide aus Text/Foto übernehmen und bearbeiten).
+    GRUNDPRINZIP: die KI liefert nur Struktur und erwartete Antworten, die App prüft ALLES
+    selbst. Datenfeld: generisches `Flashcard.taskData` (Map, auch in `VariantSnapshot`, in
+    jeder Kopie/`toMap`/`fromMap`/Export/Import/Review-Übernahme; `parseTaskData`), je Typ
+    gelesen über `StepTask.fromMap` bzw. `GanttTask.fromMap` (beide tolerant, `toMap` mit
+    `kind`). Formeln: `lib/services/math_input.dart` (`MathExpression.parse` mit Vorrang
+    + − / * / implizite Multiplikation / unär / ^ rechtsassoziativ; `sin(x)^2` = (sin x)²;
+    Funktionen sqrt/wurzel/cbrt/exp/ln/log(=log10)/lg/sin…/abs/betrag/sgn, Konstanten pi, e;
+    `evaluate` → NaN bei ungebundenen Größen/Definitionslücken; `toLatex`; `latexToInput`;
+    deutsche `formatNumber`). Modell `lib/models/step_task.dart`: `StepField` (label, kind
+    formula|number, answer in Eingabe-Schreibweise, variables, constants = frei wählbare
+    Konstanten wie C, tolerance, mistakes = typische Fehler mit Rückmeldung, domain je Größe),
+    `TaskStep` (title, prompt, fields ODER options, hints ≤ 3, result, explanation), `StepProbe`
+    (ode: y' = f(x,y) mit Anfangswerten, order 1–2 | antiderivative), `StepTask` (steps, probe,
+    domainNote, finalLabel; `finalField` = letztes Feld). Prüfer `lib/services/step_checker.dart`
+    (rein): `check(field, input)` setzt an festen Stichproben ein (Äquivalenz), Konstanten-
+    Scharen per 1D-Lösen (C − 2x ≡ 2(K − x)), erkennt typische Fehler, fehlende Konstante,
+    Vorzeichen, Faktor, zu grobe Rundung; `probe`/`runProbe` (numerische Ableitung, DGL an
+    Stichproben + Anfangswerte, Zeilen "Anfangswert y(4) = 2" / "DGL an der Stelle x = …");
+    `verify(task)` = Nachprüfung der Musterlösung (Probleme + Probe). Terminierung:
+    `lib/models/gantt_task.dart` (`GanttDirection` vorwärts/rückwärts, `GanttCounting`
+    inclusive = Ende Start+Dauer−1 | points = Start+Dauer, `GanttAsk` start/end/slack
+    (Liegezeit)/buffer (Puffer), `GanttItem` mit operations und needs, `GanttQuestion.key` =
+    "itemId.ask", `uncertain` = schlecht lesbar, `confirmed()`), Planer
+    `lib/services/gantt_scheduler.dart` (rein, deterministisch: `plan` vorwärts bzw. rückwärts
+    ab Liefertermin, Puffer = spätester − frühester Start; `judgeBars`/`judgeAnswers` mit
+    Folgefehlern = passt zum EIGENEN Diagramm; `ownAnswer`, `hint`, `explain`, `solutionText`,
+    `variant` = andere Zahlen; Zell-Rechnung: Arbeitsgang belegt Zellen s..s+d−1, `dueCell` =
+    due − shift). KI (`AiService`): `buildInteractiveTask({text, images, solution, kind})` →
+    `InteractiveTaskDraft` (`lib/models/interactive_task.dart`, kind null = "none" mit
+    `reason`; wirft bei unbrauchbarem Ergebnis), `parseInteractiveTask` (Daten unter taskData
+    oder flach, Art aus kind oder Struktur), `reviewPaperSolution` → `PaperReview`
+    (`lib/models/paper_review.dart`: Zeilen ok/fehler/folgefehler/unklar mit comment/fix,
+    finalAnswer, firstErrorStep, grade gut/schwer/nochmal; alle Zeilen ok → gut). Bei mehreren
+    Aufgaben auf einem Foto nimmt die KI die im Text genannte. UI `lib/ui/tasks/`:
+    `StepTaskView` (Modus Schritt für Schritt | Nur Ergebnis; Auswahl- oder Formelschritte mit
+    `MathInputField` (Hilfstasten, "So lese ich es"), Tipps, "Schritt zeigen", Probe-Karte;
+    Bewertung beim Weiter: ohne Fehlversuch/Tipp = gewusst, sonst isCorrect + Grade.hard,
+    aufgedeckt/aufgelöst = falsch; Probeklausur = nur Ergebnis, sofort abgegeben; Foto-Knopf
+    nur mit API-Key), `PaperCheckScreen` (Fotos → Zeilen mit Status, App prüft das Endergebnis
+    selbst (check + Probe), "Ab Schritt N Schritt für Schritt weiter" = `PaperCheckOutcome.
+    continueAtStep`, sonst eigene Bewertung Nochmal/Schwer/Gut; Hooks `aiFactory`,
+    `pickImagesHook`), `GanttTaskView` (Balken per Tippen in die Zeile setzen, ◀ ▶/Ziehen/
+    Pfeiltasten, Entfernen; Rückmeldung Sofort | Erst am Ende; Antworttabelle mit "Start/Ende
+    aus Diagramm"; Tipp, Lösung zeigen (gestrichelte richtige Lage, "So rechnet man"),
+    Zurücksetzen, "Mit anderen Zahlen üben" (gewertet wird der erste Durchgang); ab 980 px
+    breit: Aufgabe links, Diagramm rechts), Editoren `StepTaskEditor` (+ `StepTaskCheckCard`,
+    Prüfung läuft bei jeder Änderung) und `GanttTaskEditor` (+ `GanttSolutionPreview` mit
+    Live-Musterlösung, Verfahren, Zählweise, Termine, Gesucht), `TaskAnswerPreview`
+    (Kartenliste), `TaskImportScreen` ("Aufgabe übernehmen": Art Automatisch/Rechenweg/
+    Terminierung, Text, bis 4 Fotos (Vision-Modell, sonst Fragen-Modell), vorhandene Lösung;
+    nicht geeignet → Begründung + "Als Rechenweg/Als Terminierung"; Vorschau mit Editor,
+    "Ausprobieren" (ohne Speichern), Speichern mit Rückfrage bei Unstimmigkeiten bzw.
+    unbestätigten Werten; gespeichert mit `priorityIntroduction`, Gewicht wie Übungsblatt,
+    Herkunft; Terminierung: `back` = `GanttScheduler.solutionText`, `taskData` bestätigt;
+    optional Foto an Rechenweg hängen; `replaceCard` aus dem Aufgaben-Ordner bleibt, außer
+    "Aus dem Aufgaben-Ordner entfernen"; `DiscardGuard`). `QuestionAnswerView` leitet steps/
+    gantt (wenn `AnswerChecker.isAnswerable`) an die eigenen Ansichten weiter, sonst
+    Karteikarten-Ansicht. `StageGate.isTaskType` (learn/steps/gantt): keine Stufengruppe,
+    Stufe schwer; nicht im Sprint; in der Probeklausur ja. `CardEditScreen` zeigt für steps/
+    gantt die Editoren. `QuestionParsing`: Typ-Synonyme (rechenweg, schritte…, terminierung,
+    vorwärtsterminierung…), `taskData` aus taskData/task_data/stepTask/ganttTask oder flachen
+    steps/items. Einstiege: `module-task-import` (Fach), `task-folder-import` + "Interaktiv
+    üben" je Aufgabe (`task-practice-<id>`, Text/Erklärung/Bild/Quelle vorbelegt) im
+    Aufgaben-Ordner, `viewer-task-import` im PDF-Viewer bei Übungsblättern/Probeklausuren
+    (Seitenbild + markierter Text). Tests: `math_input_test`, `step_checker_test`,
+    `gantt_scheduler_test`, `step_task_view_test`, `gantt_task_view_test`,
+    `task_import_screen_test` (auch Foto-Prüfung, Parsing), Ergänzungen in
+    `card_edit_screen_test`, `task_folder_ui_test`, `flashcard_copy_integrity_test`.
+    Test-Falle: im Test-Font (Ahem) sind Texte viel breiter – schmale Spalten mit
+    `Flexible`/Ellipsis bauen, sonst Overflow. Offene Grenzen: Kristallgitter-Aufgaben
+    (Richtungen/Ebenen im Würfel) gibt es noch nicht – `taskData` ist dafür vorbereitet
+    (neuer `kind`); Zeichnen auf Papier prüft nur die Foto-Prüfung (KI liest, App rechnet nach).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

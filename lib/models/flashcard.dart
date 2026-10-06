@@ -32,6 +32,16 @@ enum QuestionType {
   /// Lernende bewertet selbst, wie gut er es verstanden hat. Alle dieser
   /// Aufgaben liegen zusätzlich dauerhaft im Aufgaben-Ordner des Fachs.
   learn,
+
+  /// Rechenweg: eine Rechenaufgabe in Schritten (Auswahl, Formeln, Zahlen) –
+  /// die App rechnet jede Antwort selbst nach (Einsetzen an Stützstellen,
+  /// Probe), siehe StepTask (step_task.dart) in [Flashcard.taskData].
+  steps,
+
+  /// Terminierung: Vorwärts-/Rückwärtsterminierung im Gantt-Diagramm mit
+  /// Start-/Endterminen und Liegezeiten – die App rechnet die Lösung selbst,
+  /// siehe GanttTask (gantt_task.dart) in [Flashcard.taskData].
+  gantt,
 }
 
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
@@ -53,6 +63,8 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.markImage => 'Bild markieren',
         QuestionType.table => 'Tabelle',
         QuestionType.learn => 'Lernen',
+        QuestionType.steps => 'Rechenweg',
+        QuestionType.gantt => 'Terminierung',
       };
 }
 
@@ -255,6 +267,10 @@ List<List<QuestionTableCell>>? parseTableRows(Object? raw) {
 List<List<Map<String, dynamic>>>? _tableRowsToMap(List<List<QuestionTableCell>>? rows) =>
     rows?.map((r) => r.map((c) => c.toMap()).toList()).toList();
 
+/// Liest die Daten einer interaktiven Aufgabe ([Flashcard.taskData])
+/// tolerant: nur eine Map zählt, sonst `null`.
+Map<String, dynamic>? parseTaskData(Object? raw) => raw is Map && raw.isNotEmpty ? Map<String, dynamic>.from(raw) : null;
+
 /// Momentaufnahme des Karten-Inhalts EINER Eskalationsstufe, angelegt kurz
 /// bevor [Flashcard.copyWithPromotedVariant] ihn durch die nächste
 /// (schwerere) Stufe überschreibt. Grundlage für
@@ -274,6 +290,7 @@ class VariantSnapshot {
     this.imageBase64,
     this.imageTargets,
     this.tableRows,
+    this.taskData,
   });
 
   final QuestionType type;
@@ -287,6 +304,7 @@ class VariantSnapshot {
   final String? imageBase64;
   final List<ImageTarget>? imageTargets;
   final List<List<QuestionTableCell>>? tableRows;
+  final Map<String, dynamic>? taskData;
 
   Map<String, dynamic> toMap() => {
         'type': type.name,
@@ -300,6 +318,7 @@ class VariantSnapshot {
         'imageBase64': imageBase64,
         'imageTargets': imageTargets?.map((t) => t.toMap()).toList(),
         'tableRows': _tableRowsToMap(tableRows),
+        'taskData': taskData,
       };
 
   factory VariantSnapshot.fromMap(Map<String, dynamic> map) => VariantSnapshot(
@@ -318,6 +337,7 @@ class VariantSnapshot {
         imageBase64: map['imageBase64'] as String?,
         imageTargets: parseImageTargets(map['imageTargets']),
         tableRows: parseTableRows(map['tableRows']),
+        taskData: parseTaskData(map['taskData']),
       );
 }
 
@@ -390,6 +410,11 @@ class Flashcard {
   /// Zeilen einer Tabellen-Frage ([QuestionType.table]); die erste Zeile ist
   /// meist die Kopfzeile (lauter vorgegebene Zellen).
   final List<List<QuestionTableCell>>? tableRows;
+
+  /// Daten einer interaktiven Aufgabe: Rechenweg ([QuestionType.steps],
+  /// StepTask) bzw. Terminierung ([QuestionType.gantt], GanttTask) – als Map
+  /// gespeichert, damit Sync, Export und Kopien sie unverändert mitnehmen.
+  final Map<String, dynamic>? taskData;
 
   final List<QuestionType>? variantChain;
   final int variantLevel;
@@ -564,6 +589,7 @@ class Flashcard {
     this.imageBase64,
     this.imageTargets,
     this.tableRows,
+    this.taskData,
     this.variantChain,
     this.variantLevel = 0,
     this.variantBox = 0,
@@ -615,7 +641,9 @@ class Flashcard {
       };
 
   String get answerSummary => switch (type) {
-        QuestionType.flashcard || QuestionType.learn => back,
+        // Rechenweg/Terminierung: back ist der lesbare Lösungsweg (beim
+        // Erstellen/Bearbeiten aus der Aufgabe geschrieben).
+        QuestionType.flashcard || QuestionType.learn || QuestionType.steps || QuestionType.gantt => back,
         QuestionType.singleChoice ||
         QuestionType.multipleChoice =>
           (options ?? const []).where((o) => o.isCorrect).map((o) => o.text).join('; '),
@@ -672,6 +700,7 @@ class Flashcard {
       imageBase64: imageBase64,
       imageTargets: imageTargets,
       tableRows: tableRows,
+      taskData: taskData,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -739,6 +768,7 @@ class Flashcard {
     bool clearImage = false,
     List<ImageTarget>? imageTargets,
     List<List<QuestionTableCell>>? tableRows,
+    Map<String, dynamic>? taskData,
   }) {
     final updated = Flashcard(
       id: id,
@@ -757,6 +787,7 @@ class Flashcard {
       imageBase64: clearImage ? null : (imageBase64 ?? this.imageBase64),
       imageTargets: imageTargets ?? this.imageTargets,
       tableRows: tableRows ?? this.tableRows,
+      taskData: taskData ?? this.taskData,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: variantBox,
@@ -931,6 +962,7 @@ class Flashcard {
         imageBase64: imageBase64,
         imageTargets: imageTargets,
         tableRows: tableRows,
+        taskData: taskData,
         variantChain: chain,
         variantLevel: variantLevel,
         variantBox: 0,
@@ -997,6 +1029,7 @@ class Flashcard {
       imageBase64: imageBase64,
       imageTargets: imageTargets,
       tableRows: tableRows,
+      taskData: taskData,
       variantChain: variantChain,
       variantLevel: variantLevel,
       variantBox: newBox,
@@ -1046,6 +1079,7 @@ class Flashcard {
     String? imageBase64,
     List<ImageTarget>? imageTargets,
     List<List<QuestionTableCell>>? tableRows,
+    Map<String, dynamic>? taskData,
     List<VariantSnapshot>? pendingVariants,
   }) {
     final snapshot = VariantSnapshot(
@@ -1060,6 +1094,7 @@ class Flashcard {
       imageBase64: this.imageBase64,
       imageTargets: this.imageTargets,
       tableRows: this.tableRows,
+      taskData: this.taskData,
     );
     return Flashcard(
       id: id,
@@ -1078,6 +1113,7 @@ class Flashcard {
       imageBase64: imageBase64,
       imageTargets: imageTargets,
       tableRows: tableRows,
+      taskData: taskData,
       variantChain: variantChain,
       variantLevel: variantLevel + 1,
       variantBox: 0,
@@ -1131,6 +1167,7 @@ class Flashcard {
       imageBase64: next.imageBase64,
       imageTargets: next.imageTargets,
       tableRows: next.tableRows,
+      taskData: next.taskData,
       pendingVariants: remaining,
     );
   }
@@ -1163,6 +1200,7 @@ class Flashcard {
       imageBase64: imageBase64,
       imageTargets: imageTargets,
       tableRows: tableRows,
+      taskData: taskData,
     );
     return Flashcard(
       id: id,
@@ -1181,6 +1219,7 @@ class Flashcard {
       imageBase64: previous.imageBase64,
       imageTargets: previous.imageTargets,
       tableRows: previous.tableRows,
+      taskData: previous.taskData,
       variantChain: variantChain,
       variantLevel: variantLevel - 1,
       variantBox: 0,
@@ -1233,6 +1272,7 @@ class Flashcard {
         'imageBase64': imageBase64,
         'imageTargets': imageTargets?.map((t) => t.toMap()).toList(),
         'tableRows': _tableRowsToMap(tableRows),
+        'taskData': taskData,
         'variantChain': variantChain?.map((t) => t.name).toList(),
         'variantLevel': variantLevel,
         'variantBox': variantBox,
@@ -1284,6 +1324,7 @@ class Flashcard {
         imageBase64: map['imageBase64'] as String?,
         imageTargets: parseImageTargets(map['imageTargets']),
         tableRows: parseTableRows(map['tableRows']),
+        taskData: parseTaskData(map['taskData']),
         variantChain:
             (map['variantChain'] as List?)?.map((t) => questionTypeFromString(t.toString())).toList(),
         variantLevel: (map['variantLevel'] as num?)?.toInt() ?? 0,

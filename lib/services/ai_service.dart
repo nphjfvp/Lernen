@@ -8,7 +8,11 @@ import '../models/app_settings.dart';
 import '../models/condense.dart';
 import '../models/flashcard.dart' show QuestionType;
 import '../models/formula_sheet.dart';
+import '../models/gantt_task.dart';
+import '../models/interactive_task.dart';
 import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
+import '../models/paper_review.dart';
+import '../models/step_task.dart';
 import 'calc_engine.dart';
 import 'calc_plan.dart';
 import 'condense_service.dart';
@@ -2157,6 +2161,9 @@ Antworte in der Sprache der Vorlage.
         QuestionType.flashcard =>
           'Zieltyp "flashcard": offene Frage/Antwort. Antwortformat: '
               '{"front": "...", "back": "..."}',
+        // Rechenweg/Terminierung sind nie Ziel einer Beförderung – zur
+        // Sicherheit wie eine Lernaufgabe.
+        QuestionType.steps || QuestionType.gantt => _variantTypeRule(QuestionType.learn),
         QuestionType.learn =>
           'Zieltyp "learn" (Aufgabe zum Verstehen): "front" ist die Aufgabe '
               'WORTGETREU mit allen Teilaufgaben (bzw. der Fakt als zu '
@@ -3897,4 +3904,208 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
     return draft;
   }
 
+  // -------------------------------------------------------------------------
+  // Interaktive Aufgaben: Rechenweg und Terminierung
+  // -------------------------------------------------------------------------
+
+  static const _interactiveTaskCap = 8000;
+
+  static Object _textWithImages(String text, List<Uint8List> images, String imageLabel) => images.isEmpty
+      ? text
+      : [
+          {'type': 'text', 'text': text},
+          for (final (i, image) in images.indexed) ...[
+            {'type': 'text', 'text': '$imageLabel ${i + 1} von ${images.length}:'},
+            {
+              'type': 'image_url',
+              'image_url': {'url': 'data:${_imageMime(image)};base64,${base64Encode(image)}'},
+            },
+          ],
+        ];
+
+  /// Macht aus einer Übungsaufgabe (Text und/oder Bilder, optional mit
+  /// vorhandener Lösung) eine interaktive Aufgabe: Rechenweg in Schritten
+  /// oder Terminierung im Gantt-Diagramm. Die KI liefert nur Struktur und
+  /// erwartete Antworten – nachgerechnet wird in der App (StepChecker bzw.
+  /// GanttScheduler). [kind] null = die KI entscheidet.
+  Future<InteractiveTaskDraft> buildInteractiveTask({
+    String text = '',
+    List<Uint8List> images = const [],
+    String solution = '',
+    InteractiveKind? kind,
+  }) async {
+    if (text.trim().isEmpty && images.isEmpty) {
+      throw AiServiceException('Gib die Aufgabe als Text oder Bild an.');
+    }
+    final buffer = StringBuffer();
+    if (text.trim().isNotEmpty) {
+      buffer
+        ..writeln('Aufgabe:')
+        ..writeln(_cap(text.trim(), _interactiveTaskCap))
+        ..writeln();
+    }
+    if (solution.trim().isNotEmpty) {
+      buffer
+        ..writeln('Vorhandene Lösung bzw. Lösungsweg (zum Abgleich, kann Fehler enthalten):')
+        ..writeln(_cap(solution.trim(), _interactiveTaskCap))
+        ..writeln();
+    }
+    buffer.writeln(switch (kind) {
+      InteractiveKind.steps => 'Gewünscht: "kind": "steps" (Rechenweg) – nur wenn das gar nicht geht, "none" mit Begründung.',
+      InteractiveKind.gantt => 'Gewünscht: "kind": "gantt" (Terminierung) – nur wenn das gar nicht geht, "none" mit Begründung.',
+      null => 'Entscheide selbst: "steps", "gantt" oder "none".',
+    });
+    if (images.isNotEmpty) {
+      buffer
+        ..writeln('Dem Text folgen ${images.length} Bild${images.length == 1 ? '' : 'er'} der Aufgabe.')
+        ..writeln('Stehen auf den Bildern mehrere Aufgaben, nimm die im Text genannte (z.B. "Aufgabe 2b"); '
+            'ist keine genannt, die erste, die als Rechenweg oder Terminierung passt.');
+    }
+    final raw = await _complete(
+      _interactiveTaskSystemPrompt,
+      _textWithImages(buffer.toString(), images, 'Bild'),
+      temperature: 0,
+    );
+    final draft = parseInteractiveTask(_parseJsonObject(raw));
+    if (draft.kind == null) {
+      if (draft.reason.trim().isEmpty) {
+        throw AiServiceException('Die KI hat keine interaktive Aufgabe geliefert – bitte erneut versuchen.', rawResponse: raw);
+      }
+      return draft;
+    }
+    if (!draft.isUsable) {
+      throw AiServiceException(
+        'Die KI hat keine brauchbare ${draft.kind!.label}-Aufgabe geliefert – bitte erneut versuchen oder ein stärkeres Modell wählen.',
+        rawResponse: raw,
+      );
+    }
+    return draft;
+  }
+
+  /// Liest die Antwort von [buildInteractiveTask] tolerant (Daten unter
+  /// "taskData" oder flach im Objekt, Art aus "kind" oder der Struktur).
+  static InteractiveTaskDraft parseInteractiveTask(Map<String, dynamic> json) {
+    final data = json['taskData'] is Map ? Map<String, dynamic>.from(json['taskData'] as Map) : json;
+    final declared = '${json['kind'] ?? json['type'] ?? ''}'.toLowerCase().trim();
+    final none = declared == 'none' || declared == 'keine' || declared == 'nicht geeignet';
+    final kind = none
+        ? null
+        : interactiveKindFrom(declared) ??
+            (data['steps'] is List
+                ? InteractiveKind.steps
+                : (data['items'] is List ? InteractiveKind.gantt : null));
+    final front = '${json['front'] ?? json['task'] ?? json['aufgabe'] ?? ''}'.trim();
+    final back = '${json['back'] ?? json['solution'] ?? json['loesungsweg'] ?? json['lösungsweg'] ?? ''}'.trim();
+    final reason = '${json['reason'] ?? json['begruendung'] ?? json['begründung'] ?? ''}'.trim();
+    return InteractiveTaskDraft(
+      kind: kind,
+      front: front,
+      back: back,
+      steps: kind == InteractiveKind.steps ? StepTask.fromMap(data) : null,
+      gantt: kind == InteractiveKind.gantt ? GanttTask.fromMap(data) : null,
+      reason: reason,
+    );
+  }
+
+  /// Prüft einen auf Papier gerechneten Rechenweg (Fotos) gegen die
+  /// Musterlösung: die KI liest Zeile für Zeile, markiert Fehler und
+  /// Folgefehler und nennt das Endergebnis – das prüft danach die App selbst
+  /// (StepChecker.probe), damit eine falsch gelesene Zeile nicht täuscht.
+  Future<PaperReview> reviewPaperSolution({
+    required String task,
+    required StepTask solution,
+    String solutionText = '',
+    required List<Uint8List> images,
+  }) async {
+    if (images.isEmpty) throw AiServiceException('Fotografiere zuerst deinen Rechenweg.');
+    final steps = [
+      for (final (i, s) in solution.steps.indexed) {'n': i + 1, 'title': s.title, 'result': s.resultText},
+    ];
+    final buffer = StringBuffer()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(task.trim(), _interactiveTaskCap))
+      ..writeln()
+      ..writeln('Musterlösung in Schritten:')
+      ..writeln(jsonEncode(steps))
+      ..writeln();
+    if (solutionText.trim().isNotEmpty) {
+      buffer
+        ..writeln('Musterlösung als Text:')
+        ..writeln(_cap(solutionText.trim(), _interactiveTaskCap))
+        ..writeln();
+    }
+    buffer.writeln('Dem Text folgen ${images.length} Foto${images.length == 1 ? '' : 's'} des handschriftlichen Rechenwegs.');
+    final raw = await _complete(_paperReviewSystemPrompt, _textWithImages(buffer.toString(), images, 'Foto'), temperature: 0);
+    final review = PaperReview.fromJson(_parseJsonObject(raw));
+    if (review.lines.isEmpty) {
+      throw AiServiceException(
+        'Auf dem Foto war kein Rechenweg zu erkennen – bitte näher, gerade und bei gutem Licht fotografieren.',
+        rawResponse: raw,
+      );
+    }
+    return review;
+  }
+
+  static const _interactiveTaskSystemPrompt = r"""
+Du wandelst eine Übungsaufgabe in eine interaktive Aufgabe für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen rechnet sie selbst aus. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
+
+Art ("kind"):
+- "steps" (Rechenweg): Rechenaufgaben mit eindeutigem Ergebnis (Mathe, Physik, Technik, Werkstoffe, BWL-Rechnungen), zerlegbar in 3–7 Schritte.
+- "gantt" (Terminierung): Vorwärts-/Rückwärtsterminierung, Durchlaufterminierung, Gantt-Diagramme mit Arbeitsgängen und Dauern.
+- "none": wenn beides nicht passt (Zeichnen, Begründen, Beweise ohne prüfbares Ergebnis) – dann "reason" mit einem Satz.
+
+Bei "steps":
+- "front": die Aufgabe WORTGETREU mit allen Angaben (Formeln in LaTeX mit $…$).
+- taskData.steps: 3–7 Schritte in der Reihenfolge des Lösungswegs. Jeder Schritt hat
+  - "title": kurz (z.B. "Substitution wählen"),
+  - "prompt": die Frage an den Lernenden, OHNE die Lösung zu verraten,
+  - ENTWEDER "options": 3–4 Antworten {"text", "correct": true/false, "feedback"} – jede falsche mit eigener Rückmeldung, warum sie hier nicht passt –
+  - ODER "fields": 1–2 Eingabefelder.
+  - "hints": genau 2 gestufte Tipps (erst ein Denkanstoß, dann deutlicher), ohne die Antwort zu nennen,
+  - "result": das Ergebnis des Schritts zum Anzeigen (LaTeX in $…$),
+  - "explanation": 1–2 Sätze, wie man darauf kommt.
+- Feld: "label" (was vor dem Feld steht, z.B. "u' =", "C =", "y(x) ="), "kind": "formula" oder "number",
+  "answer": erwartete Antwort in EINGABE-SCHREIBWEISE, KEIN LaTeX: + - * / ^, sqrt(), ln(), exp(), sin() …, pi, Dezimalpunkt – z.B. "-1/u", "x - sqrt(12 - 2*x)", "12", "pi*sqrt(3)/8",
+  "variables": die Größen, die in der Antwort vorkommen (z.B. ["u"]),
+  "constants": frei wählbare Konstanten wie die Integrationskonstante (z.B. ["C"]) – sonst weglassen,
+  "tolerance": relative Toleranz NUR bei gerundeten Zahlenergebnissen (0.01 = 1 %),
+  "mistakes": 1–3 typische Fehler {"answer": in Eingabe-Schreibweise, "feedback": kurze Rückmeldung, die zum Weiterdenken anregt, ohne die Lösung zu verraten},
+  "domain": nur wenn die Antwort nicht überall definiert ist: Bereich je Größe, z.B. {"x": [-10, 5.9]}.
+- Das letzte Feld des letzten Schritts ist das Endergebnis.
+- taskData.probe NUR bei Differentialgleichungen bzw. Stammfunktionen, damit die App das Ergebnis unabhängig prüft:
+  {"kind": "ode", "equation": rechte Seite f(x, y) von y' = f(x, y) in Eingabe-Schreibweise, "variable": "x", "function": "y", "order": 1, "conditions": [{"x": 4, "value": 2}]}
+  bzw. {"kind": "antiderivative", "equation": Integrand in Eingabe-Schreibweise}.
+- taskData.domainNote: wo die Lösung gilt (z.B. "für x < 6"), sonst leer.
+- "back": der vollständige Lösungsweg als Text (LaTeX in $…$).
+- RECHNE SORGFÄLTIG und prüfe jede erwartete Antwort selbst nach – die App setzt sie ein und meldet Widersprüche.
+
+Bei "gantt":
+- "front": die Aufgabe WORTGETREU.
+- taskData.items: je Bauteil/Baugruppe {"id": kurz, "name", "operations": [{"name", "duration": Tage als Zahl}], "needs": [ids der Teile, die vorher fertig sein müssen], "uncertain": true, wenn Werte schlecht lesbar oder abgeschnitten waren}. Die Baugruppe "needs" ihre Bauteile.
+- taskData.start: Starttermin (Zahl), taskData.due: Liefertermin (Zahl; weglassen, wenn keiner genannt ist),
+  taskData.direction: "forward" oder "backward", taskData.counting: "inclusive" (Ende = Start + Dauer − 1, üblich bei Tages-Rastern) oder "points" (Ende = Start + Dauer), wie es die Aufgabe nahelegt.
+- taskData.questions: was gefragt ist, je Teil {"item": id, "ask": "start" | "end" | "slack" | "buffer"} (slack = Liegezeit, buffer = Puffer).
+- taskData.drawChart: true, wenn ein Gantt-Diagramm gezeichnet werden soll (Standard).
+- Rechne die Termine NICHT selbst aus – das macht die App. "back" darf leer bleiben.
+
+Antworte NUR mit einem JSON-Objekt:
+{"kind": "steps" | "gantt" | "none", "front": "...", "back": "...", "reason": "...", "taskData": {...}}""";
+
+  static const _paperReviewSystemPrompt = r"""
+Du bist Korrektor für handschriftliche Rechenwege. Du bekommst eine Aufgabe, die Musterlösung in Schritten und Fotos eines Rechenwegs.
+
+1. Lies den Rechenweg Zeile für Zeile WORTGETREU ab – auch Fehler genau so, wie sie dastehen; nichts verbessern. Formeln in LaTeX mit $…$.
+2. Bewerte jede Zeile mit "status":
+   - "ok": richtig (ein anderer, aber richtiger Weg ist auch ok – vergleiche inhaltlich, nicht wörtlich),
+   - "fehler": hier passiert ein eigener Fehler,
+   - "folgefehler": aus einer früheren falschen Zeile richtig weitergerechnet,
+   - "unklar": nicht lesbar.
+3. Bei "fehler": in "comment" kurz und konkret, was falsch ist (ein bis zwei Sätze), in "fix" die richtige Zeile. Bei "folgefehler": in "comment", dass richtig weitergerechnet wurde, in "fix", was mit der richtigen Rechnung dastünde.
+4. "finalAnswer": das Endergebnis der Person als Formel in Eingabe-Schreibweise ohne linke Seite (z.B. "x - sqrt(2*x - 4)"); leer, wenn keins dasteht.
+5. "firstErrorStep": Nummer des Musterlösungs-Schritts, in dem der erste Fehler passiert; null, wenn alles stimmt.
+6. "summary": ein Satz (z.B. "1 Fehler in Zeile 3 – die Methode stimmt").
+7. "grade": "gut" (alles richtig), "schwer" (Methode richtig, kleine Rechenfehler) oder "nochmal" (falsche Methode oder mehrere Fehler).
+
+Antworte NUR mit JSON:
+{"lines": [{"n": 1, "text": "...", "status": "ok", "comment": "", "fix": ""}], "finalAnswer": "...", "firstErrorStep": null, "summary": "...", "grade": "gut"}""";
 }

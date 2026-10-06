@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/flashcard.dart';
+import 'package:lernen/models/gantt_task.dart';
+import 'package:lernen/models/step_task.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/flashcards/card_edit_screen.dart';
 import 'package:lernen/ui/flashcards/flashcard_list_screen.dart';
@@ -158,6 +160,60 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Mindestens eine Zelle zum Ausfüllen (mit Lösung) anlegen.'), findsOneWidget);
     expect(result(), isNull);
+  });
+
+  testWidgets('Terminierung bearbeiten: Werte ändern, die App schreibt den Lösungsweg neu', (tester) async {
+    final card = _card(QuestionType.gantt, front: 'Terminiere vorwärts.').copyWithContent(taskData: {
+      'kind': 'gantt',
+      'start': 1,
+      'items': [
+        {
+          'id': 'z',
+          'name': 'Zahnrad',
+          'operations': [
+            {'name': 'Drehen', 'duration': 2},
+          ],
+        },
+      ],
+      'questions': [
+        {'item': 'z', 'ask': 'end'},
+      ],
+    });
+    final result = await _open(tester, card);
+    expect(find.byKey(const ValueKey('gantt-preview')), findsOneWidget);
+    expect(find.byKey(const ValueKey('card-edit-back')), findsNothing);
+    await tester.ensureVisible(find.byKey(const ValueKey('gantt-edit-start-inc')));
+    await tester.tap(find.byKey(const ValueKey('gantt-edit-start-inc')));
+    await tester.pump();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    final edited = result()!;
+    expect(GanttTask.fromMap(edited.taskData)!.start, 2);
+    expect(edited.back, contains('Zahnrad'));
+    expect(edited.reps, 4); // Lernstand bleibt
+  });
+
+  testWidgets('Rechenweg bearbeiten: erwartete Antwort ändern', (tester) async {
+    final card = _card(QuestionType.steps, front: 'Integriere 2x.').copyWithContent(taskData: {
+      'kind': 'steps',
+      'steps': [
+        {
+          'title': 'Integrieren',
+          'fields': [
+            {'label': 'F(x) =', 'answer': 'x^2', 'variables': ['x']},
+          ],
+        },
+      ],
+    });
+    final result = await _open(tester, card);
+    expect(find.byKey(const ValueKey('step-verify')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('step-edit-0')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('step-edit-answer-0-0')), 'x^2 + C');
+    await tester.pump();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(StepTask.fromMap(result()!.taskData)!.finalField!.answer, 'x^2 + C');
   });
 
   group('Kartensuche', () {

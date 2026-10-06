@@ -684,6 +684,7 @@ class PdfQuestionImportService {
         imageBase64: q.imageBase64,
         imageTargets: parseImageTargets(f['imageTargets']),
         tableRows: parseTableRows(f['tableRows']),
+        taskData: parseTaskData(f['taskData']),
         // Leicht/Mittel/Schwer derselben Sache (siehe StageGate) – je Import
         // eindeutig, damit gleich benannte Ordner aus einem späteren Import
         // nicht mit diesen verschmelzen.

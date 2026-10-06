@@ -1,0 +1,49 @@
+import 'package:flutter/material.dart';
+
+import '../../models/flashcard.dart';
+import '../../models/gantt_task.dart';
+import '../../models/step_task.dart';
+import '../../theme/app_colors.dart';
+import '../widgets/math_text.dart';
+import 'gantt_task_editor.dart';
+
+/// Lösung einer interaktiven Aufgabe auf einen Blick (Kartenliste, Aufgaben-
+/// Ordner): beim Rechenweg die Schritte mit ihren Ergebnissen, bei der
+/// Terminierung die von der App berechnete Musterlösung.
+class TaskAnswerPreview extends StatelessWidget {
+  const TaskAnswerPreview({super.key, required this.card});
+
+  final Flashcard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final muted = TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.45);
+    switch (card.type) {
+      case QuestionType.steps:
+        final task = StepTask.fromMap(card.taskData);
+        if (task == null || task.steps.isEmpty) {
+          return Text('Kein Rechenweg hinterlegt.', style: muted.copyWith(color: c.danger));
+        }
+        return Column(
+          key: const ValueKey('task-preview-steps'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (i, s) in task.steps.indexed)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: MathText('${i + 1}. ${s.title}: ${s.resultText}', style: muted),
+              ),
+            if (task.domainNote.trim().isNotEmpty) MathText('Gilt ${task.domainNote}', style: muted),
+          ],
+        );
+      case QuestionType.gantt:
+        final task = GanttTask.fromMap(card.taskData);
+        if (task == null) return Text('Keine Terminierung hinterlegt.', style: muted.copyWith(color: c.danger));
+        return GanttSolutionPreview(task: task);
+      default:
+        return MathText(card.back, style: muted);
+    }
+  }
+}

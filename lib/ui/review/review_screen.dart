@@ -13,8 +13,10 @@ import '../widgets/math_text.dart';
 import '../../models/app_settings.dart';
 import '../../models/concept.dart';
 import '../../models/flashcard.dart';
+import '../../models/gantt_task.dart';
 import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
+import '../../models/step_task.dart';
 import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
@@ -1064,6 +1066,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         imageBase64: f['imageBase64'] as String?,
         imageTargets: parseImageTargets(f['imageTargets']),
         tableRows: parseTableRows(f['tableRows']),
+        taskData: parseTaskData(f['taskData']),
         variantChain: escalate ? QuestionParsing.escalationChain : null,
         // Leicht/Mittel/Schwer desselben Sachverhalts (siehe StageGate) –
         // pro Speichervorgang eindeutig, damit gleich benannte Gruppen aus
@@ -1883,6 +1886,8 @@ class _PreviewView extends StatelessWidget {
         QuestionType.markImage => Icons.ads_click,
         QuestionType.table => Icons.table_chart_outlined,
         QuestionType.learn => Icons.school_outlined,
+        QuestionType.steps => Icons.functions,
+        QuestionType.gantt => Icons.view_timeline_outlined,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
@@ -1918,6 +1923,12 @@ class _PreviewView extends StatelessWidget {
           for (final row in rows)
             row.map((cell) => cell.given ? cell.text : '[${AnswerChecker.solutionLabel(cell.text)}]').join(' | '),
         ].join('\n');
+      case QuestionType.steps:
+        final result = StepTask.fromMap(parseTaskData(f['taskData']))?.finalField;
+        return result == null ? (f['back'] ?? '').toString() : '${result.label} ${result.answer}'.trim();
+      case QuestionType.gantt:
+        final task = GanttTask.fromMap(parseTaskData(f['taskData']));
+        return task == null ? (f['back'] ?? '').toString() : task.describe();
     }
   }
 }

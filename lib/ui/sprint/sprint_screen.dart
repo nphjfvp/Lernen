@@ -69,7 +69,7 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
     final all = StageGate.learnable(await context.read<FlashcardRepository>().loadAll());
     // Schalter "Rechenaufgaben" (siehe CalcTasksToggle): aus → ohne sie.
     final cards = all
-        .where((c) => c.type != QuestionType.learn && (includeCalc || !CalcTaskDetector.isCalcTask(c)))
+        .where((c) => !StageGate.isTaskType(c.type) && (includeCalc || !CalcTaskDetector.isCalcTask(c)))
         .toList();
     _hasCalcCards = all.any(CalcTaskDetector.isCalcTask);
     final mastery = MasteryService();

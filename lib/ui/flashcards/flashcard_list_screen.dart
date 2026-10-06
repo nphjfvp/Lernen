@@ -28,6 +28,7 @@ import '../widgets/mastery_dot.dart';
 import '../widgets/math_text.dart';
 import '../widgets/stage_picker.dart';
 import '../widgets/table_preview.dart';
+import '../tasks/task_preview.dart';
 import '../widgets/weight_slider.dart';
 import 'card_edit_screen.dart';
 
@@ -1014,6 +1015,7 @@ class _FlashcardTile extends StatelessWidget {
       blanks: edited.blanks,
       dragPairs: edited.dragPairs,
       tableRows: edited.tableRows,
+      taskData: edited.taskData,
     ));
   }
 
@@ -1468,6 +1470,9 @@ class _AnswerDetail extends StatelessWidget {
         );
       case QuestionType.table:
         return TablePreview(rows: card.tableRows ?? const []);
+      case QuestionType.steps:
+      case QuestionType.gantt:
+        return TaskAnswerPreview(card: card);
     }
   }
 }

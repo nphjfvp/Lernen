@@ -6,8 +6,10 @@ import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/module.dart';
 import 'package:lernen/repositories/flashcard_repository.dart';
 import 'package:lernen/repositories/module_repository.dart';
+import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/theme/app_colors.dart';
 import 'package:lernen/ui/flashcards/task_folder_screen.dart';
+import 'package:lernen/ui/tasks/task_import_screen.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:provider/provider.dart';
@@ -67,6 +69,7 @@ void main() {
       providers: [
         ChangeNotifierProvider.value(value: repo),
         ChangeNotifierProvider<ModuleRepository>.value(value: _OneModule(_module(moduleId, exam))),
+        ChangeNotifierProvider<SettingsRepository>(create: (_) => SettingsRepository()),
       ],
       child: MaterialApp(
         theme: ThemeData(extensions: const [AppColors.light]),
@@ -108,6 +111,23 @@ void main() {
     expect(find.textContaining('Klausurdatum ein'), findsOneWidget);
     expect(find.textContaining('Noch keine Aufgaben'), findsOneWidget);
     expect(find.byKey(const ValueKey('task-folder-warning')), findsNothing);
+  });
+
+  testWidgets('Interaktiv üben: Aufgabe und Erklärung gehen vorbelegt in "Aufgabe übernehmen"', (tester) async {
+    await pump(tester, 'tf-int', null, [
+      _task('a', 'tf-int', 'Terminieren Sie die Baugruppe vorwärts.', back: 'Start Tag 1, Montage am Ende.', page: 4),
+    ]);
+    expect(find.byKey(const ValueKey('task-folder-import')), findsOneWidget);
+    await tester.tap(find.text('Terminieren Sie die Baugruppe vorwärts.'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('task-practice-a')));
+    await tester.pumpAndSettle();
+    expect(find.byType(TaskImportScreen), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Terminieren Sie die Baugruppe vorwärts.'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Start Tag 1, Montage am Ende.'), findsOneWidget);
+    final screen = tester.widget<TaskImportScreen>(find.byType(TaskImportScreen));
+    expect(screen.replaceCard?.id, 'a');
+    expect(screen.sourcePage, 4);
   });
 
   testWidgets('andere Fragetypen und andere Fächer stehen nicht im Ordner', (tester) async {

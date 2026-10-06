@@ -48,6 +48,7 @@ import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
 import '../speedrun/speedrun_screen.dart';
+import '../tasks/task_import_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
 import '../widgets/mastery_dot.dart';
@@ -242,6 +243,18 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PdfQuestionImportScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _SoftRow(
+                      key: const ValueKey('module-task-import'),
+                      icon: Icons.functions,
+                      title: 'Rechenweg / Terminierung übernehmen',
+                      subtitle: 'Übungsaufgabe als Text oder Foto – Schritt für Schritt lösen oder im Gantt-Diagramm planen, die App rechnet nach',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => TaskImportScreen(moduleId: module.id, moduleName: module.name),
                         ),
                       ),
                     ),
@@ -1233,7 +1246,7 @@ class _ModeCard extends StatelessWidget {
 }
 
 class _SoftRow extends StatelessWidget {
-  const _SoftRow({required this.icon, required this.title, required this.subtitle, this.onTap});
+  const _SoftRow({super.key, required this.icon, required this.title, required this.subtitle, this.onTap});
   final IconData icon;
   final String title;
   final String subtitle;

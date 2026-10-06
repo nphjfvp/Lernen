@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import '../models/flashcard.dart';
+import '../models/gantt_task.dart';
+import '../models/step_task.dart';
 
 /// Ergebnis einer automatischen Antwortprüfung.
 class AnswerCheckResult {
@@ -391,6 +393,10 @@ class AnswerChecker {
         return _hasImage(q) && markRegions(q).isNotEmpty;
       case QuestionType.table:
         return tableBlanks(q).isNotEmpty;
+      case QuestionType.steps:
+        return StepTask.fromMap(q.taskData)?.isUsable ?? false;
+      case QuestionType.gantt:
+        return GanttTask.fromMap(q.taskData) != null;
     }
   }
 
