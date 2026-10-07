@@ -3,8 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/unsupported_task.dart';
+import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../repositories/settings_repository.dart';
 import '../../repositories/unsupported_task_repository.dart';
+import '../../services/ai_service.dart';
+import '../../services/pdf_question_import_service.dart';
+import '../../services/question_parsing.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import 'task_import_screen.dart';
@@ -12,7 +17,9 @@ import 'task_import_screen.dart';
 /// Sammelliste „Noch nicht interaktiv“: Übungsaufgaben, die die App (noch)
 /// nicht selbst prüfen kann – gruppiert nach der Bedienart, die fehlt. Die
 /// Liste lässt sich als Text kopieren und weiterschicken, damit man sieht,
-/// welche Aufgabentypen als Nächstes am meisten bringen.
+/// welche Aufgabentypen als Nächstes am meisten bringen. „Fragen dazu
+/// erstellen“ legt die Aufgaben trotzdem als (nicht interaktive) Karten an –
+/// meist als Lernaufgabe mit Lösungsweg, wie beim Fragen-Import.
 class UnsupportedTasksScreen extends StatefulWidget {
   const UnsupportedTasksScreen({super.key, this.moduleId, this.moduleName = ''});
 
@@ -20,11 +27,18 @@ class UnsupportedTasksScreen extends StatefulWidget {
   final String? moduleId;
   final String moduleName;
 
+  /// Nur für Tests: KI-Zugang (API-Key, Modell) statt der Einstellungen.
+  @visibleForTesting
+  static AiService Function(String apiKey, String model)? aiFactory;
+
   @override
   State<UnsupportedTasksScreen> createState() => _UnsupportedTasksScreenState();
 }
 
 class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
+  /// Aufgaben, zu denen gerade Fragen erstellt werden.
+  final Set<String> _creating = {};
+  String? _progress;
   @override
   void initState() {
     super.initState();
@@ -60,6 +74,67 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
     );
     if (!ok || !mounted) return;
     await context.read<UnsupportedTaskRepository>().clear(moduleId: widget.moduleId);
+  }
+
+  /// Legt zu [tasks] Karten an (eine KI-Anfrage je Aufgabe, damit Quelle und
+  /// Zuordnung stimmen) und merkt sie an der Aufgabe.
+  Future<void> _createCards(List<UnsupportedTask> tasks) async {
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) return _snack('Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
+    final ai =
+        UnsupportedTasksScreen.aiFactory?.call(settings.openRouterApiKey!, settings.questionModelId) ??
+        AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+    final cardsRepo = context.read<FlashcardRepository>();
+    final list = context.read<UnsupportedTaskRepository>();
+    setState(() => _creating.addAll(tasks.map((t) => t.id)));
+    var created = 0, failed = 0;
+    try {
+      for (final (i, t) in tasks.indexed) {
+        if (tasks.length > 1) setState(() => _progress = 'Fragen werden erstellt … ${i + 1} von ${tasks.length}');
+        try {
+          final raw = await ai.importQuestionsFromExercises(t.text);
+          final questions = [
+            for (final m in raw)
+              if (QuestionParsing.normalizeGeneratedFlashcard(m) case final data?)
+                ScannedQuestion(page: t.sourcePage ?? 0, data: data, solutionByAi: true),
+          ];
+          final cards = PdfQuestionImportService.toFlashcards(
+            questions,
+            moduleId: t.moduleId,
+            sourceMaterialId: t.sourceMaterialId,
+            now: DateTime.now(),
+          );
+          if (cards.isEmpty) {
+            failed++;
+            continue;
+          }
+          await cardsRepo.saveAll(cards);
+          await list.markCards(t.id, [for (final c in cards) c.id]);
+          created += cards.length;
+        } catch (_) {
+          failed++;
+        } finally {
+          if (mounted) setState(() => _creating.remove(t.id));
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _creating.clear();
+          _progress = null;
+        });
+      }
+    }
+    if (!mounted) return;
+    _snack(
+      [
+        if (created > 0)
+          created == 1
+              ? '1 Frage erstellt – sie kommt bald im Lernplan dran.'
+              : '$created Fragen erstellt – sie kommen bald im Lernplan dran.',
+        if (failed > 0) '$failed ${failed == 1 ? 'Aufgabe ging' : 'Aufgaben gingen'} nicht – bitte erneut versuchen.',
+      ].join(' '),
+    );
   }
 
   Future<void> _retry(UnsupportedTask t) => Navigator.of(context).push(
@@ -121,7 +196,8 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
                 Text(
                   'Diese Aufgaben kann die App noch nicht selbst prüfen. Die KI sammelt sie beim „Aufgabe übernehmen“ '
                   'mit Begründung und der Bedienart, die fehlt. Kopier die Liste und schick sie weiter – dann sieht man, '
-                  'welche Aufgabentypen als Nächstes am meisten bringen.',
+                  'welche Aufgabentypen als Nächstes am meisten bringen. Mit „Fragen dazu erstellen“ kommen sie '
+                  'trotzdem ins Lernen – als normale Fragen bzw. Lernaufgaben mit Lösungsweg, ohne Prüfung durch die App.',
                   style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
                 ),
                 const SizedBox(height: 12),
@@ -145,12 +221,43 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
                     ),
                   )
                 else ...[
-                  FilledButton.icon(
-                    key: const ValueKey('unsupported-copy-button'),
-                    onPressed: () => _copy(tasks),
-                    icon: const Icon(Icons.copy_all_outlined, size: 18),
-                    label: Text('Liste kopieren (${tasks.length})'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        key: const ValueKey('unsupported-copy-button'),
+                        onPressed: () => _copy(tasks),
+                        icon: const Icon(Icons.copy_all_outlined, size: 18),
+                        label: Text('Liste kopieren (${tasks.length})'),
+                      ),
+                      if (tasks.any((t) => !t.hasCards))
+                        OutlinedButton.icon(
+                          key: const ValueKey('unsupported-create-all'),
+                          onPressed: _creating.isNotEmpty
+                              ? null
+                              : () => _createCards([
+                                  for (final t in tasks)
+                                    if (!t.hasCards) t,
+                                ]),
+                          icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                          label: Text('Fragen dazu erstellen (${tasks.where((t) => !t.hasCards).length})'),
+                        ),
+                    ],
                   ),
+                  if (_progress != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(_progress!, style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+                          ),
+                        ],
+                      ),
+                    ),
                   for (final (gi, g) in groups.indexed) ...[
                     const SizedBox(height: 18),
                     Row(
@@ -219,10 +326,30 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
               Expanded(
                 child: Text(where, style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
               ),
+              if (_creating.contains(t.id))
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                )
+              else if (t.hasCards)
+                Padding(
+                  key: ValueKey('unsupported-created-${t.id}'),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    '✓ ${t.cardIds.length == 1 ? 'Frage' : '${t.cardIds.length} Fragen'} erstellt',
+                    style: TextStyle(fontSize: 12, color: c.good, fontWeight: FontWeight.w600),
+                  ),
+                )
+              else
+                TextButton(
+                  key: ValueKey('unsupported-create-${t.id}'),
+                  onPressed: _creating.isNotEmpty ? null : () => _createCards([t]),
+                  child: const Text('Frage erstellen'),
+                ),
               TextButton(
                 key: ValueKey('unsupported-retry-${t.id}'),
                 onPressed: () => _retry(t),
-                child: const Text('Erneut versuchen'),
+                child: const Text('Interaktiv versuchen'),
               ),
               IconButton(
                 key: ValueKey('unsupported-delete-${t.id}'),

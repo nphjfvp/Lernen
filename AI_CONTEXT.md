@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1363 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1365 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1292,8 +1292,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     landen beim Import AUTOMATISCH dort (Text = Wortlaut der KI, sonst Eingabe bzw. "Aufgabe
     von Seite N"); wird so eine Aufgabe doch gespeichert, `removeText`. Bildschirm
     `lib/ui/tasks/unsupported_tasks_screen.dart` (gruppiert, "Liste kopieren" → Zwischenablage,
-    Einträge löschen, "Alle löschen", "Erneut versuchen" öffnet den Import), Zeile
-    `module-unsupported-tasks` im Fach (nur wenn > 0). Sync: replace in
+    Einträge löschen, "Alle löschen", "Interaktiv versuchen" öffnet den Import, "Frage
+    erstellen" `unsupported-create-<id>` bzw. "Fragen dazu erstellen" `unsupported-create-all`:
+    je Aufgabe `AiService.importQuestionsFromExercises(text)` → normalisiert →
+    `PdfQuestionImportService.toFlashcards` (Quelle, priorityIntroduction) → gespeichert,
+    `UnsupportedTask.cardIds` per `markCards` gemerkt; Eintrag bleibt auf der Liste;
+    Hook `UnsupportedTasksScreen.aiFactory`), Zeile `module-unsupported-tasks` im Fach
+    (IMMER sichtbar, auch leer) und Knopf `task-import-list` in der AppBar des Imports.
+    StepChecker-Fix (Nutzer-Screenshot: „typischer Fehler ist in Wahrheit richtig“ bei
+    8,63·10⁻⁹): `_close` hatte eine absolute Untergrenze (tol · max(1, |a|, |b|)), damit waren
+    alle Werte < tol „gleich“. Zahlenfelder, typische Fehler, Vorzeichen-Check und Formeln
+    ohne Größen vergleichen jetzt mit `_sameNumber` (rein relativ, 0 nur gegen ≤ 1e-12);
+    "gerundet" erkennt auch a*10^b / aeb (Schrittweite 10^(b − Nachkommastellen)). Sync: replace in
     `applySyncedHistory`, im Payload, Merge per id (`sync_merge.dart`), Waisen per moduleId
     entfernt, Auto-Sync beobachtet den Store; `ModuleRepository.deleteCascade` löscht mit.
     Tests: `crystal_geometry_test`, `crystal_task_view_test` (Zeichnen, Ebene über Punkte/

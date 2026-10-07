@@ -89,6 +89,26 @@ class StepChecker {
     return (a - b).abs() <= tol * math.max(1.0, math.max(a.abs(), b.abs()));
   }
 
+  /// Für Zahlen-Antworten: rein relativ – sonst wären alle kleinen Werte
+  /// (8,63·10⁻⁹, −8,63·10⁻⁹, 5,8·10⁻¹³) „gleich“, weil die Toleranz unter 1
+  /// absolut wirkte. Nur exakt 0 bekommt eine winzige absolute Toleranz.
+  static bool _sameNumber(double a, double b, {double tol = 1e-9}) {
+    if (!a.isFinite || !b.isFinite) return false;
+    final scale = math.max(a.abs(), b.abs());
+    if (scale == 0) return true;
+    final d = (a - b).abs();
+    if (a == 0 || b == 0) return d <= 1e-12;
+    return d <= tol * scale;
+  }
+
+  /// Richtig gerundet? [digits] = Ziffern ohne führende Nullen, [step] = Wert
+  /// der letzten Stelle; mindestens zwei gültige Ziffern.
+  static FieldVerdict? _rounded(double u, double expected, String digits, double step) {
+    if ((u - expected).abs() > 0.5 * step * (1 + 1e-9)) return null;
+    if (digits.length >= 2) return const FieldVerdict(FieldVerdictKind.correct, 'Richtig (gerundet).');
+    return const FieldVerdict(FieldVerdictKind.wrong, 'Zu grob gerundet – gib mindestens zwei gültige Ziffern an.');
+  }
+
   /// Belegungen der Größen [vars] (im Bereich [domain], falls angegeben).
   static Iterable<Map<String, double>> _assignments(List<String> vars, Map<String, (double, double)> domain) sync* {
     if (vars.isEmpty) {
@@ -129,7 +149,9 @@ class StepChecker {
     final points = _validPoints(ref, vars, domain, fixed: refFixed);
     if (points.isEmpty || (vars.isNotEmpty && points.length < 2)) return null;
     for (final env in points) {
-      if (!_close(user.evaluate({...userFixed, ...env}), ref.evaluate({...refFixed, ...env}))) return false;
+      final u = user.evaluate({...userFixed, ...env}), r = ref.evaluate({...refFixed, ...env});
+      // Ohne Größen ist es eine Zahl (z.B. 8,63·10^-9): relativ vergleichen.
+      if (!(vars.isEmpty ? _sameNumber(u, r, tol: 1e-7) : _close(u, r))) return false;
     }
     return true;
   }
@@ -270,22 +292,23 @@ class StepChecker {
       return const FieldVerdict(FieldVerdictKind.uncheckable, 'Diese Antwort kann ich nicht selbst nachrechnen.');
     }
     final tol = field.tolerance ?? 1e-9;
-    if (_close(u, expected, tol: tol)) return const FieldVerdict(FieldVerdictKind.correct, 'Richtig.');
-    // Richtig gerundet? (0,68 für 0,6802 – mindestens zwei gültige Ziffern)
-    final literal = RegExp(r'^\s*[+-]?(\d+)(?:[.,](\d+))?\s*$').firstMatch(MathExpression.normalize(input));
+    if (_sameNumber(u, expected, tol: tol)) return const FieldVerdict(FieldVerdictKind.correct, 'Richtig.');
+    // Richtig gerundet? (0,68 für 0,6802, 8,6·10^-9 für 8,632·10^-9 –
+    // mindestens zwei gültige Ziffern)
+    final normalized = MathExpression.normalize(input).replaceAll(' ', '');
+    final literal = RegExp(r'^[+-]?(\d+)(?:[.,](\d+))?(?:(?:\*10\^\(?|[eE])([+-]?\d+)\)?)?$').firstMatch(normalized);
     if (literal != null) {
       final decimals = literal[2]?.length ?? 0;
+      final exponent = int.tryParse(literal[3] ?? '') ?? 0;
       final digits = '${literal[1]}${literal[2] ?? ''}'.replaceFirst(RegExp(r'^0+'), '');
-      if ((u - expected).abs() <= 0.5 * math.pow(10, -decimals) + 1e-12) {
-        if (digits.length >= 2) return const FieldVerdict(FieldVerdictKind.correct, 'Richtig (gerundet).');
-        return const FieldVerdict(FieldVerdictKind.wrong, 'Zu grob gerundet – gib mindestens zwei gültige Ziffern an.');
-      }
+      final rounded = _rounded(u, expected, digits, math.pow(10, exponent - decimals).toDouble());
+      if (rounded != null) return rounded;
     }
     for (final m in field.mistakes) {
       final v = MathExpression.tryParse(m.answer)?.evaluate();
-      if (v != null && _close(u, v, tol: tol)) return FieldVerdict(FieldVerdictKind.mistake, m.feedback);
+      if (v != null && _sameNumber(u, v, tol: tol)) return FieldVerdict(FieldVerdictKind.mistake, m.feedback);
     }
-    if (expected != 0 && _close(u, -expected, tol: tol)) {
+    if (expected != 0 && _sameNumber(u, -expected, tol: tol)) {
       return const FieldVerdict(FieldVerdictKind.wrong, 'Fast – das Vorzeichen stimmt nicht.');
     }
     return const FieldVerdict(FieldVerdictKind.wrong, 'Das stimmt noch nicht.');

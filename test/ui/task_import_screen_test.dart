@@ -92,6 +92,13 @@ class _MemoryUnsupported extends UnsupportedTaskRepository {
   }
 
   @override
+  Future<void> markCards(String id, List<String> cardIds) async {
+    final i = items.indexWhere((t) => t.id == id);
+    if (i >= 0) items[i] = items[i].copyWith(cardIds: [...items[i].cardIds, ...cardIds]);
+    notifyListeners();
+  }
+
+  @override
   Future<void> delete(String id) async {
     items.removeWhere((t) => t.id == id);
     notifyListeners();
@@ -225,6 +232,7 @@ void main() {
     TaskImportScreen.pickImagesHook = null;
     PaperCheckScreen.aiFactory = null;
     PaperCheckScreen.pickImagesHook = null;
+    UnsupportedTasksScreen.aiFactory = null;
   });
 
   late _MemoryUnsupported unsupported;
@@ -594,6 +602,51 @@ void main() {
     expect(unsupported.forModule('m1'), isEmpty);
     expect(unsupported.items.single.moduleId, 'm2');
     expect(find.byKey(const ValueKey('unsupported-empty')), findsOneWidget);
+  });
+
+  testWidgets('Sammelliste: Fragen dazu erstellen – je Aufgabe eine Lernaufgabe, gemerkt an der Aufgabe', (tester) async {
+    final prompts = <String>[];
+    UnsupportedTasksScreen.aiFactory = (key, model) => AiService(
+          apiKey: key,
+          model: model,
+          client: MockClient((r) async {
+            final prompt = ((jsonDecode(r.body)['messages'] as List).last['content']) as String;
+            prompts.add(prompt);
+            return _chat({
+              'flashcards': [
+                {
+                  'type': 'learn',
+                  'front': prompt.contains('Fließkurve') ? 'Zeichne die Fließkurve.' : 'Skizziere das Diagramm.',
+                  'back': 'So geht der Lösungsweg …',
+                },
+              ],
+            });
+          }),
+        );
+    final cards = await pump(tester, const UnsupportedTasksScreen(moduleId: 'm1', moduleName: 'Werkstoffkunde'));
+    await unsupported.add(moduleId: 'm1', text: 'Skizziere das Diagramm.', needs: 'Kurve in Diagramm zeichnen', sourceMaterialId: 'blatt', sourcePage: 2);
+    await unsupported.add(moduleId: 'm1', text: 'Zeichne die Fließkurve.', needs: 'Kurve in Diagramm zeichnen');
+    await tester.pump();
+
+    final first = unsupported.items.first;
+    await tap(tester, 'unsupported-create-${first.id}');
+    expect(cards.saved.single.type, QuestionType.learn);
+    expect(cards.saved.single.back, 'So geht der Lösungsweg …');
+    expect(cards.saved.single.sourceMaterialId, 'blatt');
+    expect(cards.saved.single.sourcePage, 2);
+    expect(cards.saved.single.priorityIntroduction, isTrue);
+    expect(unsupported.items.first.cardIds, [cards.saved.single.id]);
+    expect(find.byKey(ValueKey('unsupported-created-${first.id}')), findsOneWidget);
+    // Bleibt auf der Liste – die Bedienart fehlt ja weiterhin.
+    expect(unsupported.items, hasLength(2));
+
+    // „Alle“ nimmt nur die, zu denen es noch keine Frage gibt.
+    expect(find.text('Fragen dazu erstellen (1)'), findsOneWidget);
+    await tap(tester, 'unsupported-create-all');
+    expect(prompts, hasLength(2));
+    expect(cards.saved, hasLength(2));
+    expect(find.byKey(const ValueKey('unsupported-create-all')), findsNothing);
+    expect(find.text('1 Frage erstellt – sie kommt bald im Lernplan dran.'), findsOneWidget);
   });
 
   testWidgets('ausprobieren: die Aufgabe so lösen wie im Quiz, ohne zu speichern', (tester) async {

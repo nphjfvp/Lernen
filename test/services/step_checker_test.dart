@@ -203,6 +203,31 @@ void main() {
       expect(StepChecker.check(pd, '0,69').kind, FieldVerdictKind.wrong);
     });
 
+    test('sehr kleine Zahlen: relativ geprüft, nicht alle „gleich“ (Diffusionskoeffizient)', () {
+      const d = StepField(
+        label: 'D =',
+        answer: '8.63*10^-9',
+        kind: StepFieldKind.number,
+        tolerance: 0.01,
+        mistakes: [StepMistake(answer: '-8.63*10^-9', feedback: 'Vorzeichen im Exponenten')],
+      );
+      expect(StepChecker.check(d, '8.63*10^-9').isCorrect, isTrue);
+      expect(StepChecker.check(d, '8,6*10^-9').isCorrect, isTrue);
+      expect(StepChecker.check(d, '0').isCorrect, isFalse);
+      expect(StepChecker.check(d, '5.79*10^-13').isCorrect, isFalse);
+      expect(StepChecker.check(d, '2.62*10^-7').isCorrect, isFalse);
+      expect(StepChecker.check(d, '-8.63*10^-9').kind, FieldVerdictKind.mistake);
+      // Die Nachprüfung meldet die typischen Fehler nicht mehr als „in Wahrheit richtig“.
+      final task = StepTask(steps: [
+        TaskStep(title: 'Exponentialterm', fields: [d]),
+      ]);
+      expect(StepChecker.verify(task).problems.where((p) => p.contains('in Wahrheit richtig')), isEmpty);
+      // Gerundet in Zehnerpotenz-Schreibweise.
+      const exact = StepField(label: 'D =', answer: '0.67*exp(-18.57)', kind: StepFieldKind.number);
+      expect(StepChecker.check(exact, '5.8*10^-9').message, contains('gerundet'));
+      expect(StepChecker.check(exact, '6*10^-9').message, contains('Zu grob'));
+    });
+
     test('Toleranz aus der Aufgabe', () {
       const v = StepField(label: 'v =', answer: '12.5', kind: StepFieldKind.number, tolerance: 0.01);
       expect(StepChecker.check(v, '12,4').isCorrect, isTrue);

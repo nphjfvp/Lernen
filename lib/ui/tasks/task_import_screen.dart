@@ -559,6 +559,12 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
             ],
           ),
           actions: [
+            IconButton(
+              key: const ValueKey('task-import-list'),
+              tooltip: 'Liste „Noch nicht interaktiv“',
+              onPressed: _openList,
+              icon: const Icon(Icons.playlist_add_check),
+            ),
             if (_hasTasks)
               TextButton(
                 key: const ValueKey('task-import-save-top'),

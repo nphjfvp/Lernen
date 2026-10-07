@@ -29,9 +29,12 @@ void main() {
       sourceMaterialId: 'blatt',
       sourcePage: 3,
       createdAt: DateTime(2026, 10, 7, 12),
+      cardIds: const ['k1', 'k2'],
     );
     final again = UnsupportedTask.fromMap(t.toMap());
     expect(again.toMap(), t.toMap());
+    expect(again.hasCards, isTrue);
+    expect(UnsupportedTask.fromMap(const {}).hasCards, isFalse);
     expect(UnsupportedTask.fromMap(const {}).createdAt, DateTime.fromMillisecondsSinceEpoch(0));
   });
 

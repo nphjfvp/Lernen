@@ -12,6 +12,7 @@ class UnsupportedTask {
     this.needs = '',
     this.sourceMaterialId,
     this.sourcePage,
+    this.cardIds = const [],
   });
 
   final String id;
@@ -29,6 +30,13 @@ class UnsupportedTask {
   final int? sourcePage;
   final DateTime createdAt;
 
+  /// Karten, die schon aus dieser Aufgabe erstellt wurden („Fragen dazu
+  /// erstellen“ – nicht interaktiv, z.B. als Lernaufgabe mit Lösungsweg).
+  /// Die Aufgabe bleibt trotzdem auf der Liste, die Bedienart fehlt ja weiter.
+  final List<String> cardIds;
+
+  bool get hasCards => cardIds.isNotEmpty;
+
   /// Gleiche Aufgabe = gleicher Text (Leerzeichen und Groß/klein egal).
   static String sameKey(String text) => text.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
 
@@ -45,6 +53,7 @@ class UnsupportedTask {
     DateTime? createdAt,
     String? sourceMaterialId,
     int? sourcePage,
+    List<String>? cardIds,
   }) => UnsupportedTask(
     id: id,
     moduleId: moduleId,
@@ -54,6 +63,7 @@ class UnsupportedTask {
     needs: needs ?? this.needs,
     sourceMaterialId: sourceMaterialId ?? this.sourceMaterialId,
     sourcePage: sourcePage ?? this.sourcePage,
+    cardIds: cardIds ?? this.cardIds,
   );
 
   Map<String, dynamic> toMap() => {
@@ -65,6 +75,7 @@ class UnsupportedTask {
     'sourceMaterialId': sourceMaterialId,
     'sourcePage': sourcePage,
     'createdAt': createdAt.toIso8601String(),
+    if (cardIds.isNotEmpty) 'cardIds': cardIds,
   };
 
   factory UnsupportedTask.fromMap(Map<String, dynamic> map) => UnsupportedTask(
@@ -76,6 +87,10 @@ class UnsupportedTask {
     sourceMaterialId: map['sourceMaterialId'] as String?,
     sourcePage: (map['sourcePage'] as num?)?.toInt(),
     createdAt: DateTime.tryParse('${map['createdAt']}') ?? DateTime.fromMillisecondsSinceEpoch(0),
+    cardIds: [
+      if (map['cardIds'] is List)
+        for (final id in map['cardIds'] as List) '$id',
+    ],
   );
 
   /// Nach fehlender Bedienart gruppiert (Groß/klein egal), die häufigste

@@ -16,7 +16,10 @@ class UnsupportedTaskRepository extends ChangeNotifier {
   /// Neueste zuerst.
   List<UnsupportedTask> get all => List.unmodifiable(_all);
 
-  List<UnsupportedTask> forModule(String moduleId) => [for (final t in _all) if (t.moduleId == moduleId) t];
+  List<UnsupportedTask> forModule(String moduleId) => [
+    for (final t in _all)
+      if (t.moduleId == moduleId) t,
+  ];
 
   Future<void> load() async {
     final db = await DatabaseService.instance.database;
@@ -63,6 +66,18 @@ class UnsupportedTaskRepository extends ChangeNotifier {
     await DatabaseService.unsupportedTasks.record(entry.id).put(db, entry.toMap());
     await load();
     return entry;
+  }
+
+  /// Merkt, welche Karten aus der Aufgabe erstellt wurden.
+  Future<void> markCards(String id, List<String> cardIds) async {
+    if (!_loaded) await load();
+    final entry = _all.where((t) => t.id == id).firstOrNull;
+    if (entry == null) return;
+    final db = await DatabaseService.instance.database;
+    await DatabaseService.unsupportedTasks
+        .record(id)
+        .put(db, entry.copyWith(cardIds: [...entry.cardIds, ...cardIds]).toMap());
+    await load();
   }
 
   Future<void> delete(String id) async {

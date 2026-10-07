@@ -1435,16 +1435,26 @@ neu versuchen („Als Kristallgitter“ …).
 **Sammelliste „Noch nicht interaktiv“**: Teilaufgaben, die die App (noch) nicht
 selbst prüfen kann, landen **automatisch** auf einer Liste – mit der Begründung
 der KI und der **fehlenden Bedienart** in wenigen Wörtern („Kurve in Diagramm
-zeichnen“, „Netzplan zeichnen“ …). Im Fach erscheint dafür die Zeile
-„Noch nicht interaktiv (N)“: die Aufgaben sind nach fehlender Bedienart
+zeichnen“, „Netzplan zeichnen“ …). Im Fach steht dafür immer die Zeile
+„Noch nicht interaktiv (N)“ (auch im „Aufgabe übernehmen“-Bildschirm oben
+rechts erreichbar): die Aufgaben sind nach fehlender Bedienart
 gruppiert (häufigste zuerst), **„Liste kopieren“** legt alles als Text in die
 Zwischenablage – zum Einfügen und Weiterschicken, damit man sieht, welcher
 Aufgabentyp als Nächstes am meisten bringt. Einträge lassen sich einzeln
-löschen, alle auf einmal leeren oder „Erneut versuchen“. Wird eine gesammelte
+löschen, alle auf einmal leeren oder „Interaktiv versuchen“. **„Fragen dazu
+erstellen“** (je Aufgabe oder alle auf einmal) legt sie trotzdem als Karten an –
+wie beim Fragen-Import meist als Lernaufgabe mit ausführlichem Lösungsweg, ohne
+Prüfung durch die App; die Aufgabe bleibt mit „✓ Frage erstellt“ auf der Liste,
+weil die Bedienart ja weiter fehlt. Wird eine gesammelte
 Aufgabe doch noch interaktiv gespeichert, verschwindet sie von der Liste. Die
 Liste wird mit synchronisiert und beim Löschen des Fachs mit gelöscht.
 
 ### 5za. Rechenwege und Terminierung interaktiv üben
+
+*Zahlen werden relativ geprüft*: auch sehr kleine Ergebnisse (z.B.
+Diffusionskoeffizient 5,8·10⁻⁹ cm²/s) werden genau verglichen – „0“ oder ein
+falscher Exponent zählt nicht als richtig, gerundete Werte in
+Zehnerpotenz-Schreibweise („5,8*10^-9“, mindestens zwei gültige Ziffern) schon.
 
 Zwei neue Aufgabentypen, bei denen **die App selbst nachrechnet** – die KI
 liefert nur die Struktur und die erwarteten Antworten:

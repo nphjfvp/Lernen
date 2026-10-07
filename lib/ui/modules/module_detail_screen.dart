@@ -265,13 +265,15 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         ),
                       ),
                     ),
-                    if (unsupportedCount > 0) ...[
+                    ...[
                       const SizedBox(height: 12),
                       _SoftRow(
                         key: const ValueKey('module-unsupported-tasks'),
                         icon: Icons.playlist_add_check,
-                        title: 'Noch nicht interaktiv ($unsupportedCount)',
-                        subtitle: 'Aufgaben, die die App noch nicht selbst prüfen kann – nach fehlender Bedienart sortiert, zum Kopieren und Weiterschicken',
+                        title: unsupportedCount > 0 ? 'Noch nicht interaktiv ($unsupportedCount)' : 'Noch nicht interaktiv',
+                        subtitle: unsupportedCount > 0
+                            ? 'Aufgaben, die die App noch nicht selbst prüfen kann – kopieren und schicken oder als Fragen erstellen'
+                            : 'Noch leer – hier landen Aufgaben, die beim Übernehmen nicht interaktiv gingen',
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) => UnsupportedTasksScreen(moduleId: module.id, moduleName: module.name),
