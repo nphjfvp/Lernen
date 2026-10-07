@@ -45,7 +45,8 @@ gewünschtes Verhalten.
 - **Persistenz**: `sembast` (Datei auf IO, IndexedDB via `sembast_web` im Web),
   Singleton `DatabaseService` mit Stores: `modules, materials, summaries,
   concepts, lecture_units, flashcards, settings, mastery_snapshots,
-  model_catalog, chat_messages`. Record-Keys im Store `settings`:
+  model_catalog, chat_messages`, später u.a. `lab_experiments`,
+  `unsupported_tasks` (Sammelliste, Punkt 55). Record-Keys im Store `settings`:
   `app_settings` = AppSettings, `study_days` = Lerntage-Protokoll,
   `daily_session` = heutiger Daily-Quiz-Stand, `mock_exam_results` =
   Probeklausur-Verlauf. Gesynct werden inzwischen auch Lerntage,
@@ -88,10 +89,10 @@ Befehle (Flutter liegt in dieser Umgebung unter `/home/user/flutter-sdk/flutter/
 **`Flashcard`** (`lib/models/flashcard.dart`) – Frage + eigener SR-Zustand:
 - Inhalt: `front`, `back`, `type` (`QuestionType`: flashcard, singleChoice,
   multipleChoice, freeText, fillBlank, dragDrop, dragCategory, html,
-  diagramLabel, markImage, table, learn, steps, gantt), je nach Typ
+  diagramLabel, markImage, table, learn, steps, gantt, crystal), je nach Typ
   `options`/`correctText`/`blanks`/`dragPairs`/`htmlContent`/`imageTargets`/
   `tableRows`/`taskData` (Map, bei steps = `StepTask`, bei gantt = `GanttTask`,
-  siehe Punkt 54);
+  siehe Punkt 54, bei crystal = `CrystalTask`, siehe Punkt 55);
   `imageBase64` (Seiten-Screenshot/Bild, nur wenn für die Frage nötig).
 - Bildfragen: `imageTargets` (`List<ImageTarget>`, Koordinaten relativ zum
   Bild 0..1; `group` = austauschbare Stellen, geprüft über
@@ -469,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1317 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1363 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1195,13 +1196,14 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     ab Liefertermin, Puffer = spätester − frühester Start; `judgeBars`/`judgeAnswers` mit
     Folgefehlern = passt zum EIGENEN Diagramm; `ownAnswer`, `hint`, `explain`, `solutionText`,
     `variant` = andere Zahlen; Zell-Rechnung: Arbeitsgang belegt Zellen s..s+d−1, `dueCell` =
-    due − shift). KI (`AiService`): `buildInteractiveTask({text, images, solution, kind})` →
-    `InteractiveTaskDraft` (`lib/models/interactive_task.dart`, kind null = "none" mit
-    `reason`; wirft bei unbrauchbarem Ergebnis), `parseInteractiveTask` (Daten unter taskData
+    due − shift). KI (`AiService`): `buildInteractiveTasks({text, images, solution, kind})` →
+    Liste von `InteractiveTaskDraft` (seit Punkt 55 mehrere Teilaufgaben; `lib/models/
+    interactive_task.dart`, kind null = "none" mit `reason`/`needs`; wirft bei unbrauchbarem
+    Ergebnis), `parseInteractiveTask` (Daten unter taskData
     oder flach, Art aus kind oder Struktur), `reviewPaperSolution` → `PaperReview`
     (`lib/models/paper_review.dart`: Zeilen ok/fehler/folgefehler/unklar mit comment/fix,
     finalAnswer, firstErrorStep, grade gut/schwer/nochmal; alle Zeilen ok → gut). Bei mehreren
-    Aufgaben auf einem Foto nimmt die KI die im Text genannte. UI `lib/ui/tasks/`:
+    Aufgaben auf einem Foto nimmt die KI die im Text genannte, sonst alle (Punkt 55). UI `lib/ui/tasks/`:
     `StepTaskView` (Modus Schritt für Schritt | Nur Ergebnis; Auswahl- oder Formelschritte mit
     `MathInputField` (Hilfstasten, "So lese ich es"), Tipps, "Schritt zeigen", Probe-Karte;
     Bewertung beim Weiter: ohne Fehlversuch/Tipp = gewusst, sonst isCorrect + Grade.hard,
@@ -1237,9 +1239,68 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `task_import_screen_test` (auch Foto-Prüfung, Parsing), Ergänzungen in
     `card_edit_screen_test`, `task_folder_ui_test`, `flashcard_copy_integrity_test`.
     Test-Falle: im Test-Font (Ahem) sind Texte viel breiter – schmale Spalten mit
-    `Flexible`/Ellipsis bauen, sonst Overflow. Offene Grenzen: Kristallgitter-Aufgaben
-    (Richtungen/Ebenen im Würfel) gibt es noch nicht – `taskData` ist dafür vorbereitet
-    (neuer `kind`); Zeichnen auf Papier prüft nur die Foto-Prüfung (KI liest, App rechnet nach).
+    `Flexible`/Ellipsis bauen, sonst Overflow. Kristallgitter: Punkt 55. Offene Grenze:
+    Zeichnen auf Papier prüft nur die Foto-Prüfung (KI liest, App rechnet nach).
+55. Kristallgitter (`QuestionType.crystal`, Label "Kristallgitter") + mehrere Teilaufgaben je
+    Foto + Sammelliste "Noch nicht interaktiv" (Nutzer: Würfel-Editor nach Mockup, "bau beides
+    ein, Live-Anzeige standardmäßig an"; Frage war, ob man für jeden neuen Aufgabentyp fragen
+    muss → stattdessen sammelt die App automatisch, was fehlt). Modell
+    `lib/models/crystal_task.dart`: `CrystalLattice` sc/bcc/fcc (short kubisch/krz/kfz),
+    `CrystalPartKind` direction/readDirection/family/plane/readPlane/planeAtoms (tolerant
+    deutsch über `crystalPartKindFrom`), `CrystalPart` (kind, indices [3 ints], optional
+    lattice, uncertain, prompt), `CrystalTask` (parts, lattice; `confirmed()`, `describe()`,
+    `toMap` mit kind 'crystal'), `millerText` (Strich über negativen Zahlen per U+0304),
+    `parseMillerIndices` ("1 -1 0", "[1̄10]", "-110", Listen). Geometrie
+    `lib/services/crystal_geometry.dart` (rein): Koordinaten im HALBRASTER (ints 0..2 =
+    0, ½, 1); Richtung = reduce(Ziel − Start); Ebene `CrystalPlane` n·r = dNum/dDen (n gekürzt,
+    Vorzeichen normiert), `millerFrom(origin)`, `interceptsFrom`, `equation`;
+    `standardOrigin` (negativer Index → Ursprung auf der 1-Seite), `standardPlane`;
+    `judgeDirection` (andersherum, Vorzeichen je Achse, verschobener Ursprung),
+    `judgeReadDirection` (ungekürzt zählt mit Hinweis), `judgePlane` (jede Ecke als Ursprung,
+    ±, parallel → "ergeben (2 2 0)", kollinear), `judgeReadPlane`, `atomsIn`/`judgeAtoms`,
+    `familyMembers` (Permutationen × Vorzeichen, ≤ 12 zeichnen), `drawableDirection`
+    (|k| ≤ 2 gekürzt), `drawablePlane` (drei Halbrasterpunkte), `hints`, `problems(task)`,
+    `playable` (= `AnswerChecker.isAnswerable`), `solutionText` (Rückseite ohne eigene
+    Erklärung). UI: `crystal_cube.dart` (`CrystalCube`: perspektivische Projektion θ 24°,
+    φ 20°, Drehen per Ziehen/◀ ▶, ½-Raster-Schalter, Punkte als nach Tiefe sortierte
+    Positioned-GestureDetector `crystal-pt-x-y-z`, CustomPainter für Kanten/Achsen/Pfeile/
+    Polygone), `CrystalTaskView` (Teilaufgaben-Chips, Live-Anzeige `crystal-live`
+    STANDARDMÄSSIG AN außer Prüfungsmodus, Ebene über Punkte oder Achsenabschnitte (1/½/∞,
+    nur ohne negative Indizes), Familie mit Fortschritt, Tipps, Lösung zeigen (grün
+    gestrichelt), Bewertung wie Rechenweg: sauber = gewusst, Fehlversuch/Tipp = isCorrect +
+    Grade.hard, Lösung/Auflösen = falsch; Prüfungsmodus "Antwort abgeben" wertet alle Teile;
+    ab 900 px Aufgabe links, Würfel rechts), `CrystalTaskEditor` (Gitter, Teilaufgaben mit
+    Art + Indizes, "Stimmt so" für unsichere, Prüfkarte mit `problems`) + `CrystalSolutionPreview`.
+    Durchgereicht wie steps/gantt: QuestionParsing (Synonyme kristall, miller, würfel …,
+    `crystalTask` bzw. flache parts/lattice), `_inferType`, `StageGate.isTaskType`,
+    QuestionAnswerView, Kartenliste (`TaskAnswerPreview`), Review-Vorschau, `CardEditScreen`
+    (leere Erklärung → `solutionText`). Mehrere Teilaufgaben: `AiService.buildInteractiveTasks`
+    (Antwort `{"tasks": [...]}`, höchstens 8; `parseInteractiveTasks` liest tasks/aufgaben/
+    teilaufgaben oder ein einzelnes Objekt; Art genannt, Daten unbrauchbar → `incomplete`,
+    NICHT auf die Sammelliste; wirft, wenn alles unvollständig ist). `TaskImportScreen`
+    jetzt mit Entwurfsliste (`_Draft`: Editor je Art, Häkchen `task-import-include-i`,
+    aufklappbar `task-import-draft-i`, Status, "Ausprobieren" `task-import-try-i`,
+    "Als <Art>"/"Erneut versuchen" je Teilaufgabe `task-import-force-i-<kind>`/
+    `task-import-retry-i`), Art-Auswahl Automatisch/Rechenweg/Terminierung/Kristall,
+    "N Aufgaben speichern" (`task-import-save`, prüft jede, Rückfrage mit "Teilaufgabe:"-
+    Präfix), Karten als Material statt Container (ListTiles in den Editoren). Sammelliste:
+    Modell `lib/models/unsupported_task.dart` (`UnsupportedTask`: text, reason, needs =
+    fehlende Bedienart, Quelle; `sameKey`, `group`, `grouped` (häufigste zuerst, Sonstiges
+    zuletzt), `exportText` zum Kopieren), `UnsupportedTaskRepository` (Store
+    `unsupported_tasks`, `add` ohne Doppelte je Fach, `removeText`, `delete`, `clear`;
+    Provider in main.dart; nullable gelesen, damit Tests ohne ihn laufen). "none"-Entwürfe
+    landen beim Import AUTOMATISCH dort (Text = Wortlaut der KI, sonst Eingabe bzw. "Aufgabe
+    von Seite N"); wird so eine Aufgabe doch gespeichert, `removeText`. Bildschirm
+    `lib/ui/tasks/unsupported_tasks_screen.dart` (gruppiert, "Liste kopieren" → Zwischenablage,
+    Einträge löschen, "Alle löschen", "Erneut versuchen" öffnet den Import), Zeile
+    `module-unsupported-tasks` im Fach (nur wenn > 0). Sync: replace in
+    `applySyncedHistory`, im Payload, Merge per id (`sync_merge.dart`), Waisen per moduleId
+    entfernt, Auto-Sync beobachtet den Store; `ModuleRepository.deleteCascade` löscht mit.
+    Tests: `crystal_geometry_test`, `crystal_task_view_test` (Zeichnen, Ebene über Punkte/
+    Achsenabschnitte, Atome, Familie, Ablesen, Prüfungsmodus, Auflösen, Editor),
+    `unsupported_task_test`, `unsupported_task_repository_test`, Ergänzungen in
+    `task_import_screen_test` (mehrere Teilaufgaben, Sammelliste, abwählen, Bildschirm),
+    `card_edit_screen_test`, `cascade_delete_test`, `sync_merge_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

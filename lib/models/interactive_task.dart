@@ -1,3 +1,4 @@
+import 'crystal_task.dart';
 import 'flashcard.dart';
 import 'gantt_task.dart';
 import 'step_task.dart';
@@ -5,7 +6,8 @@ import 'step_task.dart';
 /// Welche interaktive Aufgabe aus einer Übungsaufgabe wird.
 enum InteractiveKind {
   steps('Rechenweg', QuestionType.steps),
-  gantt('Terminierung', QuestionType.gantt);
+  gantt('Terminierung', QuestionType.gantt),
+  crystal('Kristallgitter', QuestionType.crystal);
 
   const InteractiveKind(this.label, this.type);
   final String label;
@@ -15,12 +17,15 @@ enum InteractiveKind {
 InteractiveKind? interactiveKindFrom(Object? raw) {
   final v = '${raw ?? ''}'.toLowerCase();
   if (v.contains('gantt') || v.contains('termin') || v.contains('schedul')) return InteractiveKind.gantt;
+  if (v.contains('crystal') || v.contains('kristall') || v.contains('miller') || v.contains('würfel') || v.contains('wuerfel')) {
+    return InteractiveKind.crystal;
+  }
   if (v.contains('step') || v.contains('rechen') || v.contains('schritt')) return InteractiveKind.steps;
   return null;
 }
 
-/// Was die KI aus einer Übungsaufgabe gemacht hat (siehe
-/// AiService.buildInteractiveTask) – noch nicht gespeichert; der Nutzer
+/// Was die KI aus einer (Teil-)Aufgabe gemacht hat (siehe
+/// AiService.buildInteractiveTasks) – noch nicht gespeichert; der Nutzer
 /// prüft und bearbeitet es vorher.
 class InteractiveTaskDraft {
   const InteractiveTaskDraft({
@@ -29,10 +34,13 @@ class InteractiveTaskDraft {
     this.back = '',
     this.steps,
     this.gantt,
+    this.crystal,
     this.reason = '',
+    this.needs = '',
+    this.incomplete = false,
   });
 
-  /// null = die Aufgabe passt weder als Rechenweg noch als Terminierung.
+  /// null = die Aufgabe passt (noch) nicht als interaktive Aufgabe.
   final InteractiveKind? kind;
 
   /// Die Aufgabe wortgetreu.
@@ -42,16 +50,29 @@ class InteractiveTaskDraft {
   final String back;
   final StepTask? steps;
   final GanttTask? gantt;
+  final CrystalTask? crystal;
 
   /// Warum nicht geeignet (bei [kind] null).
   final String reason;
 
-  bool get isUsable =>
-      (kind == InteractiveKind.steps && (steps?.isUsable ?? false)) || (kind == InteractiveKind.gantt && gantt != null);
+  /// Welche Bedienart fehlt, damit es ginge ("Kurve in Diagramm zeichnen").
+  final String needs;
+
+  /// Die KI hat eine Art genannt, die Daten aber nicht vollständig geliefert
+  /// (dann gehört die Aufgabe nicht auf die Sammelliste – erneut versuchen).
+  final bool incomplete;
+
+  bool get isUsable => switch (kind) {
+        InteractiveKind.steps => steps?.isUsable ?? false,
+        InteractiveKind.gantt => gantt != null,
+        InteractiveKind.crystal => crystal?.isUsable ?? false,
+        null => false,
+      };
 
   Map<String, dynamic>? get taskData => switch (kind) {
         InteractiveKind.steps => steps?.toMap(),
         InteractiveKind.gantt => gantt?.toMap(),
+        InteractiveKind.crystal => crystal?.toMap(),
         null => null,
       };
 }

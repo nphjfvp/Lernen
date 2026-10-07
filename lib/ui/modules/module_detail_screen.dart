@@ -25,6 +25,7 @@ import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../models/summary.dart';
 import '../../repositories/summary_repository.dart';
+import '../../repositories/unsupported_task_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/material_file_store.dart';
@@ -49,6 +50,7 @@ import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
 import '../speedrun/speedrun_screen.dart';
 import '../tasks/task_import_screen.dart';
+import '../tasks/unsupported_tasks_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
 import '../widgets/mastery_dot.dart';
@@ -84,6 +86,9 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     await context.read<FlashcardRepository>().loadForModule(widget.moduleId);
     if (!mounted) return;
     await context.read<LectureUnitRepository>().loadForModule(widget.moduleId);
+    if (!mounted) return;
+    final unsupported = context.read<UnsupportedTaskRepository?>();
+    if (unsupported != null && !unsupported.isLoaded) await unsupported.load();
   }
 
   /// Knopf zum Aufgaben-Ordner (nur wenn es Aufgaben zum Verstehen gibt) –
@@ -130,6 +135,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     final concepts = context.watch<ConceptRepository>().forModule(widget.moduleId);
     final flashcards = context.watch<FlashcardRepository>().forModule(widget.moduleId);
     final units = context.watch<LectureUnitRepository>().forModule(widget.moduleId);
+    final unsupportedCount = context.watch<UnsupportedTaskRepository?>()?.forModule(widget.moduleId).length ?? 0;
     final days = module.daysUntilExam;
 
     final content = SafeArea(
@@ -250,14 +256,29 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     _SoftRow(
                       key: const ValueKey('module-task-import'),
                       icon: Icons.functions,
-                      title: 'Rechenweg / Terminierung übernehmen',
-                      subtitle: 'Übungsaufgabe als Text oder Foto – Schritt für Schritt lösen oder im Gantt-Diagramm planen, die App rechnet nach',
+                      title: 'Aufgabe interaktiv übernehmen',
+                      subtitle: 'Übungsaufgabe als Text oder Foto, auch mehrere Teilaufgaben – Rechenweg, Gantt-Diagramm '
+                          'oder Kristallgitter, die App rechnet und zeichnet nach',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => TaskImportScreen(moduleId: module.id, moduleName: module.name),
                         ),
                       ),
                     ),
+                    if (unsupportedCount > 0) ...[
+                      const SizedBox(height: 12),
+                      _SoftRow(
+                        key: const ValueKey('module-unsupported-tasks'),
+                        icon: Icons.playlist_add_check,
+                        title: 'Noch nicht interaktiv ($unsupportedCount)',
+                        subtitle: 'Aufgaben, die die App noch nicht selbst prüfen kann – nach fehlender Bedienart sortiert, zum Kopieren und Weiterschicken',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => UnsupportedTasksScreen(moduleId: module.id, moduleName: module.name),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     _SoftRow(
                       icon: Icons.style_outlined,

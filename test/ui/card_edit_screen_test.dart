@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lernen/models/crystal_task.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/gantt_task.dart';
 import 'package:lernen/models/step_task.dart';
@@ -214,6 +215,43 @@ void main() {
     await tester.tap(find.text('Speichern'));
     await tester.pumpAndSettle();
     expect(StepTask.fromMap(result()!.taskData)!.finalField!.answer, 'x^2 + C');
+  });
+
+  testWidgets('Kristallgitter bearbeiten: unsichere Indizes werden bestätigt, ohne Erklärung schreibt die App den Lösungsweg', (tester) async {
+    final card = _card(QuestionType.crystal, front: 'Zeichne die Richtung ein.').copyWithContent(taskData: {
+      'kind': 'crystal',
+      'lattice': 'sc',
+      'parts': [
+        {'kind': 'direction', 'indices': [1, 1, 1], 'uncertain': true},
+      ],
+    });
+    final result = await _open(tester, card);
+    expect(find.byKey(const ValueKey('crystal-edit-lattice')), findsOneWidget);
+    expect(find.byKey(const ValueKey('crystal-preview')), findsOneWidget);
+    await tester.tap(find.text('kfz'));
+    await tester.pump();
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    final edited = result()!;
+    final task = CrystalTask.fromMap(edited.taskData)!;
+    expect(task.lattice, CrystalLattice.fcc);
+    expect(task.hasUncertain, isFalse);
+    expect(edited.back, contains('Starte bei (0, 0, 0)'));
+    expect(edited.reps, 4);
+  });
+
+  testWidgets('Kristallgitter: nicht zeichenbare Ebene wird nicht gespeichert', (tester) async {
+    final card = _card(QuestionType.crystal, front: 'Zeichne die Ebene ein.').copyWithContent(taskData: {
+      'kind': 'crystal',
+      'parts': [
+        {'kind': 'plane', 'indices': [1, 2, 3]},
+      ],
+    });
+    final result = await _open(tester, card);
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('besser „Ebene ablesen“'), findsWidgets);
+    expect(result(), isNull);
   });
 
   group('Kartensuche', () {

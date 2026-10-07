@@ -12,6 +12,7 @@ import 'package:uuid/uuid.dart';
 import '../widgets/math_text.dart';
 import '../../models/app_settings.dart';
 import '../../models/concept.dart';
+import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
 import '../../models/lecture_unit.dart';
@@ -1888,6 +1889,7 @@ class _PreviewView extends StatelessWidget {
         QuestionType.learn => Icons.school_outlined,
         QuestionType.steps => Icons.functions,
         QuestionType.gantt => Icons.view_timeline_outlined,
+        QuestionType.crystal => Icons.view_in_ar_outlined,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
@@ -1929,6 +1931,9 @@ class _PreviewView extends StatelessWidget {
       case QuestionType.gantt:
         final task = GanttTask.fromMap(parseTaskData(f['taskData']));
         return task == null ? (f['back'] ?? '').toString() : task.describe();
+      case QuestionType.crystal:
+        final crystal = CrystalTask.fromMap(parseTaskData(f['taskData']));
+        return crystal == null ? (f['back'] ?? '').toString() : crystal.describe();
     }
   }
 }

@@ -36,7 +36,7 @@ void main() {
   });
 
   group('ModuleRepository.deleteCascade', () {
-    test('entfernt auch Einheiten und Chat-Verlauf und liefert PDF-Pfade zum Aufräumen', () async {
+    test('entfernt auch Einheiten, Chat-Verlauf und Sammelliste und liefert PDF-Pfade zum Aufräumen', () async {
       await DatabaseService.modules.record('m1').put(db, {'id': 'm1'});
       await DatabaseService.materials.record('mat1').put(db, {'id': 'mat1', 'moduleId': 'm1', 'filePath': '/pdf/a.pdf'});
       await DatabaseService.materials.record('mat2').put(db, {'id': 'mat2', 'moduleId': 'm1'});
@@ -44,6 +44,8 @@ void main() {
       await DatabaseService.chatMessages.record('ch1').put(db, {'id': 'ch1', 'moduleId': 'm1'});
       await DatabaseService.flashcards.record('f1').put(db, {'id': 'f1', 'moduleId': 'm1'});
       await DatabaseService.flashcards.record('f2').put(db, {'id': 'f2', 'moduleId': 'm2'});
+      await DatabaseService.unsupportedTasks.record('u1').put(db, {'id': 'u1', 'moduleId': 'm1'});
+      await DatabaseService.unsupportedTasks.record('u2').put(db, {'id': 'u2', 'moduleId': 'm2'});
 
       final paths = await db.transaction((txn) => ModuleRepository.deleteCascade(txn, 'm1'));
 
@@ -54,6 +56,9 @@ void main() {
       expect(await DatabaseService.chatMessages.count(db), 0);
       expect(await DatabaseService.flashcards.record('f1').get(db), isNull);
       expect(await DatabaseService.flashcards.record('f2').get(db), isNotNull);
+      // Die Sammelliste „Noch nicht interaktiv“ des Fachs geht mit.
+      expect(await DatabaseService.unsupportedTasks.record('u1').get(db), isNull);
+      expect(await DatabaseService.unsupportedTasks.record('u2').get(db), isNotNull);
     });
   });
 

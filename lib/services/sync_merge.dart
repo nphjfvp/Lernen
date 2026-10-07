@@ -52,6 +52,7 @@ final Map<String, _KeyOf> _keyed = {
   'lectureUnits': _idKey,
   'labExperiments': _idKey,
   'chatMessages': _idKey,
+  'unsupportedTasks': _idKey,
   'masterySnapshots': (r) {
     final date = DateTime.tryParse('${r['date']}');
     return date == null ? null : MasterySnapshot.fromMap(r).dateKey;
@@ -74,6 +75,7 @@ const _perModule = [
   'lectureUnits',
   'labExperiments',
   'chatMessages',
+  'unsupportedTasks',
   'mockExamResults',
 ];
 
@@ -319,6 +321,7 @@ String describeMerge(SyncMergeResult result) {
     'lectureUnits': 'Einheiten',
     'labExperiments': 'Laborversuche',
     'chatMessages': 'Chat-Nachrichten',
+    'unsupportedTasks': 'Aufgaben auf der Liste „Noch nicht interaktiv“',
     'mockExamResults': 'Probeklausuren',
     'studyDays': 'Lerntage',
   };

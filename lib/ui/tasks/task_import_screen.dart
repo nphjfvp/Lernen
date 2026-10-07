@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
 import '../../models/interactive_task.dart';
@@ -14,7 +15,9 @@ import '../../models/step_task.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../repositories/unsupported_task_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/crystal_geometry.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/gantt_scheduler.dart';
 import '../../services/image_crop.dart';
@@ -23,20 +26,81 @@ import '../../theme/app_colors.dart';
 import '../widgets/discard_guard.dart';
 import '../widgets/raw_response_dialog.dart';
 import '../widgets/safe_set_state.dart';
+import 'crystal_task_editor.dart';
+import 'crystal_task_view.dart';
 import 'gantt_task_editor.dart';
 import 'gantt_task_view.dart';
 import 'step_task_editor.dart';
 import 'step_task_view.dart';
+import 'unsupported_tasks_screen.dart';
 
-enum _KindChoice { auto, steps, gantt }
+enum _KindChoice { auto, steps, gantt, crystal }
+
+/// Eine von der KI gefundene (Teil-)Aufgabe im Bildschirm – bearbeitbar,
+/// bis sie gespeichert wird.
+class _Draft {
+  _Draft(InteractiveTaskDraft d, String fallbackFront) {
+    apply(d, fallbackFront);
+  }
+
+  InteractiveKind? kind;
+  StepTask? steps;
+  GanttTask? gantt;
+  CrystalTask? crystal;
+  final front = TextEditingController();
+  final back = TextEditingController();
+  String reason = '';
+  String needs = '';
+  bool incomplete = false;
+  bool include = true;
+  bool expanded = false;
+  bool busy = false;
+  String? error;
+
+  /// Text, unter dem die Aufgabe auf der Sammelliste steht (null = nicht dort).
+  String? listedText;
+
+  /// Neu aufgebaute Editoren nach jedem KI-Ergebnis.
+  int revision = 0;
+
+  bool get hasTask => switch (kind) {
+    InteractiveKind.steps => steps != null,
+    InteractiveKind.gantt => gantt != null,
+    InteractiveKind.crystal => crystal != null,
+    null => false,
+  };
+
+  void apply(InteractiveTaskDraft d, String fallbackFront) {
+    kind = d.kind;
+    steps = d.steps;
+    gantt = d.gantt;
+    crystal = d.crystal;
+    front.text = d.front.trim().isNotEmpty ? d.front.trim() : fallbackFront;
+    back.text = d.back.trim();
+    reason = d.reason.trim();
+    needs = d.needs.trim();
+    incomplete = d.incomplete;
+    include = hasTask;
+    error = null;
+    revision++;
+  }
+
+  void dispose() {
+    front.dispose();
+    back.dispose();
+  }
+}
 
 /// Aufgabe übernehmen: aus einer Übungsaufgabe (Text und/oder Fotos, optional
-/// mit vorhandener Lösung) wird eine interaktive Aufgabe – Rechenweg Schritt
-/// für Schritt ([QuestionType.steps]) oder Terminierung im Gantt-Diagramm
-/// ([QuestionType.gantt]). Die KI schlägt Struktur und erwartete Antworten
-/// vor (AiService.buildInteractiveTask), die App rechnet nach
-/// (StepChecker.verify bzw. GanttScheduler). Vor dem Speichern lässt sich
-/// alles bearbeiten und ausprobieren.
+/// mit vorhandener Lösung) werden interaktive Aufgaben – Rechenweg Schritt
+/// für Schritt ([QuestionType.steps]), Terminierung im Gantt-Diagramm
+/// ([QuestionType.gantt]) oder Kristallgitter im Würfel ([QuestionType.crystal]).
+/// Stehen mehrere Teilaufgaben auf dem Foto, wird jede ein eigener Entwurf
+/// (AiService.buildInteractiveTasks). Die KI schlägt Struktur und erwartete
+/// Antworten vor, die App rechnet nach (StepChecker.verify, GanttScheduler,
+/// CrystalGeometry). Was (noch) nicht passt, kommt mit Begründung und
+/// fehlender Bedienart auf die Sammelliste „Noch nicht interaktiv“
+/// (UnsupportedTaskRepository).
 class TaskImportScreen extends StatefulWidget {
   const TaskImportScreen({
     super.key,
@@ -87,14 +151,13 @@ class TaskImportScreen extends StatefulWidget {
 class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<TaskImportScreen> {
   late final _text = TextEditingController(text: widget.initialText);
   late final _solution = TextEditingController(text: widget.initialSolution);
-  final _front = TextEditingController();
-  final _back = TextEditingController();
   late final List<({String name, Uint8List bytes})> _images = [
     for (final (i, bytes) in widget.initialImages.indexed) (name: 'Seite ${widget.sourcePage ?? i + 1}', bytes: bytes),
   ];
   late _KindChoice _choice = switch (widget.initialKind) {
     InteractiveKind.steps => _KindChoice.steps,
     InteractiveKind.gantt => _KindChoice.gantt,
+    InteractiveKind.crystal => _KindChoice.crystal,
     null => _KindChoice.auto,
   };
 
@@ -102,19 +165,16 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   bool _saving = false;
   String? _error;
   String? _raw;
+  final List<_Draft> _drafts = [];
 
-  /// Begründung der KI, wenn die Aufgabe nicht passt.
-  String? _unsuitable;
-  InteractiveKind? _kind;
-  StepTask? _steps;
-  GanttTask? _gantt;
-
-  /// Neu aufgebaute Editoren nach jedem KI-Ergebnis.
-  int _revision = 0;
   bool _attachImage = false;
   bool _removeReplaced = false;
 
-  bool get _hasDraft => _kind != null && (_steps != null || _gantt != null);
+  bool get _hasTasks => _drafts.any((d) => d.hasTask);
+  List<_Draft> get _toSave => [
+    for (final d in _drafts)
+      if (d.hasTask && d.include) d,
+  ];
 
   @override
   void initState() {
@@ -127,8 +187,9 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   void dispose() {
     _text.dispose();
     _solution.dispose();
-    _front.dispose();
-    _back.dispose();
+    for (final d in _drafts) {
+      d.dispose();
+    }
     super.dispose();
   }
 
@@ -141,10 +202,11 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   }
 
   InteractiveKind? get _wanted => switch (_choice) {
-        _KindChoice.auto => null,
-        _KindChoice.steps => InteractiveKind.steps,
-        _KindChoice.gantt => InteractiveKind.gantt,
-      };
+    _KindChoice.auto => null,
+    _KindChoice.steps => InteractiveKind.steps,
+    _KindChoice.gantt => InteractiveKind.gantt,
+    _KindChoice.crystal => InteractiveKind.crystal,
+  };
 
   Future<void> _pickImages() async {
     final room = TaskImportScreen.maxImages - _images.length;
@@ -163,7 +225,15 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     setState(() => _images.addAll(prepared));
   }
 
-  Future<void> _build({InteractiveKind? force}) async {
+  /// Text, unter dem eine Aufgabe ohne eigenen Wortlaut gesammelt wird.
+  String get _fallbackFront {
+    final text = _text.text.trim();
+    if (text.isNotEmpty) return text;
+    if (_images.isEmpty) return '';
+    return widget.sourcePage != null ? 'Aufgabe von Seite ${widget.sourcePage}' : 'Aufgabe von einem Foto';
+  }
+
+  Future<void> _build() async {
     if (_text.text.trim().isEmpty && _images.isEmpty) {
       setState(() => _error = 'Gib die Aufgabe als Text ein oder füge ein Foto hinzu.');
       return;
@@ -173,34 +243,31 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       setState(() => _error = 'Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
       return;
     }
-    if (force != null) {
-      _choice = force == InteractiveKind.steps ? _KindChoice.steps : _KindChoice.gantt;
-    }
     setState(() {
       _busy = true;
       _error = null;
       _raw = null;
-      _unsuitable = null;
     });
     try {
-      final draft = await ai.buildInteractiveTask(
+      final result = await ai.buildInteractiveTasks(
         text: _text.text,
         images: [for (final i in _images) i.bytes],
         solution: _solution.text,
-        kind: force ?? _wanted,
+        kind: _wanted,
       );
+      final fallback = _fallbackFront;
+      final drafts = [for (final r in result) _Draft(r, fallback)];
+      // Aufklappen: bei einer Aufgabe diese, sonst die erste brauchbare.
+      (drafts.where((d) => d.hasTask).firstOrNull ?? drafts.first).expanded = true;
       setState(() {
-        if (draft.kind == null) {
-          _unsuitable = draft.reason;
-          return;
+        for (final d in _drafts) {
+          d.dispose();
         }
-        _kind = draft.kind;
-        _steps = draft.steps;
-        _gantt = draft.gantt;
-        _front.text = draft.front.trim().isNotEmpty ? draft.front.trim() : _text.text.trim();
-        _back.text = draft.back.trim();
-        _revision++;
+        _drafts
+          ..clear()
+          ..addAll(drafts);
       });
+      await _collectUnsupported(drafts);
     } on AiServiceException catch (e) {
       setState(() {
         _error = e.message;
@@ -213,24 +280,102 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     }
   }
 
+  /// Was die KI als "passt nicht" eingestuft hat (nicht bloß unvollständig),
+  /// kommt automatisch auf die Sammelliste.
+  Future<void> _collectUnsupported(List<_Draft> drafts) async {
+    if (!mounted) return;
+    final list = context.read<UnsupportedTaskRepository?>();
+    if (list == null) return;
+    for (final d in drafts) {
+      if (d.kind != null || d.incomplete || d.listedText != null) continue;
+      final text = d.front.text.trim();
+      if (text.isEmpty) continue;
+      try {
+        await list.add(
+          moduleId: widget.moduleId,
+          text: text,
+          reason: d.reason,
+          needs: d.needs,
+          sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
+          sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+        );
+        d.listedText = text;
+      } catch (_) {
+        // Die Sammelliste ist nur eine Hilfe – der Import geht trotzdem weiter.
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Eine Teilaufgabe neu erstellen lassen (optional als bestimmte Art).
+  Future<void> _retry(_Draft d, {InteractiveKind? force}) async {
+    final ai = _ai(vision: _images.isNotEmpty);
+    if (ai == null) return _snack('Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
+    final listed = d.listedText;
+    setState(() {
+      d.busy = true;
+      d.error = null;
+    });
+    try {
+      final result = await ai.buildInteractiveTasks(
+        text: d.front.text.trim().isNotEmpty ? d.front.text : _text.text,
+        images: [for (final i in _images) i.bytes],
+        solution: _solution.text,
+        kind: force ?? _wanted,
+      );
+      final best = result.where((r) => r.isUsable).firstOrNull ?? result.first;
+      setState(() {
+        d.apply(best, d.front.text.trim().isNotEmpty ? d.front.text.trim() : _fallbackFront);
+        d.expanded = true;
+        // Bleibt sie auf der Liste, wird nur die Begründung aktualisiert.
+        d.listedText = listed;
+      });
+      if (d.kind == null && !d.incomplete) {
+        d.listedText = null;
+        await _collectUnsupported([d]);
+      }
+    } on AiServiceException catch (e) {
+      setState(() => d.error = e.message);
+    } catch (e) {
+      setState(() => d.error = 'Erstellen fehlgeschlagen: $e');
+    } finally {
+      setState(() => d.busy = false);
+    }
+  }
+
   /// Karte aus dem aktuellen Stand – zum Ausprobieren und Speichern.
-  Flashcard _card({DateTime? now}) {
+  Flashcard _card(_Draft d, {DateTime? now}) {
     final at = now ?? DateTime.now();
-    final kind = _kind!;
-    final gantt = _gantt;
+    final kind = d.kind!;
     final material = widget.sourceMaterialId == null
         ? null
-        : context.read<MaterialRepository?>()?.forModule(widget.moduleId).where((m) => m.id == widget.sourceMaterialId).firstOrNull;
+        : context
+              .read<MaterialRepository?>()
+              ?.forModule(widget.moduleId)
+              .where((m) => m.id == widget.sourceMaterialId)
+              .firstOrNull;
+    final back = switch (kind) {
+      InteractiveKind.gantt => GanttScheduler.solutionText(d.gantt!),
+      InteractiveKind.crystal =>
+        d.back.text.trim().isNotEmpty ? d.back.text.trim() : CrystalGeometry.solutionText(d.crystal!),
+      InteractiveKind.steps => d.back.text.trim(),
+    };
     return Flashcard(
       id: const Uuid().v4(),
       moduleId: widget.moduleId,
-      front: _front.text.trim(),
-      back: kind == InteractiveKind.gantt && gantt != null ? GanttScheduler.solutionText(gantt) : _back.text.trim(),
+      front: d.front.text.trim(),
+      back: back,
       createdAt: at,
       due: at,
       type: kind.type,
-      taskData: kind == InteractiveKind.gantt ? gantt?.confirmed().toMap() : _steps?.toMap(),
-      imageBase64: _attachImage && _images.isNotEmpty && kind == InteractiveKind.steps ? base64Encode(_images.first.bytes) : null,
+      taskData: switch (kind) {
+        InteractiveKind.steps => d.steps?.toMap(),
+        InteractiveKind.gantt => d.gantt?.confirmed().toMap(),
+        InteractiveKind.crystal => d.crystal?.confirmed().toMap(),
+      },
+      imageBase64: _attachImage && _images.isNotEmpty && kind == InteractiveKind.steps
+          ? base64Encode(_images.first.bytes)
+          : null,
       unitId: widget.unitId ?? widget.replaceCard?.unitId,
       sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
       sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
@@ -242,11 +387,11 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   }
 
   /// Was vor dem Speichern noch fehlt (null = alles da).
-  String? _missing() {
-    if (_front.text.trim().isEmpty) return 'Die Aufgabe (Text) darf nicht leer sein.';
-    switch (_kind) {
+  String? _missing(_Draft d) {
+    if (d.front.text.trim().isEmpty) return 'Die Aufgabe (Text) darf nicht leer sein.';
+    switch (d.kind) {
       case InteractiveKind.steps:
-        final steps = _steps;
+        final steps = d.steps;
         if (steps == null || !steps.isUsable) {
           return 'Jeder Schritt braucht ein Eingabefeld oder eine richtige Auswahl-Antwort.';
         }
@@ -254,13 +399,18 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           return 'Es fehlt ein Feld für das Endergebnis.';
         }
       case InteractiveKind.gantt:
-        final gantt = _gantt;
+        final gantt = d.gantt;
         if (gantt == null || !gantt.isValid) {
           return 'Die Teile passen nicht zusammen (fehlende Arbeitsgänge oder ein Kreis in der Reihenfolge).';
         }
         if (!gantt.drawChart && gantt.questions.isEmpty) {
           return 'Wähle, was gefragt ist, oder lass das Diagramm zeichnen.';
         }
+      case InteractiveKind.crystal:
+        final crystal = d.crystal;
+        if (crystal == null || !crystal.isUsable) return 'Jede Teilaufgabe braucht drei Indizes (nicht alle 0).';
+        final problems = CrystalGeometry.problems(crystal);
+        if (problems.isNotEmpty) return problems.first;
       case null:
         return 'Erst eine Aufgabe erstellen.';
     }
@@ -268,40 +418,76 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   }
 
   /// Hinweise, bei denen man bewusst trotzdem speichern kann.
-  List<String> _warnings() => switch (_kind) {
-        InteractiveKind.steps => StepChecker.verify(_steps!).problems,
-        InteractiveKind.gantt => [
-            if (_gantt!.hasUncertain) 'Manche Werte waren schlecht lesbar und sind noch nicht bestätigt.',
-            ...GanttScheduler.plan(_gantt!).problems,
-          ],
-        null => const [],
-      };
+  List<String> _warnings(_Draft d) => switch (d.kind) {
+    InteractiveKind.steps => StepChecker.verify(d.steps!).problems,
+    InteractiveKind.gantt => [
+      if (d.gantt!.hasUncertain) 'Manche Werte waren schlecht lesbar und sind noch nicht bestätigt.',
+      ...GanttScheduler.plan(d.gantt!).problems,
+    ],
+    InteractiveKind.crystal => [
+      if (d.crystal!.hasUncertain) 'Manche Indizes waren schlecht lesbar und sind noch nicht bestätigt.',
+    ],
+    null => const [],
+  };
+
+  String _title(int i) {
+    final d = _drafts[i];
+    final first = d.front.text.trim().split('\n').first.trim();
+    final label = first.isEmpty ? 'Teilaufgabe' : first;
+    return _drafts.length == 1 ? label : '${i + 1}. $label';
+  }
+
+  /// Kurzer Stand in der Kopfzeile der Teilaufgabe.
+  ({String text, bool ok}) _status(_Draft d) {
+    if (d.busy) return (text: 'KI liest …', ok: true);
+    if (!d.hasTask) {
+      if (d.incomplete) return (text: 'unvollständig', ok: false);
+      return (text: d.listedText != null ? 'auf der Liste' : 'passt nicht', ok: false);
+    }
+    if (_missing(d) != null) return (text: 'unvollständig', ok: false);
+    if (_warnings(d).isNotEmpty) return (text: 'bitte prüfen', ok: false);
+    return (text: d.kind == InteractiveKind.steps ? 'nachgerechnet' : 'bereit', ok: true);
+  }
 
   void _snack(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
-  Future<void> _try() async {
-    final missing = _missing();
+  Future<void> _try(_Draft d) async {
+    final missing = _missing(d);
     if (missing != null) return _snack(missing);
-    final card = _card();
-    final outcome = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => _TryTaskScreen(card: card)),
-    );
+    final card = _card(d);
+    final outcome = await Navigator.of(context)
+        .push<String>(MaterialPageRoute(builder: (_) => _TryTaskScreen(card: card)));
     if (outcome != null && mounted) _snack(outcome);
   }
 
   Future<void> _save() async {
-    final missing = _missing();
-    if (missing != null) {
-      setState(() => _error = missing);
+    final drafts = _toSave;
+    if (drafts.isEmpty) {
+      setState(() => _error = 'Wähle mindestens eine Aufgabe zum Speichern aus.');
       return;
     }
-    final warnings = _warnings();
+    for (final d in drafts) {
+      final missing = _missing(d);
+      if (missing != null) {
+        setState(() {
+          d.expanded = true;
+          _error = drafts.length == 1 ? missing : '${_title(_drafts.indexOf(d))}: $missing';
+        });
+        return;
+      }
+    }
+    final warnings = [
+      for (final d in drafts)
+        for (final w in _warnings(d)) _drafts.length == 1 ? w : '${_title(_drafts.indexOf(d))}: $w',
+    ];
     if (warnings.isNotEmpty) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Trotzdem speichern?'),
-          content: Text('Die App hat noch etwas gefunden:\n\n${warnings.map((w) => '• $w').join('\n')}'),
+          content: SingleChildScrollView(
+            child: Text('Die App hat noch etwas gefunden:\n\n${warnings.map((w) => '• $w').join('\n')}'),
+          ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Prüfen')),
             FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Speichern')),
@@ -311,18 +497,28 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       if (ok != true || !mounted) return;
     }
     final repo = context.read<FlashcardRepository>();
-    final card = _card();
+    final list = context.read<UnsupportedTaskRepository?>();
+    final cards = [for (final d in drafts) _card(d)];
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      await repo.saveAll([card]);
+      await repo.saveAll(cards);
       final replaced = widget.replaceCard;
       if (_removeReplaced && replaced != null) await repo.delete(replaced.id, replaced.moduleId);
+      // Doch noch interaktiv geworden: von der Sammelliste nehmen.
+      for (final d in drafts) {
+        final listed = d.listedText;
+        if (listed != null && list != null) await list.removeText(widget.moduleId, listed);
+      }
       if (!mounted) return;
-      _snack('${card.type.label}-Aufgabe gespeichert – sie kommt bald im Lernplan dran.');
-      Navigator.of(context).pop(card);
+      _snack(
+        cards.length == 1
+            ? '${cards.single.type.label}-Aufgabe gespeichert – sie kommt bald im Lernplan dran.'
+            : '${cards.length} Aufgaben gespeichert – sie kommen bald im Lernplan dran.',
+      );
+      Navigator.of(context).pop(cards);
     } catch (e) {
       setState(() {
         _saving = false;
@@ -331,13 +527,26 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     }
   }
 
+  void _openList() => Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => UnsupportedTasksScreen(moduleId: widget.moduleId, moduleName: widget.moduleName),
+    ),
+  );
+
+  String get _saveLabel {
+    final n = _toSave.length;
+    return n == 1 ? 'Speichern' : '$n Aufgaben speichern';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final hasKey = context.watch<SettingsRepository>().settings.hasApiKey;
     return DiscardGuard(
-      active: _hasDraft && !_saving,
-      message: 'Die erstellte Aufgabe ist noch nicht gespeichert.',
+      active: _hasTasks && !_saving,
+      message: _drafts.length == 1
+          ? 'Die erstellte Aufgabe ist noch nicht gespeichert.'
+          : 'Die erstellten Aufgaben sind noch nicht gespeichert.',
       child: Scaffold(
         backgroundColor: c.bg,
         appBar: AppBar(
@@ -345,15 +554,16 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Aufgabe übernehmen', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-              if (widget.moduleName.isNotEmpty) Text(widget.moduleName, style: TextStyle(fontSize: 12, color: c.inkMuted)),
+              if (widget.moduleName.isNotEmpty)
+                Text(widget.moduleName, style: TextStyle(fontSize: 12, color: c.inkMuted)),
             ],
           ),
           actions: [
-            if (_hasDraft)
+            if (_hasTasks)
               TextButton(
                 key: const ValueKey('task-import-save-top'),
-                onPressed: _saving ? null : _save,
-                child: const Text('Speichern'),
+                onPressed: _saving || _toSave.isEmpty ? null : _save,
+                child: Text(_saveLabel),
               ),
           ],
         ),
@@ -367,8 +577,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
                 children: [
                   _inputCard(c, hasKey),
                   if (_error != null) ...[const SizedBox(height: 12), _errorCard(c)],
-                  if (_unsuitable != null) ...[const SizedBox(height: 12), _unsuitableCard(c)],
-                  if (_hasDraft) ..._draftViews(c),
+                  if (_drafts.isNotEmpty) ..._draftList(c),
                 ],
               ),
             ),
@@ -378,17 +587,17 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     );
   }
 
-  Widget _panel(AppColors c, {required Widget child, Color? tint, Key? key}) => Container(
-        key: key,
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: tint ?? c.surface,
-          border: tint == null ? Border.all(color: c.border) : null,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: child,
-      );
+  Widget _panel(AppColors c, {required Widget child, Color? tint, Key? key, EdgeInsets? padding}) => Container(
+    key: key,
+    width: double.infinity,
+    padding: padding ?? const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: tint ?? c.surface,
+      border: tint == null ? Border.all(color: c.border) : null,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: child,
+  );
 
   Widget _inputCard(AppColors c, bool hasKey) {
     return _panel(
@@ -398,21 +607,26 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         children: [
           Text(
             'Aus einer Übungsaufgabe wird eine interaktive Aufgabe: ein Rechenweg Schritt für Schritt (z. B. '
-            'Differentialgleichungen, Integrale, Werkstoff- oder BWL-Rechnungen) oder eine Terminierung im '
-            'Gantt-Diagramm. Die KI liest die Aufgabe, die App rechnet alles nach.',
+            'Differentialgleichungen, Integrale, Werkstoff- oder BWL-Rechnungen), eine Terminierung im '
+            'Gantt-Diagramm oder Richtungen und Ebenen im Kristallgitter. Die KI liest die Aufgabe – auch mehrere '
+            'Teilaufgaben von einem Foto –, die App rechnet und zeichnet alles nach.',
             style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
           ),
           const SizedBox(height: 12),
-          SegmentedButton<_KindChoice>(
-            key: const ValueKey('task-import-kind'),
-            segments: const [
-              ButtonSegment(value: _KindChoice.auto, label: Text('Automatisch')),
-              ButtonSegment(value: _KindChoice.steps, label: Text('Rechenweg')),
-              ButtonSegment(value: _KindChoice.gantt, label: Text('Terminierung')),
-            ],
-            selected: {_choice},
-            showSelectedIcon: false,
-            onSelectionChanged: _busy ? null : (s) => setState(() => _choice = s.first),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<_KindChoice>(
+              key: const ValueKey('task-import-kind'),
+              segments: const [
+                ButtonSegment(value: _KindChoice.auto, label: Text('Automatisch')),
+                ButtonSegment(value: _KindChoice.steps, label: Text('Rechenweg')),
+                ButtonSegment(value: _KindChoice.gantt, label: Text('Terminierung')),
+                ButtonSegment(value: _KindChoice.crystal, label: Text('Kristall')),
+              ],
+              selected: {_choice},
+              showSelectedIcon: false,
+              onSelectionChanged: _busy ? null : (s) => setState(() => _choice = s.first),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -422,7 +636,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
             maxLines: 12,
             decoration: const InputDecoration(
               labelText: 'Aufgabe',
-              hintText: 'Aufgabentext einfügen – bei einem Foto reicht, welche Aufgabe (z. B. „Aufgabe 2b“)',
+              hintText: 'Aufgabentext einfügen – bei einem Foto reicht, welche Aufgabe (z. B. „Aufgabe 2b“), sonst werden alle übernommen',
               border: OutlineInputBorder(),
               alignLabelWithHint: true,
             ),
@@ -473,17 +687,21 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           const SizedBox(height: 12),
           FilledButton.icon(
             key: const ValueKey('task-import-build'),
-            onPressed: hasKey && !_busy ? () => _build() : null,
+            onPressed: hasKey && !_busy ? _build : null,
             icon: _busy
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : Icon(_hasDraft ? Icons.refresh : Icons.auto_awesome_outlined, size: 18),
-            label: Text(_busy ? 'KI liest die Aufgabe …' : (_hasDraft ? 'Neu erstellen' : 'Aufgabe erstellen')),
+                : Icon(_drafts.isNotEmpty ? Icons.refresh : Icons.auto_awesome_outlined, size: 18),
+            label: Text(
+              _busy ? 'KI liest die Aufgabe …' : (_drafts.isNotEmpty ? 'Neu erstellen' : 'Aufgabe erstellen'),
+            ),
           ),
           if (!hasKey)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text('Dafür braucht die App deinen OpenRouter-Key (Einstellungen).',
-                  style: TextStyle(fontSize: 12.5, color: c.warn)),
+              child: Text(
+                'Dafür braucht die App deinen OpenRouter-Key (Einstellungen).',
+                style: TextStyle(fontSize: 12.5, color: c.warn),
+              ),
             ),
         ],
       ),
@@ -491,151 +709,318 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   }
 
   Widget _errorCard(AppColors c) => _panel(
-        c,
-        tint: c.dangerSoft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(_error!, key: const ValueKey('task-import-error'), style: TextStyle(color: c.danger, height: 1.35)),
-            if (_raw != null)
-              TextButton(onPressed: () => showRawResponseDialog(context, _raw!), child: const Text('Rohantwort anzeigen')),
-          ],
+    c,
+    tint: c.dangerSoft,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _error!,
+          key: const ValueKey('task-import-error'),
+          style: TextStyle(color: c.danger, height: 1.35),
         ),
-      );
+        if (_raw != null)
+          TextButton(onPressed: () => showRawResponseDialog(context, _raw!), child: const Text('Rohantwort anzeigen')),
+      ],
+    ),
+  );
 
-  Widget _unsuitableCard(AppColors c) => _panel(
-        c,
-        key: const ValueKey('task-import-unsuitable'),
-        tint: c.warnSoft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Passt nicht als interaktive Aufgabe',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.warn)),
-            const SizedBox(height: 4),
-            Text(_unsuitable!, style: TextStyle(fontSize: 13, height: 1.4, color: c.ink)),
-            const SizedBox(height: 4),
-            Text(
-              widget.replaceCard != null
-                  ? 'Die Aufgabe bleibt im Aufgaben-Ordner. Du kannst es trotzdem versuchen:'
-                  : 'Du kannst es trotzdem versuchen:',
-              style: TextStyle(fontSize: 12.5, color: c.inkMuted),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(
-                  key: const ValueKey('task-import-force-steps'),
-                  onPressed: _busy ? null : () => _build(force: InteractiveKind.steps),
-                  child: const Text('Als Rechenweg'),
-                ),
-                OutlinedButton(
-                  key: const ValueKey('task-import-force-gantt'),
-                  onPressed: _busy ? null : () => _build(force: InteractiveKind.gantt),
-                  child: const Text('Als Terminierung'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-
-  List<Widget> _draftViews(AppColors c) {
-    final kind = _kind!;
+  List<Widget> _draftList(AppColors c) {
+    final usable = _drafts.where((d) => d.hasTask).length;
+    final listed = _drafts.where((d) => d.listedText != null).length;
     return [
       const SizedBox(height: 20),
-      Row(
-        children: [
-          Icon(kind == InteractiveKind.steps ? Icons.functions : Icons.view_timeline_outlined, color: c.accent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text('Vorschau · ${kind.label}',
-                key: const ValueKey('task-import-draft'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          ),
-        ],
+      Text(
+        _drafts.length == 1
+            ? 'Vorschau'
+            : 'Die KI hat ${_drafts.length} Teilaufgaben gefunden'
+                  '${usable == _drafts.length ? '' : ' – $usable davon interaktiv'}.',
+        key: const ValueKey('task-import-found'),
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
       ),
       const SizedBox(height: 4),
       Text(
-        kind == InteractiveKind.steps
-            ? 'Prüf die Schritte und erwarteten Antworten. Die App setzt jede Antwort selbst ein und meldet Widersprüche.'
-            : 'Vergleiche Teile, Dauern und Termine mit dem Blatt – die Musterlösung rechnet die App bei jeder Änderung neu.',
+        'Prüf jede Aufgabe mit dem Blatt – was gezeichnet oder gerechnet wird, prüft die App selbst nach.',
         style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
       ),
-      const SizedBox(height: 12),
-      TextField(
-        key: const ValueKey('task-import-front'),
-        controller: _front,
-        minLines: 2,
-        maxLines: 12,
-        decoration: const InputDecoration(labelText: 'Aufgabe (wie im Dokument)', border: OutlineInputBorder()),
-      ),
-      const SizedBox(height: 14),
-      if (kind == InteractiveKind.steps && _steps != null)
-        StepTaskEditor(
-          key: ValueKey('task-import-steps-$_revision'),
-          task: _steps!,
-          onChanged: (t) => setState(() => _steps = t),
-        ),
-      if (kind == InteractiveKind.gantt && _gantt != null)
-        GanttTaskEditor(
-          key: ValueKey('task-import-gantt-$_revision'),
-          task: _gantt!,
-          onChanged: (t) => setState(() => _gantt = t),
-        ),
-      if (kind == InteractiveKind.steps) ...[
-        const SizedBox(height: 12),
-        TextField(
-          key: const ValueKey('task-import-back'),
-          controller: _back,
-          minLines: 2,
-          maxLines: 14,
-          decoration: const InputDecoration(
-            labelText: 'Lösungsweg als Text (für „Lösung ansehen“)',
-            border: OutlineInputBorder(),
-            alignLabelWithHint: true,
-          ),
-        ),
-        if (_images.isNotEmpty)
+      if (listed > 0) ...[const SizedBox(height: 10), _listNote(c, listed)],
+      for (final (i, d) in _drafts.indexed) ...[const SizedBox(height: 12), _draftCard(c, i, d)],
+      if (_hasTasks) ...[
+        if (_images.isNotEmpty && _toSave.any((d) => d.kind == InteractiveKind.steps))
           SwitchListTile(
             key: const ValueKey('task-import-attach-image'),
             contentPadding: EdgeInsets.zero,
             value: _attachImage,
             onChanged: (v) => setState(() => _attachImage = v),
-            title: const Text('Foto bei der Aufgabe anzeigen'),
+            title: const Text('Foto bei Rechenweg-Aufgaben anzeigen'),
             subtitle: const Text('Sinnvoll, wenn eine Skizze oder Tabelle zur Aufgabe gehört.'),
           ),
-      ],
-      if (widget.replaceCard != null)
-        CheckboxListTile(
-          key: const ValueKey('task-import-remove-replaced'),
-          contentPadding: EdgeInsets.zero,
-          value: _removeReplaced,
-          onChanged: (v) => setState(() => _removeReplaced = v ?? false),
-          title: const Text('Aus dem Aufgaben-Ordner entfernen'),
-          subtitle: const Text('Sonst bleibt die Aufgabe zusätzlich dort mit ihrer Erklärung.'),
-        ),
-      const SizedBox(height: 12),
-      Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        alignment: WrapAlignment.end,
-        children: [
-          OutlinedButton.icon(
-            key: const ValueKey('task-import-try'),
-            onPressed: _saving ? null : _try,
-            icon: const Icon(Icons.play_arrow_outlined, size: 18),
-            label: const Text('Ausprobieren'),
+        if (widget.replaceCard != null)
+          CheckboxListTile(
+            key: const ValueKey('task-import-remove-replaced'),
+            contentPadding: EdgeInsets.zero,
+            value: _removeReplaced,
+            onChanged: (v) => setState(() => _removeReplaced = v ?? false),
+            title: const Text('Aus dem Aufgaben-Ordner entfernen'),
+            subtitle: const Text('Sonst bleibt die Aufgabe zusätzlich dort mit ihrer Erklärung.'),
           ),
-          FilledButton.icon(
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
             key: const ValueKey('task-import-save'),
-            onPressed: _saving ? null : _save,
+            onPressed: _saving || _toSave.isEmpty ? null : _save,
             icon: _saving
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.check, size: 18),
-            label: const Text('Speichern'),
+            label: Text(_saveLabel),
           ),
+        ),
+      ],
+    ];
+  }
+
+  Widget _listNote(AppColors c, int listed) => _panel(
+    c,
+    key: const ValueKey('task-import-listed'),
+    tint: c.warnSoft,
+    padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+    child: Row(
+      children: [
+        Icon(Icons.playlist_add_check, color: c.warn, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            listed == 1
+                ? '1 Aufgabe passt noch nicht und steht jetzt auf der Liste „Noch nicht interaktiv“.'
+                : '$listed Aufgaben passen noch nicht und stehen jetzt auf der Liste „Noch nicht interaktiv“.',
+            style: TextStyle(fontSize: 12.5, height: 1.35, color: c.ink),
+          ),
+        ),
+        TextButton(
+          key: const ValueKey('task-import-open-list'),
+          onPressed: _openList,
+          child: const Text('Liste ansehen'),
+        ),
+      ],
+    ),
+  );
+
+  IconData _icon(InteractiveKind? kind) => switch (kind) {
+    InteractiveKind.steps => Icons.functions,
+    InteractiveKind.gantt => Icons.view_timeline_outlined,
+    InteractiveKind.crystal => Icons.view_in_ar_outlined,
+    null => Icons.block_outlined,
+  };
+
+  Widget _draftCard(AppColors c, int i, _Draft d) {
+    final status = _status(d);
+    // Material statt Container: die Editoren enthalten ListTiles, die ihren
+    // Hintergrund auf dem nächsten Material malen.
+    return Material(
+      color: c.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            key: ValueKey('task-import-draft-$i'),
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => setState(() => d.expanded = !d.expanded),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 6, 10, 6),
+              child: Row(
+                children: [
+                  if (d.hasTask)
+                    Checkbox(
+                      key: ValueKey('task-import-include-$i'),
+                      value: d.include,
+                      onChanged: _saving ? null : (v) => setState(() => d.include = v ?? false),
+                    )
+                  else
+                    const SizedBox(width: 12),
+                  Icon(_icon(d.kind), size: 20, color: d.hasTask ? c.accent : c.inkMuted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _title(i),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          '${d.kind?.label ?? 'Noch nicht interaktiv'} · ${status.text}',
+                          key: ValueKey('task-import-status-$i'),
+                          style: TextStyle(fontSize: 12, color: status.ok ? c.good : c.warn),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(d.expanded ? Icons.expand_less : Icons.expand_more, color: c.inkMuted),
+                ],
+              ),
+            ),
+          ),
+          if (d.expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: d.hasTask ? _taskBody(c, i, d) : _unsuitableBody(c, i, d),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _taskBody(AppColors c, int i, _Draft d) {
+    final kind = d.kind!;
+    return [
+      Text(switch (kind) {
+        InteractiveKind.steps =>
+          'Prüf die Schritte und erwarteten Antworten. Die App setzt jede Antwort selbst ein und meldet Widersprüche.',
+        InteractiveKind.gantt => 'Vergleiche Teile, Dauern und Termine mit dem Blatt – die Musterlösung rechnet die App bei jeder Änderung neu.',
+        InteractiveKind.crystal => 'Vergleiche Gitter und Indizes mit dem Blatt (Striche über den Zahlen!) – die Musterlösung zeichnet die App selbst.',
+      }, style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted)),
+      const SizedBox(height: 12),
+      TextField(
+        key: ValueKey('task-import-front-$i'),
+        controller: d.front,
+        minLines: 2,
+        maxLines: 12,
+        onChanged: (_) => setState(() {}),
+        decoration: const InputDecoration(labelText: 'Aufgabe (wie im Dokument)', border: OutlineInputBorder()),
+      ),
+      const SizedBox(height: 14),
+      switch (kind) {
+        InteractiveKind.steps => StepTaskEditor(
+          key: ValueKey('task-import-steps-$i-${d.revision}'),
+          task: d.steps!,
+          onChanged: (t) => setState(() => d.steps = t),
+        ),
+        InteractiveKind.gantt => GanttTaskEditor(
+          key: ValueKey('task-import-gantt-$i-${d.revision}'),
+          task: d.gantt!,
+          onChanged: (t) => setState(() => d.gantt = t),
+        ),
+        InteractiveKind.crystal => CrystalTaskEditor(
+          key: ValueKey('task-import-crystal-$i-${d.revision}'),
+          task: d.crystal!,
+          onChanged: (t) => setState(() => d.crystal = t),
+        ),
+      },
+      if (kind != InteractiveKind.gantt) ...[
+        const SizedBox(height: 12),
+        TextField(
+          key: ValueKey('task-import-back-$i'),
+          controller: d.back,
+          minLines: 2,
+          maxLines: 14,
+          decoration: InputDecoration(
+            labelText: kind == InteractiveKind.steps
+                ? 'Lösungsweg als Text (für „Lösung ansehen“)'
+                : 'Erklärung (optional – sonst schreibt die App die Lösung)',
+            border: const OutlineInputBorder(),
+            alignLabelWithHint: true,
+          ),
+        ),
+      ],
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerRight,
+        child: OutlinedButton.icon(
+          key: ValueKey('task-import-try-$i'),
+          onPressed: _saving ? null : () => _try(d),
+          icon: const Icon(Icons.play_arrow_outlined, size: 18),
+          label: const Text('Ausprobieren'),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _unsuitableBody(AppColors c, int i, _Draft d) {
+    final text = d.front.text.trim();
+    return [
+      Container(
+        key: ValueKey('task-import-unsuitable-$i'),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              d.incomplete ? 'Nicht vollständig erkannt' : 'Passt noch nicht als interaktive Aufgabe',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.warn),
+            ),
+            if (d.reason.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(d.reason, style: TextStyle(fontSize: 13, height: 1.4, color: c.ink)),
+            ],
+            if (d.needs.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Fehlt in der App: ${d.needs}', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+            ],
+            if (d.listedText != null) ...[
+              const SizedBox(height: 4),
+              Text('Steht auf der Liste „Noch nicht interaktiv“.', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+            ],
+          ],
+        ),
+      ),
+      if (text.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Text(
+          text,
+          maxLines: 8,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 13, height: 1.4, color: c.ink),
+        ),
+      ],
+      if (d.error != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          d.error!,
+          key: ValueKey('task-import-retry-error-$i'),
+          style: TextStyle(fontSize: 12.5, color: c.danger),
+        ),
+      ],
+      const SizedBox(height: 10),
+      Text(
+        d.incomplete
+            ? 'Noch einmal versuchen (ggf. mit einem stärkeren Modell) oder eine Art vorgeben:'
+            : widget.replaceCard != null
+            ? 'Die Aufgabe bleibt im Aufgaben-Ordner. Du kannst es trotzdem versuchen:'
+            : 'Du kannst es trotzdem versuchen:',
+        style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+      ),
+      const SizedBox(height: 6),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (d.incomplete)
+            OutlinedButton.icon(
+              key: ValueKey('task-import-retry-$i'),
+              onPressed: d.busy ? null : () => _retry(d),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Erneut versuchen'),
+            ),
+          for (final k in InteractiveKind.values)
+            OutlinedButton(
+              key: ValueKey('task-import-force-$i-${k.name}'),
+              onPressed: d.busy ? null : () => _retry(d, force: k),
+              child: Text('Als ${k.label}'),
+            ),
+          if (d.busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
         ],
       ),
     ];
@@ -662,6 +1047,7 @@ class _TryTaskScreen extends StatelessWidget {
         Navigator.of(context).pop(_outcome(selfGrade: selfGrade, isCorrect: isCorrect));
     final steps = card.type == QuestionType.steps ? StepTask.fromMap(card.taskData) : null;
     final gantt = card.type == QuestionType.gantt ? GanttTask.fromMap(card.taskData) : null;
+    final crystal = card.type == QuestionType.crystal ? CrystalTask.fromMap(card.taskData) : null;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(title: const Text('Ausprobieren')),
@@ -675,8 +1061,10 @@ class _TryTaskScreen extends StatelessWidget {
               child: steps != null
                   ? StepTaskView(card: card, task: steps, isNew: true, onComplete: done)
                   : gantt != null
-                      ? GanttTaskView(card: card, task: gantt, isNew: true, onComplete: done)
-                      : const Center(child: Text('Die Aufgabe ist noch nicht vollständig.')),
+                  ? GanttTaskView(card: card, task: gantt, isNew: true, onComplete: done)
+                  : crystal != null
+                  ? CrystalTaskView(card: card, task: crystal, isNew: true, onComplete: done)
+                  : const Center(child: Text('Die Aufgabe ist noch nicht vollständig.')),
             ),
           ),
         ),

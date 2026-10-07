@@ -218,6 +218,15 @@ void main() {
       expect(result.collections['studyDays']!.changedRemotely, 1);
     });
 
+    test('Sammelliste „Noch nicht interaktiv“: beide Geräte ergänzen sich, gelöschte Einträge bleiben weg', () {
+      Map<String, dynamic> u(String id) => {'id': id, 'moduleId': 'm', 'text': 'Aufgabe $id', 'createdAt': '2026-10-01T00:00:00.000'};
+      final base = {..._payload(modules: [_module('m')]), 'unsupportedTasks': [u('alt'), u('weg')]};
+      final pc = {..._payload(modules: [_module('m')]), 'unsupportedTasks': [u('alt'), u('pc')]};
+      final phone = {..._payload(modules: [_module('m')]), 'unsupportedTasks': [u('alt'), u('weg'), u('handy')]};
+      final result = mergeSyncPayloads(local: pc, remote: phone, base: hashesOfPayload(base));
+      expect(_ids(result, 'unsupportedTasks'), ['alt', 'handy', 'pc']);
+    });
+
     test('der Daily-Stand kommt aus der Cloud', () {
       final result = mergeSyncPayloads(
         local: _payload(modules: [_module('m')], daily: {'a': 1}),

@@ -37,6 +37,9 @@ class DatabaseService {
   static final chatMessages = stringMapStoreFactory.store('chat_messages');
   static final labExperiments = stringMapStoreFactory.store('lab_experiments');
 
+  /// Aufgaben, die die App noch nicht interaktiv prüfen kann (Sammelliste).
+  static final unsupportedTasks = stringMapStoreFactory.store('unsupported_tasks');
+
   /// Fotos zu Laborversuchen – nur lokal, nicht im Cloud-Abgleich (siehe LabPhotoRepository).
   static final labPhotos = stringMapStoreFactory.store('lab_photos');
 

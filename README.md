@@ -1393,6 +1393,57 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zb. Kristallgitter im Würfel und die Sammelliste „Noch nicht interaktiv“
+
+Neuer Aufgabentyp **Kristallgitter**: Richtungen und Ebenen im kubischen
+Einheitswürfel (kubisch primitiv, krz, kfz). Wie bei Rechenweg und Terminierung
+liefert die KI nur die Indizes – **gezeichnet und geprüft wird in der App**:
+
+- **Richtung einzeichnen** `[u v w]`: Startpunkt antippen, dann Zielpunkt. Die
+  Rückmeldung erkennt „genau andersherum“, ein falsches Vorzeichen auf einer
+  Achse und einen verschobenen Ursprung (bei negativen Indizes nötig).
+- **Richtungsfamilie** `⟨u v w⟩`: alle Richtungen der Familie als eigene Pfeile
+  (z.B. 6 bei ⟨1 0 0⟩) – doppelte und nicht dazugehörige werden gemeldet.
+- **Ebene einzeichnen** `(h k l)`: drei Punkte antippen **oder**
+  Achsenabschnitte wählen (1, ½, ∞). Eine parallele Ebene an anderer Stelle
+  wird als solche erkannt („ergeben (2 2 0)“).
+- **Richtung / Ebene ablesen**: die App zeichnet, man tippt die Indizes ein
+  (Minus = Strich über der Zahl); ungekürzte Antworten zählen mit Hinweis.
+- **Atome in der Ebene markieren** (z.B. kfz (1 1 1): 3 Ecken, 3 Flächenmitten).
+
+Die **Live-Anzeige** ist standardmäßig an: beim Zeichnen steht sofort darunter,
+was die eigene Eingabe ergibt („Ziel − Start = (1, 1, 1) → [1 1 1]“ bzw.
+Achsenabschnitte → Miller-Indizes). Sie lässt sich je Aufgabe ausschalten; in
+der Probeklausur ist sie aus. Der Würfel lässt sich drehen (Ziehen oder ◀ ▶),
+ein Schalter blendet das ½-Raster ein. Gestufte **Tipps** nennen konkrete Punkte
+bzw. Achsenabschnitte; „Lösung zeigen“ zeichnet die Musterlösung grün
+gestrichelt ein. Bewertung wie bei den anderen Aufgaben: ohne Fehler und Tipps
+gewusst, sonst „Schwer“, mit Lösung bzw. „Auflösen“ nicht gewusst. Am breiten
+Bildschirm steht die Aufgabe links, der Würfel rechts. Bearbeiten in der
+Kartenliste: Gitter, Art und Indizes je Teilaufgabe, mit gezeichneter Vorschau
+und Hinweis, wenn sich etwas nicht zeichnen lässt (dann „ablesen“ statt
+„einzeichnen“).
+
+**Mehrere Teilaufgaben von einem Foto**: „Aufgabe interaktiv übernehmen“ macht
+aus einem Übungsblatt-Foto jetzt **jede Teilaufgabe zu einem eigenen Entwurf**
+(z.B. 1b Rechenweg, 2a Kristall-Richtungen, 3a Ebenen …). Jeder Entwurf hat
+seinen Editor, eine Häkchen-Box zum Mitspeichern und „Ausprobieren“;
+„N Aufgaben speichern“ speichert alle angehakten auf einmal. Die Art lässt sich
+vorgeben (Automatisch / Rechenweg / Terminierung / Kristall) oder je Teilaufgabe
+neu versuchen („Als Kristallgitter“ …).
+
+**Sammelliste „Noch nicht interaktiv“**: Teilaufgaben, die die App (noch) nicht
+selbst prüfen kann, landen **automatisch** auf einer Liste – mit der Begründung
+der KI und der **fehlenden Bedienart** in wenigen Wörtern („Kurve in Diagramm
+zeichnen“, „Netzplan zeichnen“ …). Im Fach erscheint dafür die Zeile
+„Noch nicht interaktiv (N)“: die Aufgaben sind nach fehlender Bedienart
+gruppiert (häufigste zuerst), **„Liste kopieren“** legt alles als Text in die
+Zwischenablage – zum Einfügen und Weiterschicken, damit man sieht, welcher
+Aufgabentyp als Nächstes am meisten bringt. Einträge lassen sich einzeln
+löschen, alle auf einmal leeren oder „Erneut versuchen“. Wird eine gesammelte
+Aufgabe doch noch interaktiv gespeichert, verschwindet sie von der Liste. Die
+Liste wird mit synchronisiert und beim Löschen des Fachs mit gelöscht.
+
 ### 5za. Rechenwege und Terminierung interaktiv üben
 
 Zwei neue Aufgabentypen, bei denen **die App selbst nachrechnet** – die KI
@@ -1420,7 +1471,7 @@ liefert nur die Struktur und die erwarteten Antworten:
   „Mit anderen Zahlen üben“. Zählweise wie im Skript (Tage einschließlich oder
   Zeitpunkte). Am breiten Bildschirm: Aufgabe links, Diagramm rechts.
 
-**Aufgabe übernehmen**: im Fach „Rechenweg / Terminierung übernehmen“, im
+**Aufgabe übernehmen**: im Fach „Aufgabe interaktiv übernehmen“, im
 Aufgaben-Ordner „Interaktiv üben“ an jeder Aufgabe (Text, Erklärung, Bild und
 Quelle vorbelegt) oder im PDF-Viewer eines Übungsblatts der Knopf ƒ (aktuelle
 Seite als Bild, markierter Text). Aufgabentext und/oder Fotos eingeben (bei
@@ -1430,7 +1481,8 @@ von der App nachgerechnet“ oder die gefundenen Unstimmigkeiten) bzw. rechnet
 die Terminierung selbst aus. Alles ist bearbeitbar (Schritte, erwartete
 Antworten, Teile, Dauern, Termine, Zählweise, was gefragt ist), „Ausprobieren“
 zeigt die Aufgabe wie im Quiz. Passt eine Aufgabe nicht (z.B. Zeichnen), sagt
-die KI warum – man kann es trotzdem als Rechenweg oder Terminierung versuchen.
+die KI warum – man kann es trotzdem als Rechenweg, Terminierung oder
+Kristallgitter versuchen (mehrere Teilaufgaben und Sammelliste: Abschnitt 5zb).
 Gespeicherte Aufgaben kommen bald im Lernplan dran, zählen in der Probeklausur
 (dort nur das Ergebnis, ohne Hilfen) und lassen sich in der Kartenliste
 bearbeiten.

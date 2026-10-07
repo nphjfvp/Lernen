@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/flashcard.dart';
+import '../../models/crystal_task.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
 import '../../repositories/flashcard_repository.dart';
@@ -19,6 +20,7 @@ import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
 import '../study/explain_chat.dart';
 import '../study/study_aids.dart';
+import '../tasks/crystal_task_view.dart';
 import '../tasks/gantt_task_view.dart';
 import '../tasks/step_task_view.dart';
 import '../widgets/image_editor_screen.dart';
@@ -474,6 +476,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.learn:
       case QuestionType.steps:
       case QuestionType.gantt:
+      case QuestionType.crystal:
         return false;
       case QuestionType.singleChoice:
         return _selectedIndex != null;
@@ -541,6 +544,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.html:
       case QuestionType.steps:
       case QuestionType.gantt:
+      case QuestionType.crystal:
         return null; // eigene build()-Zweige.
     }
   }
@@ -812,6 +816,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.html:
       case QuestionType.steps:
       case QuestionType.gantt:
+      case QuestionType.crystal:
         return null;
     }
   }
@@ -1017,6 +1022,17 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       return GanttTaskView(
         card: widget.card,
         task: GanttTask.fromMap(widget.card.taskData)!,
+        isNew: widget.isNew,
+        examMode: widget.examMode,
+        onComplete: _submit,
+        onSkip: widget.onSkip,
+        canGiveUp: widget.canGiveUp,
+      );
+    }
+    if (_answerable && widget.card.type == QuestionType.crystal) {
+      return CrystalTaskView(
+        card: widget.card,
+        task: CrystalTask.fromMap(widget.card.taskData)!,
         isNew: widget.isNew,
         examMode: widget.examMode,
         onComplete: _submit,
@@ -1406,6 +1422,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.html:
       case QuestionType.steps:
       case QuestionType.gantt:
+      case QuestionType.crystal:
         return const SizedBox.shrink(); // eigene build()-Zweige.
       case QuestionType.singleChoice:
         return _buildChoiceOptions(c, multiple: false);

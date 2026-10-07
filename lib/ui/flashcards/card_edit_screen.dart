@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
 import '../../services/calc_task_detector.dart';
+import '../../services/crystal_geometry.dart';
 import '../../services/gantt_scheduler.dart';
 import '../../services/question_parsing.dart';
 import '../../services/stage_gate_service.dart';
+import '../tasks/crystal_task_editor.dart';
 import '../tasks/gantt_task_editor.dart';
 import '../tasks/step_task_editor.dart';
 
@@ -71,6 +74,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   /// Rechenweg bzw. Terminierung (nur bei diesen Typen, sonst null).
   late StepTask? _steps = _type == QuestionType.steps ? StepTask.fromMap(widget.card.taskData) : null;
   late GanttTask? _gantt = _type == QuestionType.gantt ? GanttTask.fromMap(widget.card.taskData) : null;
+  late CrystalTask? _crystal = _type == QuestionType.crystal ? CrystalTask.fromMap(widget.card.taskData) : null;
 
   QuestionType get _type => widget.card.type;
   bool get _isChoice => _type == QuestionType.singleChoice || _type == QuestionType.multipleChoice;
@@ -246,6 +250,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
       // Den Lösungsweg schreibt bei der Terminierung die App.
       back = GanttScheduler.solutionText(gantt);
     }
+    if (_type == QuestionType.crystal) {
+      final crystal = _crystal;
+      if (crystal == null || !crystal.isUsable) return _fail('Jede Teilaufgabe braucht drei Indizes (nicht alle 0).');
+      final problems = CrystalGeometry.problems(crystal);
+      if (problems.isNotEmpty) return _fail(problems.first);
+      taskData = crystal.confirmed().toMap();
+      if (back.isEmpty) back = CrystalGeometry.solutionText(crystal);
+    }
     final edited = widget.card.copyWithContent(
       front: front,
       back: back,
@@ -265,6 +277,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
         QuestionType.flashcard => 'Rückseite',
         QuestionType.learn => 'Erklärung / Lösungsweg',
         QuestionType.steps => 'Lösungsweg als Text (für „Lösung ansehen“)',
+        QuestionType.crystal => 'Erklärung (optional)',
         QuestionType.markImage => 'Was ist dort zu sehen? (optional)',
         QuestionType.html => 'Antwort (wenn die Seite nicht angezeigt werden kann)',
         _ => 'Erklärung (optional)',
@@ -311,6 +324,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
           ],
           if (_gantt != null) ...[
             GanttTaskEditor(task: _gantt!, onChanged: (t) => setState(() => _gantt = t)),
+            const SizedBox(height: 16),
+          ],
+          if (_crystal != null) ...[
+            CrystalTaskEditor(task: _crystal!, onChanged: (t) => setState(() => _crystal = t)),
             const SizedBox(height: 16),
           ],
           if (_type == QuestionType.freeText) ...[

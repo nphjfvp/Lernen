@@ -1,3 +1,4 @@
+import '../models/crystal_task.dart';
 import '../models/flashcard.dart';
 import '../models/gantt_task.dart';
 import '../models/step_task.dart';
@@ -73,6 +74,7 @@ class QuestionParsing {
     'learn': QuestionType.learn,
     'steps': QuestionType.steps,
     'gantt': QuestionType.gantt,
+    'crystal': QuestionType.crystal,
   };
 
   /// Wandelt den von der KI gelieferten "type"-String (snake_case, siehe
@@ -171,6 +173,15 @@ class QuestionParsing {
     'rueckwaertsterminierung': 'gantt',
     'rückwärtsterminierung': 'gantt',
     'durchlaufterminierung': 'gantt',
+    'kristall': 'crystal',
+    'kristallgitter': 'crystal',
+    'crystal_lattice': 'crystal',
+    'miller': 'crystal',
+    'miller_indizes': 'crystal',
+    'millersche_indizes': 'crystal',
+    'einheitszelle': 'crystal',
+    'wuerfel': 'crystal',
+    'würfel': 'crystal',
   };
 
   static QuestionType? _parseTypeOrNull(String? value) {
@@ -385,8 +396,8 @@ class QuestionParsing {
     fill('htmlContent', _first(raw, const ['html']));
 
     // Interaktive Aufgaben: die Daten unter "taskData" (oder flach im
-    // Eintrag: "steps" bzw. "items").
-    final task = _first(raw, const ['taskData', 'task_data', 'stepTask', 'ganttTask']);
+    // Eintrag: "steps", "items" bzw. "parts").
+    final task = _first(raw, const ['taskData', 'task_data', 'stepTask', 'ganttTask', 'crystalTask']);
     if (task is Map) {
       fill('taskData', Map<String, dynamic>.from(task));
     } else if (raw['steps'] is List && (declared == null || declared == QuestionType.steps)) {
@@ -397,6 +408,11 @@ class QuestionParsing {
     } else if (raw['items'] is List && (declared == null || declared == QuestionType.gantt)) {
       fill('taskData', {
         for (final key in const ['items', 'start', 'due', 'direction', 'counting', 'questions', 'drawChart'])
+          if (raw[key] != null) key: raw[key],
+      });
+    } else if (raw['parts'] is List && (declared == null || declared == QuestionType.crystal)) {
+      fill('taskData', {
+        for (final key in const ['parts', 'lattice'])
           if (raw[key] != null) key: raw[key],
       });
     }
@@ -500,6 +516,7 @@ class QuestionParsing {
     if ((entry['htmlContent'] ?? '').toString().contains(htmlAnswerChannelName)) return QuestionType.html;
     if (StepTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.steps;
     if (GanttTask.fromMap(entry['taskData']) != null) return QuestionType.gantt;
+    if (CrystalTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.crystal;
     if (_hasFillableCell(tableRowsIn(raw))) return QuestionType.table;
     final targets = imageTargetsIn(raw);
     if (targets != null && targets.isNotEmpty) {
@@ -618,6 +635,8 @@ class QuestionParsing {
         return {...entry, 'taskData': StepTask.fromMap(entry['taskData'])!.toMap()};
       case QuestionType.gantt:
         return {...entry, 'taskData': GanttTask.fromMap(entry['taskData'])!.toMap()};
+      case QuestionType.crystal:
+        return {...entry, 'taskData': CrystalTask.fromMap(entry['taskData'])!.toMap()};
       case QuestionType.flashcard:
       case QuestionType.learn:
       case QuestionType.freeText:
@@ -682,6 +701,8 @@ class QuestionParsing {
         return StepTask.fromMap(raw['taskData'])?.isUsable ?? false;
       case QuestionType.gantt:
         return GanttTask.fromMap(raw['taskData']) != null;
+      case QuestionType.crystal:
+        return CrystalTask.fromMap(raw['taskData'])?.isUsable ?? false;
       case QuestionType.html:
         final html = (raw['htmlContent'] ?? '').toString();
         // Grobe Vertragsprüfung: die Seite muss den JS-Rückkanal tatsächlich

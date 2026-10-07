@@ -1472,6 +1472,7 @@ class _AnswerDetail extends StatelessWidget {
         return TablePreview(rows: card.tableRows ?? const []);
       case QuestionType.steps:
       case QuestionType.gantt:
+      case QuestionType.crystal:
         return TaskAnswerPreview(card: card);
     }
   }

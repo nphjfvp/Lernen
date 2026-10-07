@@ -42,6 +42,11 @@ enum QuestionType {
   /// Start-/Endterminen und Liegezeiten – die App rechnet die Lösung selbst,
   /// siehe GanttTask (gantt_task.dart) in [Flashcard.taskData].
   gantt,
+
+  /// Kristallgitter: Richtungen und Ebenen im Einheitswürfel einzeichnen oder
+  /// ablesen, Familien, Atome in einer Ebene – die App prüft selbst, siehe
+  /// CrystalTask (crystal_task.dart) in [Flashcard.taskData].
+  crystal,
 }
 
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
@@ -65,6 +70,7 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.learn => 'Lernen',
         QuestionType.steps => 'Rechenweg',
         QuestionType.gantt => 'Terminierung',
+        QuestionType.crystal => 'Kristallgitter',
       };
 }
 
@@ -412,7 +418,8 @@ class Flashcard {
   final List<List<QuestionTableCell>>? tableRows;
 
   /// Daten einer interaktiven Aufgabe: Rechenweg ([QuestionType.steps],
-  /// StepTask) bzw. Terminierung ([QuestionType.gantt], GanttTask) – als Map
+  /// StepTask), Terminierung ([QuestionType.gantt], GanttTask) bzw.
+  /// Kristallgitter ([QuestionType.crystal], CrystalTask) – als Map
   /// gespeichert, damit Sync, Export und Kopien sie unverändert mitnehmen.
   final Map<String, dynamic>? taskData;
 
@@ -643,7 +650,7 @@ class Flashcard {
   String get answerSummary => switch (type) {
         // Rechenweg/Terminierung: back ist der lesbare Lösungsweg (beim
         // Erstellen/Bearbeiten aus der Aufgabe geschrieben).
-        QuestionType.flashcard || QuestionType.learn || QuestionType.steps || QuestionType.gantt => back,
+        QuestionType.flashcard || QuestionType.learn || QuestionType.steps || QuestionType.gantt || QuestionType.crystal => back,
         QuestionType.singleChoice ||
         QuestionType.multipleChoice =>
           (options ?? const []).where((o) => o.isCorrect).map((o) => o.text).join('; '),

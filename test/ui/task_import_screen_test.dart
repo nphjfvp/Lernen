@@ -1,16 +1,20 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lernen/models/app_settings.dart';
+import 'package:lernen/models/crystal_task.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/gantt_task.dart';
 import 'package:lernen/models/interactive_task.dart';
 import 'package:lernen/models/step_task.dart';
+import 'package:lernen/models/unsupported_task.dart';
 import 'package:lernen/repositories/flashcard_repository.dart';
 import 'package:lernen/repositories/settings_repository.dart';
+import 'package:lernen/repositories/unsupported_task_repository.dart';
 import 'package:lernen/services/ai_service.dart';
 import 'package:lernen/services/fsrs_service.dart';
 import 'package:lernen/services/question_parsing.dart';
@@ -18,6 +22,7 @@ import 'package:lernen/theme/app_colors.dart';
 import 'package:lernen/ui/daily/question_answer_view.dart';
 import 'package:lernen/ui/tasks/paper_check_screen.dart';
 import 'package:lernen/ui/tasks/task_import_screen.dart';
+import 'package:lernen/ui/tasks/unsupported_tasks_screen.dart';
 import 'package:provider/provider.dart';
 
 class _SettingsWithKey extends SettingsRepository {
@@ -34,6 +39,69 @@ class _RecordingCards extends FlashcardRepository {
 
   @override
   Future<void> delete(String id, String moduleId) async => deleted.add(id);
+}
+
+/// Sammelliste im Speicher statt in der Datenbank.
+class _MemoryUnsupported extends UnsupportedTaskRepository {
+  final items = <UnsupportedTask>[];
+  final removed = <String>[];
+
+  @override
+  bool get isLoaded => true;
+
+  @override
+  List<UnsupportedTask> get all => List.unmodifiable(items);
+
+  @override
+  List<UnsupportedTask> forModule(String moduleId) => [for (final t in items) if (t.moduleId == moduleId) t];
+
+  @override
+  Future<void> load() async {}
+
+  @override
+  Future<UnsupportedTask> add({
+    required String moduleId,
+    required String text,
+    String reason = '',
+    String needs = '',
+    String? sourceMaterialId,
+    int? sourcePage,
+    DateTime? now,
+  }) async {
+    items.removeWhere((t) => t.moduleId == moduleId && UnsupportedTask.sameKey(t.text) == UnsupportedTask.sameKey(text));
+    final t = UnsupportedTask(
+      id: 'u${items.length + removed.length}',
+      moduleId: moduleId,
+      text: text,
+      reason: reason,
+      needs: needs,
+      sourceMaterialId: sourceMaterialId,
+      sourcePage: sourcePage,
+      createdAt: now ?? DateTime(2026, 10, 1),
+    );
+    items.add(t);
+    notifyListeners();
+    return t;
+  }
+
+  @override
+  Future<void> removeText(String moduleId, String text) async {
+    removed.add(text);
+    items.removeWhere((t) => t.moduleId == moduleId && UnsupportedTask.sameKey(t.text) == UnsupportedTask.sameKey(text));
+    notifyListeners();
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    items.removeWhere((t) => t.id == id);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> clear({String? moduleId}) async {
+    items.removeWhere((t) => moduleId == null || t.moduleId == moduleId);
+    notifyListeners();
+  }
 }
 
 http.Response _chat(Object json) => http.Response(
@@ -118,6 +186,26 @@ Map<String, dynamic> _ganttDraft() => {
       },
     };
 
+Map<String, dynamic> _crystalDraft({bool uncertain = false}) => {
+      'kind': 'crystal',
+      'front': '2a) Zeichnen Sie die Richtungen [1 1 1] und [1̄ 1̄ 1] in die Einheitszelle ein.',
+      'back': '',
+      'taskData': {
+        'lattice': 'sc',
+        'parts': [
+          {'kind': 'direction', 'indices': [1, 1, 1]},
+          {'kind': 'direction', 'indices': [-1, -1, 1], 'uncertain': uncertain},
+        ],
+      },
+    };
+
+Map<String, dynamic> _noneDraft() => {
+      'kind': 'none',
+      'front': '3c) Skizzieren Sie das Spannungs-Dehnungs-Diagramm.',
+      'reason': 'Hier soll eine Kurve gezeichnet werden.',
+      'needs': 'Kurve in Diagramm zeichnen',
+    };
+
 StepTask _paperTask() => StepTask.fromMap(_stepsDraft()['taskData'])!;
 
 Flashcard _stepsCard() => Flashcard(
@@ -139,15 +227,19 @@ void main() {
     PaperCheckScreen.pickImagesHook = null;
   });
 
-  Future<_RecordingCards> pump(WidgetTester tester, Widget home) async {
-    tester.view.physicalSize = const Size(900, 3200);
+  late _MemoryUnsupported unsupported;
+
+  Future<_RecordingCards> pump(WidgetTester tester, Widget home, {double height = 3200}) async {
+    tester.view.physicalSize = Size(900, height);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final cards = _RecordingCards();
+    unsupported = _MemoryUnsupported();
     await tester.pumpWidget(MultiProvider(
       providers: [
         ChangeNotifierProvider<SettingsRepository>.value(value: _SettingsWithKey()),
         ChangeNotifierProvider<FlashcardRepository>.value(value: cards),
+        ChangeNotifierProvider<UnsupportedTaskRepository>.value(value: unsupported),
       ],
       child: MaterialApp(theme: ThemeData(extensions: const [AppColors.light]), home: home),
     ));
@@ -191,6 +283,41 @@ void main() {
       expect(draft.reason, 'Hier soll gezeichnet werden.');
     });
 
+    test('mehrere Teilaufgaben: Liste unter "tasks", Kristall, Bedienart, unvollständige Daten', () {
+      final drafts = AiService.parseInteractiveTasks({
+        'tasks': [
+          _crystalDraft(uncertain: true),
+          _noneDraft(),
+          {'kind': 'crystal', 'front': 'Ebene', 'taskData': {'parts': []}},
+        ],
+      });
+      expect(drafts, hasLength(3));
+      expect(drafts[0].kind, InteractiveKind.crystal);
+      expect(drafts[0].crystal!.hasUncertain, isTrue);
+      expect(drafts[0].taskData!['kind'], 'crystal');
+      expect(drafts[1].kind, isNull);
+      expect(drafts[1].needs, 'Kurve in Diagramm zeichnen');
+      expect(drafts[1].incomplete, isFalse);
+      expect(drafts[2].kind, isNull);
+      expect(drafts[2].incomplete, isTrue);
+      expect(drafts[2].reason, contains('Kristallgitter'));
+      // Ein einzelnes Objekt ist eine Liste mit einem Eintrag.
+      expect(AiService.parseInteractiveTasks(_stepsDraft()).single.kind, InteractiveKind.steps);
+    });
+
+    test('nur unvollständige Entwürfe: Fehler statt leerer Vorschau', () async {
+      final ai = AiService(
+        apiKey: 'k',
+        model: 'm',
+        client: MockClient((r) async => _chat({
+              'tasks': [
+                {'kind': 'steps', 'front': 'x', 'taskData': {'steps': []}},
+              ],
+            })),
+      );
+      await expectLater(ai.buildInteractiveTasks(text: 'Aufgabe'), throwsA(isA<AiServiceException>()));
+    });
+
     test('Fragen-Import: Typ "Rechenweg"/"Terminierung" mit Aufgabendaten bleibt erhalten', () {
       final steps = QuestionParsing.normalizeGeneratedFlashcard({
         'type': 'Rechenweg',
@@ -209,6 +336,15 @@ void main() {
       });
       expect(QuestionParsing.parseType(gantt!['type'] as String?), QuestionType.gantt);
       expect(GanttTask.fromMap(parseTaskData(gantt['taskData']))!.items, hasLength(2));
+
+      final crystal = QuestionParsing.normalizeGeneratedFlashcard({
+        'type': 'Kristallgitter',
+        'front': 'Zeichne [1 1 1] ein.',
+        'back': '',
+        'crystalTask': _crystalDraft()['taskData'],
+      });
+      expect(QuestionParsing.parseType(crystal!['type'] as String?), QuestionType.crystal);
+      expect(CrystalTask.fromMap(parseTaskData(crystal['taskData']))!.parts, hasLength(2));
     });
   });
 
@@ -229,7 +365,7 @@ void main() {
 
     expect(prompts.single, contains("Löse y' = 2x"));
     expect(prompts.single, contains('Vorhandene Lösung'));
-    expect(find.byKey(const ValueKey('task-import-draft')), findsOneWidget);
+    expect(find.byKey(const ValueKey('task-import-draft-0')), findsOneWidget);
     // Die App hat die Musterlösung selbst geprüft (Probe der DGL).
     expect(find.text('Musterlösung von der App nachgerechnet'), findsOneWidget);
 
@@ -327,22 +463,144 @@ void main() {
         );
     final cards = await pump(tester, const TaskImportScreen(moduleId: 'm1', initialText: 'Zeichne das Diagramm.'));
     await tap(tester, 'task-import-build');
-    expect(find.byKey(const ValueKey('task-import-unsuitable')), findsOneWidget);
+    expect(find.byKey(const ValueKey('task-import-unsuitable-0')), findsOneWidget);
     expect(find.text('Hier soll ein Diagramm gezeichnet werden.'), findsOneWidget);
-    expect(prompts.first, contains('Entscheide selbst'));
+    expect(prompts.first, contains('Entscheide je Teilaufgabe selbst'));
+    // Automatisch auf der Sammelliste (Text aus der Eingabe, weil die KI keinen geliefert hat).
+    expect(unsupported.items.single.text, 'Zeichne das Diagramm.');
+    expect(find.byKey(const ValueKey('task-import-listed')), findsOneWidget);
+    expect(find.byKey(const ValueKey('task-import-save')), findsNothing);
 
-    await tap(tester, 'task-import-force-steps');
+    await tap(tester, 'task-import-force-0-steps');
     expect(prompts.last, contains('Gewünscht: "kind": "steps"'));
-    expect(find.byKey(const ValueKey('task-import-unsuitable')), findsNothing);
-    expect(find.byKey(const ValueKey('task-import-draft')), findsOneWidget);
+    expect(find.byKey(const ValueKey('task-import-unsuitable-0')), findsNothing);
+    expect(find.byKey(const ValueKey('task-import-steps-0-2')), findsOneWidget);
     expect(cards.saved, isEmpty);
+
+    // Doch noch interaktiv gespeichert: von der Sammelliste genommen.
+    await tap(tester, 'task-import-save');
+    expect(cards.saved.single.type, QuestionType.steps);
+    expect(unsupported.removed, ['Zeichne das Diagramm.']);
+    expect(unsupported.items, isEmpty);
+  });
+
+  testWidgets('mehrere Teilaufgaben von einem Foto: Kristall + Rechenweg speichern, Rest auf die Sammelliste', (tester) async {
+    TaskImportScreen.aiFactory = (key, model) => AiService(
+          apiKey: key,
+          model: model,
+          client: MockClient((r) async => _chat({
+                'tasks': [_crystalDraft(), _stepsDraft(), _noneDraft()],
+              })),
+        );
+    final cards = await pump(
+      tester,
+      TaskImportScreen(moduleId: 'm1', moduleName: 'Werkstoffkunde', initialImages: [_tinyPng], sourceMaterialId: 'blatt2', sourcePage: 1),
+      height: 4200,
+    );
+    await tap(tester, 'task-import-build');
+
+    expect(find.text('Die KI hat 3 Teilaufgaben gefunden – 2 davon interaktiv.'), findsOneWidget);
+    // Die erste brauchbare ist aufgeklappt: Kristall-Editor mit Vorschau.
+    expect(find.byKey(const ValueKey('crystal-edit-lattice')), findsOneWidget);
+    expect(find.byKey(const ValueKey('crystal-preview')), findsOneWidget);
+    expect(find.text('Kristallgitter · bereit'), findsOneWidget);
+    expect(find.text('Rechenweg · nachgerechnet'), findsOneWidget);
+    expect(find.text('Noch nicht interaktiv · auf der Liste'), findsOneWidget);
+
+    final listed = unsupported.items.single;
+    expect(listed.needs, 'Kurve in Diagramm zeichnen');
+    expect(listed.reason, 'Hier soll eine Kurve gezeichnet werden.');
+    expect(listed.sourceMaterialId, 'blatt2');
+    expect(listed.sourcePage, 1);
+
+    // Gesperrt: keine Speichern-Checkbox für die nicht interaktive Aufgabe.
+    expect(find.byKey(const ValueKey('task-import-include-2')), findsNothing);
+    expect(find.widgetWithText(FilledButton, '2 Aufgaben speichern'), findsOneWidget);
+    await tap(tester, 'task-import-save');
+
+    expect(cards.saved, hasLength(2));
+    final crystal = cards.saved.firstWhere((c) => c.type == QuestionType.crystal);
+    final task = CrystalTask.fromMap(crystal.taskData)!;
+    expect(task.parts.map((p) => p.indices), [
+      [1, 1, 1],
+      [-1, -1, 1],
+    ]);
+    // Ohne Erklärung der KI schreibt die App den Lösungsweg.
+    expect(crystal.back, contains('Starte bei (1, 1, 0) und gehe nach (0, 0, 1).'));
+    expect(crystal.sourceMaterialId, 'blatt2');
+    expect(crystal.priorityIntroduction, isTrue);
+    expect(cards.saved.where((c) => c.type == QuestionType.steps), hasLength(1));
+    // Die nicht passende Aufgabe bleibt auf der Liste.
+    expect(unsupported.items, hasLength(1));
+  });
+
+  testWidgets('Teilaufgabe abwählen; unsichere Indizes werden vor dem Speichern nachgefragt', (tester) async {
+    TaskImportScreen.aiFactory = (key, model) => AiService(
+          apiKey: key,
+          model: model,
+          client: MockClient((r) async => _chat({
+                'tasks': [_crystalDraft(uncertain: true), _stepsDraft()],
+              })),
+        );
+    final cards = await pump(tester, const TaskImportScreen(moduleId: 'm1', initialText: 'Aufgabe 2'), height: 4200);
+    await tap(tester, 'task-import-build');
+    expect(find.text('Kristallgitter · bitte prüfen'), findsOneWidget);
+
+    await tap(tester, 'task-import-include-1');
+    expect(find.widgetWithText(FilledButton, 'Speichern'), findsOneWidget);
+    await tap(tester, 'task-import-save');
+    expect(find.text('Trotzdem speichern?'), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.widgetWithText(FilledButton, 'Speichern')));
+    await settle(tester);
+
+    final card = cards.saved.single;
+    expect(card.type, QuestionType.crystal);
+    expect(CrystalTask.fromMap(card.taskData)!.hasUncertain, isFalse); // beim Speichern bestätigt
+  });
+
+  testWidgets('Sammelliste: gruppiert, kopieren, einzeln und alle löschen', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String?;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await pump(tester, const UnsupportedTasksScreen(moduleId: 'm1', moduleName: 'Werkstoffkunde'));
+    await unsupported.add(moduleId: 'm1', text: 'Skizziere das Diagramm.', reason: 'Kurve zeichnen.', needs: 'Kurve in Diagramm zeichnen');
+    await unsupported.add(moduleId: 'm1', text: 'Zeichne die Fließkurve.', needs: 'kurve in diagramm zeichnen', sourcePage: 4);
+    await unsupported.add(moduleId: 'm1', text: 'Begründe, warum …', needs: 'Begründung schreiben');
+    await unsupported.add(moduleId: 'm2', text: 'Anderes Fach', needs: 'Netzplan zeichnen');
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('unsupported-group-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('unsupported-group-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('unsupported-group-2')), findsNothing);
+    expect(find.text('Kurve in Diagramm zeichnen'), findsOneWidget);
+    expect(find.text('Anderes Fach'), findsNothing);
+
+    await tap(tester, 'unsupported-copy-button');
+    expect(copied, startsWith('Noch nicht interaktiv – 3 Aufgaben (Werkstoffkunde)'));
+    expect(copied, contains('## Kurve in Diagramm zeichnen (2)'));
+    expect(copied, contains('  Grund: Kurve zeichnen.'));
+    expect(copied, contains('  (Seite 4)'));
+    expect(find.text('Liste kopiert – du kannst sie jetzt einfügen und schicken.'), findsOneWidget);
+
+    await tap(tester, 'unsupported-delete-${unsupported.items.first.id}');
+    expect(unsupported.forModule('m1'), hasLength(2));
+
+    await tap(tester, 'unsupported-clear');
+    await tester.tap(find.widgetWithText(FilledButton, 'Alle löschen'));
+    await settle(tester);
+    expect(unsupported.forModule('m1'), isEmpty);
+    expect(unsupported.items.single.moduleId, 'm2');
+    expect(find.byKey(const ValueKey('unsupported-empty')), findsOneWidget);
   });
 
   testWidgets('ausprobieren: die Aufgabe so lösen wie im Quiz, ohne zu speichern', (tester) async {
     TaskImportScreen.aiFactory = (key, model) => AiService(apiKey: key, model: model, client: MockClient((r) async => _chat(_stepsDraft())));
     final cards = await pump(tester, const TaskImportScreen(moduleId: 'm1', initialText: "Löse y' = 2x."));
     await tap(tester, 'task-import-build');
-    await tap(tester, 'task-import-try');
+    await tap(tester, 'task-import-try-0');
     expect(find.widgetWithText(AppBar, 'Ausprobieren'), findsOneWidget);
     await tester.enterText(find.byKey(const ValueKey('step-input-0-0')), 'x^2 + C');
     await tester.pump();

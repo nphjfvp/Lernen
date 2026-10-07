@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/app_settings.dart';
 import '../models/condense.dart';
+import '../models/crystal_task.dart';
 import '../models/flashcard.dart' show QuestionType;
 import '../models/formula_sheet.dart';
 import '../models/gantt_task.dart';
@@ -2163,7 +2164,7 @@ Antworte in der Sprache der Vorlage.
               '{"front": "...", "back": "..."}',
         // Rechenweg/Terminierung sind nie Ziel einer Beförderung – zur
         // Sicherheit wie eine Lernaufgabe.
-        QuestionType.steps || QuestionType.gantt => _variantTypeRule(QuestionType.learn),
+        QuestionType.steps || QuestionType.gantt || QuestionType.crystal => _variantTypeRule(QuestionType.learn),
         QuestionType.learn =>
           'Zieltyp "learn" (Aufgabe zum Verstehen): "front" ist die Aufgabe '
               'WORTGETREU mit allen Teilaufgaben (bzw. der Fakt als zu '
@@ -3923,12 +3924,14 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
           ],
         ];
 
-  /// Macht aus einer Übungsaufgabe (Text und/oder Bilder, optional mit
-  /// vorhandener Lösung) eine interaktive Aufgabe: Rechenweg in Schritten
-  /// oder Terminierung im Gantt-Diagramm. Die KI liefert nur Struktur und
-  /// erwartete Antworten – nachgerechnet wird in der App (StepChecker bzw.
-  /// GanttScheduler). [kind] null = die KI entscheidet.
-  Future<InteractiveTaskDraft> buildInteractiveTask({
+  /// Macht aus Übungsaufgaben (Text und/oder Bilder, optional mit
+  /// vorhandener Lösung) interaktive Aufgaben – je Teilaufgabe ein Entwurf:
+  /// Rechenweg, Terminierung oder Kristallgitter. Die KI liefert nur Struktur
+  /// und erwartete Antworten – nachgerechnet wird in der App (StepChecker,
+  /// GanttScheduler, CrystalGeometry). Was nicht passt, kommt mit Begründung
+  /// und fehlender Bedienart zurück (kind null). [kind] null = die KI
+  /// entscheidet je Teilaufgabe.
+  Future<List<InteractiveTaskDraft>> buildInteractiveTasks({
     String text = '',
     List<Uint8List> images = const [],
     String solution = '',
@@ -3953,37 +3956,50 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
     buffer.writeln(switch (kind) {
       InteractiveKind.steps => 'Gewünscht: "kind": "steps" (Rechenweg) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.gantt => 'Gewünscht: "kind": "gantt" (Terminierung) – nur wenn das gar nicht geht, "none" mit Begründung.',
-      null => 'Entscheide selbst: "steps", "gantt" oder "none".',
+      InteractiveKind.crystal => 'Gewünscht: "kind": "crystal" (Kristallgitter) – nur wenn das gar nicht geht, "none" mit Begründung.',
+      null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal" oder "none".',
     });
     if (images.isNotEmpty) {
       buffer
         ..writeln('Dem Text folgen ${images.length} Bild${images.length == 1 ? '' : 'er'} der Aufgabe.')
-        ..writeln('Stehen auf den Bildern mehrere Aufgaben, nimm die im Text genannte (z.B. "Aufgabe 2b"); '
-            'ist keine genannt, die erste, die als Rechenweg oder Terminierung passt.');
+        ..writeln('Stehen auf den Bildern mehrere Aufgaben und ist im Text eine bestimmte genannt (z.B. "Aufgabe 2b"), '
+            'nimm nur diese; sonst alle Teilaufgaben.');
     }
     final raw = await _complete(
       _interactiveTaskSystemPrompt,
       _textWithImages(buffer.toString(), images, 'Bild'),
       temperature: 0,
     );
-    final draft = parseInteractiveTask(_parseJsonObject(raw));
-    if (draft.kind == null) {
-      if (draft.reason.trim().isEmpty) {
-        throw AiServiceException('Die KI hat keine interaktive Aufgabe geliefert – bitte erneut versuchen.', rawResponse: raw);
-      }
-      return draft;
+    final drafts = parseInteractiveTasks(_parseJsonObject(raw));
+    if (drafts.isEmpty || drafts.every((d) => d.kind == null && d.reason.trim().isEmpty && !d.incomplete)) {
+      throw AiServiceException('Die KI hat keine interaktive Aufgabe geliefert – bitte erneut versuchen.', rawResponse: raw);
     }
-    if (!draft.isUsable) {
+    if (drafts.every((d) => d.incomplete)) {
       throw AiServiceException(
-        'Die KI hat keine brauchbare ${draft.kind!.label}-Aufgabe geliefert – bitte erneut versuchen oder ein stärkeres Modell wählen.',
+        'Die KI hat keine brauchbare Aufgabe geliefert – bitte erneut versuchen oder ein stärkeres Modell wählen.',
         rawResponse: raw,
       );
     }
-    return draft;
+    return drafts;
   }
 
-  /// Liest die Antwort von [buildInteractiveTask] tolerant (Daten unter
-  /// "taskData" oder flach im Objekt, Art aus "kind" oder der Struktur).
+  /// Liest die Antwort von [buildInteractiveTasks]: eine Liste unter "tasks"
+  /// oder ein einzelnes Objekt.
+  static List<InteractiveTaskDraft> parseInteractiveTasks(Map<String, dynamic> json) {
+    final list = json['tasks'] ?? json['aufgaben'] ?? json['teilaufgaben'];
+    if (list is List) {
+      return [
+        for (final t in list.take(10))
+          if (t is Map) parseInteractiveTask(Map<String, dynamic>.from(t)),
+      ];
+    }
+    return [parseInteractiveTask(json)];
+  }
+
+  /// Liest einen Eintrag tolerant (Daten unter "taskData" oder flach im
+  /// Objekt, Art aus "kind" oder der Struktur). Nennt die KI eine Art, ohne
+  /// brauchbare Daten zu liefern, wird der Entwurf als [InteractiveTaskDraft.incomplete]
+  /// markiert.
   static InteractiveTaskDraft parseInteractiveTask(Map<String, dynamic> json) {
     final data = json['taskData'] is Map ? Map<String, dynamic>.from(json['taskData'] as Map) : json;
     final declared = '${json['kind'] ?? json['type'] ?? ''}'.toLowerCase().trim();
@@ -3993,18 +4009,37 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
         : interactiveKindFrom(declared) ??
             (data['steps'] is List
                 ? InteractiveKind.steps
-                : (data['items'] is List ? InteractiveKind.gantt : null));
+                : data['items'] is List
+                    ? InteractiveKind.gantt
+                    : (data['parts'] is List ? InteractiveKind.crystal : null));
     final front = '${json['front'] ?? json['task'] ?? json['aufgabe'] ?? ''}'.trim();
     final back = '${json['back'] ?? json['solution'] ?? json['loesungsweg'] ?? json['lösungsweg'] ?? ''}'.trim();
     final reason = '${json['reason'] ?? json['begruendung'] ?? json['begründung'] ?? ''}'.trim();
-    return InteractiveTaskDraft(
+    final needs = '${json['needs'] ?? json['bedienart'] ?? json['missing'] ?? ''}'.trim();
+    final draft = InteractiveTaskDraft(
       kind: kind,
       front: front,
       back: back,
       steps: kind == InteractiveKind.steps ? StepTask.fromMap(data) : null,
       gantt: kind == InteractiveKind.gantt ? GanttTask.fromMap(data) : null,
+      crystal: kind == InteractiveKind.crystal ? CrystalTask.fromMap(data) : null,
       reason: reason,
+      needs: needs,
     );
+    if (kind != null && !draft.isUsable) {
+      return InteractiveTaskDraft(
+        kind: null,
+        front: front,
+        back: back,
+        reason: 'Die KI hat diese Aufgabe nicht vollständig als ${kind.label} aufbereitet.',
+        incomplete: true,
+      );
+    }
+    if (kind == null && declared.isNotEmpty && !none) {
+      // Unbekannte Art: wie "passt nicht" behandeln, aber mit Hinweis.
+      return InteractiveTaskDraft(kind: null, front: front, back: back, reason: reason.isEmpty ? 'Unbekannte Art „$declared“.' : reason, needs: needs);
+    }
+    return draft;
   }
 
   /// Prüft einen auf Papier gerechneten Rechenweg (Fotos) gegen die
@@ -4047,12 +4082,15 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
   }
 
   static const _interactiveTaskSystemPrompt = r"""
-Du wandelst eine Übungsaufgabe in eine interaktive Aufgabe für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen rechnet sie selbst aus. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
+Du wandelst Übungsaufgaben in interaktive Aufgaben für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen und Kristallgitter rechnet und zeichnet sie selbst. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
 
-Art ("kind"):
+Enthält das Material mehrere Aufgaben oder Teilaufgaben (a, b, c …), liefere JEDE als eigenen Eintrag in "tasks" (höchstens 8). Teilaufgaben derselben Art zum selben Bild (z.B. mehrere Richtungen im selben Würfel) dürfen EIN Eintrag sein.
+
+Art ("kind") je Eintrag:
 - "steps" (Rechenweg): Rechenaufgaben mit eindeutigem Ergebnis (Mathe, Physik, Technik, Werkstoffe, BWL-Rechnungen), zerlegbar in 3–7 Schritte.
 - "gantt" (Terminierung): Vorwärts-/Rückwärtsterminierung, Durchlaufterminierung, Gantt-Diagramme mit Arbeitsgängen und Dauern.
-- "none": wenn beides nicht passt (Zeichnen, Begründen, Beweise ohne prüfbares Ergebnis) – dann "reason" mit einem Satz.
+- "crystal" (Kristallgitter): Richtungen [u v w] bzw. Ebenen (h k l) im kubischen Einheitswürfel einzeichnen oder ablesen, Richtungsfamilien ⟨u v w⟩, Atome in einer Ebene (kubisch primitiv, krz, kfz).
+- "none": wenn nichts davon passt (Zeichnen eines Diagramms, Begründen, Beweise ohne prüfbares Ergebnis) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte, um es zu üben (z.B. "Kurve in Diagramm zeichnen", "Phasendiagramm ablesen", "Netzplan zeichnen", "Begründung schreiben", "Schaltplan zeichnen").
 
 Bei "steps":
 - "front": die Aufgabe WORTGETREU mit allen Angaben (Formeln in LaTeX mit $…$).
@@ -4088,8 +4126,17 @@ Bei "gantt":
 - taskData.drawChart: true, wenn ein Gantt-Diagramm gezeichnet werden soll (Standard).
 - Rechne die Termine NICHT selbst aus – das macht die App. "back" darf leer bleiben.
 
+Bei "crystal":
+- "front": die Aufgabe WORTGETREU.
+- taskData.lattice: "sc" (kubisch primitiv), "bcc" (krz) oder "fcc" (kfz) – wie in der Aufgabe, sonst "sc".
+- taskData.parts: je gefragter Richtung bzw. Ebene ein Teil {"kind", "indices": [3 ganze Zahlen], "uncertain": true, wenn ein Strich über einer Zahl schlecht lesbar war}.
+  "kind": "direction" (Richtung einzeichnen), "readDirection" (gezeichneten Pfeil ablesen), "family" (alle Richtungen der Familie ⟨u v w⟩ einzeichnen – nur ⟨1 0 0⟩, ⟨1 1 0⟩, ⟨1 1 1⟩ u.ä. mit höchstens 12 Richtungen), "plane" (Ebene einzeichnen), "readPlane" (gezeichnete Ebene ablesen), "planeAtoms" (Atome in der Ebene markieren).
+  Ein Strich über einer Zahl bedeutet minus: [1̄ 1̄ 1] → [-1, -1, 1].
+  "direction"/"family" nur, wenn die gekürzten Indizes höchstens den Betrag 2 haben (sonst "readDirection"); "plane" nur bei Ebenen, die durch drei Punkte des ½-Rasters gehen (sonst "readPlane").
+- "back": kurze Erklärung (Achsenabschnitte, Kehrwerte) – gezeichnet und geprüft wird in der App.
+
 Antworte NUR mit einem JSON-Objekt:
-{"kind": "steps" | "gantt" | "none", "front": "...", "back": "...", "reason": "...", "taskData": {...}}""";
+{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "none", "front": "...", "back": "...", "reason": "...", "needs": "...", "taskData": {...}}]}""";
 
   static const _paperReviewSystemPrompt = r"""
 Du bist Korrektor für handschriftliche Rechenwege. Du bekommst eine Aufgabe, die Musterlösung in Schritten und Fotos eines Rechenwegs.

@@ -20,6 +20,7 @@ import '../models/material_item.dart';
 import '../models/module.dart';
 import '../models/pdf_storage_config.dart';
 import '../models/summary.dart';
+import '../models/unsupported_task.dart';
 import '../repositories/daily_session_repository.dart';
 import '../repositories/mock_exam_repository.dart';
 import '../repositories/study_log_repository.dart';
@@ -141,6 +142,16 @@ Future<void> applySyncedHistory(DatabaseClient txn, Map<String, dynamic> data) a
       await DatabaseService.chatMessages.record(message.id).put(txn, message.toMap());
     }
   }
+  final unsupported = data['unsupportedTasks'];
+  if (unsupported is List) {
+    await DatabaseService.unsupportedTasks.delete(txn);
+    for (final m in unsupported) {
+      if (m is! Map) continue;
+      final entry = UnsupportedTask.fromMap(Map<String, dynamic>.from(m));
+      if (entry.id.isEmpty) continue;
+      await DatabaseService.unsupportedTasks.record(entry.id).put(txn, entry.toMap());
+    }
+  }
   final exams = data['mockExamResults'];
   if (exams is List) {
     await MockExamRepository.replaceIn(txn, [
@@ -205,6 +216,7 @@ Future<Map<String, dynamic>> buildSyncPayload(DatabaseClient db) async {
     // Verlauf und Statistik – ohne sie finge jedes weitere Gerät bei null
     // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
     'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
+    'unsupportedTasks': (await DatabaseService.unsupportedTasks.find(db)).map((r) => r.value).toList(),
     'masterySnapshots': (await DatabaseService.masterySnapshots.find(db)).map((r) => r.value).toList(),
     'mockExamResults': (await MockExamRepository.loadFrom(db)).map((r) => r.toMap()).toList(),
     'studyDays': await StudyLogRepository.dayKeysFrom(db),
@@ -282,6 +294,10 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );
   await DatabaseService.labExperiments.delete(
+    txn,
+    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+  );
+  await DatabaseService.unsupportedTasks.delete(
     txn,
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );

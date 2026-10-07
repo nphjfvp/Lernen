@@ -79,10 +79,10 @@ typedef StageListEntry = ({Flashcard? card, StageFolder? folder});
 class StageGate {
   const StageGate._();
 
-  /// Aufgaben statt Fragen (Lernen, Rechenweg, Terminierung): keine Stufen,
-  /// keine Ordner.
+  /// Aufgaben statt Fragen (Lernen, Rechenweg, Terminierung, Kristallgitter):
+  /// keine Stufen, keine Ordner.
   static bool isTaskType(QuestionType type) =>
-      type == QuestionType.learn || type == QuestionType.steps || type == QuestionType.gantt;
+      type == QuestionType.learn || type == QuestionType.steps || type == QuestionType.gantt || type == QuestionType.crystal;
 
   /// Stufe aus dem Fragetyp, wenn keine gesetzt ist: Wiedererkennen ist
   /// leicht, Ergänzen/Zuordnen mittel, frei Formulieren schwer.
@@ -99,7 +99,8 @@ class StageGate {
         QuestionType.table ||
         QuestionType.learn ||
         QuestionType.steps ||
-        QuestionType.gantt =>
+        QuestionType.gantt ||
+        QuestionType.crystal =>
           StageLevel.schwer,
       };
 

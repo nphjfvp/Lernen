@@ -113,6 +113,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     DatabaseService.lectureUnits,
     DatabaseService.labExperiments,
     DatabaseService.chatMessages,
+    DatabaseService.unsupportedTasks,
   ];
 
   /// Stand der mitgesyncten Einstellungen beim letzten Blick – ändert sich
