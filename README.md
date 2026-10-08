@@ -1393,6 +1393,25 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zg. Zwei Geräte mit unterschiedlicher App-Version
+
+Läuft auf einem Gerät noch eine ältere Version, kennt sie neue Aufgabentypen
+(Stückliste, Skizze …) nicht: sie zeigt sie als Karteikarte und speichert sie
+beim Lernen auch so. Jetzt:
+
+- **Der Abgleich meldet es**: „Ein anderes Gerät hat zuletzt mit einer älteren
+  App-Version abgeglichen – bitte dort aktualisieren“ (bzw. umgekehrt). Dafür
+  trägt jeder Sync-Stand das Datenformat (`dataVersion`) mit.
+- **Solche Karten werden repariert**: eine „Karteikarte“, die noch die Daten
+  einer interaktiven Aufgabe enthält, ist beim nächsten Laden wieder die
+  interaktive Aufgabe.
+- **Nichts wird mehr gelöscht, nur weil die andere Version etwas nicht kennt**:
+  fehlt im Cloud-Stand eine ganze Liste (z.B. „Noch nicht interaktiv“), weil
+  die ältere Version sie nicht hochlädt, bleibt sie auf diesem Gerät erhalten.
+- Kennt **diese** Version eine Aufgabe nicht (von einer neueren erstellt),
+  steht im Quiz ein Hinweis „bitte aktualisieren“ statt einer stillen
+  Karteikarte.
+
 ### 5zf. Diagramm skizzieren
 
 Neuer Aufgabentyp **Diagramm skizzieren** für Aufgaben wie „Skizzieren Sie die

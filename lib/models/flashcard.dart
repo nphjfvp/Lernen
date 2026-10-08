@@ -59,6 +59,23 @@ enum QuestionType {
   sketch,
 }
 
+/// Interaktive Aufgabentypen, deren Daten (`taskData`) ihren Typ als `kind`
+/// mitführen.
+const _taskTypes = {QuestionType.steps, QuestionType.gantt, QuestionType.crystal, QuestionType.bom, QuestionType.sketch};
+
+/// Typ einer gespeicherten Karte. Eine ältere App-Version kennt neue
+/// Aufgabentypen nicht, zeigt sie als Karteikarte und speichert sie beim
+/// Lernen auch so (über den Sync landet das auf allen Geräten) – die
+/// Aufgabendaten bleiben dabei erhalten. Steht dort ein bekannter
+/// Aufgabentyp, wird die Karte wieder zur interaktiven Aufgabe.
+QuestionType _storedType(Map<String, dynamic> map) {
+  final type = questionTypeFromString(map['type'] as String?);
+  final data = map['taskData'];
+  if (type != QuestionType.flashcard || data is! Map) return type;
+  final kind = '${data['kind'] ?? ''}';
+  return _taskTypes.where((t) => t.name == kind).firstOrNull ?? type;
+}
+
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
       (e) => e.name == value,
       orElse: () => QuestionType.flashcard,
@@ -1339,7 +1356,7 @@ class Flashcard {
         back: map['back'] as String? ?? '',
         createdAt: DateTime.tryParse(map['createdAt']?.toString() ?? '') ?? DateTime(2000),
         due: DateTime.tryParse(map['due']?.toString() ?? '') ?? DateTime(2000),
-        type: questionTypeFromString(map['type'] as String?),
+        type: _storedType(map),
         options: (map['options'] as List?)
             ?.map((o) => QuizOption.fromMap(Map<String, dynamic>.from(o as Map)))
             .toList(),

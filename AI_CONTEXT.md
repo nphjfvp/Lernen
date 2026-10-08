@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1418 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1422 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1419,6 +1419,19 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `show_chart`, CardEditScreen, TaskImportScreen „Skizze“ + Warnungen aus selfCheck).
     Tests: `test/services/sketch_checker_test.dart` (Eisen 911 °C, Zugversuch, Potential),
     `test/ui/sketch_task_view_test.dart` (echte Zeichengesten), `task_import_screen_test`.
+61. Unterschiedliche App-Versionen auf zwei Geräten (Nutzer: nach dem Update Sammelliste leer,
+    neue Aufgaben im Fach nur als Karteikarte, „Ausprobieren“ ging). Ursache: ältere Version
+    kennt bom/sketch nicht (questionTypeFromString → flashcard), zeigt/speichert sie als
+    Karteikarte (taskData bleibt), und ihr Sync-Stand enthält ggf. Sammlungen gar nicht – der
+    Dreiwege-Merge wertete eine fehlende Sammlung als „alles gelöscht“. Fixes: `sync_merge.dart`
+    `syncDataVersion` (2, bei neuen Typen/Sammlungen erhöhen), `dataVersionOf`,
+    `dataVersionNotice`, `SyncMergeResult.remoteDataVersion`, fehlende Sammlung auf einer Seite
+    (`!containsKey`) löscht nichts mehr, `describeMerge` + AutoSync-Meldung nennen den Hinweis;
+    `buildSyncPayload` schreibt `dataVersion`. `Flashcard.fromMap` → `_storedType`: Typ
+    flashcard + taskData.kind ∈ {steps, gantt, crystal, bom, sketch} → wieder dieser Typ.
+    QuestionAnswerView: flashcard mit unbekanntem taskData.kind → Hinweis
+    `question-needs-update`. Tests: `test/models/flashcard_task_repair_test.dart`, Gruppe
+    „ältere App-Version …“ in `sync_merge_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

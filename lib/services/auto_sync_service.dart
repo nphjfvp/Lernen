@@ -268,7 +268,10 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     });
     _settingsSignature = _currentSettingsSignature();
     final result = outcome.result;
-    _lastMergeMessage = result == null || (result.changedLocally == 0 && result.changedRemotely == 0)
+    _lastMergeMessage = result == null ||
+            (result.changedLocally == 0 &&
+                result.changedRemotely == 0 &&
+                dataVersionNotice(result.remoteDataVersion) == null)
         ? null
         : describeMerge(result);
     if (outcome.changedLocally) await onDataChanged?.call();

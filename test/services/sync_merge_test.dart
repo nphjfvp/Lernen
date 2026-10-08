@@ -36,12 +36,40 @@ Map<String, dynamic> _payload({
       'mockExamResults': exams,
       'studyDays': days,
       'dailySession': daily,
+      'dataVersion': syncDataVersion,
     };
 
 List<String> _ids(SyncMergeResult r, String collection) =>
     [for (final e in (r.payload[collection] as List)) (e as Map)['id'] as String]..sort();
 
 void main() {
+  group('ältere App-Version auf dem anderen Gerät', () {
+    test('fehlt eine Sammlung ganz, bleibt sie erhalten (nicht „alles gelöscht“)', () {
+      final task = {'id': 'u1', 'moduleId': 'm', 'text': 'Skizziere die Kurve.', 'createdAt': '2026-10-01T00:00:00.000'};
+      final local = {..._payload(modules: [_module('m')]), 'unsupportedTasks': [task]};
+      // Basisstand: die Liste war beim letzten Abgleich auf beiden Seiten.
+      final base = hashesOfPayload(local);
+      final old = Map<String, dynamic>.from(_payload(modules: [_module('m')]))..remove('dataVersion');
+      final result = mergeSyncPayloads(local: local, remote: old, base: base);
+      expect(_ids(result, 'unsupportedTasks'), ['u1']);
+      expect(result.remoteDataVersion, 0);
+      expect(describeMerge(result), contains('älteren App-Version'));
+      expect(result.payload['dataVersion'], syncDataVersion);
+
+      // Mit derselben Version gilt eine fehlende Liste weiterhin als gelöscht.
+      final same = {..._payload(modules: [_module('m')]), 'unsupportedTasks': const []};
+      expect(_ids(mergeSyncPayloads(local: local, remote: same, base: base), 'unsupportedTasks'), isEmpty);
+    });
+
+    test('gleiche Version: kein Hinweis; neuere Version: bitte hier aktualisieren', () {
+      final a = _payload(modules: [_module('m')]);
+      final same = mergeSyncPayloads(local: a, remote: a, base: hashesOfPayload(a));
+      expect(describeMerge(same), 'Beide Stände waren schon gleich.');
+      final newer = mergeSyncPayloads(local: a, remote: {...a, 'dataVersion': syncDataVersion + 1}, base: hashesOfPayload(a));
+      expect(describeMerge(newer), contains('neuere App-Version'));
+    });
+  });
+
   group('Union: neu auf einer Seite', () {
     test('neuer Kurs vom Handy und ein Kurs vom PC: beide bleiben (auch ohne Basisstand)', () {
       final pc = _payload(modules: [_module('alt')], flashcards: [_card('c1', 'alt')]);

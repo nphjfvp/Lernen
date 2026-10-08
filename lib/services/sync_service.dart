@@ -223,6 +223,8 @@ Future<Map<String, dynamic>> buildSyncPayload(DatabaseClient db) async {
     // Heute eingeführte neue Karten – damit ein zweites Gerät am selben Tag
     // nicht noch einmal das volle Neu-Karten-Budget verteilt.
     'dailySession': (await DailySessionRepository.loadFrom(db, DateTime.now())).toMap(),
+    // Datenformat – meldet beim Abgleich unterschiedliche App-Versionen.
+    'dataVersion': syncDataVersion,
   };
 }
 

@@ -23,9 +23,35 @@ class CollectionMerge {
   final int conflicts;
 }
 
+/// Version des Datenformats im Sync-Stand. Erhöhen, wenn neue Fragetypen
+/// oder Sammlungen dazukommen, die ältere App-Versionen nicht kennen – dann
+/// meldet der Abgleich, dass ein Gerät aktualisiert werden sollte (ältere
+/// Versionen zeigen unbekannte Aufgaben nur als Karteikarte und speichern sie
+/// beim Lernen auch so). 2 = Stückliste und Diagramm-Skizze.
+const syncDataVersion = 2;
+
+/// Datenformat eines Sync-Stands (0 = von einer Version vor [syncDataVersion]).
+int dataVersionOf(Map<String, dynamic> payload) => (payload['dataVersion'] as num?)?.toInt() ?? 0;
+
+/// Hinweis, wenn das andere Gerät eine andere App-Version hat (null = gleich).
+String? dataVersionNotice(int remoteVersion) {
+  if (remoteVersion < syncDataVersion) {
+    return 'Ein anderes Gerät hat zuletzt mit einer älteren App-Version abgeglichen – bitte dort die App '
+        'aktualisieren. Sonst zeigt es neue Aufgaben (Stückliste, Skizze …) nur als Karteikarte.';
+  }
+  if (remoteVersion > syncDataVersion) {
+    return 'Auf einem anderen Gerät läuft eine neuere App-Version – bitte hier aktualisieren, sonst erscheinen '
+        'neue Aufgabentypen hier nur als Karteikarte.';
+  }
+  return null;
+}
+
 /// Ergebnis von [mergeSyncPayloads].
 class SyncMergeResult {
-  const SyncMergeResult({required this.payload, required this.collections});
+  const SyncMergeResult({required this.payload, required this.collections, this.remoteDataVersion = syncDataVersion});
+
+  /// Datenformat des Cloud-Stands (siehe [dataVersionNotice]).
+  final int remoteDataVersion;
 
   /// Der zusammengeführte Stand (Format wie SyncService.buildSyncPayload).
   final Map<String, dynamic> payload;
@@ -152,6 +178,10 @@ SyncMergeResult mergeSyncPayloads({
         };
     final l = byKey(local[name]);
     final r = byKey(remote[name]);
+    // Fehlt eine Sammlung ganz, kennt die andere Seite sie nicht (ältere
+    // App-Version) – das heißt nicht, dass dort alles gelöscht wurde.
+    final remoteKnows = remote.containsKey(name);
+    final localKnows = local.containsKey(name);
     final b = base[name] ?? const <String, String>{};
     final result = <String, Map<String, dynamic>>{};
     var conflicts = 0;
@@ -179,9 +209,9 @@ SyncMergeResult mergeSyncPayloads({
         }
       } else if (lr != null) {
         // Nur hier. Neu, oder dort gelöscht?
-        if (bh == null || recordHash(lr) != bh) result[key] = lr;
+        if (!remoteKnows || bh == null || recordHash(lr) != bh) result[key] = lr;
       } else if (rr != null) {
-        if (bh == null || recordHash(rr) != bh) result[key] = rr;
+        if (!localKnows || bh == null || recordHash(rr) != bh) result[key] = rr;
       }
     }
     merged[name] = result;
@@ -228,8 +258,9 @@ SyncMergeResult mergeSyncPayloads({
   );
   // Der Daily-Stand wird beim Anwenden mit dem lokalen zusammengeführt.
   payload['dailySession'] = remote['dailySession'] ?? local['dailySession'];
+  payload['dataVersion'] = syncDataVersion;
 
-  return SyncMergeResult(payload: payload, collections: stats);
+  return SyncMergeResult(payload: payload, collections: stats, remoteDataVersion: dataVersionOf(remote));
 }
 
 Map<String, dynamic> _resolve(String collection, Map<String, dynamic> local, Map<String, dynamic> remote) {
@@ -332,8 +363,10 @@ String describeMerge(SyncMergeResult result) {
       ].join(', ');
   final here = list((c) => c.changedLocally);
   final cloud = list((c) => c.changedRemotely);
-  if (here.isEmpty && cloud.isEmpty) return 'Beide Stände waren schon gleich.';
+  final notice = dataVersionNotice(result.remoteDataVersion);
+  if (here.isEmpty && cloud.isEmpty) return notice ?? 'Beide Stände waren schon gleich.';
   return [
+    ?notice,
     if (here.isNotEmpty) 'Auf diesem Gerät neu oder geändert: $here.',
     if (cloud.isNotEmpty) 'In der Cloud neu oder geändert: $cloud.',
     if (result.conflicts > 0)

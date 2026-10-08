@@ -1074,6 +1074,27 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       );
     }
     if (widget.card.type == QuestionType.flashcard || widget.card.type == QuestionType.learn || !_answerable) {
+      // Aufgabendaten eines Typs, den diese App-Version nicht kennt (auf einem
+      // Gerät mit neuerer Version erstellt) – Hinweis statt stiller Karteikarte.
+      if (widget.card.type == QuestionType.flashcard && widget.card.taskData?['kind'] is String) {
+        return Column(
+          children: [
+            Container(
+              key: const ValueKey('question-needs-update'),
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(14)),
+              child: const Text(
+                'Das ist eine interaktive Aufgabe, die diese App-Version noch nicht kennt – bitte die App '
+                'aktualisieren (Einstellungen → Update). Bis dahin als Karteikarte.',
+                style: TextStyle(fontSize: 13.5, height: 1.4),
+              ),
+            ),
+            Expanded(child: _buildFlashcard(c)),
+          ],
+        );
+      }
       return _buildFlashcard(c);
     }
     if (widget.card.type == QuestionType.html) {
