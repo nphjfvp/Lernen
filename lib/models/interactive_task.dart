@@ -2,6 +2,7 @@ import 'bom_task.dart';
 import 'crystal_task.dart';
 import 'flashcard.dart';
 import 'gantt_task.dart';
+import 'sketch_task.dart';
 import 'step_task.dart';
 
 /// Welche interaktive Aufgabe aus einer Übungsaufgabe wird.
@@ -9,7 +10,8 @@ enum InteractiveKind {
   steps('Rechenweg', QuestionType.steps),
   gantt('Terminierung', QuestionType.gantt),
   crystal('Kristallgitter', QuestionType.crystal),
-  bom('Stückliste', QuestionType.bom);
+  bom('Stückliste', QuestionType.bom),
+  sketch('Diagramm skizzieren', QuestionType.sketch);
 
   const InteractiveKind(this.label, this.type);
   final String label;
@@ -24,6 +26,9 @@ InteractiveKind? interactiveKindFrom(Object? raw) {
   }
   if (v.contains('bom') || v.contains('stückliste') || v.contains('stueckliste') || v.contains('stuckliste') || v.contains('erzeugnis')) {
     return InteractiveKind.bom;
+  }
+  if (v.contains('sketch') || v.contains('skizz') || v.contains('diagramm') || v.contains('kurve')) {
+    return InteractiveKind.sketch;
   }
   if (v.contains('step') || v.contains('rechen') || v.contains('schritt')) return InteractiveKind.steps;
   return null;
@@ -41,6 +46,7 @@ class InteractiveTaskDraft {
     this.gantt,
     this.crystal,
     this.bom,
+    this.sketch,
     this.reason = '',
     this.needs = '',
     this.incomplete = false,
@@ -60,6 +66,7 @@ class InteractiveTaskDraft {
   final GanttTask? gantt;
   final CrystalTask? crystal;
   final BomTask? bom;
+  final SketchTask? sketch;
 
   /// Warum nicht geeignet (bei [kind] null).
   final String reason;
@@ -84,6 +91,7 @@ class InteractiveTaskDraft {
         InteractiveKind.gantt => gantt != null,
         InteractiveKind.crystal => crystal?.isUsable ?? false,
         InteractiveKind.bom => bom?.isUsable ?? false,
+        InteractiveKind.sketch => sketch?.isUsable ?? false,
         null => false,
       };
 
@@ -92,6 +100,7 @@ class InteractiveTaskDraft {
         InteractiveKind.gantt => gantt?.toMap(),
         InteractiveKind.crystal => crystal?.toMap(),
         InteractiveKind.bom => bom?.toMap(),
+        InteractiveKind.sketch => sketch?.toMap(),
         null => null,
       };
 }

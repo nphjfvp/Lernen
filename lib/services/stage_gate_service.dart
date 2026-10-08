@@ -80,13 +80,14 @@ class StageGate {
   const StageGate._();
 
   /// Aufgaben statt Fragen (Lernen, Rechenweg, Terminierung, Kristallgitter,
-  /// Stückliste): keine Stufen, keine Ordner.
+  /// Stückliste, Skizze): keine Stufen, keine Ordner.
   static bool isTaskType(QuestionType type) =>
       type == QuestionType.learn ||
       type == QuestionType.steps ||
       type == QuestionType.gantt ||
       type == QuestionType.crystal ||
-      type == QuestionType.bom;
+      type == QuestionType.bom ||
+      type == QuestionType.sketch;
 
   /// Stufe aus dem Fragetyp, wenn keine gesetzt ist: Wiedererkennen ist
   /// leicht, Ergänzen/Zuordnen mittel, frei Formulieren schwer.
@@ -105,7 +106,8 @@ class StageGate {
         QuestionType.steps ||
         QuestionType.gantt ||
         QuestionType.crystal ||
-        QuestionType.bom =>
+        QuestionType.bom ||
+        QuestionType.sketch =>
           StageLevel.schwer,
       };
 

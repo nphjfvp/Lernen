@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../models/bom_task.dart';
 import '../models/crystal_task.dart';
+import '../models/sketch_task.dart';
 import '../models/flashcard.dart';
 import '../models/gantt_task.dart';
 import '../models/step_task.dart';
@@ -405,6 +406,8 @@ class AnswerChecker {
         return crystal != null && CrystalGeometry.playable(crystal);
       case QuestionType.bom:
         return BomTask.fromMap(q.taskData)?.isUsable ?? false;
+      case QuestionType.sketch:
+        return SketchTask.fromMap(q.taskData)?.isUsable ?? false;
     }
   }
 

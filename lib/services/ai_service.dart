@@ -8,6 +8,7 @@ import '../models/app_settings.dart';
 import '../models/condense.dart';
 import '../models/bom_task.dart';
 import '../models/crystal_task.dart';
+import '../models/sketch_task.dart';
 import '../models/flashcard.dart' show QuestionType;
 import '../models/formula_sheet.dart';
 import '../models/gantt_task.dart';
@@ -2169,7 +2170,8 @@ Antworte in der Sprache der Vorlage.
         QuestionType.steps ||
         QuestionType.gantt ||
         QuestionType.crystal ||
-        QuestionType.bom =>
+        QuestionType.bom ||
+        QuestionType.sketch =>
           _variantTypeRule(QuestionType.learn),
         QuestionType.learn =>
           'Zieltyp "learn" (Aufgabe zum Verstehen): "front" ist die Aufgabe '
@@ -3932,9 +3934,10 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
 
   /// Macht aus Übungsaufgaben (Text und/oder Bilder, optional mit
   /// vorhandener Lösung) interaktive Aufgaben – je Teilaufgabe ein Entwurf:
-  /// Rechenweg, Terminierung, Kristallgitter oder Stückliste. Die KI liefert
-  /// nur Struktur und erwartete Antworten – nachgerechnet wird in der App
-  /// (StepChecker, GanttScheduler, CrystalGeometry, BomCalculator). Was nicht passt, kommt mit Begründung
+  /// Rechenweg, Terminierung, Kristallgitter, Stückliste oder Diagramm-Skizze.
+  /// Die KI liefert nur Struktur und erwartete Antworten – nachgerechnet wird
+  /// in der App (StepChecker, GanttScheduler, CrystalGeometry, BomCalculator,
+  /// SketchChecker). Was nicht passt, kommt mit Begründung
   /// und fehlender Bedienart zurück (kind null). [kind] null = die KI
   /// entscheidet je Teilaufgabe.
   Future<List<InteractiveTaskDraft>> buildInteractiveTasks({
@@ -3964,7 +3967,9 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       InteractiveKind.gantt => 'Gewünscht: "kind": "gantt" (Terminierung) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.crystal => 'Gewünscht: "kind": "crystal" (Kristallgitter) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.bom => 'Gewünscht: "kind": "bom" (Stückliste) – nur wenn das gar nicht geht, "none" mit Begründung.',
-      null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "bom", "question" oder "none".',
+      InteractiveKind.sketch =>
+        'Gewünscht: "kind": "sketch" (Diagramm skizzieren) – nur wenn das gar nicht geht, "none" mit Begründung.',
+      null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "bom", "sketch", "question" oder "none".',
     });
     if (images.isNotEmpty) {
       buffer
@@ -4031,6 +4036,8 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
                     ? InteractiveKind.gantt
                     : data['root'] is Map
                         ? InteractiveKind.bom
+                        : data['features'] is List
+                        ? InteractiveKind.sketch
                         : (data['parts'] is List ? InteractiveKind.crystal : null));
     final front = '${json['front'] ?? json['task'] ?? json['aufgabe'] ?? ''}'.trim();
     final back = '${json['back'] ?? json['solution'] ?? json['loesungsweg'] ?? json['lösungsweg'] ?? ''}'.trim();
@@ -4044,6 +4051,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       gantt: kind == InteractiveKind.gantt ? GanttTask.fromMap(data) : null,
       crystal: kind == InteractiveKind.crystal ? CrystalTask.fromMap(data) : null,
       bom: kind == InteractiveKind.bom ? BomTask.fromMap(data) : null,
+      sketch: kind == InteractiveKind.sketch ? SketchTask.fromMap(data) : null,
       reason: reason,
       needs: needs,
     );
@@ -4164,7 +4172,7 @@ Antworte NUR mit JSON:
   }
 
   static const _interactiveTaskSystemPrompt = r"""
-Du wandelst Übungsaufgaben in interaktive Aufgaben für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen, Kristallgitter und Stücklisten rechnet und zeichnet sie selbst. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
+Du wandelst Übungsaufgaben in interaktive Aufgaben für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen, Kristallgitter und Stücklisten rechnet und zeichnet sie selbst, Skizzen prüft sie anhand von Merkmalen. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
 
 Enthält das Material mehrere Aufgaben oder Teilaufgaben (a, b, c …), liefere JEDE als eigenen Eintrag in "tasks" (höchstens 8). Teilaufgaben derselben Art zum selben Bild (z.B. mehrere Richtungen im selben Würfel) dürfen EIN Eintrag sein.
 
@@ -4173,8 +4181,9 @@ Art ("kind") je Eintrag:
 - "gantt" (Terminierung): Vorwärts-/Rückwärtsterminierung, Durchlaufterminierung, Gantt-Diagramme mit Arbeitsgängen und Dauern.
 - "crystal" (Kristallgitter): Richtungen [u v w] bzw. Ebenen (h k l) im kubischen Einheitswürfel einzeichnen oder ablesen, Richtungsfamilien ⟨u v w⟩, Atome in einer Ebene (kubisch primitiv, krz, kfz).
 - "bom" (Stückliste): aus einem Erzeugnisbaum / einer Erzeugnis- bzw. Produktstruktur eine Mengenübersichts-, Struktur- oder Baukastenstückliste (auch "Baustellen-" oder "Baustückliste") aufstellen.
+- "sketch" (Diagramm skizzieren): eine Kurve qualitativ in ein Diagramm zeichnen bzw. skizzieren (z.B. Längenänderung über der Temperatur, Spannungs-Dehnungs-Kurve, Potentialkurve, Abkühlkurve) und ggf. Kennwerte darin markieren. Verlangt die Aufgabe zusätzlich eine Erklärung/Begründung ("Erläutern Sie …"), liefere die als EIGENEN Eintrag "question" mit "questionType": "free_text".
 - "question": wenn es als NORMALE Quizfrage gut geht – die App hat dafür schon Fragetypen: Freitext/Erklären/Begründen/Kurzantwort ("free_text"), Auswahl ("single_choice"/"multiple_choice"), Zuordnen bzw. in Kategorien/Kriterien einordnen ("drag_category"), Tabelle ausfüllen mit festen Einträgen ("table"), Stellen in einer Abbildung markieren ("mark_image") oder beschriften ("diagram_label"), Lückentext ("fill_blank"). Dann "questionType" (einer dieser Werte) und "reason" mit einem kurzen Satz. "front" wortgetreu.
-- "none": NUR wenn weder interaktiv noch als normale Frage sinnvoll übbar (z.B. eine Kurve oder einen Netzplan selbst zeichnen) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte (z.B. "Kurve in Diagramm zeichnen", "Netzplan zeichnen", "Schaltplan zeichnen").
+- "none": NUR wenn weder interaktiv noch als normale Frage sinnvoll übbar (z.B. einen Netzplan oder Schaltplan selbst zeichnen) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte (z.B. "Kurve in Diagramm zeichnen", "Netzplan zeichnen", "Schaltplan zeichnen").
 - Fehlt für eine Rechnung nur ein Wert, den man üblicherweise nachschlägt (Werkstoffkennwert wie Streckgrenze, Naturkonstante), nimm einen üblichen Tabellenwert, schreib ihn als Annahme in "front" ("angenommen: R_{p0,2} = 355 MPa") und erstelle den Rechenweg trotzdem.
 
 Bei "steps":
@@ -4230,8 +4239,18 @@ Bei "bom":
   Bei "modular" "lists": Sach-Nr. der vorgegebenen Formulare (z.B. ["10", "11", "23"]), wenn welche abgebildet sind – sonst weglassen.
 - Rechne die Listen NICHT selbst aus – das macht die App. "back" darf leer bleiben.
 
+Bei "sketch":
+- "front": die Aufgabe WORTGETREU, aber ohne den Erklärungsteil (der kommt als eigener "question"-Eintrag).
+- taskData.xAxis / taskData.yAxis: {"label": Größe mit Einheit (z.B. "T in °C"), "min", "max": sinnvoller Bereich laut Aufgabe, "showNumbers": false bei rein qualitativen Achsen ohne Zahlen}.
+- taskData.reference: die Musterkurve als Punktliste [[x, y], …] in Achsen-Einheiten, 6–15 Punkte, die den typischen Verlauf zeigen; bei einem Sprung zwei Linienzüge [[[x, y], …], [[x, y], …]]. Qualitative Kurven deutlich ausgeprägt zeichnen (z.B. den elastischen Bereich überzeichnet).
+- taskData.features: 2–6 Merkmale, auf die es fachlich ankommt – die App prüft die Skizze NUR daran, grob und nicht pixelgenau. Je Merkmal {"kind", …, "text": ein Satz, was es bedeutet und warum (wird als Rückmeldung gezeigt)}:
+  "rising"/"falling"/"linear" mit "x" und "x2" (Bereich), "jumpDown"/"jumpUp" mit "x" (Stelle des Sprungs, z.B. 911), "max"/"min" mit "x" (ungefähre Stelle, sonst weglassen) und optional "y" (Minimum liegt unter y bzw. Maximum über y), "startsAt"/"endsAt" mit "x", "approaches" mit "y" (Wert, dem sich die Kurve am rechten Ende annähert), "steeperLeft" (links vom Minimum steiler als rechts, Asymmetrie), "mark" für Kennwerte, die markiert werden sollen: {"kind": "mark", "label": z.B. "R_m", "anchor": "max" | "min" | "end" | "start" | "beforeMax" | "curve" | "x" | "point", "x"/"y" falls nötig}.
+  "tol": Toleranz als Anteil der Achse (Standard 0.08), bei ungenauen Stellen größer.
+- Die Musterkurve muss alle Merkmale selbst erfüllen (die App prüft das nach).
+- "back": kurze Beschreibung des richtigen Verlaufs.
+
 Antworte NUR mit einem JSON-Objekt:
-{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "question" | "none", "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
+{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "question" | "none", "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
 
   static const _paperReviewSystemPrompt = r"""
 Du bist Korrektor für handschriftliche Rechenwege. Du bekommst eine Aufgabe, die Musterlösung in Schritten und Fotos eines Rechenwegs.

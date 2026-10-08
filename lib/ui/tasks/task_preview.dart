@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
+import '../../models/sketch_task.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
 import '../../theme/app_colors.dart';
@@ -10,6 +11,7 @@ import '../widgets/math_text.dart';
 import 'bom_task_editor.dart';
 import 'crystal_task_editor.dart';
 import 'gantt_task_editor.dart';
+import 'sketch_task_editor.dart';
 
 /// Lösung einer interaktiven Aufgabe auf einen Blick (Kartenliste, Aufgaben-
 /// Ordner): beim Rechenweg die Schritte mit ihren Ergebnissen, bei der
@@ -80,6 +82,10 @@ class TaskAnswerPreview extends StatelessWidget {
             BomTaskPreview(task: bom),
           ],
         );
+      case QuestionType.sketch:
+        final sketch = SketchTask.fromMap(card.taskData);
+        if (sketch == null) return Text('Keine Skizze hinterlegt.', style: muted.copyWith(color: c.danger));
+        return SketchTaskPreview(task: sketch, height: 180);
       default:
         return MathText(card.back, style: muted);
     }

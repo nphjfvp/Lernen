@@ -52,6 +52,11 @@ enum QuestionType {
   /// Baukastenstückliste aufstellen – die App rechnet die Listen selbst,
   /// siehe BomTask (bom_task.dart) in [Flashcard.taskData].
   bom,
+
+  /// Diagramm skizzieren: in vorgegebene Achsen eine Kurve zeichnen und
+  /// Kennwerte markieren – die App prüft grob die Merkmale (Sprung, Maximum
+  /// …), siehe SketchTask (sketch_task.dart) in [Flashcard.taskData].
+  sketch,
 }
 
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
@@ -77,6 +82,7 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.gantt => 'Terminierung',
         QuestionType.crystal => 'Kristallgitter',
         QuestionType.bom => 'Stückliste',
+        QuestionType.sketch => 'Diagramm skizzieren',
       };
 }
 
@@ -426,7 +432,8 @@ class Flashcard {
   /// Daten einer interaktiven Aufgabe: Rechenweg ([QuestionType.steps],
   /// StepTask), Terminierung ([QuestionType.gantt], GanttTask) bzw.
   /// Kristallgitter ([QuestionType.crystal], CrystalTask) bzw. Stückliste
-  /// ([QuestionType.bom], BomTask) – als Map
+  /// ([QuestionType.bom], BomTask) bzw. Skizze ([QuestionType.sketch],
+  /// SketchTask) – als Map
   /// gespeichert, damit Sync, Export und Kopien sie unverändert mitnehmen.
   final Map<String, dynamic>? taskData;
 
@@ -662,7 +669,8 @@ class Flashcard {
         QuestionType.steps ||
         QuestionType.gantt ||
         QuestionType.crystal ||
-        QuestionType.bom =>
+        QuestionType.bom ||
+        QuestionType.sketch =>
           back,
         QuestionType.singleChoice ||
         QuestionType.multipleChoice =>

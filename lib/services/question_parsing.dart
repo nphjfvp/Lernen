@@ -1,5 +1,6 @@
 import '../models/bom_task.dart';
 import '../models/crystal_task.dart';
+import '../models/sketch_task.dart';
 import '../models/flashcard.dart';
 import '../models/gantt_task.dart';
 import '../models/step_task.dart';
@@ -77,6 +78,7 @@ class QuestionParsing {
     'gantt': QuestionType.gantt,
     'crystal': QuestionType.crystal,
     'bom': QuestionType.bom,
+    'sketch': QuestionType.sketch,
   };
 
   /// Wandelt den von der KI gelieferten "type"-String (snake_case, siehe
@@ -194,6 +196,14 @@ class QuestionParsing {
     'strukturstückliste': 'bom',
     'mengenübersichtsstückliste': 'bom',
     'baukastenstückliste': 'bom',
+    'skizze': 'sketch',
+    'skizzieren': 'sketch',
+    'diagramm_skizzieren': 'sketch',
+    'kurve_zeichnen': 'sketch',
+    'kurve_skizzieren': 'sketch',
+    'sketch_curve': 'sketch',
+    'diagram_sketch': 'sketch',
+    'curve': 'sketch',
   };
 
   static QuestionType? _parseTypeOrNull(String? value) {
@@ -409,7 +419,7 @@ class QuestionParsing {
 
     // Interaktive Aufgaben: die Daten unter "taskData" (oder flach im
     // Eintrag: "steps", "items" bzw. "parts").
-    final task = _first(raw, const ['taskData', 'task_data', 'stepTask', 'ganttTask', 'crystalTask', 'bomTask']);
+    final task = _first(raw, const ['taskData', 'task_data', 'stepTask', 'ganttTask', 'crystalTask', 'bomTask', 'sketchTask']);
     if (task is Map) {
       fill('taskData', Map<String, dynamic>.from(task));
     } else if (raw['steps'] is List && (declared == null || declared == QuestionType.steps)) {
@@ -420,6 +430,11 @@ class QuestionParsing {
     } else if (raw['items'] is List && (declared == null || declared == QuestionType.gantt)) {
       fill('taskData', {
         for (final key in const ['items', 'start', 'due', 'direction', 'counting', 'questions', 'drawChart'])
+          if (raw[key] != null) key: raw[key],
+      });
+    } else if (raw['features'] is List && (declared == null || declared == QuestionType.sketch)) {
+      fill('taskData', {
+        for (final key in const ['xAxis', 'yAxis', 'reference', 'features'])
           if (raw[key] != null) key: raw[key],
       });
     } else if (raw['root'] is Map && (declared == null || declared == QuestionType.bom)) {
@@ -534,6 +549,7 @@ class QuestionParsing {
     if (StepTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.steps;
     if (GanttTask.fromMap(entry['taskData']) != null) return QuestionType.gantt;
     if (BomTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.bom;
+    if (SketchTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.sketch;
     if (CrystalTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.crystal;
     if (_hasFillableCell(tableRowsIn(raw))) return QuestionType.table;
     final targets = imageTargetsIn(raw);
@@ -657,6 +673,8 @@ class QuestionParsing {
         return {...entry, 'taskData': CrystalTask.fromMap(entry['taskData'])!.toMap()};
       case QuestionType.bom:
         return {...entry, 'taskData': BomTask.fromMap(entry['taskData'])!.toMap()};
+      case QuestionType.sketch:
+        return {...entry, 'taskData': SketchTask.fromMap(entry['taskData'])!.toMap()};
       case QuestionType.flashcard:
       case QuestionType.learn:
       case QuestionType.freeText:
@@ -725,6 +743,8 @@ class QuestionParsing {
         return CrystalTask.fromMap(raw['taskData'])?.isUsable ?? false;
       case QuestionType.bom:
         return BomTask.fromMap(raw['taskData'])?.isUsable ?? false;
+      case QuestionType.sketch:
+        return SketchTask.fromMap(raw['taskData'])?.isUsable ?? false;
       case QuestionType.html:
         final html = (raw['htmlContent'] ?? '').toString();
         // Grobe Vertragsprüfung: die Seite muss den JS-Rückkanal tatsächlich

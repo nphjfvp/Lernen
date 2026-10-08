@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1397 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1418 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1394,6 +1394,31 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     CardEditScreen (kein Rückseitenfeld), TaskImportScreen (Art „Stückliste“, Ausprobieren).
     Tests: `test/services/bom_calculator_test.dart`, `test/ui/bom_task_view_test.dart`,
     Ergänzungen in `task_import_screen_test`, `card_edit_screen_test`.
+60. Neuer Aufgabentyp Diagramm skizzieren (`QuestionType.sketch`, Nutzer-Liste: Kurve
+    zeichnen 3×, Potentialkurve 2×). `lib/models/sketch_task.dart`: `SketchAxis` (label, min,
+    max, showNumbers, norm/denorm), `SketchFeature` (kind rising/falling/linear/jumpDown/jumpUp/
+    max/min/startsAt/endsAt/approaches/steeperLeft/mark, x, x2, y, tol = Anteil der Achse,
+    label, `SketchAnchor` max/min/end/start/beforeMax/curve/x/point, text = Bedeutung →
+    Rückmeldung), `SketchTask` (xAxis, yAxis, reference = Linienzüge, features, uncertain;
+    toMap/fromMap mit KI-Synonymen, `referenceText/parseReference` „x; y“, Leerzeile = neuer
+    Strich). `lib/services/sketch_checker.dart`: `SketchCurve` (normiert 0..1, senkrechte
+    Stücke zählen nicht, `vAt`, `samples`, `maxPoint/minPoint`, `steepestChange` über 2 % der
+    Achse), `SketchChecker.check(task, strokes, marks)` → `SketchVerdict` (je Merkmal ok +
+    Meldung), `referenceMarks`, `selfCheck` (Musterkurve muss eigene Merkmale erfüllen →
+    Warnung beim Speichern/Vorschau), `hints`, `solutionText`. UI: `sketch_canvas.dart`
+    (`SketchCanvas`: Achsen/Raster/Pfeile, Musterkurve grün gestrichelt, Markierungen;
+    EagerGestureRecognizer + Listener, damit Zeichnen nicht scrollt; Ränder 46/14/14/36 px),
+    `sketch_task_view.dart` (`SketchTaskView`: Zeichnen/Markieren `sketch-mode`,
+    `sketch-label-i`, `sketch-undo/-clear/-check/-verdict/-result-i/-hint-button/-hint-i/
+    -reveal/-solution/-finished/-next/-submit`), `sketch_task_editor.dart` (`SketchTaskEditor`
+    mit `sketch-edit-<x|y>-label/-min/-max`, `-numbers`, `-reference`, `-<i>-<rev>-kind/-x/
+    -x2/-y/-tol/-label/-anchor/-text`, `-remove-i`, `-add`; `SketchTaskPreview`). Prompt: Art
+    „sketch“, Erklärungsteil als eigener "question"/free_text-Eintrag, "none" nur noch für
+    Netz-/Schaltpläne. Eingebunden wie bom (InteractiveKind.sketch, Parsing `features` flach,
+    Inferenz, AnswerChecker, StageGate, QuestionAnswerView, Vorschau, Kartenliste, Review-Icon
+    `show_chart`, CardEditScreen, TaskImportScreen „Skizze“ + Warnungen aus selfCheck).
+    Tests: `test/services/sketch_checker_test.dart` (Eisen 911 °C, Zugversuch, Potential),
+    `test/ui/sketch_task_view_test.dart` (echte Zeichengesten), `task_import_screen_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

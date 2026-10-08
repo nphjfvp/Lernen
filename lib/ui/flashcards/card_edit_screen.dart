@@ -3,16 +3,19 @@ import 'package:flutter/material.dart';
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
+import '../../models/sketch_task.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
 import '../../services/calc_task_detector.dart';
 import '../../services/bom_calculator.dart';
 import '../../services/crystal_geometry.dart';
+import '../../services/sketch_checker.dart';
 import '../../services/gantt_scheduler.dart';
 import '../../services/question_parsing.dart';
 import '../../services/stage_gate_service.dart';
 import '../tasks/bom_task_editor.dart';
 import '../tasks/crystal_task_editor.dart';
+import '../tasks/sketch_task_editor.dart';
 import '../tasks/gantt_task_editor.dart';
 import '../tasks/step_task_editor.dart';
 
@@ -79,6 +82,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   late GanttTask? _gantt = _type == QuestionType.gantt ? GanttTask.fromMap(widget.card.taskData) : null;
   late CrystalTask? _crystal = _type == QuestionType.crystal ? CrystalTask.fromMap(widget.card.taskData) : null;
   late BomTask? _bom = _type == QuestionType.bom ? BomTask.fromMap(widget.card.taskData) : null;
+  late SketchTask? _sketch = _type == QuestionType.sketch ? SketchTask.fromMap(widget.card.taskData) : null;
 
   QuestionType get _type => widget.card.type;
   bool get _isChoice => _type == QuestionType.singleChoice || _type == QuestionType.multipleChoice;
@@ -271,6 +275,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
       // Die Musterlösung rechnet bei der Stückliste die App.
       back = BomCalculator(bom).fullSolution();
     }
+    if (_type == QuestionType.sketch) {
+      final sketch = _sketch;
+      if (sketch == null || !sketch.isUsable) {
+        return _fail('Die Skizze braucht Achsen (von < bis), eine Musterkurve und gültige Merkmale.');
+      }
+      taskData = sketch.confirmed().toMap();
+      if (back.isEmpty) back = SketchChecker.solutionText(sketch);
+    }
     final edited = widget.card.copyWithContent(
       front: front,
       back: back,
@@ -345,6 +357,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
           ],
           if (_bom != null) ...[
             BomTaskEditor(task: _bom!, onChanged: (t) => setState(() => _bom = t)),
+            const SizedBox(height: 16),
+          ],
+          if (_sketch != null) ...[
+            SketchTaskEditor(task: _sketch!, onChanged: (t) => setState(() => _sketch = t)),
             const SizedBox(height: 16),
           ],
           if (_type == QuestionType.freeText) ...[

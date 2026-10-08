@@ -15,6 +15,7 @@ import '../../models/app_settings.dart';
 import '../../models/concept.dart';
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
+import '../../models/sketch_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
 import '../../models/lecture_unit.dart';
@@ -1914,6 +1915,7 @@ class _PreviewView extends StatelessWidget {
         QuestionType.gantt => Icons.view_timeline_outlined,
         QuestionType.crystal => Icons.view_in_ar_outlined,
         QuestionType.bom => Icons.account_tree_outlined,
+        QuestionType.sketch => Icons.show_chart,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
@@ -1961,6 +1963,9 @@ class _PreviewView extends StatelessWidget {
       case QuestionType.bom:
         final bom = BomTask.fromMap(parseTaskData(f['taskData']));
         return bom == null ? (f['back'] ?? '').toString() : bom.describe();
+      case QuestionType.sketch:
+        final sketch = SketchTask.fromMap(parseTaskData(f['taskData']));
+        return sketch == null ? (f['back'] ?? '').toString() : sketch.describe();
     }
   }
 }

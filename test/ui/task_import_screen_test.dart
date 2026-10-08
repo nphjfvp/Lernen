@@ -11,6 +11,7 @@ import 'package:lernen/models/crystal_task.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/gantt_task.dart';
 import 'package:lernen/models/interactive_task.dart';
+import 'package:lernen/models/sketch_task.dart';
 import 'package:lernen/models/step_task.dart';
 import 'package:lernen/models/unsupported_task.dart';
 import 'package:lernen/repositories/flashcard_repository.dart';
@@ -741,6 +742,56 @@ void main() {
     expect(card.back, contains('Strukturstückliste'));
     expect(card.back, contains('..Stufe 2 | 23 | Füllung | 2'));
     expect(card.back, contains('12 | Teigdeckel | 220 g'));
+  });
+
+  testWidgets('Skizze übernehmen: Kurve als Skizze, die Erläuterung als eigene Freitext-Frage', (tester) async {
+    TaskImportScreen.aiFactory = (key, model) => AiService(
+          apiKey: key,
+          model: model,
+          client: MockClient((r) async => _chat({
+                'tasks': [
+                  {
+                    'kind': 'sketch',
+                    'front': '1a) Skizzieren Sie die Längenänderung über der Temperatur (500 °C bis 1000 °C).',
+                    'taskData': {
+                      'xAxis': {'label': 'T in °C', 'min': 500, 'max': 1000},
+                      'yAxis': {'label': 'ΔL/L', 'min': 0, 'max': 1, 'showNumbers': false},
+                      'reference': [
+                        [
+                          [500, 0.2],
+                          [911, 0.6],
+                        ],
+                        [
+                          [911, 0.45],
+                          [1000, 0.6],
+                        ],
+                      ],
+                      'features': [
+                        {'kind': 'rising', 'x': 500, 'x2': 911},
+                        {'kind': 'jumpDown', 'x': 911, 'tol': 0.05, 'text': 'krz → kfz'},
+                      ],
+                    },
+                  },
+                  {
+                    'kind': 'question',
+                    'questionType': 'free_text',
+                    'front': '1a) Erläutern Sie das Diagramm.',
+                    'reason': 'Erklärung in eigenen Worten.',
+                  },
+                ],
+              })),
+        );
+    final cards = await pump(tester, const TaskImportScreen(moduleId: 'm1', initialText: 'Aufgabe 1a'), height: 4600);
+    await tap(tester, 'task-import-build');
+    expect(find.byKey(const ValueKey('sketch-preview')), findsOneWidget);
+    expect(find.text('Normale Frage · passt als normale Frage'), findsOneWidget);
+    expect(unsupported.items, isEmpty);
+
+    await tap(tester, 'task-import-save');
+    final card = cards.saved.single;
+    expect(card.type, QuestionType.sketch);
+    expect(SketchTask.fromMap(card.taskData)!.reference, hasLength(2));
+    expect(card.back, contains('Sprung nach unten 911: krz → kfz'));
   });
 
   testWidgets('Sammelliste aus den Einstellungen: alle Fächer, nach Fach filtern', (tester) async {

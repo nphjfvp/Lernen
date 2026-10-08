@@ -1393,6 +1393,34 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zf. Diagramm skizzieren
+
+Neuer Aufgabentyp **Diagramm skizzieren** für Aufgaben wie „Skizzieren Sie die
+Längenänderung über der Temperatur (Sprung bei 911 °C)“, „Zeichnen Sie die
+Spannungs-Dehnungs-Kurve mit R_p0,2, R_m und A“ oder „Skizzieren Sie die
+Potentialkurve“. Die KI liefert beim „Aufgabe übernehmen“ die **Achsen**, eine
+**Musterkurve** und die **Merkmale**, auf die es fachlich ankommt – geprüft wird
+in der App, **grob statt pixelgenau**:
+
+- **Zeichnen** mit Finger oder Maus direkt in die vorgegebenen Achsen (ein
+  Sprung darf ein neuer Strich sein), **Rückgängig** / **Alles löschen**.
+- **Markieren**: Kennwert wählen (z.B. R_m, A, r₀) und die Stelle antippen.
+- **Prüfen** hakt jedes Merkmal ab: steigt/fällt/verläuft gerade in einem
+  Bereich, Sprung nach unten/oben an einer Stelle („Der Sprung liegt bei ≈ 846
+  statt bei 911“), Maximum/Minimum (auch „unter 0“), Anfang/Ende (Bruch),
+  Annäherung an einen Wert (Asymptote), Asymmetrie („links steiler als
+  rechts“) und Markierungen am richtigen Ort (am Maximum, am Ende, auf der
+  Kurve vor dem Maximum …). Jede Rückmeldung nennt die Bedeutung („krz → kfz,
+  dichter gepackt“).
+- Danach erscheint die **Musterkurve grün gestrichelt** zum Vergleich.
+  **Tipps** nennen die Merkmale nach und nach, „Lösung zeigen“ listet sie auf.
+- Verlangt die Aufgabe zusätzlich „Erläutern Sie …“, legt die KI dafür einen
+  **eigenen Freitext-Entwurf** an („Passt als normale Frage“).
+- **Bearbeiten**: Achsen (von/bis, Beschriftung, Zahlen an/aus), Musterkurve als
+  Punkte („x; y“, Leerzeile = neuer Strich), Merkmale mit Stelle, Toleranz und
+  Rückmeldung. Die Vorschau zeichnet die Musterkurve und warnt, wenn sie ein
+  eigenes Merkmal nicht erfüllt (dann stimmt Merkmal oder Kurve nicht).
+
 ### 5ze. Stücklisten aus dem Erzeugnisbaum
 
 Neuer Aufgabentyp **Stückliste** (Produktionsmanagement): aus einem
@@ -1497,7 +1525,7 @@ aus einem Übungsblatt-Foto jetzt **jede Teilaufgabe zu einem eigenen Entwurf**
 (z.B. 1b Rechenweg, 2a Kristall-Richtungen, 3a Ebenen …). Jeder Entwurf hat
 seinen Editor, eine Häkchen-Box zum Mitspeichern und „Ausprobieren“;
 „N Aufgaben speichern“ speichert alle angehakten auf einmal. Die Art lässt sich
-vorgeben (Automatisch / Rechenweg / Terminierung / Kristall / Stückliste) oder je Teilaufgabe
+vorgeben (Automatisch / Rechenweg / Terminierung / Kristall / Stückliste / Skizze) oder je Teilaufgabe
 neu versuchen („Als Kristallgitter“ …).
 
 **Passt als normale Frage**: Ist eine Teilaufgabe eigentlich eine ganz normale

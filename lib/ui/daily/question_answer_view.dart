@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../models/flashcard.dart';
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
+import '../../models/sketch_task.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
 import '../../repositories/flashcard_repository.dart';
@@ -23,6 +24,7 @@ import '../study/explain_chat.dart';
 import '../study/study_aids.dart';
 import '../tasks/bom_task_view.dart';
 import '../tasks/crystal_task_view.dart';
+import '../tasks/sketch_task_view.dart';
 import '../tasks/gantt_task_view.dart';
 import '../tasks/step_task_view.dart';
 import '../widgets/zoomable_image.dart';
@@ -481,6 +483,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.gantt:
       case QuestionType.crystal:
       case QuestionType.bom:
+      case QuestionType.sketch:
         return false;
       case QuestionType.singleChoice:
         return _selectedIndex != null;
@@ -550,6 +553,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.gantt:
       case QuestionType.crystal:
       case QuestionType.bom:
+      case QuestionType.sketch:
         return null; // eigene build()-Zweige.
     }
   }
@@ -823,6 +827,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.gantt:
       case QuestionType.crystal:
       case QuestionType.bom:
+      case QuestionType.sketch:
         return null;
     }
   }
@@ -1039,6 +1044,17 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       return CrystalTaskView(
         card: widget.card,
         task: CrystalTask.fromMap(widget.card.taskData)!,
+        isNew: widget.isNew,
+        examMode: widget.examMode,
+        onComplete: _submit,
+        onSkip: widget.onSkip,
+        canGiveUp: widget.canGiveUp,
+      );
+    }
+    if (_answerable && widget.card.type == QuestionType.sketch) {
+      return SketchTaskView(
+        card: widget.card,
+        task: SketchTask.fromMap(widget.card.taskData)!,
         isNew: widget.isNew,
         examMode: widget.examMode,
         onComplete: _submit,
@@ -1435,6 +1451,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.gantt:
       case QuestionType.crystal:
       case QuestionType.bom:
+      case QuestionType.sketch:
         return const SizedBox.shrink(); // eigene build()-Zweige.
       case QuestionType.singleChoice:
         return _buildChoiceOptions(c, multiple: false);
