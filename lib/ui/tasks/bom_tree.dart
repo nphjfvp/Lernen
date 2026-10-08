@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 
 import '../../models/bom_task.dart';
@@ -5,9 +7,11 @@ import '../../services/bom_calculator.dart';
 import '../../theme/app_colors.dart';
 
 /// Zeichnet den Erzeugnisbaum wie im Skript: Stufen von oben nach unten,
-/// Mengen an den Verbindungslinien. Breite Bäume lassen sich seitlich
-/// scrollen; Antippen eines Knotens meldet die Sach-Nr. ([onTapNode]).
-class BomTreeView extends StatelessWidget {
+/// Mengen an den Verbindungslinien. Ist der Baum breiter als der Platz,
+/// wird er verkleinert ganz gezeigt; „Vergrößern“ zeigt ihn in voller Größe
+/// zum seitlichen Scrollen (Scrollleiste, Wischen oder Maus-Ziehen).
+/// Antippen eines Knotens meldet die Sach-Nr. ([onTapNode]).
+class BomTreeView extends StatefulWidget {
   const BomTreeView({super.key, required this.root, this.assemblies = const {}, this.onTapNode, this.highlight});
 
   final BomNode root;
@@ -17,7 +21,28 @@ class BomTreeView extends StatelessWidget {
   final ValueChanged<String>? onTapNode;
   final String? highlight;
 
+  @override
+  State<BomTreeView> createState() => _BomTreeViewState();
+}
+
+class _BomTreeViewState extends State<BomTreeView> {
   static const _boxW = 96.0, _boxH = 46.0, _gap = 12.0, _rowH = 82.0, _labelW = 52.0;
+
+  final _scroll = ScrollController();
+
+  /// null = automatisch (verkleinert, solange es lesbar bleibt).
+  bool? _zoomed;
+
+  BomNode get root => widget.root;
+  Set<String> get assemblies => widget.assemblies;
+  ValueChanged<String>? get onTapNode => widget.onTapNode;
+  String? get highlight => widget.highlight;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,58 +55,101 @@ class BomTreeView extends StatelessWidget {
 
     Offset topLeft(_Placed p) => Offset(_labelW + p.slot * (_boxW + _gap), p.level * _rowH);
 
+    final tree = SizedBox(
+      width: width,
+      height: height,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _EdgePainter(
+                edges: [
+                  for (final p in layout)
+                    if (p.parent != null)
+                      (
+                        topLeft(layout[p.parent!]) + const Offset(_boxW / 2, _boxH),
+                        topLeft(p) + const Offset(_boxW / 2, 0),
+                      ),
+                ],
+                color: c.inkMuted,
+              ),
+            ),
+          ),
+          for (var level = 0; level <= maxLevel; level++)
+            Positioned(
+              left: 0,
+              top: level * _rowH + _boxH / 2 - 8,
+              child: Text('Stufe $level', style: TextStyle(fontSize: 10.5, color: c.inkMuted)),
+            ),
+          for (final (i, p) in layout.indexed) ...[
+            if (p.parent != null)
+              Positioned(
+                left: topLeft(p).dx + _boxW / 2 + 4,
+                top: topLeft(p).dy - 17,
+                child: Text(
+                  '${bomQuantityText(p.node.quantity)}${p.node.unit.isEmpty ? '' : ' ${p.node.unit}'}',
+                  key: ValueKey('bom-qty-$i'),
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: p.node.uncertain ? c.warn : c.ink,
+                  ),
+                ),
+              ),
+            Positioned(left: topLeft(p).dx, top: topLeft(p).dy, width: _boxW, height: _boxH, child: _box(c, p, i)),
+          ],
+        ],
+      ),
+    );
+
     return Container(
       key: const ValueKey('bom-tree'),
       decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(14)),
       padding: const EdgeInsets.all(10),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          width: width,
-          height: height,
-          child: Stack(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final available = constraints.maxWidth;
+          if (width <= available) return Align(alignment: Alignment.topLeft, child: tree);
+          // Verkleinert, solange die Schrift noch lesbar ist – sonst gleich groß.
+          final zoomed = _zoomed ?? available / width < 0.55;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _EdgePainter(
-                    edges: [
-                      for (final p in layout)
-                        if (p.parent != null)
-                          (
-                            topLeft(layout[p.parent!]) + const Offset(_boxW / 2, _boxH),
-                            topLeft(p) + const Offset(_boxW / 2, 0),
-                          ),
-                    ],
-                    color: c.inkMuted,
-                  ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  key: const ValueKey('bom-tree-zoom'),
+                  onPressed: () => setState(() => _zoomed = !zoomed),
+                  icon: Icon(zoomed ? Icons.zoom_out_map : Icons.zoom_in, size: 18),
+                  label: Text(zoomed ? 'Ganz zeigen' : 'Vergrößern'),
                 ),
               ),
-              for (var level = 0; level <= maxLevel; level++)
-                Positioned(
-                  left: 0,
-                  top: level * _rowH + _boxH / 2 - 8,
-                  child: Text('Stufe $level', style: TextStyle(fontSize: 10.5, color: c.inkMuted)),
-                ),
-              for (final (i, p) in layout.indexed) ...[
-                if (p.parent != null)
-                  Positioned(
-                    left: topLeft(p).dx + _boxW / 2 + 4,
-                    top: topLeft(p).dy - 17,
-                    child: Text(
-                      '${bomQuantityText(p.node.quantity)}${p.node.unit.isEmpty ? '' : ' ${p.node.unit}'}',
-                      key: ValueKey('bom-qty-$i'),
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: p.node.uncertain ? c.warn : c.ink,
-                      ),
+              if (zoomed)
+                ScrollConfiguration(
+                  // Auch mit der Maus ziehen (am PC), nicht nur wischen.
+                  behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {...PointerDeviceKind.values}),
+                  child: Scrollbar(
+                    controller: _scroll,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      key: const ValueKey('bom-tree-scroll'),
+                      controller: _scroll,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: tree,
                     ),
                   ),
-                Positioned(left: topLeft(p).dx, top: topLeft(p).dy, width: _boxW, height: _boxH, child: _box(c, p, i)),
-              ],
+                )
+              else
+                FittedBox(
+                  key: const ValueKey('bom-tree-fit'),
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.topCenter,
+                  child: tree,
+                ),
             ],
-          ),
-        ),
+          );
+        },
       ),
     );
   }

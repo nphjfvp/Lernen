@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1424 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1425 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1440,6 +1440,13 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (`task-import-to-list-i`, Dialog `_ListNeedsDialog` mit `task-import-to-list-needs`/
     `-confirm`, danach `task-import-listed-i`; Status „auf der Liste“) in der Normale-Frage-
     und der Unvollständig-Ansicht. Tests in `task_import_screen_test`.
+63. Erzeugnisbaum nicht ganz sichtbar, sieht anders aus als das Blatt (Nutzer-Screenshot):
+    `BomTreeView` jetzt StatefulWidget – breiter als Platz → `FittedBox` (`bom-tree-fit`),
+    sofern Maßstab ≥ 0,55, sonst/mit `bom-tree-zoom` volle Größe in `Scrollbar` +
+    horizontalem Scroll (`bom-tree-scroll`, ScrollConfiguration mit allen dragDevices = Maus
+    ziehen). TaskImportScreen hängt das Foto jetzt auch bei bom an (`imageBase64`, Schalter
+    `task-import-attach-image`, bei Stücklisten automatisch an) – BomTaskView zeigt es im
+    Aufgabenkasten (ZoomableImage). Test in `bom_task_view_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

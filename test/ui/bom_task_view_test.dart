@@ -9,6 +9,7 @@ import 'package:lernen/theme/app_colors.dart';
 import 'package:lernen/ui/daily/question_answer_view.dart';
 import 'package:lernen/ui/tasks/bom_task_editor.dart';
 import 'package:lernen/ui/tasks/bom_task_view.dart';
+import 'package:lernen/ui/tasks/bom_tree.dart';
 
 /// 10 Tisch: 4× 20 Bein, 2× 30 Platte (2× 40 Brett, 8× 50 Schraube).
 /// Knoten im Baum (Reihenfolge von links nach unten): 0 = 10, 1 = 20, 2 = 30, 3 = 40, 4 = 50.
@@ -246,5 +247,39 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('bom-edit-totals')));
     await tester.pump();
     expect(task.parts.first.totals, isTrue);
+  });
+
+  testWidgets('breiter Baum: erst ganz (verkleinert), „Vergrößern“ zum seitlichen Scrollen, Antippen geht beides', (tester) async {
+    tester.view.physicalSize = const Size(700, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final tapped = <String>[];
+    final root = BomNode(
+      number: '1',
+      name: 'Erzeugnis',
+      children: [for (var i = 0; i < 10; i++) BomNode(number: '${20 + i}', name: 'Teil $i')],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: const [AppColors.light]),
+        home: Scaffold(
+          body: ListView(children: [BomTreeView(root: root, onTapNode: tapped.add)]),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('bom-tree-fit')), findsOneWidget);
+    expect(find.text('Vergrößern'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('bom-node-10')));
+    expect(tapped, ['29']);
+
+    await tester.tap(find.byKey(const ValueKey('bom-tree-zoom')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('bom-tree-scroll')), findsOneWidget);
+    expect(find.byType(Scrollbar), findsOneWidget);
+    await tester.drag(find.byKey(const ValueKey('bom-tree-scroll')), const Offset(-800, 0));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('bom-node-10')));
+    expect(tapped.last, '29');
+    expect(find.text('Ganz zeigen'), findsOneWidget);
   });
 }

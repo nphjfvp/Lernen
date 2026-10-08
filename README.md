@@ -1449,7 +1449,11 @@ liest beim „Aufgabe übernehmen“ **nur den Baum** ab (Sach-Nr., Bezeichnung,
 Menge an jeder Verbindungslinie, Einheiten wie g/kg) – **die Listen rechnet die
 App selbst**, auch wenn eine Baugruppe mehrfach vorkommt.
 
-- **Üben**: die App zeichnet den Baum mit Stufen und Mengen. Ein Teil im Baum
+- **Üben**: die App zeichnet den Baum mit Stufen und Mengen. Breite Bäume
+  erscheinen erst verkleinert ganz; „Vergrößern“ zeigt sie in voller Größe mit
+  Scrollleiste (seitlich wischen oder mit der Maus ziehen). Beim Übernehmen von
+  einem Foto/einer Seite hängt das Original an – der Baum vom Aufgabenblatt
+  steht dann über dem gezeichneten (antippen = groß). Ein Teil im Baum
   **antippen** trägt es als neue Zeile ein (oder „Zeile hinzufügen“), dann Stufe,
   Menge und – bei der Baukastenstückliste – das **AK** (1 = eigene Stückliste,
   2 = keine) eintragen. Bei der Baukastenstückliste legt man die nötigen Listen

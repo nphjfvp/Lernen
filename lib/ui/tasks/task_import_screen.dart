@@ -291,6 +291,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       final drafts = [for (final r in result) _Draft(r, fallback)];
       // Aufklappen: bei einer Aufgabe diese, sonst die erste brauchbare.
       (drafts.where((d) => d.hasTask).firstOrNull ?? drafts.first).expanded = true;
+      // Bei Stücklisten gehört der Original-Erzeugnisbaum dazu.
+      if (_images.isNotEmpty && drafts.any((d) => d.kind == InteractiveKind.bom)) _attachImage = true;
       setState(() {
         for (final d in _drafts) {
           d.dispose();
@@ -410,7 +412,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         InteractiveKind.bom => d.bom?.confirmed().toMap(),
         InteractiveKind.sketch => d.sketch?.confirmed().toMap(),
       },
-      imageBase64: _attachImage && _images.isNotEmpty && kind == InteractiveKind.steps
+      imageBase64: _attachImage && _images.isNotEmpty && (kind == InteractiveKind.steps || kind == InteractiveKind.bom)
           ? base64Encode(_images.first.bytes)
           : null,
       unitId: widget.unitId ?? widget.replaceCard?.unitId,
@@ -820,14 +822,14 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       if (listed > 0) ...[const SizedBox(height: 10), _listNote(c, listed)],
       for (final (i, d) in _drafts.indexed) ...[const SizedBox(height: 12), _draftCard(c, i, d)],
       if (_hasTasks) ...[
-        if (_images.isNotEmpty && _toSave.any((d) => d.kind == InteractiveKind.steps))
+        if (_images.isNotEmpty && _toSave.any((d) => d.kind == InteractiveKind.steps || d.kind == InteractiveKind.bom))
           SwitchListTile(
             key: const ValueKey('task-import-attach-image'),
             contentPadding: EdgeInsets.zero,
             value: _attachImage,
             onChanged: (v) => setState(() => _attachImage = v),
-            title: const Text('Foto bei Rechenweg-Aufgaben anzeigen'),
-            subtitle: const Text('Sinnvoll, wenn eine Skizze oder Tabelle zur Aufgabe gehört.'),
+            title: const Text('Foto bei Rechenweg- und Stücklisten-Aufgaben anzeigen'),
+            subtitle: const Text('Sinnvoll, wenn eine Skizze, Tabelle oder der Erzeugnisbaum zur Aufgabe gehört.'),
           ),
         if (widget.replaceCard != null)
           CheckboxListTile(
