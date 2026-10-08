@@ -38,6 +38,8 @@ class InteractiveTaskDraft {
     this.reason = '',
     this.needs = '',
     this.incomplete = false,
+    this.asQuestion = false,
+    this.questionType = '',
   });
 
   /// null = die Aufgabe passt (noch) nicht als interaktive Aufgabe.
@@ -61,6 +63,14 @@ class InteractiveTaskDraft {
   /// Die KI hat eine Art genannt, die Daten aber nicht vollständig geliefert
   /// (dann gehört die Aufgabe nicht auf die Sammelliste – erneut versuchen).
   final bool incomplete;
+
+  /// Passt nicht interaktiv, aber als normale Quizfrage (Freitext, Auswahl,
+  /// Zuordnen, Tabelle, Bild markieren …) – die App hat dafür schon
+  /// Fragetypen; gehört dann NICHT auf die Sammelliste.
+  final bool asQuestion;
+
+  /// Vorschlag der KI für den Fragetyp (z.B. "free_text"), nur zur Anzeige.
+  final String questionType;
 
   bool get isUsable => switch (kind) {
         InteractiveKind.steps => steps?.isUsable ?? false,

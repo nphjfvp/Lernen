@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1375 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1377 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1355,6 +1355,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `step-verify-ask-ai` bei Unstimmigkeiten); `StepTaskEditor.taskText`, übernommene
     Korrektur ersetzt alle Schritte (Probe/finalLabel im State). Speichern-Dialog im Import
     weist darauf hin. Test: `step_task_review_test`.
+58. Aufgaben, die als normale Frage passen, nicht mehr auf die Sammelliste (Nutzer schickte
+    die Liste: Freitext-Fragen, Zuordnungstabellen, Werkstoffkennwert nachschlagen landeten
+    dort). `buildInteractiveTasks`-Prompt kennt die Art `"question"` mit `questionType`
+    (free_text, single_choice, drag_category, table, mark_image, diagram_label, fill_blank …),
+    `"none"` nur noch für wirklich nicht übbare Aufgaben; fehlende Nachschlage-Werte
+    (Streckgrenze o. Ä.) nimmt die KI an und schreibt „angenommen: …“ in die Aufgabe.
+    `InteractiveTaskDraft.asQuestion/questionType`; `parseInteractiveTask` erkennt
+    question/frage/normal/quiz. Neuer Dienst `lib/services/plain_question_service.dart`
+    (`PlainQuestionService.build`, gemeinsam mit UnsupportedTasksScreen: importQuestionsFromExercises
+    → normalizeGeneratedFlashcard → toFlashcards). TaskImportScreen: `_asQuestionBody`
+    („Passt als normale Frage (Freitext)“, Knopf `task-import-as-question-i`, danach
+    `task-import-as-question-done-i`), `_collectUnsupported` überspringt diese Entwürfe.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

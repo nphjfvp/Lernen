@@ -313,6 +313,14 @@ void main() {
       expect(AiService.parseInteractiveTasks(_stepsDraft()).single.kind, InteractiveKind.steps);
     });
 
+    test('Art "question": normale Frage mit Typvorschlag, nicht unvollständig', () {
+      final d = AiService.parseInteractiveTask({'kind': 'question', 'questionType': 'drag_category', 'front': 'Ordne zu', 'reason': 'Zuordnung'});
+      expect(d.asQuestion, isTrue);
+      expect(d.kind, isNull);
+      expect(d.incomplete, isFalse);
+      expect(d.questionType, 'drag_category');
+    });
+
     test('nur unvollständige Entwürfe: Fehler statt leerer Vorschau', () async {
       final ai = AiService(
         apiKey: 'k',
@@ -647,6 +655,45 @@ void main() {
     expect(cards.saved, hasLength(2));
     expect(find.byKey(const ValueKey('unsupported-create-all')), findsNothing);
     expect(find.text('1 Frage erstellt – sie kommt bald im Lernplan dran.'), findsOneWidget);
+  });
+
+  testWidgets('passt als normale Frage: nicht auf die Sammelliste, direkt als Frage erstellen', (tester) async {
+    var calls = 0;
+    TaskImportScreen.aiFactory = (key, model) => AiService(
+          apiKey: key,
+          model: model,
+          client: MockClient((r) async {
+            calls++;
+            return calls == 1
+                ? _chat({
+                    'tasks': [
+                      {
+                        'kind': 'question',
+                        'questionType': 'free_text',
+                        'front': 'An was aus dem Alltag erinnert die Mengenübersichtsstückliste?',
+                        'reason': 'Kurze Erklärung in eigenen Worten.',
+                      },
+                      _noneDraft(),
+                    ],
+                  })
+                : _chat({
+                    'flashcards': [
+                      {'type': 'free_text', 'front': 'An was aus dem Alltag erinnert die Mengenübersichtsstückliste?', 'correctText': 'An einen Einkaufszettel.'},
+                    ],
+                  });
+          }),
+        );
+    final cards = await pump(tester, const TaskImportScreen(moduleId: 'm1', sourceMaterialId: 'blatt', sourcePage: 4, initialText: 'Aufgabe 3a und 3b'), height: 4000);
+    await tap(tester, 'task-import-build');
+    expect(find.text('Passt als normale Frage (Freitext)'), findsOneWidget);
+    // Nur die wirklich nicht übbare Aufgabe landet auf der Liste.
+    expect(unsupported.items.single.needs, 'Kurve in Diagramm zeichnen');
+
+    await tap(tester, 'task-import-as-question-0');
+    expect(cards.saved.single.type, QuestionType.freeText);
+    expect(cards.saved.single.sourcePage, 4);
+    expect(find.byKey(const ValueKey('task-import-as-question-done-0')), findsOneWidget);
+    expect(unsupported.items, hasLength(1));
   });
 
   testWidgets('Sammelliste aus den Einstellungen: alle Fächer, nach Fach filtern', (tester) async {

@@ -3958,7 +3958,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       InteractiveKind.steps => 'Gewünscht: "kind": "steps" (Rechenweg) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.gantt => 'Gewünscht: "kind": "gantt" (Terminierung) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.crystal => 'Gewünscht: "kind": "crystal" (Kristallgitter) – nur wenn das gar nicht geht, "none" mit Begründung.',
-      null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal" oder "none".',
+      null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "question" oder "none".',
     });
     if (images.isNotEmpty) {
       buffer
@@ -3972,7 +3972,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       temperature: 0,
     );
     final drafts = parseInteractiveTasks(_parseJsonObject(raw));
-    if (drafts.isEmpty || drafts.every((d) => d.kind == null && d.reason.trim().isEmpty && !d.incomplete)) {
+    if (drafts.isEmpty || drafts.every((d) => d.kind == null && d.reason.trim().isEmpty && !d.incomplete && !d.asQuestion)) {
       throw AiServiceException('Die KI hat keine interaktive Aufgabe geliefert – bitte erneut versuchen.', rawResponse: raw);
     }
     if (drafts.every((d) => d.incomplete)) {
@@ -4004,6 +4004,17 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
   static InteractiveTaskDraft parseInteractiveTask(Map<String, dynamic> json) {
     final data = json['taskData'] is Map ? Map<String, dynamic>.from(json['taskData'] as Map) : json;
     final declared = '${json['kind'] ?? json['type'] ?? ''}'.toLowerCase().trim();
+    final asQuestion = declared == 'question' || declared == 'frage' || declared == 'normal' || declared == 'quiz';
+    if (asQuestion) {
+      return InteractiveTaskDraft(
+        kind: null,
+        front: '${json['front'] ?? json['task'] ?? json['aufgabe'] ?? ''}'.trim(),
+        back: '${json['back'] ?? json['solution'] ?? ''}'.trim(),
+        reason: '${json['reason'] ?? json['begruendung'] ?? json['begründung'] ?? ''}'.trim(),
+        asQuestion: true,
+        questionType: '${json['questionType'] ?? json['fragetyp'] ?? ''}'.trim(),
+      );
+    }
     final none = declared == 'none' || declared == 'keine' || declared == 'nicht geeignet';
     final kind = none
         ? null
@@ -4152,7 +4163,9 @@ Art ("kind") je Eintrag:
 - "steps" (Rechenweg): Rechenaufgaben mit eindeutigem Ergebnis (Mathe, Physik, Technik, Werkstoffe, BWL-Rechnungen), zerlegbar in 3–7 Schritte.
 - "gantt" (Terminierung): Vorwärts-/Rückwärtsterminierung, Durchlaufterminierung, Gantt-Diagramme mit Arbeitsgängen und Dauern.
 - "crystal" (Kristallgitter): Richtungen [u v w] bzw. Ebenen (h k l) im kubischen Einheitswürfel einzeichnen oder ablesen, Richtungsfamilien ⟨u v w⟩, Atome in einer Ebene (kubisch primitiv, krz, kfz).
-- "none": wenn nichts davon passt (Zeichnen eines Diagramms, Begründen, Beweise ohne prüfbares Ergebnis) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte, um es zu üben (z.B. "Kurve in Diagramm zeichnen", "Phasendiagramm ablesen", "Netzplan zeichnen", "Begründung schreiben", "Schaltplan zeichnen").
+- "question": wenn es als NORMALE Quizfrage gut geht – die App hat dafür schon Fragetypen: Freitext/Erklären/Begründen/Kurzantwort ("free_text"), Auswahl ("single_choice"/"multiple_choice"), Zuordnen bzw. in Kategorien/Kriterien einordnen ("drag_category"), Tabelle ausfüllen mit festen Einträgen ("table"), Stellen in einer Abbildung markieren ("mark_image") oder beschriften ("diagram_label"), Lückentext ("fill_blank"). Dann "questionType" (einer dieser Werte) und "reason" mit einem kurzen Satz. "front" wortgetreu.
+- "none": NUR wenn weder interaktiv noch als normale Frage sinnvoll übbar (z.B. eine Kurve oder einen Netzplan selbst zeichnen) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte (z.B. "Kurve in Diagramm zeichnen", "Netzplan zeichnen", "Schaltplan zeichnen").
+- Fehlt für eine Rechnung nur ein Wert, den man üblicherweise nachschlägt (Werkstoffkennwert wie Streckgrenze, Naturkonstante), nimm einen üblichen Tabellenwert, schreib ihn als Annahme in "front" ("angenommen: R_{p0,2} = 355 MPa") und erstelle den Rechenweg trotzdem.
 
 Bei "steps":
 - "front": die Aufgabe WORTGETREU mit allen Angaben (Formeln in LaTeX mit $…$).
@@ -4198,7 +4211,7 @@ Bei "crystal":
 - "back": kurze Erklärung (Achsenabschnitte, Kehrwerte) – gezeichnet und geprüft wird in der App.
 
 Antworte NUR mit einem JSON-Objekt:
-{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "none", "front": "...", "back": "...", "reason": "...", "needs": "...", "taskData": {...}}]}""";
+{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "question" | "none", "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
 
   static const _paperReviewSystemPrompt = r"""
 Du bist Korrektor für handschriftliche Rechenwege. Du bekommst eine Aufgabe, die Musterlösung in Schritten und Fotos eines Rechenwegs.

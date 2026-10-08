@@ -1469,6 +1469,13 @@ seinen Editor, eine Häkchen-Box zum Mitspeichern und „Ausprobieren“;
 vorgeben (Automatisch / Rechenweg / Terminierung / Kristall) oder je Teilaufgabe
 neu versuchen („Als Kristallgitter“ …).
 
+**Passt als normale Frage**: Ist eine Teilaufgabe eigentlich eine ganz normale
+Quizfrage (kurze Erklärung, Zuordnung in eine Tabelle, Auswahl, Bild markieren …),
+erkennt die KI das und schlägt den passenden Fragetyp vor („Passt als normale Frage
+(Freitext)“) – ein Tipp auf **„Als normale Frage erstellen“** legt sie an, statt sie
+auf die Sammelliste zu setzen. Fehlende Tabellenwerte (z. B. eine Streckgrenze zum
+Nachschlagen) nimmt die KI sinnvoll an und schreibt „angenommen: …“ dazu.
+
 **Sammelliste „Noch nicht interaktiv“**: Teilaufgaben, die die App (noch) nicht
 selbst prüfen kann, landen **automatisch** auf einer Liste – mit der Begründung
 der KI und der **fehlenden Bedienart** in wenigen Wörtern („Kurve in Diagramm

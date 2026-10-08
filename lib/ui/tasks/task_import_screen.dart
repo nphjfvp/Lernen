@@ -21,6 +21,8 @@ import '../../services/crystal_geometry.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/gantt_scheduler.dart';
 import '../../services/image_crop.dart';
+import '../../services/plain_question_service.dart';
+import '../../services/question_parsing.dart';
 import '../../services/step_checker.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/discard_guard.dart';
@@ -52,6 +54,13 @@ class _Draft {
   String reason = '';
   String needs = '';
   bool incomplete = false;
+
+  /// Passt als normale Quizfrage (siehe InteractiveTaskDraft.asQuestion).
+  bool asQuestion = false;
+  String questionType = '';
+
+  /// Schon als normale Frage(n) angelegt (Anzahl Karten).
+  int createdQuestions = 0;
   bool include = true;
   bool expanded = false;
   bool busy = false;
@@ -80,6 +89,8 @@ class _Draft {
     reason = d.reason.trim();
     needs = d.needs.trim();
     incomplete = d.incomplete;
+    asQuestion = d.asQuestion;
+    questionType = d.questionType;
     include = hasTask;
     error = null;
     revision++;
@@ -287,7 +298,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     final list = context.read<UnsupportedTaskRepository?>();
     if (list == null) return;
     for (final d in drafts) {
-      if (d.kind != null || d.incomplete || d.listedText != null) continue;
+      if (d.kind != null || d.incomplete || d.asQuestion || d.listedText != null) continue;
       final text = d.front.text.trim();
       if (text.isEmpty) continue;
       try {
@@ -442,6 +453,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     if (d.busy) return (text: 'KI liest …', ok: true);
     if (!d.hasTask) {
       if (d.incomplete) return (text: 'unvollständig', ok: false);
+      if (d.createdQuestions > 0) return (text: 'als normale Frage erstellt', ok: true);
+      if (d.asQuestion) return (text: 'passt als normale Frage', ok: true);
       return (text: d.listedText != null ? 'auf der Liste' : 'passt nicht', ok: false);
     }
     if (_missing(d) != null) return (text: 'unvollständig', ok: false);
@@ -853,7 +866,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
                     )
                   else
                     const SizedBox(width: 12),
-                  Icon(_icon(d.kind), size: 20, color: d.hasTask ? c.accent : c.inkMuted),
+                  Icon(d.asQuestion ? Icons.quiz_outlined : _icon(d.kind), size: 20, color: d.hasTask ? c.accent : c.inkMuted),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -866,7 +879,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         Text(
-                          '${d.kind?.label ?? 'Noch nicht interaktiv'} · ${status.text}',
+                          '${d.kind?.label ?? (d.asQuestion ? 'Normale Frage' : 'Noch nicht interaktiv')} · ${status.text}',
                           key: ValueKey('task-import-status-$i'),
                           style: TextStyle(fontSize: 12, color: status.ok ? c.good : c.warn),
                         ),
@@ -957,8 +970,58 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     ];
   }
 
+  /// Fragetyp-Vorschlag der KI lesbar ("free_text" → "Freitext").
+  static String _typeLabel(String raw) {
+    if (raw.trim().isEmpty) return '';
+    final type = QuestionParsing.parseType(raw);
+    return type == QuestionType.flashcard && !raw.toLowerCase().contains('flash') ? raw : type.label;
+  }
+
+  /// Aufgabe, die als normale Quizfrage passt: Karten wie beim Fragen-Import anlegen.
+  Future<void> _createAsQuestion(_Draft d) async {
+    final ai = _ai(vision: false);
+    if (ai == null) return _snack('Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
+    final text = d.front.text.trim().isNotEmpty ? d.front.text.trim() : _fallbackFront;
+    if (text.isEmpty) return _snack('Die Aufgabe (Text) darf nicht leer sein.');
+    final repo = context.read<FlashcardRepository>();
+    final list = context.read<UnsupportedTaskRepository?>();
+    setState(() {
+      d.busy = true;
+      d.error = null;
+    });
+    try {
+      final cards = await PlainQuestionService.build(
+        ai,
+        text: text,
+        moduleId: widget.moduleId,
+        sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
+        sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+        unitId: widget.unitId ?? widget.replaceCard?.unitId,
+      );
+      if (cards.isEmpty) throw AiServiceException('Die KI hat keine Frage daraus gemacht – bitte erneut versuchen.');
+      await repo.saveAll(cards);
+      final listed = d.listedText;
+      if (listed != null && list != null) await list.removeText(widget.moduleId, listed);
+      if (!mounted) return;
+      setState(() {
+        d.createdQuestions = cards.length;
+        d.listedText = null;
+      });
+      _snack(cards.length == 1
+          ? '1 Frage erstellt – sie kommt bald im Lernplan dran.'
+          : '${cards.length} Fragen erstellt – sie kommen bald im Lernplan dran.');
+    } on AiServiceException catch (e) {
+      if (mounted) setState(() => d.error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => d.error = 'Erstellen fehlgeschlagen: $e');
+    } finally {
+      if (mounted) setState(() => d.busy = false);
+    }
+  }
+
   List<Widget> _unsuitableBody(AppColors c, int i, _Draft d) {
     final text = d.front.text.trim();
+    if (d.asQuestion) return _asQuestionBody(c, i, d, text);
     return [
       Container(
         key: ValueKey('task-import-unsuitable-$i'),
@@ -1024,6 +1087,71 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
               onPressed: d.busy ? null : () => _retry(d),
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Erneut versuchen'),
+            ),
+          for (final k in InteractiveKind.values)
+            OutlinedButton(
+              key: ValueKey('task-import-force-$i-${k.name}'),
+              onPressed: d.busy ? null : () => _retry(d, force: k),
+              child: Text('Als ${k.label}'),
+            ),
+          if (d.busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+        ],
+      ),
+    ];
+  }
+
+  List<Widget> _asQuestionBody(AppColors c, int i, _Draft d, String text) {
+    final type = _typeLabel(d.questionType);
+    return [
+      Container(
+        key: ValueKey('task-import-as-question-info-$i'),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              type.isEmpty ? 'Passt als normale Frage' : 'Passt als normale Frage ($type)',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.accentOnSoft),
+            ),
+            if (d.reason.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(d.reason, style: TextStyle(fontSize: 13, height: 1.4, color: c.ink)),
+            ],
+            const SizedBox(height: 4),
+            Text(
+              'Dafür gibt es in der App schon einen Fragetyp – sie kommt nicht auf die Liste „Noch nicht interaktiv“.',
+              style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+            ),
+          ],
+        ),
+      ),
+      if (text.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Text(text, maxLines: 8, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, height: 1.4, color: c.ink)),
+      ],
+      if (d.error != null) ...[
+        const SizedBox(height: 8),
+        Text(d.error!, key: ValueKey('task-import-retry-error-$i'), style: TextStyle(fontSize: 12.5, color: c.danger)),
+      ],
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (d.createdQuestions > 0)
+            Text(
+              d.createdQuestions == 1 ? '✓ Als Frage erstellt' : '✓ ${d.createdQuestions} Fragen erstellt',
+              key: ValueKey('task-import-as-question-done-$i'),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.good),
+            )
+          else
+            FilledButton.icon(
+              key: ValueKey('task-import-as-question-$i'),
+              onPressed: d.busy ? null : () => _createAsQuestion(d),
+              icon: const Icon(Icons.quiz_outlined, size: 18),
+              label: const Text('Als normale Frage erstellen'),
             ),
           for (final k in InteractiveKind.values)
             OutlinedButton(

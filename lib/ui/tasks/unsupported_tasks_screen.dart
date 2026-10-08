@@ -8,8 +8,7 @@ import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/unsupported_task_repository.dart';
 import '../../services/ai_service.dart';
-import '../../services/pdf_question_import_service.dart';
-import '../../services/question_parsing.dart';
+import '../../services/plain_question_service.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import 'task_import_screen.dart';
@@ -99,17 +98,12 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
       for (final (i, t) in tasks.indexed) {
         if (tasks.length > 1) setState(() => _progress = 'Fragen werden erstellt … ${i + 1} von ${tasks.length}');
         try {
-          final raw = await ai.importQuestionsFromExercises(t.text);
-          final questions = [
-            for (final m in raw)
-              if (QuestionParsing.normalizeGeneratedFlashcard(m) case final data?)
-                ScannedQuestion(page: t.sourcePage ?? 0, data: data, solutionByAi: true),
-          ];
-          final cards = PdfQuestionImportService.toFlashcards(
-            questions,
+          final cards = await PlainQuestionService.build(
+            ai,
+            text: t.text,
             moduleId: t.moduleId,
             sourceMaterialId: t.sourceMaterialId,
-            now: DateTime.now(),
+            sourcePage: t.sourcePage,
           );
           if (cards.isEmpty) {
             failed++;
