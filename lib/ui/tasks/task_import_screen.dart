@@ -30,6 +30,7 @@ import '../../services/question_parsing.dart';
 import '../../services/step_checker.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/discard_guard.dart';
+import '../widgets/page_question_creation_sheet.dart' show buildPageQuestionCards;
 import '../widgets/raw_response_dialog.dart';
 import '../widgets/safe_set_state.dart';
 import 'bom_task_editor.dart';
@@ -498,7 +499,9 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     if (!d.hasTask) {
       if (d.incomplete) return (text: 'unvollständig', ok: false);
       if (d.createdQuestions > 0) return (text: 'als normale Frage erstellt', ok: true);
-      if (d.asQuestion) return (text: 'passt als normale Frage', ok: true);
+      if (d.asQuestion) {
+        return d.listedText != null ? (text: 'auf der Liste', ok: false) : (text: 'passt als normale Frage', ok: true);
+      }
       return (text: d.listedText != null ? 'auf der Liste' : 'passt nicht', ok: false);
     }
     if (_missing(d) != null) return (text: 'unvollständig', ok: false);
@@ -1043,7 +1046,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
 
   /// Aufgabe, die als normale Quizfrage passt: Karten wie beim Fragen-Import anlegen.
   Future<void> _createAsQuestion(_Draft d) async {
-    final ai = _ai(vision: false);
+    final ai = _ai(vision: _images.isNotEmpty);
     if (ai == null) return _snack('Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
     final text = d.front.text.trim().isNotEmpty ? d.front.text.trim() : _fallbackFront;
     if (text.isEmpty) return _snack('Die Aufgabe (Text) darf nicht leer sein.');
@@ -1054,15 +1057,25 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       d.error = null;
     });
     try {
-      final cards = await PlainQuestionService.build(
-        ai,
-        text: text,
-        moduleId: widget.moduleId,
-        sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
-        sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
-        unitId: widget.unitId ?? widget.replaceCard?.unitId,
-      );
-      if (cards.isEmpty) throw AiServiceException('Die KI hat keine Frage daraus gemacht – bitte erneut versuchen.');
+      // Mit Foto: die KI sieht die Aufgabe samt Tabellen/Abbildungen (oft
+      // steht das Entscheidende nur im Bild); sonst bzw. wenn das nichts
+      // ergibt, nur aus dem Text.
+      var cards = _images.isEmpty ? <Flashcard>[] : await _questionFromImage(ai, d, text);
+      if (cards.isEmpty) {
+        cards = await PlainQuestionService.build(
+          _images.isEmpty ? ai : (_ai(vision: false) ?? ai),
+          text: text,
+          moduleId: widget.moduleId,
+          sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
+          sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+          unitId: widget.unitId ?? widget.replaceCard?.unitId,
+        );
+      }
+      if (cards.isEmpty) {
+        throw AiServiceException(
+          'Die KI hat keine Frage daraus gemacht – erneut versuchen oder mit „Auf die Liste setzen“ vormerken.',
+        );
+      }
       await repo.saveAll(cards);
       final listed = d.listedText;
       if (listed != null && list != null) await list.removeText(widget.moduleId, listed);
@@ -1082,6 +1095,79 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       if (mounted) setState(() => d.busy = false);
     }
   }
+
+  /// Eine Frage aus dem Foto der Aufgabe (wie „Frage erstellen“ im PDF), mit
+  /// dem Aufgabentext als Fokus und dem von der KI vorgeschlagenen Typ.
+  Future<List<Flashcard>> _questionFromImage(AiService ai, _Draft d, String text) async {
+    final image = _images.first.bytes;
+    final type = d.questionType.trim().isEmpty ? null : QuestionParsing.parseType(d.questionType);
+    final groups = await ai.generateQuestionsFromPage(
+      pageImageBytes: image,
+      pageText: '',
+      tiers: [(level: 'mittel', type: type == QuestionType.flashcard ? null : type)],
+      focusText: text,
+    );
+    final attach = await downscaleImage(image) ?? image;
+    return [
+      for (final group in buildPageQuestionCards(
+        groups,
+        moduleId: widget.moduleId,
+        unitId: widget.unitId ?? widget.replaceCard?.unitId,
+        questionCount: 1,
+        tierCount: 1,
+        attachImageBase64: base64Encode(attach),
+        now: DateTime.now(),
+        sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
+        sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+      ))
+        ...group,
+    ];
+  }
+
+  /// Von Hand auf die Sammelliste setzen (die KI meinte, es ginge, tut es
+  /// aber nicht) – mit der fehlenden Bedienart als Gruppe.
+  Future<void> _addToList(_Draft d) async {
+    final list = context.read<UnsupportedTaskRepository?>();
+    final text = d.front.text.trim().isNotEmpty ? d.front.text.trim() : _fallbackFront;
+    if (list == null || text.isEmpty) return;
+    final need = await showDialog<String>(context: context, builder: (_) => _ListNeedsDialog(initial: d.needs));
+    if (need == null || !mounted) return;
+    try {
+      await list.add(
+        moduleId: widget.moduleId,
+        text: text,
+        reason: d.error != null
+            ? 'Von Hand vorgemerkt: ${d.error}'
+            : (d.reason.isNotEmpty ? d.reason : 'Von Hand auf die Liste gesetzt.'),
+        needs: need,
+        sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
+        sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+      );
+      if (!mounted) return;
+      setState(() {
+        d.listedText = text;
+        if (need.isNotEmpty) d.needs = need;
+        d.error = null;
+      });
+      _snack('Auf die Liste „Noch nicht interaktiv“ gesetzt.');
+    } catch (e) {
+      if (mounted) setState(() => d.error = 'Auf die Liste setzen fehlgeschlagen: $e');
+    }
+  }
+
+  /// Knopf „Auf die Liste setzen“ bzw. Hinweis, dass sie dort steht.
+  Widget _listButton(AppColors c, int i, _Draft d) => d.listedText != null
+      ? Text(
+          '✓ Auf der Liste „Noch nicht interaktiv“',
+          key: ValueKey('task-import-listed-$i'),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c.inkMuted),
+        )
+      : OutlinedButton.icon(
+          key: ValueKey('task-import-to-list-$i'),
+          onPressed: d.busy ? null : () => _addToList(d),
+          icon: const Icon(Icons.playlist_add, size: 18),
+          label: const Text('Auf die Liste setzen'),
+        );
 
   List<Widget> _unsuitableBody(AppColors c, int i, _Draft d) {
     final text = d.front.text.trim();
@@ -1158,6 +1244,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
               onPressed: d.busy ? null : () => _retry(d, force: k),
               child: Text('Als ${k.label}'),
             ),
+          if (d.listedText == null) _listButton(c, i, d),
           if (d.busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
         ],
       ),
@@ -1184,7 +1271,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
             ],
             const SizedBox(height: 4),
             Text(
-              'Dafür gibt es in der App schon einen Fragetyp – sie kommt nicht auf die Liste „Noch nicht interaktiv“.',
+              'Dafür gibt es in der App schon einen Fragetyp – sie kommt nicht von selbst auf die Liste „Noch nicht '
+              'interaktiv“. Klappt es doch nicht, setz sie mit „Auf die Liste setzen“ selbst drauf.',
               style: TextStyle(fontSize: 12.5, color: c.inkMuted),
             ),
           ],
@@ -1223,6 +1311,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
               onPressed: d.busy ? null : () => _retry(d, force: k),
               child: Text('Als ${k.label}'),
             ),
+          if (d.createdQuestions == 0) _listButton(c, i, d),
           if (d.busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
         ],
       ),
@@ -1280,4 +1369,56 @@ class _TryTaskScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Fragt beim Vormerken, welche Bedienart der App fehlt (Gruppe auf der
+/// Sammelliste). Gibt null zurück, wenn abgebrochen.
+class _ListNeedsDialog extends StatefulWidget {
+  const _ListNeedsDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_ListNeedsDialog> createState() => _ListNeedsDialogState();
+}
+
+class _ListNeedsDialogState extends State<_ListNeedsDialog> {
+  late final _needs = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _needs.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Auf die Liste setzen'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Die Aufgabe kommt auf die Liste „Noch nicht interaktiv“ (Einstellungen).'),
+        const SizedBox(height: 12),
+        TextField(
+          key: const ValueKey('task-import-to-list-needs'),
+          controller: _needs,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Was fehlt der App? (optional)',
+            hintText: 'z.B. Kriterien-Tabelle ankreuzen',
+            border: OutlineInputBorder(),
+          ),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Abbrechen')),
+      FilledButton(
+        key: const ValueKey('task-import-to-list-confirm'),
+        onPressed: () => Navigator.of(context).pop(_needs.text.trim()),
+        child: const Text('Auf die Liste'),
+      ),
+    ],
+  );
 }

@@ -137,8 +137,8 @@ Rect _paddedCover(ImageTarget c) {
 /// Wandelt die KI-Antwort (je Frage die Rohkarten in Stufen-Reihenfolge, siehe
 /// AiService.generateQuestionsFromPage) in Karteikarten um. Mehr Fragen oder
 /// Stufen als bestellt werden abgeschnitten, unbrauchbare Karten verworfen,
-/// Fragen ohne brauchbare Karte fallen weg.
-@visibleForTesting
+/// Fragen ohne brauchbare Karte fallen weg. Auch von „Aufgabe übernehmen“
+/// genutzt (normale Frage aus dem Foto einer Aufgabe).
 List<List<Flashcard>> buildPageQuestionCards(
   List<List<Map<String, dynamic>>> groups, {
   required String moduleId,

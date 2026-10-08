@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1422 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1424 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1432,6 +1432,14 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     QuestionAnswerView: flashcard mit unbekanntem taskData.kind → Hinweis
     `question-needs-update`. Tests: `test/models/flashcard_task_repair_test.dart`, Gruppe
     „ältere App-Version …“ in `sync_merge_test`.
+62. „Passt als normale Frage“, aber die KI liefert keine Frage (Nutzer: Betriebstypen-Kriterien
+    standen nur im Foto). TaskImportScreen `_createAsQuestion`: mit Foto zuerst
+    `_questionFromImage` (Vision-Modell, `generateQuestionsFromPage` mit Fokus = Aufgabentext,
+    eine Stufe mit dem vorgeschlagenen Typ, `buildPageQuestionCards` – jetzt nicht mehr
+    @visibleForTesting), sonst/danach PlainQuestionService. Neu `_addToList` + `_listButton`
+    (`task-import-to-list-i`, Dialog `_ListNeedsDialog` mit `task-import-to-list-needs`/
+    `-confirm`, danach `task-import-listed-i`; Status „auf der Liste“) in der Normale-Frage-
+    und der Unvollständig-Ansicht. Tests in `task_import_screen_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

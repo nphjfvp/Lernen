@@ -1551,7 +1551,11 @@ neu versuchen („Als Kristallgitter“ …).
 Quizfrage (kurze Erklärung, Zuordnung in eine Tabelle, Auswahl, Bild markieren …),
 erkennt die KI das und schlägt den passenden Fragetyp vor („Passt als normale Frage
 (Freitext)“) – ein Tipp auf **„Als normale Frage erstellen“** legt sie an, statt sie
-auf die Sammelliste zu setzen. Fehlende Tabellenwerte (z. B. eine Streckgrenze zum
+auf die Sammelliste zu setzen. Mit Foto sieht die KI dabei das Bild der Aufgabe (oft
+stehen Tabellen oder Kriterien nur dort), sonst nur den Text. Klappt es trotzdem
+nicht, setzt **„Auf die Liste setzen“** die Aufgabe selbst auf die Sammelliste –
+auf Wunsch mit der fehlenden Bedienart als Gruppe (z.B. „Kriterien-Tabelle
+ankreuzen“). Den Knopf gibt es auch bei unvollständig erkannten Aufgaben. Fehlende Tabellenwerte (z. B. eine Streckgrenze zum
 Nachschlagen) nimmt die KI sinnvoll an und schreibt „angenommen: …“ dazu.
 
 **Sammelliste „Noch nicht interaktiv“**: Teilaufgaben, die die App (noch) nicht

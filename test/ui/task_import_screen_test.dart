@@ -794,6 +794,84 @@ void main() {
     expect(card.back, contains('Sprung nach unten 911: krz → kfz'));
   });
 
+  testWidgets('normale Frage geht doch nicht: selbst auf die Liste setzen', (tester) async {
+    var calls = 0;
+    TaskImportScreen.aiFactory = (key, model) => AiService(
+          apiKey: key,
+          model: model,
+          client: MockClient((r) async {
+            calls++;
+            return calls == 1
+                ? _chat({
+                    'tasks': [
+                      {
+                        'kind': 'question',
+                        'questionType': 'table',
+                        'front': '1. Ordnen Sie folgende Unternehmen in die Kriterien für Betriebstypen ein.',
+                        'reason': 'Einordnen in vorgegebene Kriterien.',
+                      },
+                    ],
+                  })
+                : _chat({'flashcards': []});
+          }),
+        );
+    final cards = await pump(tester, const TaskImportScreen(moduleId: 'm1', initialText: 'Aufgabe 1'), height: 4000);
+    await tap(tester, 'task-import-build');
+    await tap(tester, 'task-import-as-question-0');
+    expect(cards.saved, isEmpty);
+    expect(find.textContaining('mit „Auf die Liste setzen“ vormerken'), findsOneWidget);
+
+    await tap(tester, 'task-import-to-list-0');
+    await tester.enterText(find.byKey(const ValueKey('task-import-to-list-needs')), 'Kriterien-Tabelle ankreuzen');
+    await tester.tap(find.byKey(const ValueKey('task-import-to-list-confirm')));
+    await settle(tester);
+    final listed = unsupported.items.single;
+    expect(listed.needs, 'Kriterien-Tabelle ankreuzen');
+    expect(listed.text, startsWith('1. Ordnen Sie'));
+    expect(find.byKey(const ValueKey('task-import-listed-0')), findsOneWidget);
+    expect(find.text('Normale Frage · auf der Liste'), findsOneWidget);
+  });
+
+  testWidgets('normale Frage mit Foto: die KI sieht das Bild (Kriterien stehen oft nur dort)', (tester) async {
+    final bodies = <String>[];
+    TaskImportScreen.aiFactory = (key, model) => AiService(
+          apiKey: key,
+          model: model,
+          client: MockClient((r) async {
+            bodies.add(r.body);
+            return bodies.length == 1
+                ? _chat({
+                    'tasks': [
+                      {'kind': 'question', 'questionType': 'free_text', 'front': '1. Ordnen Sie die Unternehmen ein.'},
+                    ],
+                  })
+                : _chat({
+                    'questions': [
+                      {
+                        'flashcards': [
+                          {'type': 'free_text', 'front': 'Ordne Weiße Ware ein.', 'correctText': 'Lagerfertigung'},
+                        ],
+                      },
+                    ],
+                  });
+          }),
+        );
+    final cards = await pump(tester, TaskImportScreen(moduleId: 'm1', initialImages: [_tinyPng], sourcePage: 2), height: 4000);
+    await tap(tester, 'task-import-build');
+    await tap(tester, 'task-import-as-question-0');
+    // Das Bild wird vor dem Anhängen verkleinert (echtes Dekodieren).
+    for (var i = 0; i < 10 && cards.saved.isEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await settle(tester);
+    }
+    expect(bodies, hasLength(2));
+    expect(bodies.last, contains('image_url'));
+    final card = cards.saved.single;
+    expect(card.type, QuestionType.freeText);
+    expect(card.front, 'Ordne Weiße Ware ein.');
+    expect(card.sourcePage, 2);
+  });
+
   testWidgets('Sammelliste aus den Einstellungen: alle Fächer, nach Fach filtern', (tester) async {
     await pump(tester, const UnsupportedTasksScreen());
     await unsupported.add(moduleId: 'm1', text: 'Skizziere das Diagramm.', needs: 'Kurve in Diagramm zeichnen');
