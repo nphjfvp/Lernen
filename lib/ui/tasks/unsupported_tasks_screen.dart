@@ -36,6 +36,13 @@ class UnsupportedTasksScreen extends StatefulWidget {
 }
 
 class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
+  /// Fach-Filter (null = alle Fächer), vorbelegt mit [UnsupportedTasksScreen.moduleId].
+  late String? _filter = widget.moduleId;
+
+  String get _filterName => _filter == null
+      ? ''
+      : (_filter == widget.moduleId && widget.moduleName.isNotEmpty ? widget.moduleName : _moduleName(_filter!));
+
   /// Aufgaben, zu denen gerade Fragen erstellt werden.
   final Set<String> _creating = {};
   String? _progress;
@@ -56,8 +63,8 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
   Future<void> _copy(List<UnsupportedTask> tasks) async {
     final text = UnsupportedTask.exportText(
       tasks,
-      title: widget.moduleId == null ? 'alle Fächer' : widget.moduleName,
-      moduleName: widget.moduleId == null ? _moduleName : null,
+      title: _filter == null ? 'alle Fächer' : _filterName,
+      moduleName: _filter == null ? _moduleName : null,
     );
     await Clipboard.setData(ClipboardData(text: text));
     if (mounted) _snack('Liste kopiert – du kannst sie jetzt einfügen und schicken.');
@@ -73,7 +80,7 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
       confirmLabel: 'Alle löschen',
     );
     if (!ok || !mounted) return;
-    await context.read<UnsupportedTaskRepository>().clear(moduleId: widget.moduleId);
+    await context.read<UnsupportedTaskRepository>().clear(moduleId: _filter);
   }
 
   /// Legt zu [tasks] Karten an (eine KI-Anfrage je Aufgabe, damit Quelle und
@@ -141,7 +148,7 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
     MaterialPageRoute(
       builder: (_) => TaskImportScreen(
         moduleId: t.moduleId,
-        moduleName: widget.moduleId == null ? _moduleName(t.moduleId) : widget.moduleName,
+        moduleName: _moduleName(t.moduleId).isNotEmpty ? _moduleName(t.moduleId) : widget.moduleName,
         initialText: t.text,
         sourceMaterialId: t.sourceMaterialId,
         sourcePage: t.sourcePage,
@@ -153,7 +160,11 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final repo = context.watch<UnsupportedTaskRepository>();
-    final tasks = widget.moduleId == null ? repo.all : repo.forModule(widget.moduleId!);
+    final tasks = _filter == null ? repo.all : repo.forModule(_filter!);
+    final modules = <String, int>{};
+    for (final t in repo.all) {
+      modules[t.moduleId] = (modules[t.moduleId] ?? 0) + 1;
+    }
     final groups = UnsupportedTask.grouped(tasks);
     return Scaffold(
       backgroundColor: c.bg,
@@ -162,10 +173,7 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Noch nicht interaktiv', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            Text(
-              widget.moduleId == null ? 'Alle Fächer' : widget.moduleName,
-              style: TextStyle(fontSize: 12, color: c.inkMuted),
-            ),
+            Text(_filter == null ? 'Alle Fächer' : _filterName, style: TextStyle(fontSize: 12, color: c.inkMuted)),
           ],
         ),
         actions: [
@@ -201,6 +209,28 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
                   style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
                 ),
                 const SizedBox(height: 12),
+                if (modules.length > 1 || (_filter != null && modules.keys.any((m) => m != _filter))) ...[
+                  Wrap(
+                    key: const ValueKey('unsupported-filter'),
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      ChoiceChip(
+                        label: Text('Alle Fächer (${repo.all.length})'),
+                        selected: _filter == null,
+                        onSelected: (_) => setState(() => _filter = null),
+                      ),
+                      for (final e in modules.entries)
+                        ChoiceChip(
+                          key: ValueKey('unsupported-filter-${e.key}'),
+                          label: Text('${_moduleName(e.key).isEmpty ? 'Fach' : _moduleName(e.key)} (${e.value})'),
+                          selected: _filter == e.key,
+                          onSelected: (_) => setState(() => _filter = e.key),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (!repo.isLoaded)
                   const Padding(
                     padding: EdgeInsets.all(24),
@@ -289,7 +319,7 @@ class _UnsupportedTasksScreenState extends State<UnsupportedTasksScreen> {
 
   Widget _entry(AppColors c, UnsupportedTask t) {
     final where = [
-      if (widget.moduleId == null && _moduleName(t.moduleId).isNotEmpty) _moduleName(t.moduleId),
+      if (_filter == null && _moduleName(t.moduleId).isNotEmpty) _moduleName(t.moduleId),
       if (t.sourcePage != null) 'Seite ${t.sourcePage}',
       '${t.createdAt.day}.${t.createdAt.month}.${t.createdAt.year}',
     ].join(' · ');

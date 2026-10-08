@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../tasks/unsupported_tasks_screen.dart';
 import '../../models/ai_model_info.dart';
 import '../../models/app_settings.dart';
 import '../../models/pdf_storage_config.dart';
+import '../../repositories/unsupported_task_repository.dart';
 import '../../repositories/auth_repository.dart';
 import '../../repositories/model_catalog_repository.dart';
 import '../../repositories/lab_experiment_repository.dart';
@@ -64,6 +66,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _apiKeyController = TextEditingController(text: _knownApiKey);
     _syncCodeController = TextEditingController(text: _knownSyncCode);
     _settingsRepo.addListener(_onSettingsChanged);
+    final unsupported = context.read<UnsupportedTaskRepository?>();
+    if (unsupported != null && !unsupported.isLoaded) unsupported.load();
     // Anders als jedes andere Feld auf diesem Screen (Modelle, Chunking,
     // Erinnerung – alle speichern sofort bei Änderung) verlangte der
     // API-Key bisher AUSSCHLIESSLICH den expliziten "Speichern"-Tap unten:
@@ -654,6 +658,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         .read<SettingsRepository>()
                         .update(settings.copyWith(themeModePreference: mode.name)),
                   ),
+                  const SizedBox(height: 26),
+                  _SectionLabel('Noch nicht interaktiv'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Aufgaben aus allen Fächern, die die App noch nicht selbst prüfen kann – nach fehlender '
+                    'Bedienart sortiert. Kopieren und schicken, damit die passenden Aufgabentypen dazukommen.',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.4),
+                  ),
+                  const SizedBox(height: 10),
+                  Builder(builder: (context) {
+                    final count = context.watch<UnsupportedTaskRepository?>()?.all.length;
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('settings-unsupported-tasks'),
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const UnsupportedTasksScreen()),
+                        ),
+                        icon: const Icon(Icons.playlist_add_check, size: 18),
+                        label: Text(count == null || count == 0 ? 'Liste öffnen' : 'Liste öffnen ($count)'),
+                      ),
+                    );
+                  }),
                   const SizedBox(height: 26),
                   _SectionLabel('KI (BYOK)'),
                   const SizedBox(height: 4),

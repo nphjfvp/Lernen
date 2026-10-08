@@ -255,6 +255,74 @@ void main() {
           child: MaterialApp(theme: ThemeData(extensions: const [AppColors.light]), home: Scaffold(body: child)),
         );
 
+    testWidgets('schon erstellte Fragen der Seite, Doppel-Warnung, interaktiv üben', (tester) async {
+      tester.view.physicalSize = const Size(1200, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final png = (await tester.runAsync(() => _twoColorPng(40, 20)))!;
+      String? interactive;
+      final existing = Flashcard(
+        id: 'k1',
+        moduleId: 'm1',
+        front: 'Berechne den Diffusionskoeffizienten bei 1000 K.',
+        back: '',
+        createdAt: DateTime(2026, 10, 1),
+        due: DateTime(2026, 10, 1),
+        sourceMaterialId: 'mat1',
+        sourcePage: 3,
+      );
+      await tester.pumpWidget(host(Builder(
+        builder: (context) => TextButton(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              body: PageQuestionCreationSheet(
+                material: MaterialItem(
+                  id: 'mat1',
+                  moduleId: 'm1',
+                  fileName: 'Blatt.pdf',
+                  kind: MaterialKind.exercise,
+                  extractedText: 'Text',
+                  createdAt: DateTime(2026, 9, 26),
+                ),
+                pageNumber: 3,
+                pageText: 'Aufgabe 1 a) b)',
+                pageImageBytes: png,
+                highlightsOnPage: const [
+                  MaterialHighlight(
+                    id: 'h1',
+                    text: 'Aufgabe 1a',
+                    color: HighlightColor.yellow,
+                    source: HighlightSource.question,
+                    pageNumber: 3,
+                  ),
+                ],
+                existingCards: [existing],
+                onInteractive: (focus) => interactive = focus,
+              ),
+            ),
+          )),
+          child: const Text('Öffnen'),
+        ),
+      )));
+      await tester.tap(find.text('Öffnen'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 Frage aus dieser Seite gibt es schon'), findsOneWidget);
+      final focus = find.byType(TextField).first;
+      await tester.enterText(focus, '1 a');
+      await tester.pump();
+      expect(find.byKey(const ValueKey('page-q-duplicate')), findsOneWidget);
+      await tester.enterText(focus, 'Aufgabe 1b');
+      await tester.pump();
+      expect(find.byKey(const ValueKey('page-q-duplicate')), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const ValueKey('page-q-interactive')));
+      await tester.tap(find.byKey(const ValueKey('page-q-interactive')));
+      await tester.pumpAndSettle();
+      expect(interactive, 'Aufgabe 1b');
+      expect(find.byType(PageQuestionCreationSheet), findsNothing);
+    });
+
     testWidgets('Auswahlfeld: Standard zeigen, anderes Modell wählen, zurück auf Standard', (tester) async {
       String? override;
       await tester.pumpWidget(host(StatefulBuilder(

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../models/flashcard.dart';
+import '../../services/image_crop.dart';
 import '../../services/image_edit.dart';
 import '../../theme/app_colors.dart';
 import 'relative_image.dart';
@@ -26,6 +27,7 @@ class ImageEditResult {
     required this.targets,
     required this.imageChanged,
     this.edits = const [],
+    this.cropped = false,
   });
 
   final Uint8List bytes;
@@ -34,9 +36,28 @@ class ImageEditResult {
   /// false, wenn nichts abgedeckt oder beschriftet ist.
   final bool imageChanged;
 
-  /// Abdeckungen und Texte, bezogen auf das Ausgangsbild.
+  /// Abdeckungen und Texte, bezogen auf das Ausgangsbild – leer, wenn
+  /// zugeschnitten wurde (dann sind sie fest eingerechnet).
   final List<ImageEdit> edits;
+
+  /// Das Bild wurde zugeschnitten: [bytes] ist das neue Ausgangsbild, die
+  /// Ziele sind schon auf den Ausschnitt umgerechnet.
+  final bool cropped;
 }
+
+/// Rechnet Ziele auf einen Zuschnitt [crop] (relativ zum Bild) um; Ziele,
+/// deren Mitte außerhalb liegt, fallen weg.
+@visibleForTesting
+List<ImageTarget> cropTargets(List<ImageTarget> targets, Rect crop) => [
+      for (final t in targets)
+        if (crop.contains(Offset(t.x, t.y)))
+          t.copyWith(
+            x: (t.x - crop.left) / crop.width,
+            y: (t.y - crop.top) / crop.height,
+            w: t.w / crop.width,
+            h: t.h / crop.height,
+          ),
+    ];
 
 /// Öffnet den Bild-Editor bildschirmfüllend. `null` bei Abbruch. [edits]
 /// sind schon vorhandene, noch bearbeitbare Abdeckungen/Texte auf [bytes]
@@ -61,16 +82,17 @@ Future<ImageEditResult?> showImageEditor(
   ));
 }
 
-enum _Tool { cover, text, target }
+enum _Tool { cover, text, target, crop }
 
-enum _Kind { cover, text, target }
+enum _Kind { cover, text, target, crop }
 
 typedef _Selection = ({_Kind kind, int index});
 
 enum _DragMode { create, move, resize }
 
 /// Bild bearbeiten: Stellen abdecken (weiß oder schwarz – z.B. Beschriftungen,
-/// die sonst die Antwort verraten), Text daraufschreiben und – für Bildfragen –
+/// die sonst die Antwort verraten), Text daraufschreiben, zuschneiden (nur der
+/// Rahmen bleibt übrig) und – für Bildfragen –
 /// die Stellen mit ihrer Beschriftung bzw. die richtigen Bereiche setzen.
 /// Alles bleibt bis zum Übernehmen einzeln bearbeitbar: ziehen verschiebt,
 /// die Ecke eines ausgewählten Rahmens ändert die Größe, Antippen öffnet
@@ -110,8 +132,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   late final List<TextEdit> _texts = [...widget.initialEdits.whereType<TextEdit>()];
   late final List<ImageTarget> _targets = [...widget.initialTargets];
 
+  /// Zuschnitt (relativ zum Bild); null = ganzes Bild.
+  Rect? _crop;
+
   /// Stände vor jeder Änderung für "Rückgängig".
-  final List<({List<CoverEdit> covers, List<TextEdit> texts, List<ImageTarget> targets})> _undoStack = [];
+  final List<({List<CoverEdit> covers, List<TextEdit> texts, List<ImageTarget> targets, Rect? crop})> _undoStack = [];
 
   late _Tool _tool = widget.targetMode == null ? _Tool.cover : _Tool.target;
   bool _dark = false;
@@ -134,13 +159,15 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   bool get _labels => widget.targetMode == ImageTargetMode.labels;
   bool get _regions => widget.targetMode == ImageTargetMode.regions;
 
-  bool get _createsRect => _tool == _Tool.cover || (_tool == _Tool.target && _regions);
+  bool get _createsRect => _tool == _Tool.cover || _tool == _Tool.crop || (_tool == _Tool.target && _regions);
 
   String get _hint => switch (_tool) {
         _Tool.cover => 'Rahmen über die Stelle ziehen, die abgedeckt werden soll. Antippen wählt eine Abdeckung aus – '
             'dann verschieben, an der Ecke die Größe ändern oder löschen.',
         _Tool.text => 'Auf die Stelle tippen, an die der Text soll. Text ziehen zum Verschieben, antippen zum '
             'Ändern (auch die Schriftgröße).',
+        _Tool.crop => 'Rahmen um den Teil ziehen, der übrig bleiben soll – der Rest wird beim Übernehmen '
+            'abgeschnitten. Rahmen verschieben oder an der Ecke die Größe ändern.',
         _Tool.target => _labels
             ? 'Auf jede Stelle tippen, die beschriftet werden soll. Stellen ziehen zum Verschieben, antippen zum '
                 'Ändern – mit gleicher Gruppe werden Stellen austauschbar.'
@@ -151,7 +178,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   // -- Zustand ---------------------------------------------------------------
 
   void _pushUndo() {
-    _undoStack.add((covers: List.of(_covers), texts: List.of(_texts), targets: List.of(_targets)));
+    _undoStack.add((covers: List.of(_covers), texts: List.of(_texts), targets: List.of(_targets), crop: _crop));
   }
 
   void _undo() {
@@ -167,6 +194,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       _targets
         ..clear()
         ..addAll(last.targets);
+      _crop = last.crop;
       _selected = null;
     });
   }
@@ -179,10 +207,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             height: _targets[sel.index].h,
           ),
         _Kind.text => Rect.fromCenter(center: _texts[sel.index].position, width: 0, height: 0),
+        _Kind.crop => _crop ?? const Rect.fromLTWH(0, 0, 1, 1),
       };
 
   bool _isRectSelection(_Selection? sel) =>
-      sel != null && (sel.kind == _Kind.cover || (sel.kind == _Kind.target && _regions));
+      sel != null && (sel.kind == _Kind.cover || sel.kind == _Kind.crop || (sel.kind == _Kind.target && _regions));
 
   void _setRect(_Selection sel, Rect rect) {
     final r = _clampRect(rect);
@@ -192,6 +221,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       case _Kind.target:
         _targets[sel.index] =
             _targets[sel.index].copyWith(x: r.center.dx, y: r.center.dy, w: r.width, h: r.height);
+      case _Kind.crop:
+        _crop = r;
       case _Kind.text:
         break;
     }
@@ -206,6 +237,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       case _Kind.target:
         _targets[sel.index] = _targets[sel.index].copyWith(x: c.dx, y: c.dy);
       case _Kind.cover:
+      case _Kind.crop:
         break;
     }
   }
@@ -251,6 +283,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   /// Oberstes Objekt an [p] (Ziele über Texten über Abdeckungen).
   _Selection? _hitTest(Offset p) {
     final px = _toPx(p);
+    // Beim Zuschneiden zählt nur der Zuschnitt-Rahmen.
+    if (_tool == _Tool.crop) {
+      final crop = _crop;
+      return crop != null && crop.contains(p) ? (kind: _Kind.crop, index: 0) : null;
+    }
     if (widget.targetMode != null) {
       for (var i = _targets.length - 1; i >= 0; i--) {
         final hit = _regions ? _targets[i].contains(p.dx, p.dy, tolerance: 0) : _labelRectPx(i).contains(px);
@@ -352,6 +389,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       if (_tool == _Tool.cover) {
         _covers.add(CoverEdit(_clampRect(rect), dark: _dark));
         _selected = (kind: _Kind.cover, index: _covers.length - 1);
+      } else if (_tool == _Tool.crop) {
+        _crop = _clampRect(rect);
+        _selected = (kind: _Kind.crop, index: 0);
       } else {
         final r = _clampRect(rect);
         _targets.add(ImageTarget(x: r.center.dx, y: r.center.dy, w: r.width, h: r.height));
@@ -370,6 +410,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           await _editLabel(hit.index);
         case _Kind.target:
         case _Kind.cover:
+        case _Kind.crop:
           setState(() => _selected = _selected == hit ? null : hit);
       }
       return;
@@ -385,6 +426,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         await _editLabel(null, at: p);
       case _Tool.target:
       case _Tool.cover:
+      case _Tool.crop:
         return;
     }
   }
@@ -547,6 +589,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           _texts.removeAt(sel.index);
         case _Kind.target:
           _targets.removeAt(sel.index);
+        case _Kind.crop:
+          _crop = null;
       }
       _selected = null;
     });
@@ -581,7 +625,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     // Texte über den Abdeckungen – so lässt sich eine Beschriftung auf eine
     // frisch abgedeckte Stelle schreiben.
     final edits = <ImageEdit>[..._covers, ..._texts];
-    final bytes = await applyImageEdits(widget.bytes, edits);
+    var bytes = await applyImageEdits(widget.bytes, edits);
+    final crop = _crop;
+    final cropping = crop != null && (crop.width < 0.999 || crop.height < 0.999);
+    if (bytes != null && cropping) bytes = await cropImageRelative(bytes, crop);
     if (!mounted) return;
     setState(() => _saving = false);
     if (bytes == null) {
@@ -591,9 +638,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     }
     Navigator.of(context).pop(ImageEditResult(
       bytes: bytes,
-      targets: List.of(_targets),
-      imageChanged: edits.isNotEmpty,
-      edits: edits,
+      targets: cropping ? cropTargets(_targets, crop) : List.of(_targets),
+      imageChanged: edits.isNotEmpty || cropping,
+      edits: cropping ? const [] : edits,
+      cropped: cropping,
     ));
   }
 
@@ -693,6 +741,20 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               ),
             ),
           ),
+      if (_crop != null) ...[
+        for (final r in _outside(_crop!))
+          Positioned.fromRect(
+            rect: scaled(r),
+            child: IgnorePointer(child: Container(color: Colors.black.withAlpha(140))),
+          ),
+        Positioned.fromRect(
+          key: const ValueKey('editor-crop-frame'),
+          rect: scaled(_crop!),
+          child: IgnorePointer(
+            child: Container(decoration: BoxDecoration(border: Border.all(color: c.accent, width: 2))),
+          ),
+        ),
+      ],
       if (_isRectSelection(selected)) handle(_rectOf(selected!)),
       if (drag != null)
         Positioned.fromRect(
@@ -700,7 +762,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           child: IgnorePointer(
             child: Container(
               decoration: BoxDecoration(
-                color: _tool == _Tool.cover ? (_dark ? Colors.black : Colors.white).withAlpha(200) : c.good.withAlpha(50),
+                color: switch (_tool) {
+                  _Tool.cover => (_dark ? Colors.black : Colors.white).withAlpha(200),
+                  _Tool.crop => Colors.transparent,
+                  _ => c.good.withAlpha(50),
+                },
                 border: Border.all(color: c.accent, width: 2),
               ),
             ),
@@ -708,6 +774,14 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         ),
     ];
   }
+
+  /// Die vier Streifen um den Zuschnitt (werden abgedunkelt).
+  static List<Rect> _outside(Rect r) => [
+        Rect.fromLTRB(0, 0, 1, r.top),
+        Rect.fromLTRB(0, r.bottom, 1, 1),
+        Rect.fromLTRB(0, r.top, r.left, r.bottom),
+        Rect.fromLTRB(r.right, r.top, 1, r.bottom),
+      ].where((x) => x.width > 0 && x.height > 0).toList();
 
   /// Aktionen für eine ausgewählte Abdeckung bzw. einen Bereich.
   Widget? _selectionBar() {
@@ -729,7 +803,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             key: const ValueKey('editor-delete-selected'),
             onPressed: _deleteSelected,
             icon: const Icon(Icons.delete_outline, size: 18),
-            label: const Text('Entfernen'),
+            label: Text(sel.kind == _Kind.crop ? 'Zuschnitt aufheben' : 'Entfernen'),
           ),
         ],
       ),
@@ -764,6 +838,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                 segments: [
                   const ButtonSegment(value: _Tool.cover, icon: Icon(Icons.crop_square), label: Text('Abdecken')),
                   const ButtonSegment(value: _Tool.text, icon: Icon(Icons.text_fields), label: Text('Text')),
+                  const ButtonSegment(value: _Tool.crop, icon: Icon(Icons.crop), label: Text('Zuschneiden')),
                   if (mode != null)
                     ButtonSegment(
                       value: _Tool.target,

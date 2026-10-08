@@ -20,6 +20,7 @@ import '../../services/highlight_matcher.dart';
 import '../../services/image_crop.dart';
 import '../../services/material_file_store.dart';
 import '../../services/question_parsing.dart';
+import '../../services/task_label_locator.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
 import '../tasks/task_import_screen.dart';
@@ -596,6 +597,8 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
       final examContext = MaterialItem.practiceExamTextFrom(
           context.read<MaterialRepository>().forModule(widget.material.moduleId));
       if (!mounted) return;
+      String? savedFocus;
+      String? interactiveFocus;
       final savedCount = await showModalBottomSheet<int>(
         context: context,
         isScrollControlled: true,
@@ -607,37 +610,42 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
           highlightsOnPage: highlightsOnPage,
           initialQuestionText: liveSelectionText.isEmpty ? null : liveSelectionText,
           examContext: examContext,
+          existingCards: _cardsFromPage(page),
+          onSaved: (cards, focus) => savedFocus = focus,
+          onInteractive: (focus) => interactiveFocus = focus,
         ),
       );
-      if (savedCount != null && savedCount > 0 && mounted) {
+      if (!mounted) return;
+      if (savedCount != null && savedCount > 0) {
+        await _markCreated(page: page, selected: selectedLines, focus: savedFocus ?? liveSelectionText);
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('$savedCount Frage${savedCount == 1 ? '' : 'n'} gespeichert.'),
+          content: Text('$savedCount Frage${savedCount == 1 ? '' : 'n'} gespeichert – im PDF als erstellt markiert.'),
         ));
+      } else if (interactiveFocus != null) {
+        await _taskFromPage(page: page, imageBytes: imageBytes, text: interactiveFocus!, selected: selectedLines);
       }
     } finally {
       if (mounted) setState(() => _creatingQuestion = false);
     }
   }
 
-  /// Übungsaufgabe auf der sichtbaren Seite als Rechenweg oder Terminierung
-  /// übernehmen (TaskImportScreen) – mit Seitenbild und ausgewähltem Text.
-  Future<void> _taskFromPage() async {
-    if (_bytes == null) return;
-    final selected = (_pdfViewerKey.currentState?.getSelectedTextLines() ?? const []).map((l) => l.text).join(' ').trim();
-    final page = _currentPage;
-    final image = await _capturePageImage();
+  /// Übungsaufgabe der Seite interaktiv übernehmen (Rechenweg, Terminierung,
+  /// Kristallgitter – TaskImportScreen), aus „Frage erstellen“ heraus; danach
+  /// wird sie im PDF wie eine erstellte Frage markiert.
+  Future<void> _taskFromPage({
+    required int page,
+    required Uint8List imageBytes,
+    required String text,
+    required List<PdfTextLine> selected,
+  }) async {
+    final prepared = await prepareImageForAi(imageBytes);
     if (!mounted) return;
-    if (image == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seite konnte nicht erfasst werden.')));
-      return;
-    }
-    final prepared = await prepareImageForAi(image);
-    if (!mounted) return;
-    await Navigator.of(context).push(
+    final saved = await Navigator.of(context).push<Object?>(
       MaterialPageRoute(
         builder: (_) => TaskImportScreen(
           moduleId: widget.material.moduleId,
-          initialText: selected,
+          initialText: text,
           initialImages: [prepared],
           sourceMaterialId: widget.material.id,
           sourcePage: page,
@@ -645,9 +653,66 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
         ),
       ),
     );
+    if (saved is List && saved.isNotEmpty && mounted) {
+      await _markCreated(page: page, selected: selected, focus: text);
+    }
   }
 
-  Future<void> _save() async {
+  /// Karten, die schon aus Seite [page] dieses Materials erstellt wurden.
+  List<Flashcard> _cardsFromPage(int page) => [
+        for (final c in context.read<FlashcardRepository>().forModule(widget.material.moduleId))
+          if (c.sourceMaterialId == widget.material.id && c.sourcePage == page) c,
+      ];
+
+  /// Markiert im PDF, dass aus dieser Stelle schon eine Frage erstellt wurde
+  /// (Häkchen-Markierung, [HighlightSource.question]) – die ausgewählten
+  /// Zeilen bzw. die Aufgabe, die zum Fokus-Text passt („Aufgabe 1a“), und
+  /// speichert gleich, damit die Markierung bleibt. Ohne Fundstelle gibt es
+  /// trotzdem einen Eintrag (für den Hinweis beim nächsten Erstellen).
+  Future<void> _markCreated({required int page, required List<PdfTextLine> selected, required String focus}) async {
+    final bytes = _bytes;
+    if (bytes == null) return;
+    var lines = selected.where((l) => l.pageNumber == page).toList();
+    final label = focus.trim().isNotEmpty
+        ? focus.trim()
+        : lines.map((l) => l.text).join(' ').trim();
+    if (lines.isEmpty && label.isNotEmpty) {
+      try {
+        final document = sf_pdf.PdfDocument(inputBytes: bytes);
+        try {
+          final pageLines = sf_pdf.PdfTextExtractor(document)
+              .extractTextLines(startPageIndex: page - 1, endPageIndex: page - 1);
+          final range = TaskLabelLocator.find([for (final l in pageLines) l.text], label);
+          if (range != null) lines = [for (final i in range) PdfTextLine(pageLines[i].bounds, pageLines[i].text, page)];
+        } finally {
+          document.dispose();
+        }
+      } catch (_) {
+        // Ohne lesbaren Text bleibt es beim Eintrag ohne Markierung im PDF.
+      }
+    }
+    final id = const Uuid().v4();
+    if (lines.isNotEmpty) {
+      final annotation = HighlightAnnotation(textBoundsCollection: lines)
+        ..color = context.colors.accent.withAlpha(70)
+        ..subject = id;
+      _pdfController.addAnnotation(annotation);
+    }
+    final text = label.length > 140 ? '${label.substring(0, 140)} …' : label;
+    setState(() {
+      _highlights.add(MaterialHighlight(
+        id: id,
+        text: text.isEmpty ? 'Seite $page' : text,
+        color: HighlightColor.yellow,
+        source: HighlightSource.question,
+        pageNumber: page,
+      ));
+      _dirty = true;
+    });
+    await _save(quiet: true);
+  }
+
+  Future<void> _save({bool quiet = false}) async {
     setState(() => _saving = true);
     try {
       final savedBytes = Uint8List.fromList(await _pdfController.saveDocument());
@@ -663,7 +728,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
           );
       if (!mounted) return;
       setState(() => _dirty = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gespeichert.')));
+      if (!quiet) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gespeichert.')));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -687,6 +752,76 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
       ),
     );
     return leave ?? false;
+  }
+
+  /// Hinweis über dem PDF: aus dieser Seite gibt es schon Fragen (antippen
+  /// zeigt sie) – damit keine Aufgabe doppelt übernommen wird.
+  Widget _createdOnPageBar(AppColors c) {
+    final cards = [
+      for (final card in context.watch<FlashcardRepository>().forModule(widget.material.moduleId))
+        if (card.sourceMaterialId == widget.material.id && card.sourcePage == _currentPage) card,
+    ];
+    if (cards.isEmpty) return const SizedBox.shrink();
+    return Material(
+      color: c.goodSoft,
+      child: InkWell(
+        key: const ValueKey('viewer-created-on-page'),
+        onTap: () => showModalBottomSheet<void>(
+          context: context,
+          showDragHandle: true,
+          builder: (ctx) => SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              children: [
+                Text('Schon erstellt aus Seite $_currentPage',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                for (final card in cards)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.check_circle, size: 16, color: c.good),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(card.front, maxLines: 3, overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13, height: 1.35)),
+                              Text(card.type.label, style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: Row(
+            children: [
+              Icon(Icons.check_circle_outline, size: 16, color: c.good),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  cards.length == 1
+                      ? '1 Frage aus dieser Seite erstellt'
+                      : '${cards.length} Fragen aus dieser Seite erstellt',
+                  style: TextStyle(fontSize: 12.5, color: c.good, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text('Ansehen', style: TextStyle(fontSize: 12.5, color: c.good)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -719,13 +854,6 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
                   : const Icon(Icons.quiz_outlined),
               onPressed: (_creatingQuestion || _bytes == null) ? null : _createQuestionFromPage,
             ),
-            if (widget.material.kind == MaterialKind.exercise || widget.material.kind == MaterialKind.practiceExam)
-              IconButton(
-                key: const ValueKey('viewer-task-import'),
-                tooltip: 'Als Rechenweg / Terminierung üben',
-                icon: const Icon(Icons.functions),
-                onPressed: _bytes == null ? null : _taskFromPage,
-              ),
             IconButton(
               key: const ValueKey('viewer-ask'),
               tooltip: _qaPanelOpen ? 'KI-Fragen ausblenden' : 'Frage zur Seite',
@@ -775,6 +903,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
                         highlightCount: _highlights.length,
                         onTogglePanel: () => setState(() => _bottomPanelOpen = !_bottomPanelOpen),
                       ),
+                      _createdOnPageBar(c),
                       Expanded(
                         child: LayoutBuilder(builder: (context, outer) {
                           final docked = _qaPanelOpen && outer.maxWidth >= _qaDockMinWidth;
@@ -1033,7 +1162,10 @@ class _BottomPanel extends StatelessWidget {
                               child: Container(
                                 width: 9,
                                 height: 9,
-                                decoration: BoxDecoration(color: colorFor(h.color), shape: BoxShape.circle),
+                                decoration: BoxDecoration(
+                                  color: h.source == HighlightSource.question ? c.accent : colorFor(h.color),
+                                  shape: BoxShape.circle,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -1047,6 +1179,8 @@ class _BottomPanel extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 12.5),
                                   ),
+                                  if (h.source == HighlightSource.question)
+                                    Text('Frage erstellt', style: TextStyle(fontSize: 11, color: c.inkMuted)),
                                   if (h.source == HighlightSource.ai)
                                     Text(
                                       [

@@ -90,6 +90,17 @@ void main() {
     });
   });
 
+  test('Zuschnitt: Ziele werden auf den Ausschnitt umgerechnet, außerhalb fallen weg', () {
+    final out = cropTargets(const [
+      ImageTarget(x: 0.6, y: 0.5, w: 0.2, h: 0.4, label: 'drin'),
+      ImageTarget(x: 0.2, y: 0.5, label: 'draußen'),
+    ], const Rect.fromLTRB(0.5, 0, 1, 1));
+    expect(out.map((t) => t.label), ['drin']);
+    expect(out.single.x, closeTo(0.2, 1e-9));
+    expect(out.single.w, closeTo(0.4, 1e-9));
+    expect(out.single.h, closeTo(0.4, 1e-9));
+  });
+
   group('ImageEditorScreen', () {
     setUp(() {
       final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -305,6 +316,51 @@ void main() {
       expect(cover.rect.right, closeTo(0.55, 0.03));
       expect(cover.rect.bottom, closeTo(0.6, 0.03));
       expect(result!.imageChanged, isTrue);
+    });
+
+    testWidgets('Zuschneiden: nur der Rahmen bleibt, Bereiche wandern mit', (tester) async {
+      final png = (await tester.runAsync(() => _bluePng(200, 100)))!;
+      ImageEditResult? result;
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light,
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => result = await showImageEditor(
+              context,
+              png,
+              targetMode: ImageTargetMode.regions,
+              targets: const [ImageTarget(x: 0.75, y: 0.5, w: 0.2, h: 0.4)],
+            ),
+            child: const Text('Öffnen'),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('Öffnen'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500)); // Seitenübergang
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Zuschneiden'));
+      await tester.pumpAndSettle();
+      final box = canvas(tester);
+      await tester.dragFrom(Offset(box.left + box.width * 0.5, box.top + box.height * 0.01),
+          Offset(box.width * 0.49, box.height * 0.98));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-crop-frame')), findsOneWidget);
+      await tester.tap(find.text('Übernehmen'));
+      await _settleImageWork(tester);
+
+      expect(result!.cropped, isTrue);
+      expect(result!.imageChanged, isTrue);
+      expect(result!.edits, isEmpty);
+      final image = (await tester.runAsync(() async =>
+          (await (await ui.instantiateImageCodec(result!.bytes)).getNextFrame()).image))!;
+      expect(image.width, closeTo(98, 3));
+      expect(image.height, closeTo(98, 3));
+      final region = result!.targets.single;
+      expect(region.x, closeTo(0.5, 0.04));
+      expect(region.w, closeTo(0.4, 0.04));
     });
 
     testWidgets('Bereich für Bild markieren aufziehen', (tester) async {

@@ -16,6 +16,7 @@ import '../../services/ai_service.dart';
 import '../../services/image_crop.dart';
 import '../../services/image_edit.dart';
 import '../../services/question_parsing.dart';
+import '../../services/task_label_locator.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
 import '../study/script_match_runner.dart';
@@ -51,7 +52,22 @@ class PageQuestionCreationSheet extends StatefulWidget {
     this.initialQuestionText,
     this.examContext,
     this.aiFactory,
+    this.existingCards = const [],
+    this.onSaved,
+    this.onInteractive,
   });
+
+  /// Schon aus dieser Seite erstellte Karten (Hinweis gegen Doppelte).
+  final List<Flashcard> existingCards;
+
+  /// Nach dem Speichern: die Karten und der Fokus-Text (z.B. „Aufgabe 1a“) –
+  /// der Viewer markiert die Stelle damit im PDF als erstellt.
+  final void Function(List<Flashcard> cards, String focus)? onSaved;
+
+  /// „Interaktiv üben“: statt einer Quizfrage eine interaktive Aufgabe
+  /// (Rechenweg, Terminierung, Kristallgitter) – das Sheet schließt sich, der
+  /// Viewer öffnet den Import mit dem Fokus-Text.
+  final void Function(String focus)? onInteractive;
 
   /// Nur für Tests: baut den KI-Zugang aus API-Key und Modell (sonst der
   /// echte [AiService]).
@@ -324,6 +340,26 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
     ));
   }
 
+  /// Was auf dieser Seite schon als erstellt markiert ist (siehe
+  /// MaterialViewerScreen) und zum Fokus-Text passt – z.B. „Aufgabe 1a“.
+  String? get _alreadyCreated {
+    final focus = _focusController.text.trim();
+    if (focus.isEmpty) return null;
+    String norm(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    final label = TaskLabelLocator.parseLabel(focus);
+    for (final h in widget.highlightsOnPage) {
+      if (h.source != HighlightSource.question) continue;
+      final other = TaskLabelLocator.parseLabel(h.text);
+      if (label != null && other != null) {
+        if (label == other) return h.text;
+        continue;
+      }
+      final a = norm(focus), b = norm(h.text);
+      if (a == b || (a.length >= 20 && b.length >= 20 && (a.contains(b) || b.contains(a)))) return h.text;
+    }
+    return null;
+  }
+
   @override
   void dispose() {
     _focusController.dispose();
@@ -552,7 +588,14 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           imageTargets: i == tier && mode != null ? result.targets : null,
         );
       }
-      if (editable) {
+      if (result.cropped) {
+        // Zugeschnitten: das Ergebnis ist das neue Ausgangsbild, bisherige
+        // Abdeckungen sind darin fest eingerechnet.
+        question
+          ..imageBase = result.bytes
+          ..imageEdits = const []
+          ..sharedImage = newBase64;
+      } else if (editable) {
         question
           ..imageEdits = result.edits
           ..sharedImage = newBase64;
@@ -595,7 +638,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
       weight: defaultFlashcardWeightFor(widget.material.kind),
     );
     final question = _GeneratedQuestion([card], manual: true)
-      ..imageBase = image
+      ..imageBase = result.cropped ? result.bytes : image
       ..imageEdits = result.edits
       ..sharedImage = card.imageBase64;
     setState(() {
@@ -670,6 +713,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
     if (!mounted) return;
     // Stammt die Seite aus einem Übungsblatt: Erklärung im Skript suchen.
     unawaited(matchNewCardsToScript(context, cards));
+    widget.onSaved?.call(cards, _focusController.text.trim());
     setState(() => _saving = false);
     Navigator.of(context).pop(kept.length);
   }
@@ -750,11 +794,45 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
         ],
       );
 
+  Widget _existingCards(AppColors c) => Padding(
+        key: const ValueKey('page-q-existing'),
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Material(
+          color: c.goodSoft,
+          clipBehavior: Clip.antiAlias,
+          borderRadius: BorderRadius.circular(12),
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              leading: Icon(Icons.check_circle_outline, color: c.good, size: 20),
+              title: Text(
+                widget.existingCards.length == 1
+                    ? '1 Frage aus dieser Seite gibt es schon'
+                    : '${widget.existingCards.length} Fragen aus dieser Seite gibt es schon',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.good),
+              ),
+              children: [
+                for (final card in widget.existingCards)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text('• ${card.front.split('\n').first}',
+                        maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+
   Widget _buildConfig(AppColors c) {
     final focusImage = _focusImage;
+    final duplicate = _alreadyCreated;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (widget.existingCards.isNotEmpty) _existingCards(c),
         _sectionTitle(
           c,
           'Fokus (optional)',
@@ -802,8 +880,26 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
           enabled: !_generating,
           maxLines: null,
           minLines: 2,
+          onChanged: (_) => setState(() {}),
           decoration: _fieldDecoration(c, 'Worum soll es gehen? Textauswahl aus dem PDF oder eigene Anweisung'),
         ),
+        if (duplicate != null)
+          Container(
+            key: const ValueKey('page-q-duplicate'),
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(10)),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 18, color: c.warn),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('„$duplicate“ hast du auf dieser Seite schon als Frage erstellt.',
+                      style: TextStyle(fontSize: 12.5, color: c.ink)),
+                ),
+              ],
+            ),
+          ),
         const SizedBox(height: 8),
         TextField(
           controller: _answerController,
@@ -891,6 +987,20 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
             final n => '$n Fragen erstellen',
           }),
         ),
+        if (widget.onInteractive != null) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const ValueKey('page-q-interactive'),
+            onPressed: _generating
+                ? null
+                : () {
+                    widget.onInteractive!(_focusController.text.trim());
+                    Navigator.of(context).pop();
+                  },
+            icon: const Icon(Icons.functions, size: 18),
+            label: const Text('Interaktiv üben (Rechenweg, Terminierung, Kristall)'),
+          ),
+        ],
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(top: 14),

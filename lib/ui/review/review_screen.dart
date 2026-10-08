@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../speedrun/speedrun_screen.dart';
 import '../widgets/math_text.dart';
 import '../../models/app_settings.dart';
 import '../../models/concept.dart';
@@ -18,6 +19,7 @@ import '../../models/gantt_task.dart';
 import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
 import '../../models/step_task.dart';
+import '../../repositories/module_repository.dart';
 import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
@@ -1102,7 +1104,27 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
       active: _step != _Step.pick,
       message: 'Die erstellten Konzepte und Karten sind noch nicht gespeichert.',
       child: Scaffold(
-        appBar: AppBar(title: const Text('Nachbereiten-Modus')),
+        appBar: AppBar(
+          title: const Text('Nachbereiten-Modus'),
+          actions: [
+            // Speedrun gehört zum Nachbereiten: schneller Durchlauf durch alle
+            // Konzepte des Fachs, Fehler werden danach vertieft.
+            if (_step == _Step.pick)
+              TextButton.icon(
+                key: const ValueKey('review-speedrun'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => SpeedrunScreen(
+                      moduleId: widget.moduleId,
+                      moduleName: context.read<ModuleRepository?>()?.byId(widget.moduleId)?.name ?? '',
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.bolt_outlined, size: 18),
+                label: const Text('Speedrun'),
+              ),
+          ],
+        ),
         body: Padding(
           padding: const EdgeInsets.all(16),
           child: _buildBody(),

@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1365 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1373 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1311,6 +1311,36 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `unsupported_task_test`, `unsupported_task_repository_test`, Ergänzungen in
     `task_import_screen_test` (mehrere Teilaufgaben, Sammelliste, abwählen, Bildschirm),
     `card_edit_screen_test`, `cascade_delete_test`, `sync_merge_test`.
+56. Aufräumen + Markieren + Bild (Nutzer: Fach-Seite zu voll; Aufgaben aus dem PDF
+    nicht doppelt übernehmen; Bild ausschneiden; Bild groß ansehen). ModuleDetailScreen ohne
+    "Aufgabe interaktiv übernehmen", "Noch nicht interaktiv" und Speedrun-Zeile;
+    Speedrun = `review-speedrun` in der AppBar des ReviewScreen (Schritt pick);
+    Sammelliste in den Einstellungen (`settings-unsupported-tasks`, Repository dort geladen),
+    `UnsupportedTasksScreen` mit Fach-Filter (`unsupported-filter-<moduleId>`, Startwert
+    `moduleId`). Interaktiv übernehmen: `PageQuestionCreationSheet.onInteractive` (Knopf
+    `page-q-interactive`, schließt das Sheet) → `MaterialViewerScreen._taskFromPage` öffnet
+    TaskImportScreen mit Seitenbild + Fokus-Text (der ƒ-Knopf ist weg). Markieren:
+    `HighlightSource.question` (neu; HighlightContext ignoriert sie), nach dem Speichern
+    (`onSaved(cards, focus)`) bzw. nach gespeichertem Import legt `_markCreated` eine
+    HighlightAnnotation (Akzentfarbe) auf die ausgewählten Zeilen oder auf die per
+    `TaskLabelLocator.find` (lib/services/task_label_locator.dart: "Aufgabe 1a"/"1 a)"/"2b" →
+    Überschrift "Aufgabe N" bzw. "N." und darunter "a)"; sonst wörtlich über
+    HighlightMatcher, auf die echten Zeilen gekürzt) gefundenen Zeilen, und speichert still
+    (`_save(quiet: true)`). Viewer-Leiste `viewer-created-on-page` (Karten mit
+    sourceMaterialId/sourcePage der aktuellen Seite), Sheet zeigt `existingCards`
+    (`page-q-existing`) und warnt (`page-q-duplicate`), wenn der Fokus-Text zu einer
+    Frage-erstellt-Markierung der Seite passt (gleiche Bezeichnung oder gleicher Text).
+    Bild-Editor: Werkzeug Zuschneiden (`_Tool.crop`/`_Kind.crop`, Rahmen außen abgedunkelt,
+    `editor-crop-frame`), beim Übernehmen erst Abdeckungen/Texte einrechnen, dann
+    `cropImageRelative`; `ImageEditResult.cropped` (dann `edits` leer, `bytes` = neues
+    Ausgangsbild), Ziele über `cropTargets` umgerechnet (außerhalb fallen weg); das
+    Frage-erstellen-Sheet übernimmt bei `cropped` das Ergebnis als neues `imageBase`.
+    Vollbild: `lib/ui/widgets/zoomable_image.dart` (`ZoomableImage` antippen →
+    `showImageFullscreen`, InteractiveViewer bis 8×) in QuestionAnswerView, StepTaskView,
+    CrystalTaskView; Bildfragen mit Knopf `image-question-zoom`. Tests:
+    `task_label_locator_test`, `zoomable_image_test`, Ergänzungen in `image_editor_test`
+    (Zuschneiden, cropTargets), `page_question_creation_test` (schon erstellt, Doppel-Warnung,
+    interaktiv), `task_import_screen_test` (Fach-Filter).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

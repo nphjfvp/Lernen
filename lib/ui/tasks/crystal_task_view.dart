@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../widgets/zoomable_image.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
 import '../../services/crystal_geometry.dart';
@@ -745,13 +746,7 @@ class _CrystalTaskViewState extends State<CrystalTaskView> {
     try {
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 220),
-            child: Image.memory(base64Decode(base64), fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
-          ),
-        ),
+        child: ZoomableImage(bytes: base64Decode(base64)),
       );
     } catch (_) {
       return const SizedBox.shrink();

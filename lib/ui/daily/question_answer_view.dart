@@ -23,6 +23,7 @@ import '../study/study_aids.dart';
 import '../tasks/crystal_task_view.dart';
 import '../tasks/gantt_task_view.dart';
 import '../tasks/step_task_view.dart';
+import '../widgets/zoomable_image.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
 import '../widgets/relative_image.dart';
@@ -1305,13 +1306,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       padding: const EdgeInsets.only(bottom: 16),
       child: Stack(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
-              child: Image.memory(bytes, fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
-            ),
-          ),
+          ZoomableImage(bytes: bytes, borderRadius: 14),
           if (canEdit)
             Positioned(
               top: 4,
@@ -1816,6 +1811,15 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
               ),
           ],
         ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            key: const ValueKey('image-question-zoom'),
+            onPressed: () => showImageFullscreen(context, bytes),
+            icon: const Icon(Icons.zoom_in, size: 18),
+            label: const Text('Bild groß ansehen'),
+          ),
+        ),
         const SizedBox(height: 14),
         if (_labelTyping) ..._buildLabelInputs(c) else ..._buildLabelPool(c),
       ],
@@ -1949,6 +1953,15 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                 child: IgnorePointer(child: Icon(Icons.adjust, key: const ValueKey('mark-marker'), size: 32, color: markerColor)),
               ),
           ],
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            key: const ValueKey('image-question-zoom'),
+            onPressed: () => showImageFullscreen(context, bytes),
+            icon: const Icon(Icons.zoom_in, size: 18),
+            label: const Text('Bild groß ansehen'),
+          ),
         ),
       ],
     );

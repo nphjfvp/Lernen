@@ -649,6 +649,21 @@ void main() {
     expect(find.text('1 Frage erstellt – sie kommt bald im Lernplan dran.'), findsOneWidget);
   });
 
+  testWidgets('Sammelliste aus den Einstellungen: alle Fächer, nach Fach filtern', (tester) async {
+    await pump(tester, const UnsupportedTasksScreen());
+    await unsupported.add(moduleId: 'm1', text: 'Skizziere das Diagramm.', needs: 'Kurve in Diagramm zeichnen');
+    await unsupported.add(moduleId: 'm2', text: 'Zeichne den Netzplan.', needs: 'Netzplan zeichnen');
+    await tester.pump();
+    expect(find.text('Alle Fächer (2)'), findsOneWidget);
+    expect(find.text('Skizziere das Diagramm.'), findsOneWidget);
+    expect(find.text('Zeichne den Netzplan.'), findsOneWidget);
+
+    await tap(tester, 'unsupported-filter-m2');
+    expect(find.text('Skizziere das Diagramm.'), findsNothing);
+    expect(find.text('Zeichne den Netzplan.'), findsOneWidget);
+    expect(find.text('Liste kopieren (1)'), findsOneWidget);
+  });
+
   testWidgets('ausprobieren: die Aufgabe so lösen wie im Quiz, ohne zu speichern', (tester) async {
     TaskImportScreen.aiFactory = (key, model) => AiService(apiKey: key, model: model, client: MockClient((r) async => _chat(_stepsDraft())));
     final cards = await pump(tester, const TaskImportScreen(moduleId: 'm1', initialText: "Löse y' = 2x."));

@@ -25,7 +25,6 @@ import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../models/summary.dart';
 import '../../repositories/summary_repository.dart';
-import '../../repositories/unsupported_task_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/material_file_store.dart';
@@ -48,9 +47,6 @@ import '../practice/practice_screen.dart';
 import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
-import '../speedrun/speedrun_screen.dart';
-import '../tasks/task_import_screen.dart';
-import '../tasks/unsupported_tasks_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/edit_text_dialog.dart';
 import '../widgets/mastery_dot.dart';
@@ -86,9 +82,6 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     await context.read<FlashcardRepository>().loadForModule(widget.moduleId);
     if (!mounted) return;
     await context.read<LectureUnitRepository>().loadForModule(widget.moduleId);
-    if (!mounted) return;
-    final unsupported = context.read<UnsupportedTaskRepository?>();
-    if (unsupported != null && !unsupported.isLoaded) await unsupported.load();
   }
 
   /// Knopf zum Aufgaben-Ordner (nur wenn es Aufgaben zum Verstehen gibt) –
@@ -135,7 +128,6 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     final concepts = context.watch<ConceptRepository>().forModule(widget.moduleId);
     final flashcards = context.watch<FlashcardRepository>().forModule(widget.moduleId);
     final units = context.watch<LectureUnitRepository>().forModule(widget.moduleId);
-    final unsupportedCount = context.watch<UnsupportedTaskRepository?>()?.forModule(widget.moduleId).length ?? 0;
     final days = module.daysUntilExam;
 
     final content = SafeArea(
@@ -233,7 +225,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           child: _ModeCard(
                             icon: Icons.auto_awesome_outlined,
                             title: 'Nachbereiten',
-                            subtitle: 'Folien + Übungen → Konzepte & Karten',
+                            subtitle: 'Folien + Übungen → Konzepte & Karten · Speedrun',
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => ReviewScreen(moduleId: module.id)),
                             ),
@@ -254,35 +246,6 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     ),
                     const SizedBox(height: 12),
                     _SoftRow(
-                      key: const ValueKey('module-task-import'),
-                      icon: Icons.functions,
-                      title: 'Aufgabe interaktiv übernehmen',
-                      subtitle: 'Übungsaufgabe als Text oder Foto, auch mehrere Teilaufgaben – Rechenweg, Gantt-Diagramm '
-                          'oder Kristallgitter, die App rechnet und zeichnet nach',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => TaskImportScreen(moduleId: module.id, moduleName: module.name),
-                        ),
-                      ),
-                    ),
-                    ...[
-                      const SizedBox(height: 12),
-                      _SoftRow(
-                        key: const ValueKey('module-unsupported-tasks'),
-                        icon: Icons.playlist_add_check,
-                        title: unsupportedCount > 0 ? 'Noch nicht interaktiv ($unsupportedCount)' : 'Noch nicht interaktiv',
-                        subtitle: unsupportedCount > 0
-                            ? 'Aufgaben, die die App noch nicht selbst prüfen kann – kopieren und schicken oder als Fragen erstellen'
-                            : 'Noch leer – hier landen Aufgaben, die beim Übernehmen nicht interaktiv gingen',
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => UnsupportedTasksScreen(moduleId: module.id, moduleName: module.name),
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    _SoftRow(
                       icon: Icons.style_outlined,
                       title: 'Üben (Lernmodus)',
                       subtitle: 'Frei üben, unabhängig von Fälligkeit/Klausur-Pacing – zählt trotzdem für die Planung',
@@ -300,17 +263,6 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => MockExamScreen(moduleId: module.id, moduleName: module.name),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _SoftRow(
-                      icon: Icons.bolt_outlined,
-                      title: 'Speedrun (Nachbereiten)',
-                      subtitle: 'Schneller Durchlauf durch alle Konzepte – Fehler werden danach vertieft',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => SpeedrunScreen(moduleId: module.id, moduleName: module.name),
                         ),
                       ),
                     ),
@@ -1269,7 +1221,7 @@ class _ModeCard extends StatelessWidget {
 }
 
 class _SoftRow extends StatelessWidget {
-  const _SoftRow({super.key, required this.icon, required this.title, required this.subtitle, this.onTap});
+  const _SoftRow({required this.icon, required this.title, required this.subtitle, this.onTap});
   final IconData icon;
   final String title;
   final String subtitle;

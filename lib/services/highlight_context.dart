@@ -12,11 +12,13 @@ class HighlightContext {
 
   /// Leerer String, wenn nichts markiert/notiert wurde – nichts anzuhängen.
   static String build(MaterialItem material) {
-    if (material.highlights.isEmpty && material.notes.trim().isEmpty && material.pageNotes.isEmpty) return '';
+    // "Frage erstellt"-Häkchen sagen nichts über den Inhalt.
+    final highlights = [for (final h in material.highlights) if (h.source != HighlightSource.question) h];
+    if (highlights.isEmpty && material.notes.trim().isEmpty && material.pageNotes.isEmpty) return '';
 
     final buffer = StringBuffer()
       ..writeln('[Vom Nutzer in "${material.fileName}" als besonders wichtig markiert]');
-    for (final h in material.highlights) {
+    for (final h in highlights) {
       buffer.writeln('- (${_label(h.color)}) "${h.text}"');
     }
     final notes = material.notes.trim();

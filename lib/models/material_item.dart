@@ -28,8 +28,11 @@ HighlightColor highlightColorFromString(String? value) => HighlightColor.values.
     );
 
 /// Wer die Markierung erzeugt hat: der Nutzer selbst (durch Textauswahl in
-/// [MaterialViewerScreen]) oder die KI (via [AiService.suggestHighlights]).
-enum HighlightSource { manual, ai }
+/// [MaterialViewerScreen]), die KI (via [AiService.suggestHighlights]) oder
+/// [question]: aus dieser Stelle wurde schon eine Frage erstellt (Häkchen im
+/// PDF, damit keine Aufgabe doppelt übernommen wird) – zählt nicht als
+/// inhaltliche Markierung für die KI.
+enum HighlightSource { manual, ai, question }
 
 HighlightSource highlightSourceFromString(String? value) => HighlightSource.values.firstWhere(
       (e) => e.name == value,

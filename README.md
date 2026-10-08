@@ -1393,6 +1393,29 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zc. Übersichtlicher: erstellte Aufgaben markiert, Bilder zuschneiden und groß ansehen
+
+- **Schon erstellte Aufgaben im PDF markiert**: nach „Frage erstellen“ (bzw.
+  „Interaktiv üben“) markiert der PDF-Viewer die Stelle blau – die ausgewählte
+  Textstelle oder, wenn nur „Aufgabe 1a“ eingetippt wurde, die passende Zeile
+  der Seite (Überschrift „Aufgabe 1“ → Teilaufgabe „a)“) – und speichert das
+  gleich mit. Über dem PDF steht „✓ N Fragen aus dieser Seite erstellt“
+  (antippen zeigt sie), und „Frage erstellen“ zeigt oben, was es aus der Seite
+  schon gibt, und warnt, wenn man dieselbe Aufgabe noch einmal eintippt. Die
+  Markierung erscheint in „Meine Markierungen“ als „Frage erstellt“ und lässt
+  sich dort entfernen; für die KI zählt sie nicht als inhaltliche Markierung.
+- **Fach-Seite aufgeräumt**: „Aufgabe interaktiv übernehmen“ ist jetzt Teil von
+  „Frage erstellen“ im PDF (Knopf „Interaktiv üben“, für alle Materialarten),
+  die Liste „Noch nicht interaktiv“ steht in den Einstellungen (alle Fächer,
+  nach Fach filterbar), der **Speedrun** liegt im Nachbereiten (oben rechts).
+- **Bild zuschneiden**: im Bild-Editor neben Abdecken und Text das Werkzeug
+  „Zuschneiden“ – Rahmen um den Teil ziehen, der bleiben soll (verschieben,
+  Größe ändern, „Zuschnitt aufheben“); Stellen/Bereiche von Bildfragen wandern
+  mit, was außerhalb liegt, fällt weg.
+- **Bild groß ansehen**: Bilder in Fragen und Aufgaben (Quiz, Rechenweg,
+  Kristallgitter) antippen öffnet sie bildschirmfüllend zum Zoomen; bei
+  Bildfragen (beschriften/markieren) über „Bild groß ansehen“.
+
 ### 5zb. Kristallgitter im Würfel und die Sammelliste „Noch nicht interaktiv“
 
 Neuer Aufgabentyp **Kristallgitter**: Richtungen und Ebenen im kubischen
@@ -1424,7 +1447,7 @@ Kartenliste: Gitter, Art und Indizes je Teilaufgabe, mit gezeichneter Vorschau
 und Hinweis, wenn sich etwas nicht zeichnen lässt (dann „ablesen“ statt
 „einzeichnen“).
 
-**Mehrere Teilaufgaben von einem Foto**: „Aufgabe interaktiv übernehmen“ macht
+**Mehrere Teilaufgaben von einem Foto**: der Import interaktiver Aufgaben macht
 aus einem Übungsblatt-Foto jetzt **jede Teilaufgabe zu einem eigenen Entwurf**
 (z.B. 1b Rechenweg, 2a Kristall-Richtungen, 3a Ebenen …). Jeder Entwurf hat
 seinen Editor, eine Häkchen-Box zum Mitspeichern und „Ausprobieren“;
@@ -1435,9 +1458,10 @@ neu versuchen („Als Kristallgitter“ …).
 **Sammelliste „Noch nicht interaktiv“**: Teilaufgaben, die die App (noch) nicht
 selbst prüfen kann, landen **automatisch** auf einer Liste – mit der Begründung
 der KI und der **fehlenden Bedienart** in wenigen Wörtern („Kurve in Diagramm
-zeichnen“, „Netzplan zeichnen“ …). Im Fach steht dafür immer die Zeile
-„Noch nicht interaktiv (N)“ (auch im „Aufgabe übernehmen“-Bildschirm oben
-rechts erreichbar): die Aufgaben sind nach fehlender Bedienart
+zeichnen“, „Netzplan zeichnen“ …). Die Liste steht **in den Einstellungen**
+(„Noch nicht interaktiv“ → „Liste öffnen“, alle Fächer zusammen, oben nach Fach
+filterbar; auch im „Aufgabe übernehmen“-Bildschirm oben rechts erreichbar): die
+Aufgaben sind nach fehlender Bedienart
 gruppiert (häufigste zuerst), **„Liste kopieren“** legt alles als Text in die
 Zwischenablage – zum Einfügen und Weiterschicken, damit man sieht, welcher
 Aufgabentyp als Nächstes am meisten bringt. Einträge lassen sich einzeln
@@ -1481,10 +1505,10 @@ liefert nur die Struktur und die erwarteten Antworten:
   „Mit anderen Zahlen üben“. Zählweise wie im Skript (Tage einschließlich oder
   Zeitpunkte). Am breiten Bildschirm: Aufgabe links, Diagramm rechts.
 
-**Aufgabe übernehmen**: im Fach „Aufgabe interaktiv übernehmen“, im
-Aufgaben-Ordner „Interaktiv üben“ an jeder Aufgabe (Text, Erklärung, Bild und
-Quelle vorbelegt) oder im PDF-Viewer eines Übungsblatts der Knopf ƒ (aktuelle
-Seite als Bild, markierter Text). Aufgabentext und/oder Fotos eingeben (bei
+**Aufgabe übernehmen**: im PDF-Viewer unter „Frage erstellen“ der Knopf
+„Interaktiv üben (Rechenweg, Terminierung, Kristall)“ (aktuelle Seite als Bild,
+Fokus-Text bzw. markierter Text wie „Aufgabe 1a“) oder im Aufgaben-Ordner
+„Interaktiv üben“ an jeder Aufgabe (Text, Erklärung, Bild und Quelle vorbelegt). Aufgabentext und/oder Fotos eingeben (bei
 einem Seitenfoto reicht „Aufgabe 2b“), optional die vorhandene Lösung. Die KI
 schlägt die Aufgabe vor, die App prüft die Musterlösung sofort („Musterlösung
 von der App nachgerechnet“ oder die gefundenen Unstimmigkeiten) bzw. rechnet

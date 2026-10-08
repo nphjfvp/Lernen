@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/zoomable_image.dart';
 import '../../models/flashcard.dart';
 import '../../models/step_task.dart';
 import '../../repositories/settings_repository.dart';
@@ -321,13 +322,7 @@ class _StepTaskViewState extends State<StepTaskView> {
       final bytes = base64Decode(base64);
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 220),
-            child: Image.memory(bytes, fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink()),
-          ),
-        ),
+        child: ZoomableImage(bytes: bytes),
       );
     } catch (_) {
       return const SizedBox.shrink();
