@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
 import '../../services/calc_task_detector.dart';
+import '../../services/bom_calculator.dart';
 import '../../services/crystal_geometry.dart';
 import '../../services/gantt_scheduler.dart';
 import '../../services/question_parsing.dart';
 import '../../services/stage_gate_service.dart';
+import '../tasks/bom_task_editor.dart';
 import '../tasks/crystal_task_editor.dart';
 import '../tasks/gantt_task_editor.dart';
 import '../tasks/step_task_editor.dart';
@@ -75,6 +78,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   late StepTask? _steps = _type == QuestionType.steps ? StepTask.fromMap(widget.card.taskData) : null;
   late GanttTask? _gantt = _type == QuestionType.gantt ? GanttTask.fromMap(widget.card.taskData) : null;
   late CrystalTask? _crystal = _type == QuestionType.crystal ? CrystalTask.fromMap(widget.card.taskData) : null;
+  late BomTask? _bom = _type == QuestionType.bom ? BomTask.fromMap(widget.card.taskData) : null;
 
   QuestionType get _type => widget.card.type;
   bool get _isChoice => _type == QuestionType.singleChoice || _type == QuestionType.multipleChoice;
@@ -258,6 +262,15 @@ class _CardEditScreenState extends State<CardEditScreen> {
       taskData = crystal.confirmed().toMap();
       if (back.isEmpty) back = CrystalGeometry.solutionText(crystal);
     }
+    if (_type == QuestionType.bom) {
+      final bom = _bom;
+      if (bom == null || !bom.isUsable) return _fail('Der Erzeugnisbaum braucht ein Erzeugnis mit Bestandteilen und mindestens eine gefragte Liste.');
+      final problems = BomCalculator(bom).problems();
+      if (problems.isNotEmpty) return _fail(problems.first);
+      taskData = bom.confirmed().toMap();
+      // Die Musterlösung rechnet bei der Stückliste die App.
+      back = BomCalculator(bom).fullSolution();
+    }
     final edited = widget.card.copyWithContent(
       front: front,
       back: back,
@@ -330,6 +343,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
             CrystalTaskEditor(task: _crystal!, onChanged: (t) => setState(() => _crystal = t)),
             const SizedBox(height: 16),
           ],
+          if (_bom != null) ...[
+            BomTaskEditor(task: _bom!, onChanged: (t) => setState(() => _bom = t)),
+            const SizedBox(height: 16),
+          ],
           if (_type == QuestionType.freeText) ...[
             TextField(
               key: const ValueKey('card-edit-correct-text'),
@@ -339,7 +356,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
             ),
             const SizedBox(height: 16),
           ],
-          if (_type != QuestionType.diagramLabel && _type != QuestionType.gantt)
+          if (_type != QuestionType.diagramLabel && _type != QuestionType.gantt && _type != QuestionType.bom)
             TextField(
               key: const ValueKey('card-edit-back'),
               controller: _back,

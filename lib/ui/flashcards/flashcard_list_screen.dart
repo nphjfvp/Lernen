@@ -1473,6 +1473,7 @@ class _AnswerDetail extends StatelessWidget {
       case QuestionType.steps:
       case QuestionType.gantt:
       case QuestionType.crystal:
+      case QuestionType.bom:
         return TaskAnswerPreview(card: card);
     }
   }

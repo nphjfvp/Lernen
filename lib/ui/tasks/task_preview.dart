@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/math_text.dart';
+import 'bom_task_editor.dart';
 import 'crystal_task_editor.dart';
 import 'gantt_task_editor.dart';
 
@@ -59,6 +61,23 @@ class TaskAnswerPreview extends StatelessWidget {
               ),
             const SizedBox(height: 6),
             CrystalSolutionPreview(part: crystal.parts.first, lattice: crystal.latticeOf(crystal.parts.first), height: 180),
+          ],
+        );
+      case QuestionType.bom:
+        final bom = BomTask.fromMap(card.taskData);
+        if (bom == null) return Text('Keine Stückliste hinterlegt.', style: muted.copyWith(color: c.danger));
+        return Column(
+          key: const ValueKey('task-preview-bom'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (i, p) in bom.parts.indexed)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('${String.fromCharCode(97 + i)}) ${p.kind.label}', style: muted),
+              ),
+            const SizedBox(height: 6),
+            BomTaskPreview(task: bom),
           ],
         );
       default:

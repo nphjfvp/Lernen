@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../models/bom_task.dart';
 import '../models/crystal_task.dart';
 import '../models/flashcard.dart';
 import '../models/gantt_task.dart';
@@ -402,6 +403,8 @@ class AnswerChecker {
       case QuestionType.crystal:
         final crystal = CrystalTask.fromMap(q.taskData);
         return crystal != null && CrystalGeometry.playable(crystal);
+      case QuestionType.bom:
+        return BomTask.fromMap(q.taskData)?.isUsable ?? false;
     }
   }
 

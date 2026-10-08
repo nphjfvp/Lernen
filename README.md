@@ -1393,6 +1393,37 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5ze. Stücklisten aus dem Erzeugnisbaum
+
+Neuer Aufgabentyp **Stückliste** (Produktionsmanagement): aus einem
+Erzeugnisbaum die **Mengenübersichts-**, **Struktur-** oder
+**Baukastenstückliste** (auch „Baustellen-“/„Baustückliste“) aufstellen. Die KI
+liest beim „Aufgabe übernehmen“ **nur den Baum** ab (Sach-Nr., Bezeichnung,
+Menge an jeder Verbindungslinie, Einheiten wie g/kg) – **die Listen rechnet die
+App selbst**, auch wenn eine Baugruppe mehrfach vorkommt.
+
+- **Üben**: die App zeichnet den Baum mit Stufen und Mengen. Ein Teil im Baum
+  **antippen** trägt es als neue Zeile ein (oder „Zeile hinzufügen“), dann Stufe,
+  Menge und – bei der Baukastenstückliste – das **AK** (1 = eigene Stückliste,
+  2 = keine) eintragen. Bei der Baukastenstückliste legt man die nötigen Listen
+  selbst an („Liste anlegen“); sind im Blatt Formulare vorgegeben, sind sie schon da.
+- **Prüfen** markiert jede Zeile grün oder rot, mit konkreter Rückmeldung:
+  „Menge nicht multipliziert – entlang des Pfads alle Mengen malnehmen“,
+  „kommt 3-mal im Baum vor – alle Vorkommen zusammenzählen“, „In der
+  Strukturstückliste steht die Menge je übergeordnete Baugruppe, nicht die
+  Gesamtmenge“, „kein direkter Bestandteil – nur eine Stufe tief“, „AK: hat
+  eine eigene Stückliste → AK 1“, „steht an der falschen Stelle“ (eine
+  vergessene Zeile macht nicht alle folgenden falsch), dazu was noch fehlt
+  („Es fehlt noch 1 Liste“).
+- **Tipps** (gestuft, der letzte nennt die Zeilenzahl bzw. die nötigen Listen),
+  **Lösung zeigen** als fertige Tabelle; Bewertung wie bei den anderen Aufgaben.
+- **Bearbeiten**: der Baum als Text, eine Zeile je Teil wie in der
+  Strukturstückliste (`Stufe; Sach-Nr.; Bezeichnung; Menge; Einheit`), dazu,
+  welche Listen gefragt sind (Mengenübersicht mit/ohne Baugruppen,
+  Strukturstückliste mit Gesamtmengen, vorgegebene Baukasten-Formulare) – mit
+  gezeichnetem Baum und Musterlösung als Vorschau. Unsicher gelesene Zahlen sind
+  gelb und werden vor dem Speichern bestätigt.
+
 ### 5zd. Meldungen beim Rechenweg verstehen: KI fragen und korrigieren lassen
 
 Findet die App beim Nachrechnen eines Rechenwegs etwas (z.B. „„8,63·10⁻⁹“ ist
@@ -1466,7 +1497,7 @@ aus einem Übungsblatt-Foto jetzt **jede Teilaufgabe zu einem eigenen Entwurf**
 (z.B. 1b Rechenweg, 2a Kristall-Richtungen, 3a Ebenen …). Jeder Entwurf hat
 seinen Editor, eine Häkchen-Box zum Mitspeichern und „Ausprobieren“;
 „N Aufgaben speichern“ speichert alle angehakten auf einmal. Die Art lässt sich
-vorgeben (Automatisch / Rechenweg / Terminierung / Kristall) oder je Teilaufgabe
+vorgeben (Automatisch / Rechenweg / Terminierung / Kristall / Stückliste) oder je Teilaufgabe
 neu versuchen („Als Kristallgitter“ …).
 
 **Passt als normale Frage**: Ist eine Teilaufgabe eigentlich eine ganz normale

@@ -1,3 +1,4 @@
+import 'bom_task.dart';
 import 'crystal_task.dart';
 import 'flashcard.dart';
 import 'gantt_task.dart';
@@ -7,7 +8,8 @@ import 'step_task.dart';
 enum InteractiveKind {
   steps('Rechenweg', QuestionType.steps),
   gantt('Terminierung', QuestionType.gantt),
-  crystal('Kristallgitter', QuestionType.crystal);
+  crystal('Kristallgitter', QuestionType.crystal),
+  bom('Stückliste', QuestionType.bom);
 
   const InteractiveKind(this.label, this.type);
   final String label;
@@ -19,6 +21,9 @@ InteractiveKind? interactiveKindFrom(Object? raw) {
   if (v.contains('gantt') || v.contains('termin') || v.contains('schedul')) return InteractiveKind.gantt;
   if (v.contains('crystal') || v.contains('kristall') || v.contains('miller') || v.contains('würfel') || v.contains('wuerfel')) {
     return InteractiveKind.crystal;
+  }
+  if (v.contains('bom') || v.contains('stückliste') || v.contains('stueckliste') || v.contains('stuckliste') || v.contains('erzeugnis')) {
+    return InteractiveKind.bom;
   }
   if (v.contains('step') || v.contains('rechen') || v.contains('schritt')) return InteractiveKind.steps;
   return null;
@@ -35,6 +40,7 @@ class InteractiveTaskDraft {
     this.steps,
     this.gantt,
     this.crystal,
+    this.bom,
     this.reason = '',
     this.needs = '',
     this.incomplete = false,
@@ -53,6 +59,7 @@ class InteractiveTaskDraft {
   final StepTask? steps;
   final GanttTask? gantt;
   final CrystalTask? crystal;
+  final BomTask? bom;
 
   /// Warum nicht geeignet (bei [kind] null).
   final String reason;
@@ -76,6 +83,7 @@ class InteractiveTaskDraft {
         InteractiveKind.steps => steps?.isUsable ?? false,
         InteractiveKind.gantt => gantt != null,
         InteractiveKind.crystal => crystal?.isUsable ?? false,
+        InteractiveKind.bom => bom?.isUsable ?? false,
         null => false,
       };
 
@@ -83,6 +91,7 @@ class InteractiveTaskDraft {
         InteractiveKind.steps => steps?.toMap(),
         InteractiveKind.gantt => gantt?.toMap(),
         InteractiveKind.crystal => crystal?.toMap(),
+        InteractiveKind.bom => bom?.toMap(),
         null => null,
       };
 }

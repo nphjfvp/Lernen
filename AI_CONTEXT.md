@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1377 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1397 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1367,6 +1367,33 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     → normalizeGeneratedFlashcard → toFlashcards). TaskImportScreen: `_asQuestionBody`
     („Passt als normale Frage (Freitext)“, Knopf `task-import-as-question-i`, danach
     `task-import-as-question-done-i`), `_collectUnsupported` überspringt diese Entwürfe.
+59. Neuer Aufgabentyp Stückliste (`QuestionType.bom`, Nutzer-Liste „Noch nicht interaktiv“:
+    6 Stücklisten-Aufgaben). `lib/models/bom_task.dart`: `BomNode` (nr, name, quantity = Menge
+    an der Linie je 1 Stück der Baugruppe darüber, unit, children, uncertain; `walk()`),
+    `BomPart` (kind overview/structure/modular, includeAssemblies, totals, lists = vorgegebene
+    Formulare), `BomTask` (root, parts, baseQuantity; toMap/fromMap mit KI-Feldnamen,
+    Textform `outline`/`parseOutline` „Stufe; Sach-Nr.; Bezeichnung; Menge; Einheit“),
+    `bomListKindFrom`, `parseBomQuantity`, `bomQuantityText` (deutsches Komma).
+    `lib/services/bom_calculator.dart`: `BomCalculator` – mehrfach vorkommende Baugruppen werden
+    über die eine aufgelöste Stelle expandiert (`childrenOf`), `occurrences()` mit Pfadmengen,
+    `structure/overview/modular/assemblies/modularLists`, Prüfen `checkOverview/checkStructure`
+    (LCS-Zuordnung, Reihenfolge zählt) `/checkModular` → `BomVerdict` (rows je Zeile null/Fehler,
+    missing, listProblems) mit Diagnosen (nicht multipliziert, Vorkommen nicht addiert,
+    Gesamt- statt Linienmenge, zu tief, AK, Erzeugnis selbst, doppelt), `hints`,
+    `solutionText/fullSolution` (= Rückseite, schreibt immer die App), `problems()`.
+    UI: `bom_tree.dart` (`BomTreeView` Stack + CustomPaint, Keys `bom-node-<walkIndex>`;
+    `BomSolutionTables`), `bom_task_view.dart` (`BomTaskView`, Keys `bom-row-i-level/-qty/
+    -number/-delete/-error`, Baukasten `bom-<liste>-row-i-…-ak-1/2`, `bom-add-list`,
+    `bom-list-<nr>(-remove/-error)`, `bom-check/-hint-button/-reveal/-verdict/-solution/
+    -finished/-next/-submit/-part-i`), `bom_task_editor.dart` (`BomTaskEditor` mit
+    `bom-edit-outline/-kind-<name>/-assemblies/-totals/-lists/-uncertain/-confirm`,
+    `BomTaskPreview`). Eingebunden wie crystal: InteractiveKind.bom, Prompt-Abschnitt „Bei
+    "bom"“ (nur Baum ablesen), parseInteractiveTask (taskData.root → bom), QuestionParsing
+    (Alias/Synonyme, `root` flach, Inferenz vor crystal), AnswerChecker.isAnswerable,
+    StageGate (Aufgabentyp), QuestionAnswerView, TaskAnswerPreview, Kartenliste, Review-Icon,
+    CardEditScreen (kein Rückseitenfeld), TaskImportScreen (Art „Stückliste“, Ausprobieren).
+    Tests: `test/services/bom_calculator_test.dart`, `test/ui/bom_task_view_test.dart`,
+    Ergänzungen in `task_import_screen_test`, `card_edit_screen_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

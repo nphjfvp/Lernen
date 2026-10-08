@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lernen/models/app_settings.dart';
+import 'package:lernen/models/bom_task.dart';
 import 'package:lernen/models/crystal_task.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/gantt_task.dart';
@@ -694,6 +695,52 @@ void main() {
     expect(cards.saved.single.sourcePage, 4);
     expect(find.byKey(const ValueKey('task-import-as-question-done-0')), findsOneWidget);
     expect(unsupported.items, hasLength(1));
+  });
+
+  testWidgets('Stückliste übernehmen: KI liest nur den Baum, die App rechnet die Musterlösung', (tester) async {
+    TaskImportScreen.aiFactory = (key, model) => AiService(
+          apiKey: key,
+          model: model,
+          client: MockClient((r) async => _chat({
+                'tasks': [
+                  {
+                    'kind': 'bom',
+                    'front': 'b) Erstellen Sie die Strukturstückliste für folgendes Produkt.',
+                    'taskData': {
+                      'root': {
+                        'nr': '10',
+                        'name': 'Apfelkuchen',
+                        'children': [
+                          {'nr': '11', 'name': 'gefüllter Boden', 'qty': 1, 'children': [
+                            {'nr': '23', 'name': 'Füllung', 'qty': 2, 'uncertain': true},
+                          ]},
+                          {'nr': '12', 'name': 'Teigdeckel', 'qty': 220, 'unit': 'g'},
+                        ],
+                      },
+                      'parts': [
+                        {'list': 'structure'},
+                      ],
+                    },
+                  },
+                ],
+              })),
+        );
+    final cards = await pump(tester, const TaskImportScreen(moduleId: 'm1', initialText: 'Aufgabe 3b'), height: 4200);
+    await tap(tester, 'task-import-build');
+    expect(find.byKey(const ValueKey('bom-edit-outline')), findsOneWidget);
+    expect(find.byKey(const ValueKey('bom-edit-uncertain')), findsOneWidget);
+    expect(find.byKey(const ValueKey('bom-preview')), findsOneWidget);
+    // Kein Lösungsweg-Feld: die Lösung rechnet die App.
+    expect(find.byKey(const ValueKey('task-import-back-0')), findsNothing);
+    await tap(tester, 'bom-edit-confirm');
+
+    await tap(tester, 'task-import-save');
+    final card = cards.saved.single;
+    expect(card.type, QuestionType.bom);
+    expect(BomTask.fromMap(card.taskData)!.root.children, hasLength(2));
+    expect(card.back, contains('Strukturstückliste'));
+    expect(card.back, contains('..Stufe 2 | 23 | Füllung | 2'));
+    expect(card.back, contains('12 | Teigdeckel | 220 g'));
   });
 
   testWidgets('Sammelliste aus den Einstellungen: alle Fächer, nach Fach filtern', (tester) async {

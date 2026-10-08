@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/flashcard.dart';
+import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
@@ -20,6 +21,7 @@ import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
 import '../study/explain_chat.dart';
 import '../study/study_aids.dart';
+import '../tasks/bom_task_view.dart';
 import '../tasks/crystal_task_view.dart';
 import '../tasks/gantt_task_view.dart';
 import '../tasks/step_task_view.dart';
@@ -478,6 +480,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.steps:
       case QuestionType.gantt:
       case QuestionType.crystal:
+      case QuestionType.bom:
         return false;
       case QuestionType.singleChoice:
         return _selectedIndex != null;
@@ -546,6 +549,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.steps:
       case QuestionType.gantt:
       case QuestionType.crystal:
+      case QuestionType.bom:
         return null; // eigene build()-Zweige.
     }
   }
@@ -818,6 +822,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.steps:
       case QuestionType.gantt:
       case QuestionType.crystal:
+      case QuestionType.bom:
         return null;
     }
   }
@@ -1034,6 +1039,17 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       return CrystalTaskView(
         card: widget.card,
         task: CrystalTask.fromMap(widget.card.taskData)!,
+        isNew: widget.isNew,
+        examMode: widget.examMode,
+        onComplete: _submit,
+        onSkip: widget.onSkip,
+        canGiveUp: widget.canGiveUp,
+      );
+    }
+    if (_answerable && widget.card.type == QuestionType.bom) {
+      return BomTaskView(
+        card: widget.card,
+        task: BomTask.fromMap(widget.card.taskData)!,
         isNew: widget.isNew,
         examMode: widget.examMode,
         onComplete: _submit,
@@ -1418,6 +1434,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.steps:
       case QuestionType.gantt:
       case QuestionType.crystal:
+      case QuestionType.bom:
         return const SizedBox.shrink(); // eigene build()-Zweige.
       case QuestionType.singleChoice:
         return _buildChoiceOptions(c, multiple: false);

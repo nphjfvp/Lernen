@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lernen/models/bom_task.dart';
 import 'package:lernen/models/crystal_task.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/gantt_task.dart';
@@ -238,6 +239,32 @@ void main() {
     expect(task.hasUncertain, isFalse);
     expect(edited.back, contains('Starte bei (0, 0, 0)'));
     expect(edited.reps, 4);
+  });
+
+  testWidgets('Stückliste bearbeiten: Baum als Text ändern, die App schreibt die Musterlösung', (tester) async {
+    final card = _card(QuestionType.bom, front: 'Erstellen Sie die Mengenübersichtsstückliste.').copyWithContent(taskData: {
+      'kind': 'bom',
+      'root': {
+        'nr': '10',
+        'name': 'Tisch',
+        'children': [
+          {'nr': '20', 'name': 'Bein', 'qty': 4},
+        ],
+      },
+      'parts': [
+        {'list': 'overview'},
+      ],
+    });
+    final result = await _open(tester, card);
+    expect(find.byKey(const ValueKey('bom-preview')), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('bom-edit-outline')), '0; 10; Tisch\n1; 20; Bein; 3\n1; 30; Platte; 1');
+    await tester.pump();
+    await tester.ensureVisible(find.text('Speichern'));
+    await tester.tap(find.text('Speichern'));
+    await tester.pumpAndSettle();
+    final edited = result()!;
+    expect(BomTask.fromMap(edited.taskData)!.root.children.map((c) => c.number), ['20', '30']);
+    expect(edited.back, 'Mengenübersichtsstückliste\n20 | Bein | 3\n30 | Platte | 1');
   });
 
   testWidgets('Kristallgitter: nicht zeichenbare Ebene wird nicht gespeichert', (tester) async {

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
@@ -17,6 +18,7 @@ import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/unsupported_task_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/bom_calculator.dart';
 import '../../services/crystal_geometry.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/gantt_scheduler.dart';
@@ -28,6 +30,8 @@ import '../../theme/app_colors.dart';
 import '../widgets/discard_guard.dart';
 import '../widgets/raw_response_dialog.dart';
 import '../widgets/safe_set_state.dart';
+import 'bom_task_editor.dart';
+import 'bom_task_view.dart';
 import 'crystal_task_editor.dart';
 import 'crystal_task_view.dart';
 import 'gantt_task_editor.dart';
@@ -36,7 +40,7 @@ import 'step_task_editor.dart';
 import 'step_task_view.dart';
 import 'unsupported_tasks_screen.dart';
 
-enum _KindChoice { auto, steps, gantt, crystal }
+enum _KindChoice { auto, steps, gantt, crystal, bom }
 
 /// Eine von der KI gefundene (Teil-)Aufgabe im Bildschirm – bearbeitbar,
 /// bis sie gespeichert wird.
@@ -49,6 +53,7 @@ class _Draft {
   StepTask? steps;
   GanttTask? gantt;
   CrystalTask? crystal;
+  BomTask? bom;
   final front = TextEditingController();
   final back = TextEditingController();
   String reason = '';
@@ -76,6 +81,7 @@ class _Draft {
     InteractiveKind.steps => steps != null,
     InteractiveKind.gantt => gantt != null,
     InteractiveKind.crystal => crystal != null,
+    InteractiveKind.bom => bom != null,
     null => false,
   };
 
@@ -84,6 +90,7 @@ class _Draft {
     steps = d.steps;
     gantt = d.gantt;
     crystal = d.crystal;
+    bom = d.bom;
     front.text = d.front.trim().isNotEmpty ? d.front.trim() : fallbackFront;
     back.text = d.back.trim();
     reason = d.reason.trim();
@@ -105,7 +112,8 @@ class _Draft {
 /// Aufgabe übernehmen: aus einer Übungsaufgabe (Text und/oder Fotos, optional
 /// mit vorhandener Lösung) werden interaktive Aufgaben – Rechenweg Schritt
 /// für Schritt ([QuestionType.steps]), Terminierung im Gantt-Diagramm
-/// ([QuestionType.gantt]) oder Kristallgitter im Würfel ([QuestionType.crystal]).
+/// ([QuestionType.gantt]), Kristallgitter im Würfel ([QuestionType.crystal]) oder
+/// Stückliste aus einem Erzeugnisbaum ([QuestionType.bom]).
 /// Stehen mehrere Teilaufgaben auf dem Foto, wird jede ein eigener Entwurf
 /// (AiService.buildInteractiveTasks). Die KI schlägt Struktur und erwartete
 /// Antworten vor, die App rechnet nach (StepChecker.verify, GanttScheduler,
@@ -169,6 +177,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     InteractiveKind.steps => _KindChoice.steps,
     InteractiveKind.gantt => _KindChoice.gantt,
     InteractiveKind.crystal => _KindChoice.crystal,
+    InteractiveKind.bom => _KindChoice.bom,
     null => _KindChoice.auto,
   };
 
@@ -217,6 +226,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     _KindChoice.steps => InteractiveKind.steps,
     _KindChoice.gantt => InteractiveKind.gantt,
     _KindChoice.crystal => InteractiveKind.crystal,
+    _KindChoice.bom => InteractiveKind.bom,
   };
 
   Future<void> _pickImages() async {
@@ -370,6 +380,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       InteractiveKind.crystal =>
         d.back.text.trim().isNotEmpty ? d.back.text.trim() : CrystalGeometry.solutionText(d.crystal!),
       InteractiveKind.steps => d.back.text.trim(),
+      InteractiveKind.bom => BomCalculator(d.bom!).fullSolution(),
     };
     return Flashcard(
       id: const Uuid().v4(),
@@ -383,6 +394,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         InteractiveKind.steps => d.steps?.toMap(),
         InteractiveKind.gantt => d.gantt?.confirmed().toMap(),
         InteractiveKind.crystal => d.crystal?.confirmed().toMap(),
+        InteractiveKind.bom => d.bom?.confirmed().toMap(),
       },
       imageBase64: _attachImage && _images.isNotEmpty && kind == InteractiveKind.steps
           ? base64Encode(_images.first.bytes)
@@ -422,6 +434,13 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         if (crystal == null || !crystal.isUsable) return 'Jede Teilaufgabe braucht drei Indizes (nicht alle 0).';
         final problems = CrystalGeometry.problems(crystal);
         if (problems.isNotEmpty) return problems.first;
+      case InteractiveKind.bom:
+        final bom = d.bom;
+        if (bom == null || !bom.isUsable) {
+          return 'Der Erzeugnisbaum braucht ein Erzeugnis mit Bestandteilen und mindestens eine gefragte Liste.';
+        }
+        final problems = BomCalculator(bom).problems();
+        if (problems.isNotEmpty) return problems.first;
       case null:
         return 'Erst eine Aufgabe erstellen.';
     }
@@ -437,6 +456,9 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     ],
     InteractiveKind.crystal => [
       if (d.crystal!.hasUncertain) 'Manche Indizes waren schlecht lesbar und sind noch nicht bestätigt.',
+    ],
+    InteractiveKind.bom => [
+      if (d.bom!.hasUncertain) 'Manche Mengen oder Sach-Nr. waren schlecht lesbar und sind noch nicht bestätigt.',
     ],
     null => const [],
   };
@@ -631,8 +653,9 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           Text(
             'Aus einer Übungsaufgabe wird eine interaktive Aufgabe: ein Rechenweg Schritt für Schritt (z. B. '
             'Differentialgleichungen, Integrale, Werkstoff- oder BWL-Rechnungen), eine Terminierung im '
-            'Gantt-Diagramm oder Richtungen und Ebenen im Kristallgitter. Die KI liest die Aufgabe – auch mehrere '
-            'Teilaufgaben von einem Foto –, die App rechnet und zeichnet alles nach.',
+            'Gantt-Diagramm, Richtungen und Ebenen im Kristallgitter oder Stücklisten aus einem Erzeugnisbaum. '
+            'Die KI liest die Aufgabe – auch mehrere Teilaufgaben von einem Foto –, die App rechnet und zeichnet '
+            'alles nach.',
             style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
           ),
           const SizedBox(height: 12),
@@ -645,6 +668,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
                 ButtonSegment(value: _KindChoice.steps, label: Text('Rechenweg')),
                 ButtonSegment(value: _KindChoice.gantt, label: Text('Terminierung')),
                 ButtonSegment(value: _KindChoice.crystal, label: Text('Kristall')),
+                ButtonSegment(value: _KindChoice.bom, label: Text('Stückliste')),
               ],
               selected: {_choice},
               showSelectedIcon: false,
@@ -833,6 +857,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     InteractiveKind.steps => Icons.functions,
     InteractiveKind.gantt => Icons.view_timeline_outlined,
     InteractiveKind.crystal => Icons.view_in_ar_outlined,
+    InteractiveKind.bom => Icons.account_tree_outlined,
     null => Icons.block_outlined,
   };
 
@@ -912,6 +937,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           'Prüf die Schritte und erwarteten Antworten. Die App setzt jede Antwort selbst ein und meldet Widersprüche.',
         InteractiveKind.gantt => 'Vergleiche Teile, Dauern und Termine mit dem Blatt – die Musterlösung rechnet die App bei jeder Änderung neu.',
         InteractiveKind.crystal => 'Vergleiche Gitter und Indizes mit dem Blatt (Striche über den Zahlen!) – die Musterlösung zeichnet die App selbst.',
+        InteractiveKind.bom =>
+          'Vergleiche den Baum (Sach-Nr., Mengen an den Linien) mit dem Blatt – die Stücklisten rechnet die App selbst.',
       }, style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted)),
       const SizedBox(height: 12),
       TextField(
@@ -940,8 +967,13 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           task: d.crystal!,
           onChanged: (t) => setState(() => d.crystal = t),
         ),
+        InteractiveKind.bom => BomTaskEditor(
+          key: ValueKey('task-import-bom-$i-${d.revision}'),
+          task: d.bom!,
+          onChanged: (t) => setState(() => d.bom = t),
+        ),
       },
-      if (kind != InteractiveKind.gantt) ...[
+      if (kind != InteractiveKind.gantt && kind != InteractiveKind.bom) ...[
         const SizedBox(height: 12),
         TextField(
           key: ValueKey('task-import-back-$i'),
@@ -1187,6 +1219,7 @@ class _TryTaskScreen extends StatelessWidget {
     final steps = card.type == QuestionType.steps ? StepTask.fromMap(card.taskData) : null;
     final gantt = card.type == QuestionType.gantt ? GanttTask.fromMap(card.taskData) : null;
     final crystal = card.type == QuestionType.crystal ? CrystalTask.fromMap(card.taskData) : null;
+    final bom = card.type == QuestionType.bom ? BomTask.fromMap(card.taskData) : null;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(title: const Text('Ausprobieren')),
@@ -1203,6 +1236,8 @@ class _TryTaskScreen extends StatelessWidget {
                   ? GanttTaskView(card: card, task: gantt, isNew: true, onComplete: done)
                   : crystal != null
                   ? CrystalTaskView(card: card, task: crystal, isNew: true, onComplete: done)
+                  : bom != null
+                  ? BomTaskView(card: card, task: bom, isNew: true, onComplete: done)
                   : const Center(child: Text('Die Aufgabe ist noch nicht vollständig.')),
             ),
           ),

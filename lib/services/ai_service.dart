@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/app_settings.dart';
 import '../models/condense.dart';
+import '../models/bom_task.dart';
 import '../models/crystal_task.dart';
 import '../models/flashcard.dart' show QuestionType;
 import '../models/formula_sheet.dart';
@@ -2165,7 +2166,11 @@ Antworte in der Sprache der Vorlage.
               '{"front": "...", "back": "..."}',
         // Rechenweg/Terminierung sind nie Ziel einer Beförderung – zur
         // Sicherheit wie eine Lernaufgabe.
-        QuestionType.steps || QuestionType.gantt || QuestionType.crystal => _variantTypeRule(QuestionType.learn),
+        QuestionType.steps ||
+        QuestionType.gantt ||
+        QuestionType.crystal ||
+        QuestionType.bom =>
+          _variantTypeRule(QuestionType.learn),
         QuestionType.learn =>
           'Zieltyp "learn" (Aufgabe zum Verstehen): "front" ist die Aufgabe '
               'WORTGETREU mit allen Teilaufgaben (bzw. der Fakt als zu '
@@ -3927,9 +3932,9 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
 
   /// Macht aus Übungsaufgaben (Text und/oder Bilder, optional mit
   /// vorhandener Lösung) interaktive Aufgaben – je Teilaufgabe ein Entwurf:
-  /// Rechenweg, Terminierung oder Kristallgitter. Die KI liefert nur Struktur
-  /// und erwartete Antworten – nachgerechnet wird in der App (StepChecker,
-  /// GanttScheduler, CrystalGeometry). Was nicht passt, kommt mit Begründung
+  /// Rechenweg, Terminierung, Kristallgitter oder Stückliste. Die KI liefert
+  /// nur Struktur und erwartete Antworten – nachgerechnet wird in der App
+  /// (StepChecker, GanttScheduler, CrystalGeometry, BomCalculator). Was nicht passt, kommt mit Begründung
   /// und fehlender Bedienart zurück (kind null). [kind] null = die KI
   /// entscheidet je Teilaufgabe.
   Future<List<InteractiveTaskDraft>> buildInteractiveTasks({
@@ -3958,7 +3963,8 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       InteractiveKind.steps => 'Gewünscht: "kind": "steps" (Rechenweg) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.gantt => 'Gewünscht: "kind": "gantt" (Terminierung) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.crystal => 'Gewünscht: "kind": "crystal" (Kristallgitter) – nur wenn das gar nicht geht, "none" mit Begründung.',
-      null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "question" oder "none".',
+      InteractiveKind.bom => 'Gewünscht: "kind": "bom" (Stückliste) – nur wenn das gar nicht geht, "none" mit Begründung.',
+      null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "bom", "question" oder "none".',
     });
     if (images.isNotEmpty) {
       buffer
@@ -4023,7 +4029,9 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
                 ? InteractiveKind.steps
                 : data['items'] is List
                     ? InteractiveKind.gantt
-                    : (data['parts'] is List ? InteractiveKind.crystal : null));
+                    : data['root'] is Map
+                        ? InteractiveKind.bom
+                        : (data['parts'] is List ? InteractiveKind.crystal : null));
     final front = '${json['front'] ?? json['task'] ?? json['aufgabe'] ?? ''}'.trim();
     final back = '${json['back'] ?? json['solution'] ?? json['loesungsweg'] ?? json['lösungsweg'] ?? ''}'.trim();
     final reason = '${json['reason'] ?? json['begruendung'] ?? json['begründung'] ?? ''}'.trim();
@@ -4035,6 +4043,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       steps: kind == InteractiveKind.steps ? StepTask.fromMap(data) : null,
       gantt: kind == InteractiveKind.gantt ? GanttTask.fromMap(data) : null,
       crystal: kind == InteractiveKind.crystal ? CrystalTask.fromMap(data) : null,
+      bom: kind == InteractiveKind.bom ? BomTask.fromMap(data) : null,
       reason: reason,
       needs: needs,
     );
@@ -4155,7 +4164,7 @@ Antworte NUR mit JSON:
   }
 
   static const _interactiveTaskSystemPrompt = r"""
-Du wandelst Übungsaufgaben in interaktive Aufgaben für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen und Kristallgitter rechnet und zeichnet sie selbst. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
+Du wandelst Übungsaufgaben in interaktive Aufgaben für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen, Kristallgitter und Stücklisten rechnet und zeichnet sie selbst. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
 
 Enthält das Material mehrere Aufgaben oder Teilaufgaben (a, b, c …), liefere JEDE als eigenen Eintrag in "tasks" (höchstens 8). Teilaufgaben derselben Art zum selben Bild (z.B. mehrere Richtungen im selben Würfel) dürfen EIN Eintrag sein.
 
@@ -4163,6 +4172,7 @@ Art ("kind") je Eintrag:
 - "steps" (Rechenweg): Rechenaufgaben mit eindeutigem Ergebnis (Mathe, Physik, Technik, Werkstoffe, BWL-Rechnungen), zerlegbar in 3–7 Schritte.
 - "gantt" (Terminierung): Vorwärts-/Rückwärtsterminierung, Durchlaufterminierung, Gantt-Diagramme mit Arbeitsgängen und Dauern.
 - "crystal" (Kristallgitter): Richtungen [u v w] bzw. Ebenen (h k l) im kubischen Einheitswürfel einzeichnen oder ablesen, Richtungsfamilien ⟨u v w⟩, Atome in einer Ebene (kubisch primitiv, krz, kfz).
+- "bom" (Stückliste): aus einem Erzeugnisbaum / einer Erzeugnis- bzw. Produktstruktur eine Mengenübersichts-, Struktur- oder Baukastenstückliste (auch "Baustellen-" oder "Baustückliste") aufstellen.
 - "question": wenn es als NORMALE Quizfrage gut geht – die App hat dafür schon Fragetypen: Freitext/Erklären/Begründen/Kurzantwort ("free_text"), Auswahl ("single_choice"/"multiple_choice"), Zuordnen bzw. in Kategorien/Kriterien einordnen ("drag_category"), Tabelle ausfüllen mit festen Einträgen ("table"), Stellen in einer Abbildung markieren ("mark_image") oder beschriften ("diagram_label"), Lückentext ("fill_blank"). Dann "questionType" (einer dieser Werte) und "reason" mit einem kurzen Satz. "front" wortgetreu.
 - "none": NUR wenn weder interaktiv noch als normale Frage sinnvoll übbar (z.B. eine Kurve oder einen Netzplan selbst zeichnen) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte (z.B. "Kurve in Diagramm zeichnen", "Netzplan zeichnen", "Schaltplan zeichnen").
 - Fehlt für eine Rechnung nur ein Wert, den man üblicherweise nachschlägt (Werkstoffkennwert wie Streckgrenze, Naturkonstante), nimm einen üblichen Tabellenwert, schreib ihn als Annahme in "front" ("angenommen: R_{p0,2} = 355 MPa") und erstelle den Rechenweg trotzdem.
@@ -4210,8 +4220,18 @@ Bei "crystal":
   "direction"/"family" nur, wenn die gekürzten Indizes höchstens den Betrag 2 haben (sonst "readDirection"); "plane" nur bei Ebenen, die durch drei Punkte des ½-Rasters gehen (sonst "readPlane").
 - "back": kurze Erklärung (Achsenabschnitte, Kehrwerte) – gezeichnet und geprüft wird in der App.
 
+Bei "bom":
+- "front": die Aufgabe WORTGETREU (ohne den Baum abzuschreiben).
+- taskData.root: NUR den Erzeugnisbaum ablesen – das Erzeugnis (Stufe 0) mit {"nr": Sach-Nr. als Text, "name": Bezeichnung, "children": [...]}; jedes Kind {"nr", "name", "qty": Zahl an der Verbindungslinie (Menge je 1 Stück der Baugruppe direkt darüber), "unit": nur bei Mengeneinheiten wie "g", "kg", "l", "m" (sonst weglassen), "children": [...], "uncertain": true, wenn die Zahl schlecht lesbar war}.
+  Kinder in der Reihenfolge von links nach rechts wie im Bild. Steht an einer Linie keine Menge, gilt laut Aufgabe meist 1. Kommt dieselbe Baugruppe mehrfach vor, reicht es, sie einmal mit ihren Kindern aufzuführen (sonst ohne "children").
+- taskData.parts: je gefragter Liste ein Eintrag in der Reihenfolge der Aufgabe: {"list": "overview" (Mengenübersichtsstückliste) | "structure" (Strukturstückliste) | "modular" (Baukasten-/Baustellenstückliste)}.
+  Bei "overview" zusätzlich "includeAssemblies": true, wenn Baugruppen mit aufgeführt werden ("mit Berücksichtigung der intern erstellten Baugruppen"), false bei nur Teilen/Rohstoffen.
+  Bei "structure" "totals": true NUR, wenn ausdrücklich die Gesamtmenge je Erzeugnis verlangt ist (Standard: Menge je übergeordnete Baugruppe).
+  Bei "modular" "lists": Sach-Nr. der vorgegebenen Formulare (z.B. ["10", "11", "23"]), wenn welche abgebildet sind – sonst weglassen.
+- Rechne die Listen NICHT selbst aus – das macht die App. "back" darf leer bleiben.
+
 Antworte NUR mit einem JSON-Objekt:
-{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "question" | "none", "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
+{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "question" | "none", "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
 
   static const _paperReviewSystemPrompt = r"""
 Du bist Korrektor für handschriftliche Rechenwege. Du bekommst eine Aufgabe, die Musterlösung in Schritten und Fotos eines Rechenwegs.

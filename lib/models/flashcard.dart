@@ -47,6 +47,11 @@ enum QuestionType {
   /// ablesen, Familien, Atome in einer Ebene – die App prüft selbst, siehe
   /// CrystalTask (crystal_task.dart) in [Flashcard.taskData].
   crystal,
+
+  /// Stückliste: aus einem Erzeugnisbaum Mengenübersichts-, Struktur- oder
+  /// Baukastenstückliste aufstellen – die App rechnet die Listen selbst,
+  /// siehe BomTask (bom_task.dart) in [Flashcard.taskData].
+  bom,
 }
 
 QuestionType questionTypeFromString(String? value) => QuestionType.values.firstWhere(
@@ -71,6 +76,7 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.steps => 'Rechenweg',
         QuestionType.gantt => 'Terminierung',
         QuestionType.crystal => 'Kristallgitter',
+        QuestionType.bom => 'Stückliste',
       };
 }
 
@@ -419,7 +425,8 @@ class Flashcard {
 
   /// Daten einer interaktiven Aufgabe: Rechenweg ([QuestionType.steps],
   /// StepTask), Terminierung ([QuestionType.gantt], GanttTask) bzw.
-  /// Kristallgitter ([QuestionType.crystal], CrystalTask) – als Map
+  /// Kristallgitter ([QuestionType.crystal], CrystalTask) bzw. Stückliste
+  /// ([QuestionType.bom], BomTask) – als Map
   /// gespeichert, damit Sync, Export und Kopien sie unverändert mitnehmen.
   final Map<String, dynamic>? taskData;
 
@@ -650,7 +657,13 @@ class Flashcard {
   String get answerSummary => switch (type) {
         // Rechenweg/Terminierung: back ist der lesbare Lösungsweg (beim
         // Erstellen/Bearbeiten aus der Aufgabe geschrieben).
-        QuestionType.flashcard || QuestionType.learn || QuestionType.steps || QuestionType.gantt || QuestionType.crystal => back,
+        QuestionType.flashcard ||
+        QuestionType.learn ||
+        QuestionType.steps ||
+        QuestionType.gantt ||
+        QuestionType.crystal ||
+        QuestionType.bom =>
+          back,
         QuestionType.singleChoice ||
         QuestionType.multipleChoice =>
           (options ?? const []).where((o) => o.isCorrect).map((o) => o.text).join('; '),

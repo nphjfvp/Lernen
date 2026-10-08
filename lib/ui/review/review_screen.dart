@@ -13,6 +13,7 @@ import '../speedrun/speedrun_screen.dart';
 import '../widgets/math_text.dart';
 import '../../models/app_settings.dart';
 import '../../models/concept.dart';
+import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
@@ -1912,6 +1913,7 @@ class _PreviewView extends StatelessWidget {
         QuestionType.steps => Icons.functions,
         QuestionType.gantt => Icons.view_timeline_outlined,
         QuestionType.crystal => Icons.view_in_ar_outlined,
+        QuestionType.bom => Icons.account_tree_outlined,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
@@ -1956,6 +1958,9 @@ class _PreviewView extends StatelessWidget {
       case QuestionType.crystal:
         final crystal = CrystalTask.fromMap(parseTaskData(f['taskData']));
         return crystal == null ? (f['back'] ?? '').toString() : crystal.describe();
+      case QuestionType.bom:
+        final bom = BomTask.fromMap(parseTaskData(f['taskData']));
+        return bom == null ? (f['back'] ?? '').toString() : bom.describe();
     }
   }
 }
