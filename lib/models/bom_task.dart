@@ -303,8 +303,9 @@ class BomTask {
       if (level == null || level < 0) return (root: null, error: 'Zeile ${l.line}: zuerst die Stufe (0, 1, 2 …).');
       if (cells.length < 2 || cells[1].trim().isEmpty) return (root: null, error: 'Zeile ${l.line}: Sach-Nr. fehlt.');
       final qty = cells.length > 3 && cells[3].trim().isNotEmpty ? parseBomQuantity(cells[3]) : 1.0;
-      if (qty == null || qty <= 0)
+      if (qty == null || qty <= 0) {
         return (root: null, error: 'Zeile ${l.line}: Menge „${cells[3].trim()}“ ist keine Zahl.');
+      }
       rows.add((
         level: level,
         nr: cells[1].trim(),
