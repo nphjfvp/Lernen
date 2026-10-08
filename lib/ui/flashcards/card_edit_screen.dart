@@ -319,7 +319,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
           if (_type == QuestionType.fillBlank) ..._buildBlanks(),
           if (_type == QuestionType.table) ..._buildTable(theme),
           if (_steps != null) ...[
-            StepTaskEditor(task: _steps!, onChanged: (t) => setState(() => _steps = t)),
+            StepTaskEditor(task: _steps!, taskText: _front.text, onChanged: (t) => setState(() => _steps = t)),
             const SizedBox(height: 16),
           ],
           if (_gantt != null) ...[

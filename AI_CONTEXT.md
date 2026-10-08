@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1373 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1375 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1341,6 +1341,20 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `task_label_locator_test`, `zoomable_image_test`, Ergänzungen in `image_editor_test`
     (Zuschneiden, cropTargets), `page_question_creation_test` (schon erstellt, Doppel-Warnung,
     interaktiv), `task_import_screen_test` (Fach-Filter).
+57. Meldungen der Rechenweg-Nachprüfung verstehen (Nutzer: „typischer Fehler … in Wahrheit
+    richtig“ unverständlich – ist die Aufgabe falsch? KI soll crosschecken und Korrektur
+    anbieten). StepChecker.verify formuliert die Meldung jetzt mit Ursache („entweder ist
+    diese Fehler-Rückmeldung überflüssig, oder die erwartete Antwort … stimmt nicht“).
+    `AiService.reviewStepTask({taskText, task, problems, question, history})` →
+    `StepTaskReview` (lib/models/step_task_review.dart: answer, verdict ok/feedbackWrong/
+    solutionWrong/unclear, corrected = StepTask?), Hilfe-Modell (effectiveHelpModelId),
+    Prompt erklärt Felder/typische Fehler/Toleranz. UI `lib/ui/tasks/step_task_review_sheet.dart`
+    (`showStepTaskReview`, Gespräch mit Nachfragen `step-review-question`/`-send`, Urteil-Chip,
+    Korrektur-Karte `step-review-fix` mit App-Nachrechnung über StepChecker.verify,
+    `step-review-apply`; Hook `aiFactory`). `StepTaskCheckCard.onAskAi` (Knopf
+    `step-verify-ask-ai` bei Unstimmigkeiten); `StepTaskEditor.taskText`, übernommene
+    Korrektur ersetzt alle Schritte (Probe/finalLabel im State). Speichern-Dialog im Import
+    weist darauf hin. Test: `step_task_review_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

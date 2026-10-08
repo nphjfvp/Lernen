@@ -1393,6 +1393,20 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zd. Meldungen beim Rechenweg verstehen: KI fragen und korrigieren lassen
+
+Findet die App beim Nachrechnen eines Rechenwegs etwas (z.B. „„8,63·10⁻⁹“ ist
+als typischer Fehler hinterlegt, ist aber in Wahrheit richtig“), steht in der
+Prüf-Box der Knopf **„Was heißt das? KI erklären & prüfen lassen“**. Die KI
+erklärt jede Meldung in einfachen Worten – *ist die Aufgabe bzw. Musterlösung
+falsch, nur eine hinterlegte Fehler-Rückmeldung, oder ist es harmlos?* –,
+rechnet selbst nach und schlägt bei Bedarf eine **Korrektur** vor. Die App
+rechnet die Korrektur wieder selbst nach („keine Unstimmigkeiten mehr“) und
+übernimmt sie erst auf Knopfdruck. Unten im Fenster kann man **nachfragen**
+(„Ist meine Aufgabe jetzt falsch?“); das Gespräch bleibt dabei erhalten. Zur
+Einordnung: „typische Fehler“ sind absichtlich falsche Antworten, die Lernende
+oft geben, mit eigener Rückmeldung – sie gehören nicht zum Lösungsweg.
+
 ### 5zc. Übersichtlicher: erstellte Aufgaben markiert, Bilder zuschneiden und groß ansehen
 
 - **Schon erstellte Aufgaben im PDF markiert**: nach „Frage erstellen“ (bzw.

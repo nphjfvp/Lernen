@@ -5,14 +5,18 @@ import '../../services/step_checker.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/math_text.dart';
 import 'math_input_field.dart';
+import 'step_task_review_sheet.dart';
 
 /// Ergebnis der App-Nachprüfung einer Rechenweg-Aufgabe: grün, wenn die
 /// Musterlösung stimmt (Probe bestanden, alle Antworten lesbar), sonst die
 /// gefundenen Probleme.
 class StepTaskCheckCard extends StatelessWidget {
-  const StepTaskCheckCard({super.key, required this.task});
+  const StepTaskCheckCard({super.key, required this.task, this.onAskAi});
 
   final StepTask task;
+
+  /// „Was heißt das? KI fragen“ bei Unstimmigkeiten (null = kein Knopf).
+  final ValueChanged<List<String>>? onAskAi;
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +92,16 @@ class StepTaskCheckCard extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: c.inkMuted),
             ),
           ),
+          if (!ok && onAskAi != null && check.problems.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: OutlinedButton.icon(
+                key: const ValueKey('step-verify-ask-ai'),
+                onPressed: () => onAskAi!(check.problems),
+                icon: const Icon(Icons.help_outline, size: 18),
+                label: const Text('Was heißt das? KI erklären & prüfen lassen'),
+              ),
+            ),
         ],
       ),
     );
@@ -205,10 +219,13 @@ class _EditStep {
 /// Antwort, Auswahl-Optionen, Tipps, typische Fehler). Jede Änderung geht über
 /// [onChanged] hinaus; die Nachprüfung zeigt [StepTaskCheckCard].
 class StepTaskEditor extends StatefulWidget {
-  const StepTaskEditor({super.key, required this.task, required this.onChanged});
+  const StepTaskEditor({super.key, required this.task, required this.onChanged, this.taskText = ''});
 
   final StepTask task;
   final ValueChanged<StepTask> onChanged;
+
+  /// Aufgabentext – für die Nachfrage bei der KI (siehe [showStepTaskReview]).
+  final String taskText;
 
   @override
   State<StepTaskEditor> createState() => _StepTaskEditorState();
@@ -218,6 +235,26 @@ class _StepTaskEditorState extends State<StepTaskEditor> {
   late final List<_EditStep> _steps = [for (final s in widget.task.steps) _EditStep(s)];
   late final _domainNote = TextEditingController(text: widget.task.domainNote);
   late StepTask _current = widget.task;
+  late StepProbe? _probe = widget.task.probe;
+  late String _finalLabel = widget.task.finalLabel;
+
+  /// Fragt die KI zu den Meldungen; eine übernommene Korrektur ersetzt alle Schritte.
+  Future<void> _askAi(List<String> problems) async {
+    final fixed = await showStepTaskReview(context, taskText: widget.taskText, task: _current, problems: problems);
+    if (fixed == null || !mounted) return;
+    setState(() {
+      for (final s in _steps) {
+        s.dispose();
+      }
+      _steps
+        ..clear()
+        ..addAll([for (final s in fixed.steps) _EditStep(s)]);
+      _domainNote.text = fixed.domainNote;
+      _probe = fixed.probe ?? _probe;
+      _finalLabel = fixed.finalLabel.isEmpty ? _finalLabel : fixed.finalLabel;
+    });
+    _changed();
+  }
 
   @override
   void dispose() {
@@ -231,9 +268,9 @@ class _StepTaskEditorState extends State<StepTaskEditor> {
   void _changed() {
     final task = StepTask(
       steps: [for (final s in _steps) s.build()],
-      probe: widget.task.probe,
+      probe: _probe,
       domainNote: _domainNote.text.trim(),
-      finalLabel: widget.task.finalLabel,
+      finalLabel: _finalLabel,
     );
     setState(() => _current = task);
     widget.onChanged(task);
@@ -245,7 +282,7 @@ class _StepTaskEditorState extends State<StepTaskEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        StepTaskCheckCard(task: _current),
+        StepTaskCheckCard(task: _current, onAskAi: _askAi),
         const SizedBox(height: 12),
         Text('SCHRITTE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: c.inkMuted)),
         const SizedBox(height: 6),

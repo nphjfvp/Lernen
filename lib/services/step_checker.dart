@@ -562,7 +562,9 @@ class StepChecker {
         for (final m in field.mistakes) {
           final verdict = check(field, m.answer);
           if (verdict.isCorrect) {
-            problems.add('Schritt $n: der „typische Fehler“ „${m.answer}“ ist in Wahrheit richtig.');
+            problems.add('Schritt $n: „${m.answer}“ ist als typischer Fehler hinterlegt, ist aber in Wahrheit richtig '
+                '(die App wertet es als richtige Antwort) – entweder ist diese Fehler-Rückmeldung überflüssig, '
+                'oder die erwartete Antwort „${field.answer}“ stimmt nicht.');
           }
         }
       }

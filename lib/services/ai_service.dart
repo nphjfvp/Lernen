@@ -14,6 +14,7 @@ import '../models/interactive_task.dart';
 import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import '../models/paper_review.dart';
 import '../models/step_task.dart';
+import '../models/step_task_review.dart';
 import 'calc_engine.dart';
 import 'calc_plan.dart';
 import 'condense_service.dart';
@@ -4041,6 +4042,67 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
     }
     return draft;
   }
+
+  /// Erklärt die Unstimmigkeiten, die die App in einem Rechenweg gefunden hat
+  /// ([problems], siehe StepChecker.verify), rechnet selbst nach und schlägt
+  /// bei Bedarf eine korrigierte Aufgabe vor ([StepTaskReview.corrected] –
+  /// die App prüft sie danach wieder selbst). [question] = Nachfrage des
+  /// Nutzers, [history] = bisheriges Gespräch.
+  Future<StepTaskReview> reviewStepTask({
+    required String taskText,
+    required StepTask task,
+    required List<String> problems,
+    String? question,
+    List<({String question, String answer})> history = const [],
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(taskText.trim(), _interactiveTaskCap))
+      ..writeln()
+      ..writeln('Rechenweg als JSON (taskData):')
+      ..writeln(jsonEncode(task.toMap()))
+      ..writeln()
+      ..writeln('Was die App beim Nachrechnen gefunden hat:');
+    for (final p in problems) {
+      buffer.writeln('- $p');
+    }
+    if (problems.isEmpty) buffer.writeln('- (nichts)');
+    for (final h in history) {
+      buffer
+        ..writeln()
+        ..writeln('Frage des Nutzers: ${h.question}')
+        ..writeln('Deine Antwort: ${h.answer}');
+    }
+    buffer
+      ..writeln()
+      ..writeln(question == null || question.trim().isEmpty
+          ? 'Erkläre die Meldungen und prüfe die Aufgabe.'
+          : 'Neue Frage des Nutzers: ${question.trim()}');
+    final raw = await _complete(_stepReviewSystemPrompt, buffer.toString(), temperature: 0);
+    final review = StepTaskReview.fromJson(_parseJsonObject(raw));
+    if (review.answer.isEmpty) {
+      throw AiServiceException('Die KI hat keine Erklärung geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return review;
+  }
+
+  static const _stepReviewSystemPrompt = r'''
+Du hilfst einem Studenten, der in einer Lern-App einen Rechenweg (Schritte mit erwarteten Antworten) aus einer Übungsaufgabe übernommen hat. Die App hat die hinterlegte Musterlösung selbst nachgerechnet und Unstimmigkeiten gemeldet. Erkläre sie verständlich und rechne selbst sorgfältig nach.
+
+Hintergrund, den du erklären kannst:
+- "answer" eines Felds ist die erwartete (richtige) Antwort, in Eingabe-Schreibweise.
+- "mistakes" sind TYPISCHE FEHLER: absichtlich FALSCHE Antworten, die Lernende oft geben, mit einer eigenen Rückmeldung. Sie gehören nicht zum Lösungsweg. Meldet die App, ein typischer Fehler sei "in Wahrheit richtig", rechnet sie diese Eingabe als richtige Antwort – dann ist entweder der hinterlegte typische Fehler unsinnig (nur die Rückmeldung ist falsch, die Aufgabe stimmt) ODER die erwartete Antwort ist falsch.
+- "tolerance" ist die erlaubte relative Abweichung bei gerundeten Zahlen.
+
+Vorgehen:
+1. Erkläre jede Meldung in 1–3 einfachen Sätzen: Was bedeutet sie? Ist die Aufgabe/Musterlösung falsch, nur eine Rückmeldung, oder harmlos? Was müsste man ändern?
+2. Rechne die betroffenen Schritte selbst nach (kurz, mit Zahlen; LaTeX in $…$).
+3. Beantworte eine Nachfrage des Nutzers direkt und konkret.
+4. Wenn etwas korrigiert werden sollte: "corrected" = das vollständige korrigierte taskData-Objekt (gleiches Schema wie das gelieferte, alle Schritte, nur das Nötige ändern – z.B. falsche typische Fehler entfernen oder ersetzen, falsche erwartete Antworten korrigieren). Sonst "corrected": null.
+
+Antworte NUR mit JSON:
+{"answer": "Erklärung auf Deutsch, du-Form, mit Absätzen (
+)", "verdict": "ok" | "rueckmeldung_falsch" | "loesung_falsch" | "unklar", "corrected": {...} | null}''';
 
   /// Prüft einen auf Papier gerechneten Rechenweg (Fotos) gegen die
   /// Musterlösung: die KI liest Zeile für Zeile, markiert Fehler und

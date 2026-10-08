@@ -486,7 +486,11 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         builder: (ctx) => AlertDialog(
           title: const Text('Trotzdem speichern?'),
           content: SingleChildScrollView(
-            child: Text('Die App hat noch etwas gefunden:\n\n${warnings.map((w) => '• $w').join('\n')}'),
+            child: Text(
+              'Die App hat noch etwas gefunden:\n\n${warnings.map((w) => '• $w').join('\n')}'
+              '\n\nUnsicher, was das bedeutet? Mit „Prüfen“ zurück – in der Prüf-Box des Rechenwegs erklärt '
+              '„Was heißt das? KI erklären & prüfen lassen“ es und schlägt bei Bedarf eine Korrektur vor.',
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Prüfen')),
@@ -910,6 +914,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         InteractiveKind.steps => StepTaskEditor(
           key: ValueKey('task-import-steps-$i-${d.revision}'),
           task: d.steps!,
+          taskText: d.front.text,
           onChanged: (t) => setState(() => d.steps = t),
         ),
         InteractiveKind.gantt => GanttTaskEditor(
