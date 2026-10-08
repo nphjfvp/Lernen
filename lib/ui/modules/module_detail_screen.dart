@@ -237,7 +237,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     _SoftRow(
                       icon: Icons.manage_search,
                       title: 'Fragen aus PDF importieren',
-                      subtitle: 'KI liest beliebig viele PDFs fortlaufend und übernimmt jede vorhandene Frage/Aufgabe ins Quiz',
+                      subtitle: 'KI liest beliebig viele PDFs fortlaufend und übernimmt jede vorhandene Frage/Aufgabe ins '
+                          'Quiz – oder macht daraus interaktive Aufgaben (z.B. alle Mathe-Aufgaben als Rechenweg)',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PdfQuestionImportScreen(moduleId: module.id, moduleName: module.name),
@@ -587,6 +588,10 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     ),
                   )
               : null,
+          onInteractiveTasks:
+              m.hasViewablePdf && m.kind != MaterialKind.condensed && m.fileName.toLowerCase().endsWith('.pdf')
+                  ? () => _openInteractive([m])
+                  : null,
           onAttachPdf: !m.hasViewablePdf && !m.hasRemotePdf && m.fileName.toLowerCase().endsWith('.pdf')
               ? () => _attachPdf(m)
               : null,
@@ -873,6 +878,13 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
         ),
       );
 
+  /// "Interaktive Aufgaben aus PDF" mit diesen Materialien vorgewählt.
+  Future<void> _openInteractive(List<MaterialItem> materials) => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PdfQuestionImportScreen(moduleId: widget.moduleId, materials: materials, interactive: true),
+        ),
+      );
+
   Future<void> _uploadMaterials() async {
     final kind = await _pickKind();
     if (kind == null || !mounted) return;
@@ -922,6 +934,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     final ocr = PdfOcrService.fromSettings(context.read<SettingsRepository>().settings);
     final messenger = ScaffoldMessenger.maybeOf(context);
     final errors = <String>[];
+    final pdfs = <MaterialItem>[];
     for (final file in files) {
       try {
         final Uint8List bytes = await file.readBytes();
@@ -943,7 +956,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
         if (file.name.toLowerCase().endsWith('.pdf')) {
           (filePath, fileBytesBase64) = await MaterialFileStore.store(id, bytes);
         }
-        await repo.save(MaterialItem(
+        final material = MaterialItem(
           id: id,
           moduleId: widget.moduleId,
           fileName: file.name,
@@ -953,14 +966,30 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
           filePath: filePath,
           fileBytesBase64: fileBytesBase64,
           unitId: unitId,
-        ));
+        );
+        await repo.save(material);
+        if (material.hasViewablePdf) pdfs.add(material);
         if (!mounted) return;
       } catch (e) {
         errors.add('${file.name}: $e');
       }
     }
-    if (errors.isNotEmpty && mounted) {
+    if (!mounted) return;
+    if (errors.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errors.join('\n'))));
+    } else if (pdfs.isNotEmpty) {
+      // Gleich anbieten, die Aufgaben darin interaktiv zu machen.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text(pdfs.length == 1 ? '„${pdfs.single.fileName}“ hochgeladen.' : '${pdfs.length} PDFs hochgeladen.'),
+        action: SnackBarAction(
+          key: const ValueKey('upload-interactive'),
+          label: 'Interaktive Aufgaben',
+          onPressed: () {
+            if (mounted) _openInteractive(pdfs);
+          },
+        ),
+      ));
     }
   }
 
@@ -1278,6 +1307,7 @@ class _MaterialRow extends StatelessWidget {
     this.onOpen,
     this.onRecognizeText,
     this.onImportQuestions,
+    this.onInteractiveTasks,
     this.onAttachPdf,
     this.onCondense,
     this.onShowText,
@@ -1288,6 +1318,7 @@ class _MaterialRow extends StatelessWidget {
   final VoidCallback? onOpen;
   final VoidCallback? onRecognizeText;
   final VoidCallback? onImportQuestions;
+  final VoidCallback? onInteractiveTasks;
   final VoidCallback? onAttachPdf;
   final VoidCallback? onCondense;
   final VoidCallback? onShowText;
@@ -1363,6 +1394,7 @@ class _MaterialRow extends StatelessWidget {
                   // Seltenere Aktionen im Menü – nebeneinander wird die Zeile
                   // auf dem Handy zu schmal für den Dateinamen.
                   if (onImportQuestions != null ||
+                      onInteractiveTasks != null ||
                       onRecognizeText != null ||
                       onAttachPdf != null ||
                       onCondense != null ||
@@ -1397,6 +1429,17 @@ class _MaterialRow extends StatelessWidget {
                             child: const ListTile(
                               leading: Icon(Icons.manage_search),
                               title: Text('Fragen daraus importieren'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        if (onInteractiveTasks != null)
+                          PopupMenuItem(
+                            key: ValueKey('material-interactive-${material.id}'),
+                            value: onInteractiveTasks,
+                            child: const ListTile(
+                              leading: Icon(Icons.touch_app_outlined),
+                              title: Text('Interaktive Aufgaben daraus erstellen'),
+                              subtitle: Text('z.B. alle Mathe-Aufgaben als Rechenweg'),
                               contentPadding: EdgeInsets.zero,
                             ),
                           ),

@@ -17,10 +17,13 @@ import 'package:lernen/repositories/material_repository.dart';
 import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/services/ai_service.dart';
 import 'package:lernen/services/database_service.dart';
+import 'package:lernen/services/interactive_task_scan_service.dart';
 import 'package:lernen/services/pdf_page_renderer.dart';
 import 'package:lernen/services/pdf_question_import_service.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/review/review_screen.dart';
+import 'package:lernen/ui/tasks/task_import_screen.dart';
+import 'package:lernen/ui/widgets/import_options_card.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:provider/provider.dart';
@@ -60,7 +63,115 @@ void main() {
     PathProviderPlatform.instance = _FakePathProviderPlatform(dir.path);
   });
 
-  tearDown(() => ReviewScreen.importServiceFactory = null);
+  tearDown(() {
+    ReviewScreen.importServiceFactory = null;
+    ReviewScreen.interactiveServiceFactory = null;
+  });
+
+  testWidgets('Nachbereiten: Übungsblatt als interaktive Aufgaben – nur die gewünschten, mit Seite', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final prompts = <String>[];
+    final client = MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      final content = (body['messages'] as List)[1]['content'];
+      prompts.add(content is String ? content : jsonEncode(content));
+      return http.Response(
+        jsonEncode({
+          'choices': [
+            {
+              'message': {
+                'content': jsonEncode({
+                  'tasks': [
+                    {
+                      'kind': 'steps',
+                      'page': 1,
+                      'front': 'Aufgabe 1: Löse 2x = 4.',
+                      'taskData': {
+                        'steps': [
+                          {
+                            'title': 'Ergebnis',
+                            'prompt': 'Teile durch 2.',
+                            'fields': [
+                              {'label': 'x =', 'answer': '2'},
+                            ],
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    ReviewScreen.interactiveServiceFactory = (ai) => InteractiveTaskScanService(
+          ai: AiService(apiKey: ai.apiKey, model: ai.model, client: client),
+          renderer: (_) async => null,
+        );
+
+    final settings = SettingsRepository();
+    final materials = MaterialRepository();
+    await tester.runAsync(() async {
+      await settings.update(const AppSettings(openRouterApiKey: 'sk-test'));
+      await materials.save(MaterialItem(
+        id: 'blatt7',
+        moduleId: 'm7',
+        fileName: 'Blatt 7.pdf',
+        kind: MaterialKind.exercise,
+        extractedText: 'Seite 1',
+        createdAt: DateTime(2026, 10, 1),
+        fileBytesBase64: base64Encode(pdfWithPages(1)),
+      ));
+    });
+
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: settings),
+        ChangeNotifierProvider.value(value: materials),
+        ChangeNotifierProvider(create: (_) => FlashcardRepository()),
+        ChangeNotifierProvider(create: (_) => ConceptRepository()),
+        ChangeNotifierProvider(create: (_) => LectureUnitRepository()),
+      ],
+      child: MaterialApp(theme: AppTheme.light, home: const ReviewScreen(moduleId: 'm7')),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Fragen importieren').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Vorhandenes Material verwenden'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Blatt 7.pdf'));
+    await tester.pump();
+    await tester.tap(find.text('Übernehmen'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('review-import-interactive')));
+    await tester.pumpAndSettle();
+    // Prüfung/Stufen gelten nur für Quizfragen.
+    expect(find.byType(ImportOptionsCard), findsNothing);
+    expect(find.byKey(const ValueKey('review-import-instruction')), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('review-import-instruction')), 'alle Mathe-Aufgaben');
+    await tester.ensureVisible(find.text('Interaktive Aufgaben erstellen'));
+    await tester.tap(find.text('Interaktive Aufgaben erstellen'));
+    for (var i = 0; i < 20 && find.byType(TaskImportScreen).evaluate().isEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pumpAndSettle();
+
+    expect(prompts.single, contains('alle Mathe-Aufgaben'));
+    expect(find.byType(TaskImportScreen), findsOneWidget);
+    expect(find.textContaining('S. 1 · Aufgabe 1'), findsOneWidget);
+    // Vorhandenes Material wird nicht doppelt angelegt.
+    expect(materials.forModule('m7'), hasLength(1));
+  });
 
   testWidgets('Nachbereiten-Import: PDF seitenweise mit Bild, Aufgabenform und Abbildung bleiben erhalten',
       (tester) async {

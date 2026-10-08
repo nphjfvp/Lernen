@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1425 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1435 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1447,6 +1447,23 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     ziehen). TaskImportScreen hängt das Foto jetzt auch bei bom an (`imageBase64`, Schalter
     `task-import-attach-image`, bei Stücklisten automatisch an) – BomTaskView zeigt es im
     Aufgabenkasten (ZoomableImage). Test in `bom_task_view_test`.
+64. Interaktive Aufgaben aus ganzen Dokumenten, mit Wunsch („alle Mathe-Aufgaben als
+    Rechenweg“). `AiService.buildInteractiveTasks` + `instruction`, `pages`, `contextPage`,
+    `allowEmpty` (leere Liste statt Fehler); `parseInteractiveTask` liest `page`/`seite`,
+    `InteractiveTaskDraft.page` + `withPage`. Neu `InteractiveTaskScanService`
+    (`windowsFor`: je 2 neue Seiten + Seite davor als Kontext; `scan` rendert Seitenbilder,
+    ordnet Seiten zu – fremde → erste neue Seite –, lässt leere Einträge weg, Fehler je
+    Abschnitt, Abbruch) → `ScannedTaskDraft{draft, page, sourceName, pageImage, materialId}`.
+    TaskImportScreen `initialDrafts` + `scanNotes`: `_Draft.page/image/materialId/sourceName`,
+    `_documentCard` (`task-import-document`) statt Eingabe, Titel „S. n · “. Einstiege:
+    PdfQuestionImportScreen `interactive`/`materials`/`interactiveServiceFactory`, Umschalter
+    `import-mode`, `import-interactive-instruction`, `import-interactive-kind-*`,
+    `import-interactive-start` (hochgeladene PDFs als Übung gespeichert, dann pushReplacement);
+    Fach: Material-Menü `material-interactive-<id>`, nach Upload SnackBar-Aktion
+    `upload-interactive`; ReviewScreen Import-Modus: Schalter `review-import-interactive`,
+    `review-import-instruction`, `interactiveServiceFactory`. Tests:
+    `interactive_task_scan_service_test`, `task_import_screen_test`,
+    `pdf_question_import_screen_test`, `review_screen_import_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

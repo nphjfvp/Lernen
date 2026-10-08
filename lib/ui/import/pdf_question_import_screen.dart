@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/flashcard.dart';
+import '../../models/interactive_task.dart';
 import '../../models/material_item.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
@@ -17,6 +18,7 @@ import '../../services/ai_service.dart';
 import '../../services/import_reference.dart';
 import '../../services/import_stage_service.dart';
 import '../../services/import_verify_service.dart';
+import '../../services/interactive_task_scan_service.dart';
 import '../../services/material_file_store.dart';
 import '../../services/pdf_question_import_service.dart';
 import '../../services/pdf_service.dart';
@@ -25,6 +27,7 @@ import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import '../practice/practice_screen.dart';
 import '../study/script_match_runner.dart';
+import '../tasks/task_import_screen.dart';
 import '../widgets/discard_guard.dart';
 import '../widgets/import_check_panel.dart';
 import '../widgets/import_options_card.dart';
@@ -44,14 +47,24 @@ enum _UncertainDecision { keep, skip }
 /// inhaltliche, und ob fehlende Lösungen ergänzt werden. Die Treffer lassen
 /// sich vor dem Import einzeln abwählen; danach landen sie als Karten im Fach
 /// und lassen sich sofort üben.
+///
+/// Im Modus „Interaktive Aufgaben“ ([interactive]) baut die KI stattdessen
+/// interaktive Aufgaben (Rechenweg, Terminierung, Kristall, Stückliste,
+/// Skizze) aus dem Dokument – auf Wunsch nur bestimmte, z.B. „alle
+/// Mathe-Aufgaben als Rechenweg“ (InteractiveTaskScanService). Die Funde
+/// kommen zum Prüfen in „Aufgabe übernehmen“ (TaskImportScreen).
 class PdfQuestionImportScreen extends StatefulWidget {
   const PdfQuestionImportScreen({
     super.key,
     required this.moduleId,
     this.moduleName = '',
     this.material,
+    this.materials = const [],
     this.serviceFactory,
     this.aiFactory,
+    this.interactive = false,
+    this.initialInstruction = '',
+    this.interactiveServiceFactory,
   });
 
   final String moduleId;
@@ -59,6 +72,9 @@ class PdfQuestionImportScreen extends StatefulWidget {
 
   /// Direkt mit diesem Material starten (Knopf an einer PDF im Fach).
   final MaterialItem? material;
+
+  /// Direkt mit diesen Materialien starten (z.B. gerade hochgeladen).
+  final List<MaterialItem> materials;
 
   /// Nur für Tests: eigener Import-Dienst statt des Vision-Modells aus den
   /// Einstellungen.
@@ -70,6 +86,16 @@ class PdfQuestionImportScreen extends StatefulWidget {
   /// [AiService] mit dem API-Key aus den Einstellungen.
   @visibleForTesting
   final AiService Function(String model)? aiFactory;
+
+  /// Gleich im Modus „Interaktive Aufgaben“ starten.
+  final bool interactive;
+
+  /// Vorbelegter Wunsch, welche Aufgaben übernommen werden.
+  final String initialInstruction;
+
+  /// Nur für Tests: eigener Dienst für interaktive Aufgaben.
+  @visibleForTesting
+  final InteractiveTaskScanService Function()? interactiveServiceFactory;
 
   @override
   State<PdfQuestionImportScreen> createState() => _PdfQuestionImportScreenState();
@@ -97,6 +123,13 @@ class _ImportFile {
 class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     with SafeSetState<PdfQuestionImportScreen> {
   _Step _step = _Step.pick;
+
+  /// Interaktive Aufgaben statt Quizfragen (siehe [PdfQuestionImportScreen.interactive]).
+  late bool _interactive = widget.interactive;
+  late final _instruction = TextEditingController(text: widget.initialInstruction);
+
+  /// Vorgegebene Art; null = die KI entscheidet je Aufgabe.
+  InteractiveKind? _kind;
 
   final List<_ImportFile> _files = [];
   final _fromController = TextEditingController(text: '1');
@@ -148,14 +181,15 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
   @override
   void initState() {
     super.initState();
-    final material = widget.material;
-    if (material != null) WidgetsBinding.instance.addPostFrameCallback((_) => _useMaterial(material));
+    final start = [?widget.material, ...widget.materials];
+    if (start.isNotEmpty) WidgetsBinding.instance.addPostFrameCallback((_) => _useAllMaterials(start));
   }
 
   @override
   void dispose() {
     _fromController.dispose();
     _toController.dispose();
+    _instruction.dispose();
     super.dispose();
   }
 
@@ -664,6 +698,103 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     }
   }
 
+  // -- Interaktive Aufgaben ---------------------------------------------------
+
+  /// Der Dienst für interaktive Aufgaben mit dem Vision-Modell; null ohne
+  /// API-Key.
+  InteractiveTaskScanService? _interactiveService() {
+    final factory = widget.interactiveServiceFactory;
+    if (factory != null) return factory();
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) return null;
+    return InteractiveTaskScanService(
+      ai: AiService(apiKey: settings.openRouterApiKey!, model: settings.visionModelId),
+    );
+  }
+
+  /// KI-Anfragen für die interaktiven Aufgaben (Abschnitte aller PDFs).
+  int _interactiveRequests(({int from, int to}) range) => _files.fold<int>(
+    0,
+    (sum, f) =>
+        sum +
+        InteractiveTaskScanService.windowsFor(
+          _single ? range.from : 1,
+          _single ? range.to : f.pageCount,
+          InteractiveTaskScanService.defaultPagesPerRequest,
+        ).length,
+  );
+
+  /// Liest alle PDFs und öffnet die Funde in „Aufgabe übernehmen“.
+  /// Hochgeladene PDFs werden vorher als Übung im Fach abgelegt, damit die
+  /// Aufgaben später zu ihrer Seite führen.
+  Future<void> _scanInteractive() async {
+    final range = _range;
+    if (_files.isEmpty || range == null) return;
+    final service = _interactiveService();
+    if (service == null) {
+      setState(() => _error = 'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
+      return;
+    }
+    final total = _interactiveRequests(range);
+    setState(() {
+      _step = _Step.scanning;
+      _cancelled = false;
+      _done = 0;
+      _total = total;
+      _phase = '';
+      _scanLabel = '';
+      _error = null;
+    });
+    final drafts = <ScannedTaskDraft>[];
+    final notes = <String>[];
+    var offset = 0;
+    for (final (i, file) in _files.indexed) {
+      if (_cancelled) break;
+      final material = file.material ?? file.saved ?? await _saveUploadedPdf(file);
+      if (!mounted) return;
+      final source = _sources()[i];
+      setState(() => _scanLabel = file.name);
+      final result = await service.scan(
+        source,
+        instruction: _instruction.text.trim(),
+        kind: _kind,
+        materialId: material?.id,
+        onProgress: (done, _) => setState(() => _done = offset + done),
+        isCancelled: () => _cancelled,
+      );
+      if (!mounted) return;
+      offset += result.windows;
+      drafts.addAll(result.drafts);
+      notes.addAll([for (final e in result.errors) _single ? e : '${file.name}: $e']);
+    }
+    if (!mounted) return;
+    final cancelled = _cancelled;
+    if (drafts.isEmpty) {
+      setState(() {
+        _step = _Step.pick;
+        _error = [
+          cancelled
+              ? 'Abgebrochen – bis dahin wurde keine passende Aufgabe gefunden.'
+              : 'Keine passende Aufgabe gefunden.${_instruction.text.trim().isEmpty ? '' : ' Formuliere den Wunsch '
+                    'vielleicht etwas allgemeiner.'}',
+          ...notes,
+        ].join('\n');
+      });
+      return;
+    }
+    if (cancelled) notes.insert(0, 'Abgebrochen – hier stehen die bis dahin gefundenen Aufgaben.');
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => TaskImportScreen(
+          moduleId: widget.moduleId,
+          moduleName: widget.moduleName,
+          initialDrafts: drafts,
+          scanNotes: notes,
+        ),
+      ),
+    );
+  }
+
   // -- Darstellung -----------------------------------------------------------
 
   @override
@@ -672,7 +803,11 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
       active: _step == _Step.preview && _questions.isNotEmpty,
       message: 'Die gefundenen Fragen sind noch nicht importiert.',
       child: Scaffold(
-        appBar: AppBar(title: const Text('Fragen aus PDF importieren')),
+        appBar: AppBar(
+          title: Text(
+            _interactive && _step != _Step.preview ? 'Interaktive Aufgaben aus PDF' : 'Fragen aus PDF importieren',
+          ),
+        ),
         body: SafeArea(
           child: switch (_step) {
             _Step.pick => _buildPick(context),
@@ -713,10 +848,29 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        SegmentedButton<bool>(
+          key: const ValueKey('import-mode'),
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: false, icon: Icon(Icons.quiz_outlined), label: Text('Fragen')),
+            ButtonSegment(value: true, icon: Icon(Icons.touch_app_outlined), label: Text('Interaktive Aufgaben')),
+          ],
+          selected: {_interactive},
+          onSelectionChanged: (s) => setState(() {
+            _interactive = s.first;
+            _error = null;
+          }),
+        ),
+        const SizedBox(height: 12),
         Text(
-          'Die KI sucht in deinen PDFs nach Fragen und Aufgaben, die dort schon stehen (z.B. Altklausur, '
-          'Übungsblatt, Fragen auf Folien), und übernimmt sie ins Quiz – sie erfindet keine neuen. Wähle '
-          'beliebig viele PDFs auf einmal.',
+          _interactive
+              ? 'Die KI liest deine PDFs Seite für Seite und macht aus den Aufgaben darin interaktive Aufgaben – '
+                    'Rechenweg Schritt für Schritt, Terminierung, Kristallgitter, Stückliste oder Diagramm-Skizze. '
+                    'Sag ihr, welche du willst (z.B. „alle Mathe-Aufgaben als Rechenweg“). Danach prüfst du jede '
+                    'Aufgabe mit ihrer Seite und speicherst sie.'
+              : 'Die KI sucht in deinen PDFs nach Fragen und Aufgaben, die dort schon stehen (z.B. Altklausur, '
+                    'Übungsblatt, Fragen auf Folien), und übernimmt sie ins Quiz – sie erfindet keine neuen. Wähle '
+                    'beliebig viele PDFs auf einmal.',
           style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
@@ -828,60 +982,64 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
               'Alle $totalPages Seiten aller ${_files.length} PDFs werden gelesen – ohne Begrenzung.',
               style: TextStyle(fontSize: 13, color: c.inkMuted),
             ),
-          const SizedBox(height: 20),
-          Text('Welche Fragen?', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: false, label: Text('Jede Frage')),
-              ButtonSegment(value: true, label: Text('Nur inhaltliche')),
-            ],
-            selected: {_contentOnly},
-            onSelectionChanged: (s) => setState(() => _contentOnly = s.first),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _contentOnly
-                ? 'Nur Fragen und Aufgaben, die fachliches Wissen prüfen – ohne Organisatorisches, rhetorische '
-                    'Einstiegsfragen oder Meinungsfragen.'
-                : 'Wirklich jede Frage und Aufgabe, auch Teilaufgaben und kleine Zwischenfragen auf Folien.',
-            style: TextStyle(fontSize: 12, color: c.inkMuted),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _fillMissing,
-            onChanged: (v) => setState(() => _fillMissing = v),
-            title: const Text('Fehlende Lösungen von der KI ergänzen'),
-            subtitle: Text(
-              'Sonst werden Fragen übersprungen, zu denen im Dokument keine Lösung steht. Eine Musterlösung '
-              'in einer anderen der gewählten PDFs wird dafür nachgeschlagen.',
-              style: TextStyle(fontSize: 12, color: c.inkMuted),
+          if (_interactive)
+            ..._interactiveOptions(context, range)
+          else ...[
+            const SizedBox(height: 20),
+            Text('Welche Fragen?', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: false, label: Text('Jede Frage')),
+                ButtonSegment(value: true, label: Text('Nur inhaltliche')),
+              ],
+              selected: {_contentOnly},
+              onSelectionChanged: (s) => setState(() => _contentOnly = s.first),
             ),
-          ),
-          const SizedBox(height: 8),
-          ImportOptionsCard(options: _options, onChanged: (o) => setState(() => _options = o)),
-          const SizedBox(height: 12),
-          if (range == null)
-            Text('Bitte einen gültigen Seitenbereich (1–${_files.single.pageCount}) angeben.',
-                style: TextStyle(color: c.danger))
-          else
+            const SizedBox(height: 6),
             Text(
-              '$requests KI-Anfrage${requests == 1 ? '' : 'n'} an dein Vision-Modell. Die KI liest fortlaufend: '
-              'ein paar neue Seiten (bei viel Text weniger) plus die letzte Seite des vorigen Abschnitts – dort '
-              'prüft sie, ob eine begonnene Aufgabe auf den neuen Seiten weitergeht, und ergänzt sie dann. Sie '
-              'sieht jede Seite als Bild, übernimmt die Aufgabenform (Ankreuzen, Lücken, Zuordnen, Tabellen, '
-              'Beschriften) und hängt nötige Abbildungen als Ausschnitt an.'
-              '${_options.verify ? ' Danach prüft die zweite KI die Vollständigkeit.' : ''}'
-              '${_options.expandStages ? ' Danach ergänzt die KI die gewählten Stufen.' : ''}',
+              _contentOnly
+                  ? 'Nur Fragen und Aufgaben, die fachliches Wissen prüfen – ohne Organisatorisches, rhetorische '
+                      'Einstiegsfragen oder Meinungsfragen.'
+                  : 'Wirklich jede Frage und Aufgabe, auch Teilaufgaben und kleine Zwischenfragen auf Folien.',
               style: TextStyle(fontSize: 12, color: c.inkMuted),
             ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: range == null ? null : () => _scan(),
-            icon: const Icon(Icons.manage_search),
-            label: const Text('Fragen suchen'),
-          ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _fillMissing,
+              onChanged: (v) => setState(() => _fillMissing = v),
+              title: const Text('Fehlende Lösungen von der KI ergänzen'),
+              subtitle: Text(
+                'Sonst werden Fragen übersprungen, zu denen im Dokument keine Lösung steht. Eine Musterlösung '
+                'in einer anderen der gewählten PDFs wird dafür nachgeschlagen.',
+                style: TextStyle(fontSize: 12, color: c.inkMuted),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ImportOptionsCard(options: _options, onChanged: (o) => setState(() => _options = o)),
+            const SizedBox(height: 12),
+            if (range == null)
+              Text('Bitte einen gültigen Seitenbereich (1–${_files.single.pageCount}) angeben.',
+                  style: TextStyle(color: c.danger))
+            else
+              Text(
+                '$requests KI-Anfrage${requests == 1 ? '' : 'n'} an dein Vision-Modell. Die KI liest fortlaufend: '
+                'ein paar neue Seiten (bei viel Text weniger) plus die letzte Seite des vorigen Abschnitts – dort '
+                'prüft sie, ob eine begonnene Aufgabe auf den neuen Seiten weitergeht, und ergänzt sie dann. Sie '
+                'sieht jede Seite als Bild, übernimmt die Aufgabenform (Ankreuzen, Lücken, Zuordnen, Tabellen, '
+                'Beschriften) und hängt nötige Abbildungen als Ausschnitt an.'
+                '${_options.verify ? ' Danach prüft die zweite KI die Vollständigkeit.' : ''}'
+                '${_options.expandStages ? ' Danach ergänzt die KI die gewählten Stufen.' : ''}',
+                style: TextStyle(fontSize: 12, color: c.inkMuted),
+              ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: range == null ? null : () => _scan(),
+              icon: const Icon(Icons.manage_search),
+              label: const Text('Fragen suchen'),
+            ),
+          ],
         ],
         if (_error != null)
           Padding(
@@ -890,6 +1048,74 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
           ),
       ],
     );
+  }
+
+  /// Wunsch, Art und Start für die interaktiven Aufgaben.
+  List<Widget> _interactiveOptions(BuildContext context, ({int from, int to})? range) {
+    final c = context.colors;
+    final requests = range == null ? 0 : _interactiveRequests(range);
+    final uploaded = _files.where((f) => f.material == null && f.saved == null).length;
+    return [
+      const SizedBox(height: 20),
+      Text('Welche Aufgaben?', style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 8),
+      TextField(
+        key: const ValueKey('import-interactive-instruction'),
+        controller: _instruction,
+        minLines: 1,
+        maxLines: 3,
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          isDense: true,
+          hintText: 'z.B. alle Mathe-Aufgaben als Rechenweg',
+          helperText: 'Leer lassen = jede Aufgabe, die sich interaktiv machen lässt.',
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+      const SizedBox(height: 12),
+      Text('Art', style: TextStyle(fontSize: 12, color: c.inkMuted)),
+      const SizedBox(height: 6),
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          ChoiceChip(
+            key: const ValueKey('import-interactive-kind-auto'),
+            label: const Text('Automatisch'),
+            selected: _kind == null,
+            onSelected: (_) => setState(() => _kind = null),
+          ),
+          for (final k in InteractiveKind.values)
+            ChoiceChip(
+              key: ValueKey('import-interactive-kind-${k.name}'),
+              label: Text(k.label),
+              selected: _kind == k,
+              onSelected: (_) => setState(() => _kind = k),
+            ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      if (range == null)
+        Text(
+          'Bitte einen gültigen Seitenbereich (1–${_files.single.pageCount}) angeben.',
+          style: TextStyle(color: c.danger),
+        )
+      else
+        Text(
+          '$requests KI-Anfrage${requests == 1 ? '' : 'n'} an dein Vision-Modell – je zwei neue Seiten plus die '
+          'Seite davor, damit eine Aufgabe über den Seitenumbruch ganz bleibt. Was nicht interaktiv geht, kommt '
+          'mit Begründung auf die Sammelliste „Noch nicht interaktiv“.'
+          '${uploaded > 0 ? ' Hochgeladene PDFs werden als Übung im Fach abgelegt.' : ''}',
+          style: TextStyle(fontSize: 12, color: c.inkMuted),
+        ),
+      const SizedBox(height: 12),
+      FilledButton.icon(
+        key: const ValueKey('import-interactive-start'),
+        onPressed: range == null ? null : _scanInteractive,
+        icon: const Icon(Icons.auto_awesome),
+        label: const Text('Interaktive Aufgaben erstellen'),
+      ),
+    ];
   }
 
   Widget _buildScanning(BuildContext context) {

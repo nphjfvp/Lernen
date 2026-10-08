@@ -34,6 +34,7 @@ import '../../services/highlight_context.dart';
 import '../../services/import_reference.dart';
 import '../../services/import_stage_service.dart';
 import '../../services/import_verify_service.dart';
+import '../../services/interactive_task_scan_service.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
 import '../../services/math_markup.dart';
@@ -53,6 +54,7 @@ import '../widgets/ocr_notice.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/raw_response_dialog.dart';
 import '../study/script_match_runner.dart';
+import '../tasks/task_import_screen.dart';
 import '../widgets/safe_set_state.dart';
 
 enum _Step { pick, generating, preview }
@@ -122,6 +124,10 @@ class ReviewScreen extends StatefulWidget {
   @visibleForTesting
   static AiService Function(String apiKey, String model)? aiFactory;
 
+  /// Test-Hook: erzeugt den Dienst für interaktive Aufgaben aus Dokumenten.
+  @visibleForTesting
+  static InteractiveTaskScanService Function(AiService ai)? interactiveServiceFactory;
+
   @override
   State<ReviewScreen> createState() => _ReviewScreenState();
 }
@@ -134,6 +140,12 @@ String? _batchGroup(String? group, DateTime savedAt) =>
 class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScreen> {
   _Step _step = _Step.pick;
   _GenerateMode _mode = _GenerateMode.create;
+
+  /// Import-Modus: interaktive Aufgaben (Rechenweg, Terminierung …) statt
+  /// Quizfragen – auf Wunsch nur bestimmte ([_instruction]), siehe
+  /// InteractiveTaskScanService.
+  bool _interactive = false;
+  final _instruction = TextEditingController();
 
   /// Für DIESE Erstellung gewähltes KI-Modell (null = Standard aus den
   /// Einstellungen) – z.B. ein stärkeres für Tabellen oder lange Aufgaben.
@@ -150,6 +162,12 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
   /// Rohtext, den der Nutzer im Modus "JSON einfügen" aus einem externen
   /// KI-Chat kopiert hat (siehe [_GenerateMode.pasteJson]).
   String _pastedJson = '';
+
+  @override
+  void dispose() {
+    _instruction.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -229,9 +247,15 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
   /// zusätzlicher Kontext.
   bool get _readyToGenerate => switch (_mode) {
         _GenerateMode.create => _slidesFiles.isNotEmpty || _exercisesFiles.isNotEmpty,
-        _GenerateMode.import => _exercisesFiles.isNotEmpty,
+        _GenerateMode.import => _interactive ? _interactivePdfs.isNotEmpty : _exercisesFiles.isNotEmpty,
         _GenerateMode.pasteJson => _pastedJson.trim().isNotEmpty,
       };
+
+  /// Die Übungs-PDFs, aus denen interaktive Aufgaben werden können.
+  List<_PickedFile> get _interactivePdfs => [
+        for (final f in _exercisesFiles)
+          if (f.fileName.toLowerCase().endsWith('.pdf') && f.bytes.isNotEmpty) f,
+      ];
 
   String get _slidesText =>
       _slidesFiles.map((f) => '=== Datei: ${f.fileName} ===\n${f.text}').join('\n\n');
@@ -352,6 +376,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
       setState(() => _error = 'Kein OpenRouter-API-Key hinterlegt. Bitte zuerst in den Einstellungen eintragen.');
       return;
     }
+    if (_mode == _GenerateMode.import && _interactive) return _generateInteractive(settings);
 
     setState(() {
       _step = _Step.generating;
@@ -443,6 +468,91 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
         _step = _Step.pick;
       });
     }
+  }
+
+  /// Import-Modus „interaktive Aufgaben“: jede Übungs-PDF fortlaufend lesen
+  /// (InteractiveTaskScanService) und die Funde in „Aufgabe übernehmen“
+  /// prüfen lassen. Neu hochgeladene PDFs werden dafür als Übung im Fach
+  /// abgelegt – so führen die Aufgaben später zu ihrer Seite.
+  Future<void> _generateInteractive(AppSettings settings) async {
+    final pdfs = _interactivePdfs;
+    final unitId = _unitChoice.isEmpty ? null : _unitChoice;
+    final materialRepo = context.read<MaterialRepository>();
+    final ai = AiService(apiKey: settings.openRouterApiKey!, model: _modelOverride ?? settings.visionModelId);
+    final service = ReviewScreen.interactiveServiceFactory?.call(ai) ?? InteractiveTaskScanService(ai: ai);
+    setState(() {
+      _step = _Step.generating;
+      _error = null;
+      _rawResponse = null;
+      _progressText = null;
+    });
+    final drafts = <ScannedTaskDraft>[];
+    final notes = <String>[
+      if (pdfs.length < _exercisesFiles.length) 'Nur PDFs werden nach interaktiven Aufgaben durchsucht.',
+    ];
+    try {
+      for (final f in pdfs) {
+        var materialId = f.existingMaterialId;
+        if (materialId == null) {
+          final id = const Uuid().v4();
+          final (filePath, fileBytesBase64) = await MaterialFileStore.store(id, f.bytes);
+          await materialRepo.save(MaterialItem(
+            id: id,
+            moduleId: widget.moduleId,
+            fileName: f.fileName,
+            kind: MaterialKind.exercise,
+            extractedText: f.rawText,
+            createdAt: DateTime.now(),
+            covered: true,
+            unitId: unitId,
+            filePath: filePath,
+            fileBytesBase64: fileBytesBase64,
+          ));
+          materialId = id;
+        }
+        if (!mounted) return;
+        final result = await service.scan(
+          ImportSource(name: f.fileName, bytes: f.bytes),
+          instruction: _instruction.text.trim(),
+          materialId: materialId,
+          onProgress: (done, total) => setState(() => _progressText = '${f.fileName} · Abschnitt $done von $total'),
+        );
+        if (!mounted) return;
+        drafts.addAll(result.drafts);
+        notes.addAll([for (final e in result.errors) pdfs.length == 1 ? e : '${f.fileName}: $e']);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Unerwarteter Fehler: $e';
+          _step = _Step.pick;
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    if (drafts.isEmpty) {
+      setState(() {
+        _error = [
+          'Keine passende Aufgabe gefunden.${_instruction.text.trim().isEmpty ? '' : ' Formuliere den Wunsch '
+              'vielleicht etwas allgemeiner.'}',
+          ...notes,
+        ].join('\n');
+        _step = _Step.pick;
+      });
+      return;
+    }
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => TaskImportScreen(
+          moduleId: widget.moduleId,
+          moduleName: context.read<ModuleRepository?>()?.byId(widget.moduleId)?.name ?? '',
+          unitId: unitId,
+          initialDrafts: drafts,
+          scanNotes: notes,
+        ),
+      ),
+    );
   }
 
   /// Import-Modus: PDFs werden Seite für Seite vom Vision-Modell gelesen
@@ -1138,8 +1248,7 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
   /// Der Import liest PDF-Aufgaben als Seitenbilder – dafür ist ein Modell
   /// mit Bildverständnis nötig (sonst das Fragen-Modell).
   bool get _importUsesVision =>
-      _mode == _GenerateMode.import &&
-      _exercisesFiles.any((f) => f.fileName.toLowerCase().endsWith('.pdf') && f.bytes.isNotEmpty);
+      _mode == _GenerateMode.import && (_interactive || _interactivePdfs.isNotEmpty);
 
   Widget _buildBody() {
     switch (_step) {
@@ -1189,6 +1298,9 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
           importOptions: _importOptions,
           onImportOptionsChanged: (o) => setState(() => _importOptions = o),
           verifyAvailable: _checkablePdfs.isNotEmpty,
+          interactive: _interactive,
+          onInteractiveChanged: (v) => setState(() => _interactive = v),
+          instruction: _instruction,
         );
       case _Step.generating:
         return Center(
@@ -1199,7 +1311,8 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
               const SizedBox(height: 16),
               Text(switch (_mode) {
                 _GenerateMode.pasteJson => 'JSON wird eingelesen …',
-                _GenerateMode.import => 'KI liest die Aufgaben fortlaufend …',
+                _GenerateMode.import =>
+                  _interactive ? 'KI baut interaktive Aufgaben …' : 'KI liest die Aufgaben fortlaufend …',
                 _GenerateMode.create => 'KI erstellt Konzepte und Karteikarten …',
               }),
               if (_progressText != null) ...[
@@ -1274,11 +1387,19 @@ class _PickView extends StatelessWidget {
     required this.importOptions,
     required this.onImportOptionsChanged,
     required this.verifyAvailable,
+    required this.interactive,
+    required this.onInteractiveChanged,
+    required this.instruction,
     this.modelSelector,
     this.analysis,
     this.error,
     this.rawResponse,
   });
+
+  /// Import-Modus: interaktive Aufgaben statt Quizfragen.
+  final bool interactive;
+  final ValueChanged<bool> onInteractiveChanged;
+  final TextEditingController instruction;
 
   /// Modellwahl für diese Erstellung (siehe [ModelOverrideTile]); null im
   /// Modus "JSON einfügen" (dort wird keine KI aufgerufen).
@@ -1508,12 +1629,42 @@ class _PickView extends StatelessWidget {
             const SizedBox(height: 16),
           ],
         if (mode == _GenerateMode.import) ...[
-          ImportOptionsCard(
-            options: importOptions,
-            onChanged: onImportOptionsChanged,
-            verifyAvailable: verifyAvailable,
+          SwitchListTile(
+            key: const ValueKey('review-import-interactive'),
+            contentPadding: EdgeInsets.zero,
+            value: interactive,
+            onChanged: onInteractiveChanged,
+            title: const Text('Als interaktive Aufgaben'),
+            subtitle: Text(
+              'Rechenweg Schritt für Schritt, Terminierung, Kristallgitter, Stückliste oder Diagramm-Skizze statt '
+              'Quizfragen. Du prüfst danach jede Aufgabe mit ihrer Seite.',
+              style: TextStyle(fontSize: 12, color: context.colors.inkMuted),
+            ),
           ),
-          const SizedBox(height: 12),
+          if (interactive) ...[
+            const SizedBox(height: 4),
+            TextField(
+              key: const ValueKey('review-import-instruction'),
+              controller: instruction,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Welche Aufgaben?',
+                hintText: 'z.B. alle Mathe-Aufgaben als Rechenweg',
+                helperText: 'Leer lassen = jede Aufgabe, die sich interaktiv machen lässt.',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ] else ...[
+            ImportOptionsCard(
+              options: importOptions,
+              onChanged: onImportOptionsChanged,
+              verifyAvailable: verifyAvailable,
+            ),
+            const SizedBox(height: 12),
+          ],
         ],
         if (modelSelector != null) ...[
           modelSelector!,
@@ -1523,12 +1674,12 @@ class _PickView extends StatelessWidget {
           onPressed: onGenerate,
           icon: Icon(switch (mode) {
             _GenerateMode.create => Icons.auto_awesome_outlined,
-            _GenerateMode.import => Icons.file_download_outlined,
+            _GenerateMode.import => interactive ? Icons.touch_app_outlined : Icons.file_download_outlined,
             _GenerateMode.pasteJson => Icons.playlist_add_check_outlined,
           }),
           label: Text(switch (mode) {
             _GenerateMode.create => 'Konzepte & Karteikarten erstellen',
-            _GenerateMode.import => 'Fragen importieren',
+            _GenerateMode.import => interactive ? 'Interaktive Aufgaben erstellen' : 'Fragen importieren',
             _GenerateMode.pasteJson => 'JSON einfügen',
           }),
         ),

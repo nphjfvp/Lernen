@@ -52,6 +52,7 @@ class InteractiveTaskDraft {
     this.incomplete = false,
     this.asQuestion = false,
     this.questionType = '',
+    this.page,
   });
 
   /// null = die Aufgabe passt (noch) nicht als interaktive Aufgabe.
@@ -85,6 +86,26 @@ class InteractiveTaskDraft {
 
   /// Vorschlag der KI für den Fragetyp (z.B. "free_text"), nur zur Anzeige.
   final String questionType;
+
+  /// Seite im Dokument (1-basiert), wenn ein ganzes Dokument gelesen wurde.
+  final int? page;
+
+  InteractiveTaskDraft withPage(int? page) => InteractiveTaskDraft(
+        kind: kind,
+        front: front,
+        back: back,
+        steps: steps,
+        gantt: gantt,
+        crystal: crystal,
+        bom: bom,
+        sketch: sketch,
+        reason: reason,
+        needs: needs,
+        incomplete: incomplete,
+        asQuestion: asQuestion,
+        questionType: questionType,
+        page: page,
+      );
 
   bool get isUsable => switch (kind) {
         InteractiveKind.steps => steps?.isUsable ?? false,

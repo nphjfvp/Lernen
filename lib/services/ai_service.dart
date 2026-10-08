@@ -3940,11 +3940,21 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
   /// SketchChecker). Was nicht passt, kommt mit Begründung
   /// und fehlender Bedienart zurück (kind null). [kind] null = die KI
   /// entscheidet je Teilaufgabe.
+  ///
+  /// Für ganze Dokumente (siehe InteractiveTaskScanService): [instruction] ist
+  /// der Wunsch des Nutzers, welche Aufgaben und wie (z.B. "alle Mathe-Aufgaben
+  /// als Rechenweg") – nicht passende werden weggelassen; [pages] sind die
+  /// Seitennummern der Bilder, [contextPage] eine schon gelesene Seite davor
+  /// (nur Kontext). Mit [allowEmpty] ist "nichts gefunden" kein Fehler.
   Future<List<InteractiveTaskDraft>> buildInteractiveTasks({
     String text = '',
     List<Uint8List> images = const [],
     String solution = '',
     InteractiveKind? kind,
+    String instruction = '',
+    List<int> pages = const [],
+    int? contextPage,
+    bool allowEmpty = false,
   }) async {
     if (text.trim().isEmpty && images.isEmpty) {
       throw AiServiceException('Gib die Aufgabe als Text oder Bild an.');
@@ -3971,7 +3981,25 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
         'Gewünscht: "kind": "sketch" (Diagramm skizzieren) – nur wenn das gar nicht geht, "none" mit Begründung.',
       null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "bom", "sketch", "question" oder "none".',
     });
-    if (images.isNotEmpty) {
+    if (instruction.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Wunsch des Nutzers, welche Aufgaben und wie: ${instruction.trim()}')
+        ..writeln('Übernimm NUR Aufgaben, die dazu passen, und lass alle anderen ganz weg (auch nicht als "none"). '
+            'Nennt der Wunsch eine Art (z.B. "als Rechenweg"), verwende sie, wo es irgend geht.');
+    }
+    if (pages.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('${images.isEmpty ? 'Der Text enthält' : 'Die Bilder (und der Text) sind'} Seiten eines Dokuments: ${[
+          if (contextPage != null) 'Seite $contextPage (nur Kontext)',
+          for (final p in pages) 'Seite $p',
+        ].join(', ')}.')
+        ..writeln('Übernimm JEDE passende Aufgabe, die auf ${pages.length == 1 ? 'Seite ${pages.first}' : 'den Seiten ${pages.first}–${pages.last}'} '
+            'beginnt (höchstens 8)${contextPage == null ? '' : ' – Aufgaben, die schon auf Seite $contextPage beginnen, wurden '
+                'bereits übernommen und gehören nicht dazu'}. Gib bei jeder Aufgabe "page" an (Seite, auf der sie beginnt). '
+            'Steht dort keine passende Aufgabe, antworte mit {"tasks": []}.');
+    } else if (images.isNotEmpty) {
       buffer
         ..writeln('Dem Text folgen ${images.length} Bild${images.length == 1 ? '' : 'er'} der Aufgabe.')
         ..writeln('Stehen auf den Bildern mehrere Aufgaben und ist im Text eine bestimmte genannt (z.B. "Aufgabe 2b"), '
@@ -3983,6 +4011,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       temperature: 0,
     );
     final drafts = parseInteractiveTasks(_parseJsonObject(raw));
+    if (allowEmpty) return drafts;
     if (drafts.isEmpty || drafts.every((d) => d.kind == null && d.reason.trim().isEmpty && !d.incomplete && !d.asQuestion)) {
       throw AiServiceException('Die KI hat keine interaktive Aufgabe geliefert – bitte erneut versuchen.', rawResponse: raw);
     }
@@ -4013,6 +4042,13 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
   /// brauchbare Daten zu liefern, wird der Entwurf als [InteractiveTaskDraft.incomplete]
   /// markiert.
   static InteractiveTaskDraft parseInteractiveTask(Map<String, dynamic> json) {
+    final draft = _parseInteractiveTask(json);
+    final page = json['page'] ?? json['seite'];
+    final n = page is num ? page.toInt() : int.tryParse('${page ?? ''}'.trim());
+    return n == null || n < 1 ? draft : draft.withPage(n);
+  }
+
+  static InteractiveTaskDraft _parseInteractiveTask(Map<String, dynamic> json) {
     final data = json['taskData'] is Map ? Map<String, dynamic>.from(json['taskData'] as Map) : json;
     final declared = '${json['kind'] ?? json['type'] ?? ''}'.toLowerCase().trim();
     final asQuestion = declared == 'question' || declared == 'frage' || declared == 'normal' || declared == 'quiz';
@@ -4250,7 +4286,7 @@ Bei "sketch":
 - "back": kurze Beschreibung des richtigen Verlaufs.
 
 Antworte NUR mit einem JSON-Objekt:
-{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "question" | "none", "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
+{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
 
   static const _paperReviewSystemPrompt = r"""
 Du bist Korrektor für handschriftliche Rechenwege. Du bekommst eine Aufgabe, die Musterlösung in Schritten und Fotos eines Rechenwegs.

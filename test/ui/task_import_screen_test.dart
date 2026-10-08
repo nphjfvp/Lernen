@@ -19,6 +19,7 @@ import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/repositories/unsupported_task_repository.dart';
 import 'package:lernen/services/ai_service.dart';
 import 'package:lernen/services/fsrs_service.dart';
+import 'package:lernen/services/interactive_task_scan_service.dart';
 import 'package:lernen/services/question_parsing.dart';
 import 'package:lernen/theme/app_colors.dart';
 import 'package:lernen/ui/daily/question_answer_view.dart';
@@ -870,6 +871,63 @@ void main() {
     expect(card.type, QuestionType.freeText);
     expect(card.front, 'Ordne Weiße Ware ein.');
     expect(card.sourcePage, 2);
+  });
+
+  testWidgets('aus einem ganzen Dokument: jede Aufgabe mit ihrer Seite, ihrem Blatt und Seitenbild', (tester) async {
+    final cards = await pump(
+      tester,
+      TaskImportScreen(
+        moduleId: 'm1',
+        initialDrafts: [
+          ScannedTaskDraft(
+            draft: AiService.parseInteractiveTask(_stepsDraft()).withPage(2),
+            page: 2,
+            sourceName: 'Blatt 3.pdf',
+            pageImage: _tinyPng,
+            materialId: 'blatt3',
+          ),
+          ScannedTaskDraft(
+            draft: AiService.parseInteractiveTask(_crystalDraft()),
+            page: 4,
+            sourceName: 'Blatt 3.pdf',
+            materialId: 'blatt3',
+          ),
+          ScannedTaskDraft(
+            draft: AiService.parseInteractiveTask(_noneDraft()),
+            page: 5,
+            sourceName: 'Blatt 3.pdf',
+            materialId: 'blatt3',
+          ),
+        ],
+        scanNotes: const ['Seite 6: Die KI hat nicht geantwortet.'],
+      ),
+      height: 4200,
+    );
+    await settle(tester);
+
+    // Statt der Eingabe: Herkunft und Hinweise vom Lesen.
+    expect(find.byKey(const ValueKey('task-import-document')), findsOneWidget);
+    expect(find.byKey(const ValueKey('task-import-text')), findsNothing);
+    expect(find.textContaining('Aus Blatt 3.pdf'), findsOneWidget);
+    expect(find.text('Seite 6: Die KI hat nicht geantwortet.'), findsOneWidget);
+    expect(find.text('Die KI hat 3 Aufgaben im Dokument gefunden – 2 davon interaktiv.'), findsOneWidget);
+    expect(find.textContaining('2. S. 4 · 2a) Zeichnen'), findsOneWidget);
+
+    // Die nicht interaktive Aufgabe steht mit ihrer Seite auf der Sammelliste.
+    final listed = unsupported.items.single;
+    expect(listed.sourceMaterialId, 'blatt3');
+    expect(listed.sourcePage, 5);
+
+    await tap(tester, 'task-import-save');
+    expect(cards.saved, hasLength(2));
+    final steps = cards.saved.firstWhere((c) => c.type == QuestionType.steps);
+    expect(steps.sourceMaterialId, 'blatt3');
+    expect(steps.sourcePage, 2);
+    // Das Seitenbild hängt an der Aufgabe, die eins hat.
+    expect(steps.imageBase64, isNotNull);
+    final crystal = cards.saved.firstWhere((c) => c.type == QuestionType.crystal);
+    expect(crystal.sourcePage, 4);
+    expect(crystal.imageBase64, isNull);
   });
 
   testWidgets('Sammelliste aus den Einstellungen: alle Fächer, nach Fach filtern', (tester) async {

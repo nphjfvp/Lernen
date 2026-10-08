@@ -1393,6 +1393,31 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zh. Interaktive Aufgaben aus einem ganzen Dokument
+
+Statt jede Aufgabe einzeln zu fotografieren, liest die KI ein ganzes
+Übungsblatt (oder eine Altklausur) und macht daraus interaktive Aufgaben –
+Rechenweg, Terminierung, Kristallgitter, Stückliste oder Diagramm-Skizze.
+Man kann ihr sagen, welche: z.B. **„alle Mathe-Aufgaben als Rechenweg“**.
+
+- **Wo**: im Fach unter „Fragen aus PDF importieren“ oben auf „Interaktive
+  Aufgaben“ umschalten; im Menü (⋮) einer PDF „Interaktive Aufgaben daraus
+  erstellen“; direkt nach dem Hochladen über „Interaktive Aufgaben“ in der
+  Meldung; im Nachbereiten im Modus „Fragen importieren“ mit dem Schalter
+  „Als interaktive Aufgaben“.
+- **Wunsch und Art**: ein freies Feld „Welche Aufgaben?“ (leer = jede, die
+  sich interaktiv machen lässt) und optional eine feste Art. Aufgaben, die
+  nicht zum Wunsch passen, lässt die KI ganz weg.
+- **Fortlaufend gelesen**: je zwei neue Seiten plus die Seite davor als
+  Kontext – eine Aufgabe über den Seitenumbruch bleibt ganz, und keine wird
+  doppelt übernommen. Ein fehlgeschlagener Abschnitt bricht den Rest nicht ab
+  und steht als Hinweis oben.
+- **Prüfen und speichern**: die Funde öffnen sich in „Aufgabe übernehmen“ –
+  jede mit ihrer Seite („S. 3 · …“), ihrem Blatt (für „Im Aufgabenblatt
+  ansehen“) und dem Seitenbild. Wie gewohnt: bearbeiten, abwählen, als normale
+  Frage erstellen oder auf die Sammelliste „Noch nicht interaktiv“ setzen.
+  Hochgeladene PDFs werden dafür als Übung im Fach abgelegt.
+
 ### 5zg. Zwei Geräte mit unterschiedlicher App-Version
 
 Läuft auf einem Gerät noch eine ältere Version, kennt sie neue Aufgabentypen

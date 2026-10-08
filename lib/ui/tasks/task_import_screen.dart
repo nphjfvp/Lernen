@@ -25,6 +25,7 @@ import '../../services/sketch_checker.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/gantt_scheduler.dart';
 import '../../services/image_crop.dart';
+import '../../services/interactive_task_scan_service.dart';
 import '../../services/plain_question_service.dart';
 import '../../services/question_parsing.dart';
 import '../../services/step_checker.dart';
@@ -82,6 +83,13 @@ class _Draft {
 
   /// Neu aufgebaute Editoren nach jedem KI-Ergebnis.
   int revision = 0;
+
+  /// Aus einem ganzen Dokument gelesen: Seite, Seitenbild und Material
+  /// (sonst gelten die des Bildschirms).
+  int? page;
+  Uint8List? image;
+  String? materialId;
+  String sourceName = '';
 
   bool get hasTask => switch (kind) {
     InteractiveKind.steps => steps != null,
@@ -142,6 +150,8 @@ class TaskImportScreen extends StatefulWidget {
     this.sourcePage,
     this.unitId,
     this.replaceCard,
+    this.initialDrafts = const [],
+    this.scanNotes = const [],
   });
 
   final String moduleId;
@@ -161,6 +171,16 @@ class TaskImportScreen extends StatefulWidget {
   /// Aufgabe aus dem Aufgaben-Ordner, die hiermit interaktiv wird. Sie bleibt
   /// erhalten, außer man wählt beim Speichern "aus dem Ordner entfernen".
   final Flashcard? replaceCard;
+
+  /// Schon aus einem ganzen Dokument gelesene Aufgaben (siehe
+  /// InteractiveTaskScanService) – dann entfällt die Eingabe oben.
+  final List<ScannedTaskDraft> initialDrafts;
+
+  /// Hinweise vom Lesen des Dokuments (z.B. Abschnitte, die nicht gelesen
+  /// werden konnten).
+  final List<String> scanNotes;
+
+  bool get fromDocument => initialDrafts.isNotEmpty;
 
   static const maxImages = 4;
 
@@ -211,6 +231,21 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     super.initState();
     // Bei einem Seitenbild gehört die Abbildung meist zur Aufgabe.
     _attachImage = widget.initialImages.length == 1 && widget.sourcePage != null;
+    if (widget.fromDocument) {
+      for (final scanned in widget.initialDrafts) {
+        _drafts.add(
+          _Draft(scanned.draft, '')
+            ..page = scanned.page
+            ..image = scanned.pageImage
+            ..materialId = scanned.materialId
+            ..sourceName = scanned.sourceName
+            ..expanded = false,
+        );
+      }
+      (_drafts.where((d) => d.hasTask).firstOrNull ?? _drafts.first).expanded = true;
+      _attachImage = _drafts.any((d) => d.image != null);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _collectUnsupported(_drafts));
+    }
   }
 
   @override
@@ -314,6 +349,12 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     }
   }
 
+  String? _materialOf(_Draft d) => d.materialId ?? widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId;
+  int? _pageOf(_Draft d) => d.page ?? widget.sourcePage ?? widget.replaceCard?.sourcePage;
+
+  /// Die Bilder einer Teilaufgabe: ihre Dokumentseite bzw. die Fotos oben.
+  List<Uint8List> _imagesOf(_Draft d) => d.image != null ? [d.image!] : [for (final i in _images) i.bytes];
+
   /// Was die KI als "passt nicht" eingestuft hat (nicht bloß unvollständig),
   /// kommt automatisch auf die Sammelliste.
   Future<void> _collectUnsupported(List<_Draft> drafts) async {
@@ -330,8 +371,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           text: text,
           reason: d.reason,
           needs: d.needs,
-          sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
-          sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+          sourceMaterialId: _materialOf(d),
+          sourcePage: _pageOf(d),
         );
         d.listedText = text;
       } catch (_) {
@@ -343,7 +384,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
 
   /// Eine Teilaufgabe neu erstellen lassen (optional als bestimmte Art).
   Future<void> _retry(_Draft d, {InteractiveKind? force}) async {
-    final ai = _ai(vision: _images.isNotEmpty);
+    final images = _imagesOf(d);
+    final ai = _ai(vision: images.isNotEmpty);
     if (ai == null) return _snack('Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
     final listed = d.listedText;
     setState(() {
@@ -353,7 +395,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     try {
       final result = await ai.buildInteractiveTasks(
         text: d.front.text.trim().isNotEmpty ? d.front.text : _text.text,
-        images: [for (final i in _images) i.bytes],
+        images: images,
         solution: _solution.text,
         kind: force ?? _wanted,
       );
@@ -381,12 +423,13 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   Flashcard _card(_Draft d, {DateTime? now}) {
     final at = now ?? DateTime.now();
     final kind = d.kind!;
-    final material = widget.sourceMaterialId == null
+    final materialId = _materialOf(d);
+    final material = materialId == null
         ? null
         : context
               .read<MaterialRepository?>()
               ?.forModule(widget.moduleId)
-              .where((m) => m.id == widget.sourceMaterialId)
+              .where((m) => m.id == materialId)
               .firstOrNull;
     final back = switch (kind) {
       InteractiveKind.gantt => GanttScheduler.solutionText(d.gantt!),
@@ -412,12 +455,12 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         InteractiveKind.bom => d.bom?.confirmed().toMap(),
         InteractiveKind.sketch => d.sketch?.confirmed().toMap(),
       },
-      imageBase64: _attachImage && _images.isNotEmpty && (kind == InteractiveKind.steps || kind == InteractiveKind.bom)
-          ? base64Encode(_images.first.bytes)
+      imageBase64: _attachImage && _imagesOf(d).isNotEmpty && (kind == InteractiveKind.steps || kind == InteractiveKind.bom)
+          ? base64Encode(_imagesOf(d).first)
           : null,
       unitId: widget.unitId ?? widget.replaceCard?.unitId,
-      sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
-      sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+      sourceMaterialId: _materialOf(d),
+      sourcePage: _pageOf(d),
       // Selbst übernommene Aufgaben sollen bald drankommen, unabhängig vom
       // Einheiten-Gate (siehe Flashcard.priorityIntroduction).
       priorityIntroduction: true,
@@ -492,7 +535,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     final d = _drafts[i];
     final first = d.front.text.trim().split('\n').first.trim();
     final label = first.isEmpty ? 'Teilaufgabe' : first;
-    return _drafts.length == 1 ? label : '${i + 1}. $label';
+    final page = d.page == null ? '' : 'S. ${d.page} · ';
+    return _drafts.length == 1 ? '$page$label' : '${i + 1}. $page$label';
   }
 
   /// Kurzer Stand in der Kopfzeile der Teilaufgabe.
@@ -647,7 +691,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 48),
                 children: [
-                  _inputCard(c, hasKey),
+                  if (widget.fromDocument) _documentCard(c) else _inputCard(c, hasKey),
                   if (_error != null) ...[const SizedBox(height: 12), _errorCard(c)],
                   if (_drafts.isNotEmpty) ..._draftList(c),
                 ],
@@ -670,6 +714,30 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     ),
     child: child,
   );
+
+  /// Statt der Eingabe: woher die Aufgaben stammen.
+  Widget _documentCard(AppColors c) {
+    final names = {for (final d in _drafts) if (d.sourceName.isNotEmpty) d.sourceName};
+    return _panel(
+      c,
+      key: const ValueKey('task-import-document'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Aus ${names.isEmpty ? 'dem Dokument' : names.join(', ')}: jede gefundene Aufgabe steht unten mit ihrer '
+            'Seite. Prüf sie mit dem Blatt, wähl ab, was du nicht willst, und speichere den Rest auf einmal.',
+            style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
+          ),
+          for (final note in widget.scanNotes)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(note, style: TextStyle(fontSize: 12, height: 1.35, color: c.warn)),
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _inputCard(AppColors c, bool hasKey) {
     return _panel(
@@ -809,7 +877,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       Text(
         _drafts.length == 1
             ? 'Vorschau'
-            : 'Die KI hat ${_drafts.length} Teilaufgaben gefunden'
+            : 'Die KI hat ${_drafts.length} ${widget.fromDocument ? 'Aufgaben im Dokument' : 'Teilaufgaben'} gefunden'
                   '${usable == _drafts.length ? '' : ' – $usable davon interaktiv'}.',
         key: const ValueKey('task-import-found'),
         style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
@@ -822,7 +890,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       if (listed > 0) ...[const SizedBox(height: 10), _listNote(c, listed)],
       for (final (i, d) in _drafts.indexed) ...[const SizedBox(height: 12), _draftCard(c, i, d)],
       if (_hasTasks) ...[
-        if (_images.isNotEmpty && _toSave.any((d) => d.kind == InteractiveKind.steps || d.kind == InteractiveKind.bom))
+        if (_toSave.any((d) => _imagesOf(d).isNotEmpty && (d.kind == InteractiveKind.steps || d.kind == InteractiveKind.bom)))
           SwitchListTile(
             key: const ValueKey('task-import-attach-image'),
             contentPadding: EdgeInsets.zero,
@@ -1048,7 +1116,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
 
   /// Aufgabe, die als normale Quizfrage passt: Karten wie beim Fragen-Import anlegen.
   Future<void> _createAsQuestion(_Draft d) async {
-    final ai = _ai(vision: _images.isNotEmpty);
+    final images = _imagesOf(d);
+    final ai = _ai(vision: images.isNotEmpty);
     if (ai == null) return _snack('Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
     final text = d.front.text.trim().isNotEmpty ? d.front.text.trim() : _fallbackFront;
     if (text.isEmpty) return _snack('Die Aufgabe (Text) darf nicht leer sein.');
@@ -1062,14 +1131,14 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       // Mit Foto: die KI sieht die Aufgabe samt Tabellen/Abbildungen (oft
       // steht das Entscheidende nur im Bild); sonst bzw. wenn das nichts
       // ergibt, nur aus dem Text.
-      var cards = _images.isEmpty ? <Flashcard>[] : await _questionFromImage(ai, d, text);
+      var cards = images.isEmpty ? <Flashcard>[] : await _questionFromImage(ai, d, text);
       if (cards.isEmpty) {
         cards = await PlainQuestionService.build(
-          _images.isEmpty ? ai : (_ai(vision: false) ?? ai),
+          images.isEmpty ? ai : (_ai(vision: false) ?? ai),
           text: text,
           moduleId: widget.moduleId,
-          sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
-          sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+          sourceMaterialId: _materialOf(d),
+          sourcePage: _pageOf(d),
           unitId: widget.unitId ?? widget.replaceCard?.unitId,
         );
       }
@@ -1101,7 +1170,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   /// Eine Frage aus dem Foto der Aufgabe (wie „Frage erstellen“ im PDF), mit
   /// dem Aufgabentext als Fokus und dem von der KI vorgeschlagenen Typ.
   Future<List<Flashcard>> _questionFromImage(AiService ai, _Draft d, String text) async {
-    final image = _images.first.bytes;
+    final image = _imagesOf(d).first;
     final type = d.questionType.trim().isEmpty ? null : QuestionParsing.parseType(d.questionType);
     final groups = await ai.generateQuestionsFromPage(
       pageImageBytes: image,
@@ -1119,8 +1188,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         tierCount: 1,
         attachImageBase64: base64Encode(attach),
         now: DateTime.now(),
-        sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
-        sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+        sourceMaterialId: _materialOf(d),
+        sourcePage: _pageOf(d),
       ))
         ...group,
     ];
@@ -1142,8 +1211,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
             ? 'Von Hand vorgemerkt: ${d.error}'
             : (d.reason.isNotEmpty ? d.reason : 'Von Hand auf die Liste gesetzt.'),
         needs: need,
-        sourceMaterialId: widget.sourceMaterialId ?? widget.replaceCard?.sourceMaterialId,
-        sourcePage: widget.sourcePage ?? widget.replaceCard?.sourcePage,
+        sourceMaterialId: _materialOf(d),
+        sourcePage: _pageOf(d),
       );
       if (!mounted) return;
       setState(() {
