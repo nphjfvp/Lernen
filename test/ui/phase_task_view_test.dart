@@ -295,6 +295,106 @@ void main() {
     expect(results.single.correct, isFalse);
   });
 
+  testWidgets('Blatt 6, Aufgabe 1 (1:1): Fragen, gegebene Abkühlkurve, Kurven mit Namen vom Blatt', (tester) async {
+    // So wie die KI es vom Blatt liest: Werte des abgebildeten Diagramms, Teile a)–e).
+    final task = PhaseTask.fromMap({
+      'system': {
+        'a': 'Pb',
+        'b': 'Sn',
+        'tMin': 0,
+        'tMax': 350,
+        'meltA': 327,
+        'eutecticC': 61.9,
+        'eutecticT': 180,
+        'rightC': 100,
+        'rightT': 240,
+        'alphaMax': 29,
+        'alphaLow': 2,
+        'betaMax': 97.5,
+        'betaLow': 99,
+        'alpha': 'α-MK',
+        'beta': 'β-MK',
+        'structureNames': true,
+      },
+      'parts': [
+        {
+          'kind': 'question',
+          'prompt': 'a) Um welchen Typ von Zweistoffsystem handelt es sich?',
+          'options': [
+            'Vollständige Löslichkeit im festen Zustand',
+            'Eutektisches System mit begrenzter Löslichkeit im festen Zustand',
+            'Peritektisches System',
+          ],
+          'correct': 1,
+        },
+        {
+          'kind': 'question',
+          'prompt': 'b) Auf welche gegenseitige Löslichkeit lässt das Diagramm schließen?',
+          'answer': 'Flüssig vollständig löslich, fest nur begrenzt (α- und β-Mischkristalle).',
+        },
+        {
+          'kind': 'composition',
+          'curveGiven': true,
+          't': 228,
+          'prompt': 'c) Ermitteln Sie die beiden möglichen Legierungszusammensetzungen.',
+        },
+        {
+          'kind': 'question',
+          'prompt': 'd) Schlagen Sie ein Verfahren zur Unterscheidung vor.',
+          'answer': 'Metallografischer Schliff: primäre α- bzw. β-MK im Gefüge.',
+        },
+        {
+          'kind': 'cooling',
+          'compositions': [0, 20, 61.9],
+          'labels': ['100 % Pb, 0 % Sn', '80 % Pb, 20 % Sn', 'Eutektische Legierung'],
+        },
+      ],
+    })!;
+    expect(task.isUsable, isTrue);
+    expect(task.system.structureNames, isTrue);
+    await pump(tester, task);
+
+    // a) Auswahl.
+    await tap(tester, 'phase-option-0');
+    await tap(tester, 'phase-check');
+    expect(text(tester, 'phase-verdict'), contains('Nicht ganz'));
+    await tap(tester, 'phase-option-1');
+    await tap(tester, 'phase-check');
+    expect(text(tester, 'phase-verdict'), contains('Richtig'));
+
+    // b) Freitext: Musterantwort aufdecken, selbst bewerten.
+    await tap(tester, 'phase-next-part');
+    expect(text(tester, 'phase-prompt'), contains('b) Auf welche gegenseitige Löslichkeit'));
+    await tap(tester, 'phase-show-answer');
+    expect(text(tester, 'phase-answer'), contains('Flüssig vollständig löslich'));
+    await tap(tester, 'phase-self-ok');
+
+    // c) Die gemessene Kurve wird gezeigt, die Temperatur steht nicht im Text.
+    await tap(tester, 'phase-next-part');
+    expect(find.byKey(const ValueKey('phase-given-curve')), findsOneWidget);
+    expect(text(tester, 'phase-prompt'), isNot(contains('228')));
+    final cs = PhaseCalculator(task).compositionsForLiquidus(228);
+    expect(cs, hasLength(2));
+    await enter(tester, 'phase-2-x1', PhaseCalculator.fmt(cs[0], digits: 0));
+    await enter(tester, 'phase-2-x2', PhaseCalculator.fmt(cs[1], digits: 0));
+    await tap(tester, 'phase-check');
+    expect(text(tester, 'phase-verdict'), contains('Richtig'));
+
+    // d) Freitext nicht gewusst → Lösung gezeigt.
+    await tap(tester, 'phase-next-part');
+    await tap(tester, 'phase-show-answer');
+    await tap(tester, 'phase-self-wrong');
+    expect(text(tester, 'phase-solution'), contains('Metallografischer Schliff'));
+
+    // e) Kurven mit den Namen vom Blatt.
+    await tap(tester, 'phase-next-part');
+    expect(find.text('Eutektische Legierung'), findsOneWidget);
+    expect(find.text('100 % Pb, 0 % Sn'), findsOneWidget);
+    await tap(tester, 'phase-reveal');
+    await tap(tester, 'phase-next');
+    expect(results.single.correct, isFalse);
+  });
+
   testWidgets('QuestionAnswerView zeigt Zustandsdiagramm-Karten als Diagramm', (tester) async {
     final task = _task(const [PhasePart(kind: PhasePartKind.phases, c: 40, t: 100)]);
     expect(AnswerChecker.isAnswerable(_card(task)), isTrue);
@@ -335,7 +435,7 @@ void main() {
     expect(task.parts[1].compositions, [0, 62]);
     await enter(tester, 'phase-edit-1-2-comps', '0; 30; 62');
     expect(task.parts[1].compositions, [0, 30, 62]);
-    expect(text(tester, 'phase-preview'), contains('b) 0 % Sn: reines Pb: Haltepunkt bei 327 °C'));
+    expect(text(tester, 'phase-preview'), contains('b) 100 % Pb: reines Pb: Haltepunkt bei 327 °C'));
   });
 
   test('KI-Eintrag mit Diagramm-Eckdaten wird zum Zustandsdiagramm', () {

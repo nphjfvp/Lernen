@@ -193,12 +193,56 @@ void main() {
 
     test('erzeugte Skizze: eine Kurve je Legierung, Musterkurven bestehen ihre eigene Prüfung', () {
       final sketch = calc.coolingSketch([0, 40, 61.9, 80]);
-      expect(sketch.curveNames, ['0 % Sn', '40 % Sn', '61,9 % Sn', '80 % Sn']);
+      expect(sketch.curveNames, ['100 % Pb', '40 % Sn', 'eutektisch (61,9 % Sn)', '80 % Sn']);
       expect(sketch.features.where((f) => f.kind == SketchFeatureKind.plateau), hasLength(4));
       expect(sketch.features.where((f) => f.kind == SketchFeatureKind.kink), hasLength(2));
       expect(SketchChecker.selfCheck(sketch), isEmpty);
       final byCurve = {for (final c in sketch.curves) c.name: c.reference};
       expect(SketchChecker.check(sketch, byCurve.values.first, const [], byCurve: byCurve).ok, isTrue);
+    });
+
+    test('Kurvennamen vom Blatt, gegebene Kurve, Frage-Teile', () {
+      const cooling = PhasePart(
+        kind: PhasePartKind.cooling,
+        compositions: [0, 20, 61.9],
+        labels: ['100 % Pb, 0 % Sn', '', 'Eutektische Legierung'],
+      );
+      expect(calc.curveNames(cooling), ['100 % Pb, 0 % Sn', '20 % Sn', 'Eutektische Legierung']);
+      expect(calc.solutionText(cooling), contains('Eutektische Legierung: Eutektikum: Haltepunkt bei 183 °C'));
+
+      const given = PhasePart(kind: PhasePartKind.composition, t: 230, curveGiven: true);
+      final curve = calc.givenCurve(given)!;
+      expect(curve.features.map((f) => f.kind), [SketchFeatureKind.kink, SketchFeatureKind.plateau]);
+      expect(curve.features.first.y, closeTo(230, 1e-9));
+      expect(calc.promptText(given), isNot(contains('230')));
+      expect(calc.hints(given).first, contains('Knick'));
+      expect(calc.solutionText(given), startsWith('Knick der Kurve bei ≈ 230 °C'));
+
+      const choice = PhasePart(
+        kind: PhasePartKind.question,
+        prompt: 'Typ?',
+        options: ['vollständig löslich', 'eutektisch'],
+        correct: 1,
+        answer: 'Begrenzte Löslichkeit im festen Zustand.',
+      );
+      expect(choice.isValid, isTrue);
+      expect(calc.checkChoice(choice, 1).ok, isTrue);
+      expect(calc.checkChoice(choice, 0).ok, isFalse);
+      expect(calc.solutionText(choice), 'eutektisch – Begrenzte Löslichkeit im festen Zustand.');
+      expect(const PhasePart(kind: PhasePartKind.question, prompt: 'x').isValid, isFalse);
+
+      final parsed = PhasePart.fromMap({
+        'kind': 'frage',
+        'prompt': 'Typ?',
+        'options': [
+          {'text': 'A'},
+          {'text': 'B', 'correct': true},
+        ],
+      })!;
+      expect(parsed.correct, 1);
+      expect(PhasePart.fromMap(parsed.toMap())!.toMap(), parsed.toMap());
+      expect(PhasePart.fromMap(cooling.toMap())!.labels, cooling.labels);
+      expect(PhasePart.fromMap(given.toMap())!.curveGiven, isTrue);
     });
 
     test('Stahlecke: Umwandlung statt Erstarrung, Perlit als Haltepunkt', () {

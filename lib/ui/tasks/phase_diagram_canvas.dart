@@ -210,12 +210,30 @@ class _PhasePainter extends CustomPainter {
     }
     canvas.restore();
 
+    // Gefüge statt Phasen unter der eutektischen Linie: gestrichelte
+    // Trennlinie an der eutektischen Zusammensetzung.
+    final structure = s.structureNames && showRegionNames && !numbered;
+    if (structure) {
+      final dash = Paint()
+        ..color = muted
+        ..strokeWidth = 1.2;
+      final top = _px(s.eutecticC, s.eutecticT), bottom = _px(s.eutecticC, s.tMin);
+      for (var y = top.dy; y < bottom.dy; y += 9) {
+        canvas.drawLine(Offset(top.dx, y), Offset(top.dx, math.min(y + 5, bottom.dy)), dash);
+      }
+    }
     if (showRegionNames || numbered) {
       for (final (i, l) in calc.regionLabels().indexed) {
         final o = _px(l.at.c, l.at.t);
         if (numbered) {
           canvas.drawCircle(o, 11, Paint()..color = line);
           _text(canvas, '${i + 1}', o, color: Colors.white, bold: true, size: 12);
+        } else if (structure && l.region == PhaseRegion.alphaBeta) {
+          final t = l.at.t;
+          final left = (calc.cAtT(PhaseLine.solvusLeft, t) + s.eutecticC) / 2;
+          final right = (s.eutecticC + calc.cAtT(PhaseLine.solvusRight, t)) / 2;
+          _text(canvas, '${s.eutecticName} +\n${s.alpha}', _px(left, t), color: ink, size: 11);
+          _text(canvas, '${s.eutecticName} +\n${s.beta}', _px(right, t), color: ink, size: 11);
         } else {
           _text(canvas, s.regionName(l.region), o, color: ink, size: 11.5);
         }

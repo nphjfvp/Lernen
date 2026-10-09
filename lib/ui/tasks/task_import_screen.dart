@@ -393,8 +393,11 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       final drafts = [for (final r in result) _Draft(r, fallback)];
       // Aufklappen: bei einer Aufgabe diese, sonst die erste brauchbare.
       (drafts.where((d) => d.hasTask).firstOrNull ?? drafts.first).expanded = true;
-      // Bei Stücklisten gehört der Original-Erzeugnisbaum dazu.
-      if (_images.isNotEmpty && drafts.any((d) => d.kind == InteractiveKind.bom)) _attachImage = true;
+      // Bei Stücklisten gehört der Original-Erzeugnisbaum dazu, beim
+      // Zustandsdiagramm das Blatt (z.B. mit der gemessenen Abkühlkurve).
+      if (_images.isNotEmpty && drafts.any((d) => d.kind == InteractiveKind.bom || d.kind == InteractiveKind.phase)) {
+        _attachImage = true;
+      }
       setState(() {
         for (final d in _drafts) {
           d.dispose();
@@ -706,7 +709,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         InteractiveKind.phase => d.phase?.confirmed().toMap(),
         InteractiveKind.drawing => d.drawing?.confirmed().toMap(),
       },
-      imageBase64: _attachImage && _imagesOf(d).isNotEmpty && (kind == InteractiveKind.steps || kind == InteractiveKind.bom)
+      imageBase64: _attachImage && _imagesOf(d).isNotEmpty && const {InteractiveKind.steps, InteractiveKind.bom, InteractiveKind.phase, InteractiveKind.drawing}.contains(kind)
           ? base64Encode(_imagesOf(d).first)
           : null,
       unitId: _unitId,

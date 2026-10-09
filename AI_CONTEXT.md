@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1499 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1501 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1531,6 +1531,15 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Import: Option "imageBox" → `PdfQuestionImportService.attachOptionImages` (in attachFigure);
     Karten-Editor `card-edit-option-image-i` (Hook `CardEditScreen.pickImageHook`).
     `syncDataVersion` = 4. Tests: `drawing_task_view_test`, `image_options_test`.
+69. Zustandsdiagramm 1:1 (Blatt 6 Aufg. 1): `PhasePartKind.question` (prompt, `answer`, `options`
+    + `correct`; Auswahl über `checkChoice`, Freitext: `phase-show-answer` → `phase-self-ok`/
+    `phase-self-wrong`, in der Probeklausur nicht gewertet), `PhasePart.curveGiven`
+    (composition: `PhaseCalculator.givenCurve` als `phase-given-curve`, Prompt ohne T),
+    `PhasePart.labels` (Kurvennamen vom Blatt, `curveNames`; Standard "100 % Pb",
+    "eutektisch (61,9 % Sn)"), `PhaseSystem.structureNames` (Canvas: Gefüge-Beschriftung unter
+    der eutektischen Linie, gestrichelte Trennlinie). `PhaseCalculator.cAtT(line, t)` (Instanz,
+    mit Randwert), statisch jetzt `cAtTOf`. KI-Prompt: Werte vom Blatt ablesen, Fragen als
+    Teile. TaskImportScreen hängt die Abbildung an phase/drawing-Karten.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

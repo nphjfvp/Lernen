@@ -76,6 +76,7 @@ class PhaseSystem {
     this.beta = 'β',
     this.eutecticName = 'Eutektikum',
     this.eutectoid = false,
+    this.structureNames = false,
     required this.meltA,
     required this.eutecticC,
     required this.eutecticT,
@@ -110,6 +111,11 @@ class PhaseSystem {
   /// Eutektoid (Umwandlung im festen Zustand, z.B. γ → α + Fe₃C): Wörter
   /// "Umwandlung" statt "Erstarrung".
   final bool eutectoid;
+
+  /// Unter der eutektischen Linie nach Gefüge beschriften („Eutektikum +
+  /// α“ links, „Eutektikum + β“ rechts, getrennt an der eutektischen
+  /// Zusammensetzung) statt nach Phasen („α + β“) – wie in vielen Skripten.
+  final bool structureNames;
 
   /// Schmelz- (bzw. Umwandlungs-)Temperatur von A.
   final double meltA;
@@ -196,6 +202,7 @@ class PhaseSystem {
     'beta': beta,
     'eutecticName': eutecticName,
     if (eutectoid) 'eutectoid': true,
+    if (structureNames) 'structureNames': true,
     'meltA': meltA,
     'eutecticC': eutecticC,
     'eutecticT': eutecticT,
@@ -223,6 +230,7 @@ class PhaseSystem {
     String? beta,
     String? eutecticName,
     bool? eutectoid,
+    bool? structureNames,
     double? meltA,
     double? eutecticC,
     double? eutecticT,
@@ -245,6 +253,7 @@ class PhaseSystem {
     beta: beta ?? this.beta,
     eutecticName: eutecticName ?? this.eutecticName,
     eutectoid: eutectoid ?? this.eutectoid,
+    structureNames: structureNames ?? this.structureNames,
     meltA: meltA ?? this.meltA,
     eutecticC: eutecticC ?? this.eutecticC,
     eutecticT: eutecticT ?? this.eutecticT,
@@ -308,6 +317,7 @@ class PhaseSystem {
       beta: s(['beta'], 'β'),
       eutecticName: s(['eutecticName', 'eutektikum'], eutectoid ? 'Perlit' : 'Eutektikum'),
       eutectoid: eutectoid,
+      structureNames: raw['structureNames'] == true || '${raw['structureNames']}'.toLowerCase() == 'true',
       meltA: meltA,
       eutecticC: cE,
       eutecticT: tE,
@@ -332,7 +342,8 @@ enum PhasePartKind {
   solubility('Löslichkeit'),
   eutecticLine('Eutektische Linie'),
   regions('Gebiete benennen'),
-  pickRegion('Gebiet zeigen');
+  pickRegion('Gebiet zeigen'),
+  question('Frage');
 
   const PhasePartKind(this.label);
   final String label;
@@ -353,6 +364,13 @@ PhasePartKind? phasePartKindFrom(Object? raw) {
     'eutektischelinie' || 'eutectic' || 'eutectoidline' => PhasePartKind.eutecticLine,
     'gebiete' || 'benennen' || 'labels' || 'beschriften' => PhasePartKind.regions,
     'gebiet' || 'region' || 'bereich' || 'markieren' => PhasePartKind.pickRegion,
+    'frage' ||
+    'text' ||
+    'freetext' ||
+    'erklaeren' ||
+    'erklären' ||
+    'choice' ||
+    'singlechoice' => PhasePartKind.question,
     _ => null,
   };
 }
@@ -364,9 +382,14 @@ class PhasePart {
     this.c,
     this.t,
     this.compositions = const [],
+    this.labels = const [],
     this.side = 'b',
     this.region,
+    this.curveGiven = false,
     this.prompt = '',
+    this.answer = '',
+    this.options = const [],
+    this.correct,
   });
 
   final PhasePartKind kind;
@@ -378,14 +401,30 @@ class PhasePart {
   /// Abkühlkurven: die Zusammensetzungen.
   final List<double> compositions;
 
+  /// Abkühlkurven: Namen wie auf dem Blatt (z.B. "Eutektische Legierung"),
+  /// je Zusammensetzung; leer = die App benennt sie selbst.
+  final List<String> labels;
+
   /// Löslichkeit: 'b' = von B in α (links), 'a' = von A in β (rechts).
   final String side;
 
   /// Gebiet zeigen: das gesuchte Gebiet.
   final PhaseRegion? region;
 
+  /// Zusammensetzung: statt der Temperatur ist eine gemessene Abkühlkurve
+  /// gegeben (Knick bei [t], Haltepunkt bei der eutektischen Temperatur) –
+  /// die App zeigt die Kurve, man liest selbst ab.
+  final bool curveGiven;
+
   /// Eigener Aufgabentext (sonst schreibt ihn die App).
   final String prompt;
+
+  /// Frage ([PhasePartKind.question]): Musterantwort bzw. Auswahl.
+  final String answer;
+  final List<String> options;
+  final int? correct;
+
+  bool get isChoice => options.length >= 2 && correct != null && correct! >= 0 && correct! < options.length;
 
   bool get isValid => switch (kind) {
     PhasePartKind.phases || PhasePartKind.lever => c != null && t != null,
@@ -393,6 +432,7 @@ class PhasePart {
     PhasePartKind.cooling => compositions.isNotEmpty,
     PhasePartKind.composition => t != null,
     PhasePartKind.pickRegion => region != null,
+    PhasePartKind.question => prompt.trim().isNotEmpty && (isChoice || answer.trim().isNotEmpty),
     _ => true,
   };
 
@@ -403,17 +443,28 @@ class PhasePart {
     bool clearC = false,
     bool clearT = false,
     List<double>? compositions,
+    List<String>? labels,
     String? side,
     PhaseRegion? region,
+    bool? curveGiven,
     String? prompt,
+    String? answer,
+    List<String>? options,
+    int? correct,
+    bool clearCorrect = false,
   }) => PhasePart(
     kind: kind ?? this.kind,
     c: clearC ? null : (c ?? this.c),
     t: clearT ? null : (t ?? this.t),
     compositions: compositions ?? this.compositions,
+    labels: labels ?? this.labels,
     side: side ?? this.side,
     region: region ?? this.region,
+    curveGiven: curveGiven ?? this.curveGiven,
     prompt: prompt ?? this.prompt,
+    answer: answer ?? this.answer,
+    options: options ?? this.options,
+    correct: clearCorrect ? null : (correct ?? this.correct),
   );
 
   Map<String, dynamic> toMap() => {
@@ -421,9 +472,14 @@ class PhasePart {
     if (c != null) 'c': c,
     if (t != null) 't': t,
     if (compositions.isNotEmpty) 'compositions': compositions,
+    if (labels.any((l) => l.trim().isNotEmpty)) 'labels': labels,
     if (kind == PhasePartKind.solubility) 'side': side,
     if (region != null) 'region': region!.name,
+    if (curveGiven) 'curveGiven': true,
     if (prompt.trim().isNotEmpty) 'prompt': prompt.trim(),
+    if (answer.trim().isNotEmpty) 'answer': answer.trim(),
+    if (options.isNotEmpty) 'options': options,
+    if (correct != null) 'correct': correct,
   };
 
   static PhasePart? fromMap(Object? raw) {
@@ -431,7 +487,26 @@ class PhasePart {
     final kind = phasePartKindFrom(raw['kind'] ?? raw['type'] ?? raw['art']);
     if (kind == null) return null;
     final comps = raw['compositions'] ?? raw['zusammensetzungen'] ?? raw['alloys'];
+    final labels = raw['labels'] ?? raw['names'] ?? raw['namen'];
     final side = '${raw['side'] ?? raw['seite'] ?? 'b'}'.toLowerCase().trim();
+    final given = raw['curveGiven'] ?? raw['kurveGegeben'];
+    final rawOptions = raw['options'] ?? raw['optionen'] ?? raw['choices'];
+    // Optionen als Texte oder als {"text", "correct"}.
+    final options = <String>[];
+    int? correct = (raw['correct'] is num) ? (raw['correct'] as num).toInt() : int.tryParse('${raw['correct'] ?? ''}');
+    if (rawOptions is List) {
+      for (final o in rawOptions) {
+        if (o is Map) {
+          final text = '${o['text'] ?? ''}'.trim();
+          if (text.isEmpty) continue;
+          final flag = o['correct'] ?? o['isCorrect'];
+          if (flag == true || '$flag'.toLowerCase() == 'true') correct = options.length;
+          options.add(text);
+        } else if ('${o ?? ''}'.trim().isNotEmpty) {
+          options.add('$o'.trim());
+        }
+      }
+    }
     return PhasePart(
       kind: kind,
       c: _num(raw['c'] ?? raw['composition'] ?? raw['zusammensetzung']),
@@ -440,9 +515,17 @@ class PhasePart {
         if (comps is List)
           for (final v in comps) ?_num(v),
       ],
+      labels: [
+        if (labels is List)
+          for (final l in labels) '${l ?? ''}'.trim(),
+      ],
       side: side == 'a' || side == 'left' || side == 'links' ? 'a' : 'b',
       region: phaseRegionFrom(raw['region'] ?? raw['gebiet']),
+      curveGiven: given == true || '$given'.toLowerCase() == 'true',
       prompt: '${raw['prompt'] ?? raw['frage'] ?? ''}'.trim(),
+      answer: '${raw['answer'] ?? raw['antwort'] ?? raw['solution'] ?? ''}'.trim(),
+      options: options,
+      correct: correct,
     );
   }
 }

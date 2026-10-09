@@ -1393,6 +1393,25 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zm. Zustandsdiagramm-Aufgaben 1:1 wie auf dem Blatt
+
+Beispiel Blatt 6, Aufgabe 1 (Pb-Sn mit gemessener Abkühlkurve):
+
+- **Alle Teilaufgaben in einer Karte**, in der Reihenfolge des Blatts – auch
+  Wissens- und Erklärfragen („Um welchen Typ von Zweistoffsystem handelt es
+  sich?“, „Schlagen Sie ein Verfahren vor …“) als Teil „Frage“: mit Auswahl
+  (geprüft) oder Freitext mit Musterantwort zum Selbstbewerten.
+- **Gegebene Abkühlkurve**: Ist statt einer Temperatur eine gemessene Kurve
+  abgebildet, zeigt die App diese Kurve (Knick, Haltepunkt); man liest selbst
+  ab, die Temperatur steht nicht mehr im Text.
+- **Werte vom Blatt statt aus dem Lehrbuch**: Die KI soll alle Eckdaten aus dem
+  abgebildeten Diagramm ablesen, auch wenn es vom Lehrbuch abweicht.
+- **Beschriftung wie im Skript**: unter der eutektischen Linie wahlweise nach
+  Gefüge („Eutektikum + α-MK“ / „Eutektikum + β-MK“, gestrichelt getrennt).
+  Abkühlkurven tragen die Namen vom Blatt („100 % Pb, 0 % Sn“, „Eutektische
+  Legierung“).
+- Die Abbildung des Blatts wird an die Karte gehängt.
+
 ### 5zl. Gefüge skizzieren (Freihand mit KI-Bewertung) und Bilder als Antworten
 
 - **Neuer Aufgabentyp „Freihand-Skizze“**: frei zeichnen – z.B. das Korngefüge

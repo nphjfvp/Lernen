@@ -22,6 +22,10 @@ class _PartState {
   final Map<int, PhaseRegion?> regions = {};
   PhasePoint? tapped;
 
+  /// Frage: gewählte Antwort bzw. Musterantwort aufgedeckt (Freitext).
+  int? choice;
+  bool answerShown = false;
+
   /// Abkühlkurven: Striche je Kurve, gerade gezeichnete Kurve.
   Map<String, List<List<SketchPoint>>> cooling = {};
   String? coolingCurrent;
@@ -86,8 +90,13 @@ class _PhaseTaskViewState extends State<PhaseTaskView> {
   _PartState get _state => _parts[_current];
   bool get _allDone => _gaveUp || _parts.every((p) => p.solved || p.revealed);
 
-  SketchTask _sketchFor(int i) =>
-      _coolingSketches.putIfAbsent(i, () => _calc.coolingSketch(widget.task.parts[i].compositions));
+  SketchTask _sketchFor(int i) => _coolingSketches.putIfAbsent(
+    i,
+    () => _calc.coolingSketch(widget.task.parts[i].compositions, labels: widget.task.parts[i].labels),
+  );
+
+  /// Freitext-Frage: wird selbst bewertet (nach dem Aufdecken der Musterantwort).
+  bool _isOpenQuestion(PhasePart p) => p.kind == PhasePartKind.question && !p.isChoice;
 
   @override
   void dispose() {
@@ -133,6 +142,9 @@ class _PhaseTaskViewState extends State<PhaseTaskView> {
         return _calc.checkRegions(s.regions);
       case PhasePartKind.pickRegion:
         return _calc.checkPick(p, s.tapped);
+      case PhasePartKind.question:
+        // Freitext bewertet man selbst (siehe _rateSelf); hier nur die Auswahl.
+        return p.isChoice ? _calc.checkChoice(p, s.choice) : PhaseCheck(s.solved, const []);
       case PhasePartKind.cooling:
         final sketch = _sketchFor(i);
         final v = SketchChecker.check(
@@ -151,7 +163,13 @@ class _PhaseTaskViewState extends State<PhaseTaskView> {
 
   void _check() {
     if (widget.examMode) {
-      _submit(isCorrect: [for (var i = 0; i < _parts.length; i++) _judge(i).ok].every((b) => b));
+      // Freitext-Fragen lassen sich ohne Rückmeldung nicht bewerten – sie zählen nicht mit.
+      _submit(
+        isCorrect: [
+          for (var i = 0; i < _parts.length; i++)
+            if (!_isOpenQuestion(widget.task.parts[i])) _judge(i).ok,
+        ].every((b) => b),
+      );
       return;
     }
     final v = _judge(_current);
@@ -164,6 +182,15 @@ class _PhaseTaskViewState extends State<PhaseTaskView> {
       }
     });
   }
+
+  /// Freitext-Frage nach dem Aufdecken: selbst gewusst oder nicht.
+  void _rateSelf(bool knew) => setState(() {
+    if (knew) {
+      _state.solved = true;
+    } else {
+      _state.revealed = true;
+    }
+  });
 
   /// Antippen im Diagramm: Hebel (erst links, dann rechts) bzw. Gebiet zeigen.
   void _tap(PhasePoint p) {
@@ -430,7 +457,17 @@ class _PhaseTaskViewState extends State<PhaseTaskView> {
           ),
         ];
       case PhasePartKind.composition:
+        final given = part.curveGiven ? _calc.givenCurve(part) : null;
         return [
+          if (given != null) ...[
+            SketchCanvas(
+              key: const ValueKey('phase-given-curve'),
+              task: given,
+              height: 240,
+              strokesByCurve: {for (final curve in given.curves) curve.name: curve.reference},
+            ),
+            const SizedBox(height: 10),
+          ],
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -504,6 +541,46 @@ class _PhaseTaskViewState extends State<PhaseTaskView> {
               'Angetippt: ${PhaseCalculator.fmt(s.tapped!.c)} $pct, ${PhaseCalculator.fmt(s.tapped!.t, digits: 0)} °C',
               style: TextStyle(fontSize: 12.5, color: c.inkMuted),
             ),
+        ];
+      case PhasePartKind.question:
+        if (part.isChoice) {
+          return [
+            for (final (i, o) in part.options.indexed)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: ChoiceChip(
+                  key: ValueKey('phase-option-$i'),
+                  label: Text(o),
+                  selected: s.choice == i,
+                  onSelected: locked
+                      ? null
+                      : (_) => setState(() {
+                          s.choice = i;
+                          s.verdict = null;
+                        }),
+                ),
+              ),
+          ];
+        }
+        return [
+          TextField(
+            key: ValueKey('phase-$_current-text'),
+            controller: s.field('text'),
+            enabled: !locked,
+            minLines: 2,
+            maxLines: 6,
+            decoration: const InputDecoration(labelText: 'Deine Antwort (für dich)', border: OutlineInputBorder()),
+          ),
+          if (s.answerShown || locked) ...[
+            const SizedBox(height: 10),
+            Container(
+              key: const ValueKey('phase-answer'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(14)),
+              child: MathText('Musterantwort: ${part.answer}', style: const TextStyle(fontSize: 13.5, height: 1.45)),
+            ),
+          ],
         ];
       case PhasePartKind.cooling:
         final sketch = _sketchFor(_current);
@@ -634,6 +711,36 @@ class _PhaseTaskViewState extends State<PhaseTaskView> {
                 : 'Weiter zu ${String.fromCharCode(97 + nextIndex)}  ${widget.task.parts[nextIndex].kind.label}',
           ),
         ),
+      ];
+    }
+    if (_isOpenQuestion(widget.task.parts[_current])) {
+      return [
+        if (!s.answerShown)
+          FilledButton(
+            key: const ValueKey('phase-show-answer'),
+            onPressed: () => setState(() => s.answerShown = true),
+            child: const Text('Musterantwort zeigen'),
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  key: const ValueKey('phase-self-wrong'),
+                  onPressed: () => _rateSelf(false),
+                  child: const Text('Wusste ich nicht'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  key: const ValueKey('phase-self-ok'),
+                  onPressed: () => _rateSelf(true),
+                  child: const Text('Wusste ich'),
+                ),
+              ),
+            ],
+          ),
       ];
     }
     return [

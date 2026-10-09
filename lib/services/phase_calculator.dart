@@ -69,7 +69,7 @@ class PhaseCalculator {
   // ---------------------------------------------------------------------------
 
   /// Zusammensetzung, bei der der Linienzug die Temperatur [t] hat.
-  static double? cAtT(List<PhasePoint> line, double t) {
+  static double? cAtTOf(List<PhasePoint> line, double t) {
     for (var i = 0; i + 1 < line.length; i++) {
       final p = line[i], q = line[i + 1];
       final lo = math.min(p.t, q.t), hi = math.max(p.t, q.t);
@@ -94,6 +94,12 @@ class PhaseCalculator {
 
   List<PhasePoint> line(PhaseLine l) => s.line(l);
 
+  /// Zusammensetzung einer Linie bei [t] (außerhalb: nächstes Ende).
+  double cAtT(PhaseLine l, double t) {
+    final pts = line(l);
+    return PhaseCalculator.cAtTOf(pts, t) ?? (t > pts.first.t == (pts.first.t > pts.last.t) ? pts.first.c : pts.last.c);
+  }
+
   /// Liquidustemperatur (bzw. Beginn der Umwandlung) der Zusammensetzung [c].
   double liquidusT(double c) => c <= s.eutecticC
       ? (tAtC(line(PhaseLine.liquidusLeft), c) ?? s.meltA)
@@ -107,15 +113,15 @@ class PhaseCalculator {
     if (t >= s.eutecticT) {
       if (c <= s.eutecticC) {
         if (t >= liquidusT(c)) return PhaseRegion.liquid;
-        final solidus = cAtT(line(PhaseLine.solidusLeft), t) ?? s.alphaMax;
+        final solidus = cAtTOf(line(PhaseLine.solidusLeft), t) ?? s.alphaMax;
         return c <= solidus ? PhaseRegion.alpha : PhaseRegion.liquidAlpha;
       }
       if (t >= liquidusT(c)) return PhaseRegion.liquid;
-      final solidus = cAtT(line(PhaseLine.solidusRight), t) ?? s.betaMax;
+      final solidus = cAtTOf(line(PhaseLine.solidusRight), t) ?? s.betaMax;
       return c >= solidus ? PhaseRegion.beta : PhaseRegion.liquidBeta;
     }
-    final ca = cAtT(line(PhaseLine.solvusLeft), t) ?? s.alphaLow;
-    final cb = cAtT(line(PhaseLine.solvusRight), t) ?? s.betaLow;
+    final ca = cAtTOf(line(PhaseLine.solvusLeft), t) ?? s.alphaLow;
+    final cb = cAtTOf(line(PhaseLine.solvusRight), t) ?? s.betaLow;
     if (c <= ca) return PhaseRegion.alpha;
     if (c >= cb) return PhaseRegion.beta;
     return PhaseRegion.alphaBeta;
@@ -129,21 +135,21 @@ class PhaseCalculator {
     final (String, double?, String, double?) ends = switch (region) {
       PhaseRegion.liquidAlpha => (
         s.alpha,
-        cAtT(line(PhaseLine.solidusLeft), t),
+        cAtTOf(line(PhaseLine.solidusLeft), t),
         s.liquid,
-        cAtT(line(PhaseLine.liquidusLeft), t),
+        cAtTOf(line(PhaseLine.liquidusLeft), t),
       ),
       PhaseRegion.liquidBeta => (
         s.liquid,
-        cAtT(line(PhaseLine.liquidusRight), t),
+        cAtTOf(line(PhaseLine.liquidusRight), t),
         s.beta,
-        cAtT(line(PhaseLine.solidusRight), t),
+        cAtTOf(line(PhaseLine.solidusRight), t),
       ),
       PhaseRegion.alphaBeta => (
         s.alpha,
-        cAtT(line(PhaseLine.solvusLeft), t),
+        cAtTOf(line(PhaseLine.solvusLeft), t),
         s.beta,
-        cAtT(line(PhaseLine.solvusRight), t),
+        cAtTOf(line(PhaseLine.solvusRight), t),
       ),
       _ => ('', null, '', null),
     };
@@ -173,8 +179,8 @@ class PhaseCalculator {
 
   /// Zusammensetzungen, deren Erstarrung (Umwandlung) bei [t] beginnt.
   List<double> compositionsForLiquidus(double t) => [
-    if (t >= s.eutecticT - 1e-9 && t <= s.meltA + 1e-9) ?cAtT(line(PhaseLine.liquidusLeft), t),
-    if (t >= s.eutecticT - 1e-9 && t <= s.rightT + 1e-9) ?cAtT(line(PhaseLine.liquidusRight), t),
+    if (t >= s.eutecticT - 1e-9 && t <= s.meltA + 1e-9) ?cAtTOf(line(PhaseLine.liquidusLeft), t),
+    if (t >= s.eutecticT - 1e-9 && t <= s.rightT + 1e-9) ?cAtTOf(line(PhaseLine.liquidusRight), t),
   ];
 
   // ---------------------------------------------------------------------------
@@ -217,11 +223,45 @@ class PhaseCalculator {
     ];
   }
 
-  String curveName(double c) => '${fmt(c)} % ${s.b}';
+  /// Name einer Abkühlkurve: [label] vom Blatt, sonst "100 % Pb",
+  /// "eutektisch (61,9 % Sn)" bzw. "40 % Sn".
+  String curveName(double c, [String label = '']) {
+    if (label.trim().isNotEmpty) return label.trim();
+    final eps = s.cMax * 0.002;
+    if (c <= eps) return '100 % ${s.a}';
+    if (c >= s.cMax - eps && (s.cMax - 100).abs() < 1e-9) return '100 % ${s.b}';
+    if ((c - s.eutecticC).abs() <= s.cMax * 0.004) {
+      return '${s.eutectoid ? 'eutektoid' : 'eutektisch'} (${fmt(c)} % ${s.b})';
+    }
+    return '${fmt(c)} % ${s.b}';
+  }
+
+  /// Die Namen der Kurven einer Teilaufgabe (eindeutig).
+  List<String> curveNames(PhasePart p) {
+    final names = <String>[];
+    for (final (i, c) in p.compositions.indexed) {
+      var name = curveName(c, i < p.labels.length ? p.labels[i] : '');
+      if (names.contains(name)) name = '$name (${fmt(c)} % ${s.b})';
+      names.add(name);
+    }
+    return names;
+  }
+
+  /// Die gemessene Abkühlkurve einer Teilaufgabe "Zusammensetzung" mit
+  /// gegebener Kurve: Knick bei der abgelesenen Temperatur, dann (wenn die
+  /// Legierung eutektisch erstarrt) Haltepunkt. null, wenn bei dieser
+  /// Temperatur keine Liquiduslinie liegt.
+  SketchTask? givenCurve(PhasePart p) {
+    if (p.t == null) return null;
+    final cs = compositionsForLiquidus(p.t!);
+    if (cs.isEmpty) return null;
+    return coolingSketch([cs.first], labels: const ['gemessene Kurve']);
+  }
 
   /// Die Abkühlkurven als Skizze (T über t, je Zusammensetzung eine Kurve,
   /// zeitlich versetzt) – geprüft an Knicken und Haltepunkten.
-  SketchTask coolingSketch(List<double> compositions) {
+  SketchTask coolingSketch(List<double> compositions, {List<String> labels = const []}) {
+    final names = curveNames(PhasePart(kind: PhasePartKind.cooling, compositions: compositions, labels: labels));
     final range = s.tMax - s.tMin;
     final liquid = range / 25, twoPhase = range / 80, solid = range / 30;
     const plateau = 14.0, offset = 20.0;
@@ -230,7 +270,7 @@ class PhaseCalculator {
     var maxEnd = 0.0;
     for (final (i, c) in compositions.indexed) {
       final events = coolingEvents(c);
-      final name = curveName(c);
+      final name = names[i];
       final first = events.first.t;
       var t = i * offset, temp = math.min(s.tMax, first + 0.15 * range);
       final pts = <SketchPoint>[SketchPoint(t, temp)];
@@ -285,14 +325,14 @@ class PhaseCalculator {
     final top = math.max(s.meltA, s.rightT);
     add(PhaseRegion.liquid, s.eutecticC, math.min(s.tMax - (s.tMax - s.tMin) * 0.06, (top + s.tMax) / 2));
     final tl = s.eutecticT + (s.meltA - s.eutecticT) * 0.35;
-    final la = cAtT(line(PhaseLine.solidusLeft), tl), ll = cAtT(line(PhaseLine.liquidusLeft), tl);
+    final la = cAtTOf(line(PhaseLine.solidusLeft), tl), ll = cAtTOf(line(PhaseLine.liquidusLeft), tl);
     add(PhaseRegion.liquidAlpha, la == null || ll == null ? null : (la + ll) / 2, tl);
     final tr = s.eutecticT + (s.rightT - s.eutecticT) * 0.35;
-    final lr = cAtT(line(PhaseLine.liquidusRight), tr), sr = cAtT(line(PhaseLine.solidusRight), tr);
+    final lr = cAtTOf(line(PhaseLine.liquidusRight), tr), sr = cAtTOf(line(PhaseLine.solidusRight), tr);
     add(PhaseRegion.liquidBeta, lr == null || sr == null ? null : (lr + math.min(sr, s.cMax)) / 2, tr);
     final tb = s.eutecticT - (s.eutecticT - s.tMin) * 0.3;
-    add(PhaseRegion.alpha, (cAtT(line(PhaseLine.solvusLeft), tb) ?? s.alphaLow) / 2, tb);
-    final cb = cAtT(line(PhaseLine.solvusRight), tb) ?? s.betaLow;
+    add(PhaseRegion.alpha, (cAtTOf(line(PhaseLine.solvusLeft), tb) ?? s.alphaLow) / 2, tb);
+    final cb = cAtTOf(line(PhaseLine.solvusRight), tb) ?? s.betaLow;
     add(PhaseRegion.beta, (cb + s.cMax) / 2, tb);
     add(PhaseRegion.alphaBeta, s.eutecticC, s.tMin + (s.eutecticT - s.tMin) * 0.5);
     return out;
@@ -320,9 +360,11 @@ class PhaseCalculator {
         'Hebelgesetz bei ${_at(p)}: Wie sind die beiden Phasen zusammengesetzt, und wie groß sind ihre Anteile?',
       PhasePartKind.structure =>
         'Gefügeanteile einer Legierung mit ${fmt(p.c ?? 0)} % ${s.b} direkt unterhalb von ${fmt(s.eutecticT)} °C?',
-      PhasePartKind.cooling =>
-        'Zeichne die Abkühlkurven für ${[for (final c in p.compositions) curveName(c)].join(', ')}.',
-      PhasePartKind.composition => 'Bei welchen Zusammensetzungen beginnt die $_solidify bei ${fmt(p.t ?? 0)} °C?',
+      PhasePartKind.cooling => 'Zeichne die Abkühlkurven für ${curveNames(p).join(', ')}.',
+      PhasePartKind.composition =>
+        p.curveGiven
+            ? 'Ermittle anhand der gegebenen Abkühlkurve und des Diagramms die möglichen Legierungszusammensetzungen.'
+            : 'Bei welchen Zusammensetzungen beginnt die $_solidify bei ${fmt(p.t ?? 0)} °C?',
       PhasePartKind.solubility =>
         p.side == 'a'
             ? 'Wie groß ist die maximale Löslichkeit von ${s.a} in ${s.beta}, und bei welcher Temperatur?'
@@ -331,6 +373,7 @@ class PhaseCalculator {
         'Über welchen ${s.b}-Bereich reicht die ${s.eutectoid ? 'eutektoide' : 'eutektische'} Linie?',
       PhasePartKind.regions => 'Benenne die nummerierten Gebiete im Diagramm.',
       PhasePartKind.pickRegion => 'Tippe im Diagramm das Gebiet „${s.regionName(p.region!)}“ an.',
+      PhasePartKind.question => '',
     };
   }
 
@@ -407,6 +450,13 @@ class PhaseCalculator {
           : 'Primär ${st.primary} ≈ ${fmt(st.primaryShare * 100, digits: 0)} %, ${st.eutectic} ≈ ${fmt(st.eutecticShare * 100, digits: 0)} % '
                 '(Hebel zwischen ${fmt(st.primary == s.alpha ? s.alphaMax : s.betaMax)} und ${fmt(s.eutecticC)} % ${s.b}).',
     ]);
+  }
+
+  /// Frage mit Auswahl: [chosen] = Index der gewählten Antwort.
+  PhaseCheck checkChoice(PhasePart p, int? chosen) {
+    if (chosen == null) return const PhaseCheck(false, ['Wähle eine Antwort.']);
+    if (chosen == p.correct) return PhaseCheck(true, ['Richtig.${p.answer.isEmpty ? '' : ' ${p.answer}'}']);
+    return PhaseCheck(false, ['Nicht ganz.']);
   }
 
   PhaseCheck checkComposition(PhasePart p, List<double?> given) {
@@ -497,6 +547,8 @@ class PhaseCalculator {
       'Bei der ${s.eutectoid ? 'eutektoiden' : 'eutektischen'} Temperatur bleibt die Temperatur stehen (Haltepunkt); reine Stoffe haben nur einen Haltepunkt.',
     ],
     PhasePartKind.composition => [
+      if (p.curveGiven)
+        'Am Knick der Kurve (A) beginnt die $_solidify – lies die Temperatur ab (≈ ${fmt(p.t!, digits: 0)} °C).',
       'Zeichne bei ${fmt(p.t!)} °C eine Waagerechte – wo schneidet sie die Liquiduslinien?',
     ],
     PhasePartKind.solubility => ['Die Löslichkeit ist dort am größten, wo das Mischkristallgebiet am breitesten ist.'],
@@ -505,6 +557,7 @@ class PhaseCalculator {
       'Oben ist alles ${s.liquid}, an den Rändern die Mischkristalle, dazwischen Zweiphasengebiete.',
     ],
     PhasePartKind.pickRegion => ['Gesucht: ${s.regionName(p.region!)}.'],
+    PhasePartKind.question => const [],
   };
 
   /// Musterlösung einer Teilaufgabe als Text.
@@ -525,14 +578,17 @@ class PhaseCalculator {
         return '${fmt(p.c!)} % ${s.b}: primär ${st.primary} ≈ ${fmt(st.primaryShare * 100, digits: 0)} %, '
             '${st.eutectic} ≈ ${fmt(st.eutecticShare * 100, digits: 0)} %.';
       case PhasePartKind.cooling:
+        final names = curveNames(p);
         return [
-          for (final c in p.compositions) '${curveName(c)}: ${[for (final e in coolingEvents(c)) e.why].join('; ')}',
+          for (final (i, c) in p.compositions.indexed)
+            '${names[i]}: ${[for (final e in coolingEvents(c)) e.why].join('; ')}',
         ].join('\n');
       case PhasePartKind.composition:
         final cs = compositionsForLiquidus(p.t!);
         return cs.isEmpty
             ? 'Bei ${fmt(p.t!)} °C beginnt keine $_solidify.'
-            : 'Liquidus bei ${fmt(p.t!)} °C: ${[for (final c in cs) '${fmt(c)} % ${s.b}'].join(' und ')}.';
+            : '${p.curveGiven ? 'Knick der Kurve bei ≈ ${fmt(p.t!, digits: 0)} °C → ' : ''}'
+                  'Liquidus bei ${fmt(p.t!)} °C: ${[for (final c in cs) '${fmt(c)} % ${s.b}'].join(' und ')}.';
       case PhasePartKind.solubility:
         final sol = solubility(p.side);
         return 'Maximal ${fmt(sol.value)} % bei ${fmt(sol.t)} °C.';
@@ -543,6 +599,8 @@ class PhaseCalculator {
         return [for (final (i, l) in regionLabels().indexed) '${i + 1}: ${s.regionName(l.region)}'].join('\n');
       case PhasePartKind.pickRegion:
         return 'Gebiet „${s.regionName(p.region!)}“.';
+      case PhasePartKind.question:
+        return [if (p.isChoice) p.options[p.correct!], if (p.answer.isNotEmpty) p.answer].join(' – ');
     }
   }
 

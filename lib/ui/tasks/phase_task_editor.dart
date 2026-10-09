@@ -153,6 +153,17 @@ class _PhaseTaskEditorState extends State<PhaseTaskEditor> {
           value: s.eutectoid,
           onChanged: (v) => _system(s.copyWith(eutectoid: v)),
         ),
+        SwitchListTile(
+          key: const ValueKey('phase-edit-structure-names'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Unten nach Gefüge beschriften'),
+          subtitle: Text(
+            '„${s.eutecticName} + ${s.alpha}“ / „${s.eutecticName} + ${s.beta}“ statt „${s.alpha} + ${s.beta}“',
+          ),
+          value: s.structureNames,
+          onChanged: (v) => _system(s.copyWith(structureNames: v)),
+        ),
         const SizedBox(height: 4),
         Text('Eckdaten', style: head),
         const SizedBox(height: 8),
@@ -322,12 +333,65 @@ class _PhaseTaskEditorState extends State<PhaseTaskEditor> {
                   ],
                   onChanged: (r) => r == null ? null : _setPart(i, p.copyWith(region: r)),
                 ),
+              if (p.kind == PhasePartKind.cooling)
+                _field(
+                  '$k-labels',
+                  'Namen wie auf dem Blatt (mit ; getrennt, optional)',
+                  p.labels.join('; '),
+                  width: 300,
+                  (v) => _setPart(i, p.copyWith(labels: [for (final l in v.split(';')) l.trim()])),
+                ),
+              if (p.kind == PhasePartKind.composition)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      key: ValueKey('$k-curve-given'),
+                      value: p.curveGiven,
+                      onChanged: (v) => _setPart(i, p.copyWith(curveGiven: v ?? false)),
+                    ),
+                    const Text('Abkühlkurve gegeben (T = Knick)'),
+                  ],
+                ),
             ],
           ),
+          if (p.kind == PhasePartKind.question) ...[
+            const SizedBox(height: 8),
+            _field(
+              '$k-options',
+              'Auswahl-Antworten (mit ; getrennt, leer = Freitext)',
+              p.options.join('; '),
+              width: double.infinity,
+              (v) {
+                final options = [
+                  for (final o in v.split(';'))
+                    if (o.trim().isNotEmpty) o.trim(),
+                ];
+                final keep = p.correct != null && p.correct! < options.length;
+                _setPart(i, p.copyWith(options: options, correct: keep ? p.correct : 0, clearCorrect: options.isEmpty));
+              },
+            ),
+            if (p.options.length >= 2)
+              DropdownButton<int>(
+                key: ValueKey('$k-correct'),
+                value: p.correct != null && p.correct! < p.options.length ? p.correct : null,
+                hint: const Text('Richtige Antwort'),
+                items: [for (final (j, o) in p.options.indexed) DropdownMenuItem(value: j, child: Text('richtig: $o'))],
+                onChanged: (v) => v == null ? null : _setPart(i, p.copyWith(correct: v)),
+              ),
+            const SizedBox(height: 8),
+            _field(
+              '$k-answer',
+              p.options.length >= 2 ? 'Erklärung (optional)' : 'Musterantwort',
+              p.answer,
+              width: double.infinity,
+              (v) => _setPart(i, p.copyWith(answer: v)),
+            ),
+          ],
           const SizedBox(height: 8),
           _field(
             '$k-prompt',
-            'Aufgabentext (optional, sonst schreibt ihn die App)',
+            p.kind == PhasePartKind.question ? 'Frage' : 'Aufgabentext (optional, sonst schreibt ihn die App)',
             p.prompt,
             width: double.infinity,
             (v) => _setPart(i, p.copyWith(prompt: v)),
