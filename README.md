@@ -1393,6 +1393,30 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zi. Aufgaben von einer externen KI importieren (JSON)
+
+Wer lieber ChatGPT, Gemini oder Claude.ai das Übungsblatt lesen lässt, kann
+deren Ergebnis direkt importieren:
+
+- **Import-Knopf** (⬆ „Aufgaben importieren“): in „Aufgabe übernehmen“ oben
+  rechts und unter der Eingabe, im Aufgaben-Ordner und in „Fragen aus PDF
+  importieren“ („JSON importieren“).
+- **Prompt kopieren** → in die externe KI einfügen, Blatt anhängen. Der Prompt
+  beschreibt dasselbe Format wie die App-KI (Rechenweg, Terminierung,
+  Kristallgitter, Stückliste, Skizze) und liefert für alles andere gleich die
+  **fertige Quizfrage** mit (Auswahl, Lücken, Freitext, Tabelle, Zuordnen).
+- **JSON-Datei hochladen** oder die Antwort einfügen. Auch eine Liste
+  fertiger Fragen (Format aus „JSON einfügen“ im Nachbereiten) geht.
+- Danach wie gewohnt: die App rechnet alles selbst nach. Fertige Fragen werden
+  zusammen mit den Aufgaben gespeichert, „Ausprobieren“ zeigt sie wie im Quiz.
+- **Auf Richtigkeit prüfen**: eine zweite KI (Modell „Gegenprüfung“) rechnet
+  jede Aufgabe und Frage nach, meldet Fehler mit Erklärung und schlägt eine
+  Korrektur vor („Korrektur übernehmen“ – die App prüft sie wieder selbst).
+- **Vorlesung zuordnen**: wählt man eine Vorlesung (Folien-PDF des Fachs),
+  bekommen die Aufgaben deren Einheit, und nach dem Speichern sucht die KI in
+  genau dieser Vorlesung, wo die Lösung erklärt wird („Im Skript“). Ohne Wahl
+  werden Aufgaben aus Übungsblättern wie bisher mit dem Skript abgeglichen.
+
 ### 5zh. Interaktive Aufgaben aus einem ganzen Dokument
 
 Statt jede Aufgabe einzeln zu fotografieren, liest die KI ein ganzes

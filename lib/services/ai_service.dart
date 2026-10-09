@@ -17,6 +17,7 @@ import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import '../models/paper_review.dart';
 import '../models/step_task.dart';
 import '../models/step_task_review.dart';
+import '../models/task_verification.dart';
 import 'calc_engine.dart';
 import 'calc_plan.dart';
 import 'condense_service.dart';
@@ -4287,6 +4288,178 @@ Bei "sketch":
 
 Antworte NUR mit einem JSON-Objekt:
 {"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
+
+  // -- Aufgaben von einer externen KI (JSON) -------------------------------
+
+  /// Prompt zum Kopieren in eine externe KI (ChatGPT, Gemini, Claude.ai …):
+  /// dasselbe Format wie [buildInteractiveTasks], aber für ein ganzes
+  /// Dokument und mit fertigen Quizfragen ("card") für alles, was nicht
+  /// interaktiv geht – die Antwort wird als JSON-Datei importiert
+  /// ([parseImportedTasks]).
+  static final String externalTaskPrompt = [
+    'Ich lerne mit der App "Lernen" und möchte die Aufgaben aus dem Dokument, das ich dir gebe (Übungsblatt, '
+        'Altklausur …), dort importieren. Lies das GANZE Dokument und befolge die folgenden Regeln der App genau.\n\n',
+    _interactiveTaskSystemPrompt.replaceFirst(' (höchstens 8)', ''),
+    _externalTaskRules,
+  ].join();
+
+  static const _externalTaskRules = r'''
+
+
+ZUSÄTZLICH FÜR DEN IMPORT:
+- Übernimm ALLE Aufgaben des Dokuments (keine Höchstzahl), in der Reihenfolge des Dokuments, und gib bei jeder "page" an (Seite, auf der sie beginnt).
+- Bei "question" liefere die fertige Quizfrage zusätzlich unter "card", damit die App sie direkt übernehmen kann – mit allen Feldern ihres Typs:
+  {"type": "single_choice" | "multiple_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
+  {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung; Variante"]}
+  {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative", "back": "Erklärung"}
+  {"type": "table", "front": "Vervollständige die Tabelle", "table": [["Kopf 1", "Kopf 2"], ["vorgegeben", {"answer": "Lösung"}]]}
+  {"type": "drag_drop" | "drag_category", "front": "Ordne zu", "dragPairs": [{"source": "Begriff", "target": "Ziel bzw. Kategorie"}]}
+  {"type": "learn", "front": "Aufgabe wortgetreu", "back": "ausführlicher Lösungsweg"} (nur, wenn sich nichts davon prüfen lässt)
+- Steht im Dokument eine Musterlösung, halte dich daran; sonst rechne bzw. löse SORGFÄLTIG selbst.
+- Formeln in LaTeX mit $…$. Verdopple in JSON jeden Backslash (z.B. "$\\frac{a}{b}$"), sonst ist das JSON ungültig.
+- Antworte AUSSCHLIESSLICH mit dem JSON-Objekt {"tasks": [...]} – ohne Text davor oder danach. Ich speichere es als Datei "aufgaben.json" und lade sie in der App hoch.''';
+
+  /// Liest den JSON-Text einer externen KI (siehe [externalTaskPrompt]):
+  /// {"tasks": [...]} mit interaktiven Aufgaben und Fragen, aber auch eine
+  /// Liste fertiger Quizfragen ("flashcards"/"questions", z.B. aus dem
+  /// Prompt im Nachbereiten). Fragen werden wie beim Import normalisiert
+  /// (QuestionParsing.normalizeGeneratedFlashcard); unbrauchbare zählen in
+  /// `dropped`. Wirft [AiServiceException], wenn das kein JSON ist.
+  static ({List<InteractiveTaskDraft> drafts, int dropped}) parseImportedTasks(String raw) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(MathMarkup.escapeLatexInJson(_extractJsonBlock(raw)));
+    } catch (e) {
+      throw AiServiceException('Das ist kein gültiges JSON: $e', rawResponse: raw);
+    }
+    final tasks = <Object?>[];
+    final cards = <Object?>[];
+    if (decoded is List) {
+      tasks.addAll(decoded);
+    } else if (decoded is Map) {
+      for (final key in const ['tasks', 'aufgaben', 'teilaufgaben']) {
+        if (decoded[key] is List) tasks.addAll(decoded[key] as List);
+      }
+      for (final key in const ['flashcards', 'questions', 'cards', 'fragen']) {
+        if (decoded[key] is List) cards.addAll(decoded[key] as List);
+      }
+      if (tasks.isEmpty && cards.isEmpty) tasks.add(decoded);
+    }
+    final drafts = <InteractiveTaskDraft>[];
+    var dropped = 0;
+    InteractiveTaskDraft? question(Map<String, dynamic> card, {Object? page, String reason = ''}) {
+      final normalized = QuestionParsing.normalizeGeneratedFlashcard(card);
+      if (normalized == null) return null;
+      final draft = InteractiveTaskDraft(
+        kind: null,
+        front: '${normalized['front'] ?? ''}'.trim(),
+        back: '${normalized['back'] ?? ''}'.trim(),
+        reason: reason,
+        asQuestion: true,
+        questionType: '${normalized['type'] ?? ''}',
+        questionData: normalized,
+      );
+      final n = page is num ? page.toInt() : int.tryParse('${page ?? ''}'.trim());
+      return n == null || n < 1 ? draft : draft.withPage(n);
+    }
+
+    for (final t in tasks) {
+      if (t is! Map) {
+        dropped++;
+        continue;
+      }
+      final map = Map<String, dynamic>.from(t);
+      // Ohne "kind"/"taskData", aber mit Fragetyp: eine fertige Quizfrage.
+      if (!map.containsKey('kind') && !map.containsKey('taskData') && map.containsKey('type')) {
+        cards.add(map);
+        continue;
+      }
+      var draft = parseInteractiveTask(map);
+      final card = map['card'] ?? map['question'] ?? map['frage'];
+      if (draft.asQuestion && card is Map) {
+        final front = '${card['front'] ?? card['question'] ?? ''}'.trim();
+        final full = question(
+          {...Map<String, dynamic>.from(card), if (front.isEmpty) 'front': draft.front},
+          page: map['page'] ?? map['seite'],
+          reason: draft.reason,
+        );
+        if (full != null) draft = full;
+      }
+      if (draft.front.trim().isEmpty && draft.kind == null && draft.reason.trim().isEmpty) {
+        dropped++;
+        continue;
+      }
+      drafts.add(draft);
+    }
+    for (final c in cards) {
+      final draft = c is Map ? question(Map<String, dynamic>.from(c), page: c['page'] ?? c['sourcePage']) : null;
+      if (draft == null) {
+        dropped++;
+      } else {
+        drafts.add(draft);
+      }
+    }
+    return (drafts: drafts, dropped: dropped);
+  }
+
+  /// Zweite Meinung zu einer übernommenen Aufgabe bzw. Frage: stimmen
+  /// erwartete Antworten, Daten und Lösung mit der Aufgabenstellung? [kind]
+  /// = Art ("steps", … bzw. der Fragetyp), [data] = taskData bzw. die
+  /// Frage, [appFindings] = was die App beim Nachrechnen selbst gefunden hat.
+  Future<TaskVerification> verifyTask({
+    required String kind,
+    required String front,
+    String back = '',
+    required Map<String, dynamic> data,
+    List<String> appFindings = const [],
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Art: $kind')
+      ..writeln()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(front.trim(), _interactiveTaskCap))
+      ..writeln();
+    if (back.trim().isNotEmpty) {
+      buffer
+        ..writeln('Hinterlegter Lösungsweg/Erklärung:')
+        ..writeln(_cap(back.trim(), _interactiveTaskCap))
+        ..writeln();
+    }
+    buffer
+      ..writeln('Daten als JSON:')
+      ..writeln(jsonEncode(data))
+      ..writeln()
+      ..writeln('Was die App beim Nachrechnen selbst gefunden hat:');
+    for (final f in appFindings) {
+      buffer.writeln('- $f');
+    }
+    if (appFindings.isEmpty) buffer.writeln('- (nichts)');
+    final raw = await _complete(_verifyTaskSystemPrompt, buffer.toString(), temperature: 0);
+    final verification = TaskVerification.fromJson(_parseJsonObject(raw));
+    if (verification.verdict == TaskVerdict.unclear && verification.comment.isEmpty) {
+      throw AiServiceException('Die KI hat kein Urteil geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return verification;
+  }
+
+  static const _verifyTaskSystemPrompt = r'''
+Du prüfst für eine Lern-App eine Aufgabe, die eine andere KI aus einem Übungsblatt übernommen hat. Prüfe GENAU und rechne selbst nach – Lernende verlassen sich darauf.
+
+Je nach Art:
+- "steps" (Rechenweg): Stimmt jede erwartete Antwort ("answer") und das Endergebnis? Sind die "mistakes" (typische Fehler) wirklich falsch? Passen die Auswahl-Antworten ("correct")? Antworten stehen in Eingabe-Schreibweise (x^2, sqrt(), pi …).
+- "gantt" (Terminierung): Passen Teile, Arbeitsgänge, Dauern, Reihenfolge ("needs"), Start-/Liefertermin, Richtung und Zählweise zur Aufgabe? Termine rechnet die App selbst.
+- "crystal" (Kristallgitter): Passen Gitter und Indizes (Vorzeichen!) zur Aufgabe?
+- "bom" (Stückliste): Passt der Erzeugnisbaum (Sach-Nr., Mengen, Struktur) und welche Listen gefragt sind? Die Listen rechnet die App selbst.
+- "sketch" (Diagramm): Ist die Musterkurve fachlich richtig, stimmen die Merkmale?
+- Quizfrage (Typ wie "single_choice", "free_text", "fill_blank", "table" …): Ist die als richtig hinterlegte Antwort fachlich richtig und vollständig, sind falsche Optionen wirklich falsch, passt die Frage zur Aufgabe?
+
+Urteil:
+- "ok": alles stimmt.
+- "fehler": mindestens eine Angabe ist falsch. Dann "comment": kurz und konkret, was falsch ist und was richtig wäre (1–4 Sätze, LaTeX in $…$), und "corrected": das VOLLSTÄNDIGE korrigierte Datenobjekt im gleichen Schema wie geliefert (nur das Nötige ändern).
+- "unklar": lässt sich ohne das Blatt nicht entscheiden (z.B. Werte, die nur im Bild stehen) – "comment" sagt, was man prüfen sollte.
+
+Antworte NUR mit JSON:
+{"verdict": "ok" | "fehler" | "unklar", "comment": "...", "corrected": {...} | null}''';
 
   static const _paperReviewSystemPrompt = r"""
 Du bist Korrektor für handschriftliche Rechenwege. Du bekommst eine Aufgabe, die Musterlösung in Schritten und Fotos eines Rechenwegs.

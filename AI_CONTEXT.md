@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1435 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1442 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1464,6 +1464,23 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `review-import-instruction`, `interactiveServiceFactory`. Tests:
     `interactive_task_scan_service_test`, `task_import_screen_test`,
     `pdf_question_import_screen_test`, `review_screen_import_test`.
+65. Aufgaben von einer externen KI importieren (JSON). `AiService.externalTaskPrompt` (=
+    `_interactiveTaskSystemPrompt` ohne Höchstzahl + `_externalTaskRules`: page, fertige Frage
+    unter "card"), `AiService.parseImportedTasks(raw)` → `(drafts, dropped)`: "tasks" (Einträge
+    ohne kind/taskData aber mit type = Frage) und "flashcards"/"questions"/Liste, Fragen über
+    `normalizeGeneratedFlashcard` → `InteractiveTaskDraft.questionData` (+ `withQuestionData`).
+    TaskImportScreen: `_Draft.questionData/ready/savable` (fertige Frage wird mitgespeichert,
+    `_questionCard` via `PdfQuestionImportService.toFlashcards`, `_readyBody`), Knopf
+    `task-import-json` (AppBar) / `task-import-json-input`, `startWithJsonImport`,
+    `_JsonImportSheet` (`task-import-json-copy`/`-file`/`-text`/`-apply`, Test-Hook
+    `pickJsonHook`). „Auf Richtigkeit prüfen“ (`task-import-verify`): `AiService.verifyTask`
+    (Modell crosscheckModelId) → `TaskVerification` (models/task_verification.dart, Urteil
+    ok/wrong/unclear, `corrected`), `_verificationNote` (`task-import-verdict-i`,
+    `task-import-apply-fix-i` → `_applyFix`). „Vorlesung zuordnen“ (`task-import-lecture`,
+    `SourceLocator.scriptPdfs`): unitId der Vorlesung, nach dem Speichern
+    `matchCardsToLecture` (script_match_runner, `ScriptMatchContext.run(only: [...])`), sonst
+    `matchNewCardsToScript`. Einstiege: Aufgaben-Ordner `task-folder-json-import`,
+    PdfQuestionImportScreen `import-json`. Tests: `test/ui/task_json_import_test.dart`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

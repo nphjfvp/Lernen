@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -14,6 +15,7 @@ import '../../models/gantt_task.dart';
 import '../../models/interactive_task.dart';
 import '../../models/material_item.dart';
 import '../../models/step_task.dart';
+import '../../models/task_verification.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
@@ -22,18 +24,22 @@ import '../../services/ai_service.dart';
 import '../../services/bom_calculator.dart';
 import '../../services/crystal_geometry.dart';
 import '../../services/sketch_checker.dart';
+import '../../services/source_locator.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/gantt_scheduler.dart';
 import '../../services/image_crop.dart';
 import '../../services/interactive_task_scan_service.dart';
+import '../../services/pdf_question_import_service.dart';
 import '../../services/plain_question_service.dart';
 import '../../services/question_parsing.dart';
 import '../../services/step_checker.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/discard_guard.dart';
+import '../widgets/math_text.dart';
 import '../widgets/page_question_creation_sheet.dart' show buildPageQuestionCards;
 import '../widgets/raw_response_dialog.dart';
 import '../widgets/safe_set_state.dart';
+import '../study/script_match_runner.dart';
 import 'bom_task_editor.dart';
 import 'bom_task_view.dart';
 import 'crystal_task_editor.dart';
@@ -71,6 +77,17 @@ class _Draft {
   bool asQuestion = false;
   String questionType = '';
 
+  /// Fertige Quizfrage (z.B. aus der JSON-Datei einer externen KI) – wird
+  /// wie eine Aufgabe mitgespeichert, ohne dass die App-KI sie erst baut.
+  Map<String, dynamic>? questionData;
+
+  /// Urteil der zweiten KI („Auf Richtigkeit prüfen“).
+  TaskVerification? verification;
+  bool verifying = false;
+
+  /// Die Korrektur der zweiten KI wurde übernommen.
+  bool fixApplied = false;
+
   /// Schon als normale Frage(n) angelegt (Anzahl Karten).
   int createdQuestions = 0;
   bool include = true;
@@ -90,6 +107,11 @@ class _Draft {
   Uint8List? image;
   String? materialId;
   String sourceName = '';
+
+  bool get ready => kind == null && questionData != null;
+
+  /// Wird mit „Speichern“ angelegt: interaktive Aufgabe oder fertige Frage.
+  bool get savable => hasTask || ready;
 
   bool get hasTask => switch (kind) {
     InteractiveKind.steps => steps != null,
@@ -114,7 +136,10 @@ class _Draft {
     incomplete = d.incomplete;
     asQuestion = d.asQuestion;
     questionType = d.questionType;
-    include = hasTask;
+    questionData = d.questionData;
+    verification = null;
+    fixApplied = false;
+    include = hasTask || ready;
     error = null;
     revision++;
   }
@@ -152,6 +177,7 @@ class TaskImportScreen extends StatefulWidget {
     this.replaceCard,
     this.initialDrafts = const [],
     this.scanNotes = const [],
+    this.startWithJsonImport = false,
   });
 
   final String moduleId;
@@ -182,6 +208,9 @@ class TaskImportScreen extends StatefulWidget {
 
   bool get fromDocument => initialDrafts.isNotEmpty;
 
+  /// Gleich „Importieren (JSON)“ öffnen – Aufgaben von einer externen KI.
+  final bool startWithJsonImport;
+
   static const maxImages = 4;
 
   /// Nur für Tests: KI-Zugang (API-Key, Modell) statt der Einstellungen.
@@ -191,6 +220,10 @@ class TaskImportScreen extends StatefulWidget {
   /// Nur für Tests: statt des Datei-Dialogs.
   @visibleForTesting
   static Future<List<({String name, Uint8List bytes})>> Function()? pickImagesHook;
+
+  /// Nur für Tests: statt des Datei-Dialogs beim JSON-Import (Inhalt der Datei).
+  @visibleForTesting
+  static Future<String?> Function()? pickJsonHook;
 
   @override
   State<TaskImportScreen> createState() => _TaskImportScreenState();
@@ -220,10 +253,21 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   bool _attachImage = false;
   bool _removeReplaced = false;
 
-  bool get _hasTasks => _drafts.any((d) => d.hasTask);
+  /// Aufgaben kamen aus der JSON-Datei einer externen KI.
+  bool _fromJson = false;
+  String? _importNote;
+
+  /// „Auf Richtigkeit prüfen“ läuft (Fortschritt als Text).
+  String? _verifyProgress;
+
+  /// Vorlesung, in der die KI nach dem Speichern die Lösung sucht ('' = keine
+  /// bestimmte).
+  String _lectureId = '';
+
+  bool get _hasTasks => _drafts.any((d) => d.savable);
   List<_Draft> get _toSave => [
     for (final d in _drafts)
-      if (d.hasTask && d.include) d,
+      if (d.savable && d.include) d,
   ];
 
   @override
@@ -246,6 +290,12 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       _attachImage = _drafts.any((d) => d.image != null);
       WidgetsBinding.instance.addPostFrameCallback((_) => _collectUnsupported(_drafts));
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Für die Auswahl „Vorlesung“ (Lösung im Skript suchen).
+      unawaited(context.read<MaterialRepository?>()?.loadForModule(widget.moduleId));
+      if (widget.startWithJsonImport) _openJsonImport();
+    });
   }
 
   @override
@@ -419,9 +469,187 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     }
   }
 
+  // -- Import von einer externen KI (JSON) ----------------------------------
+
+  Future<void> _openJsonImport() async {
+    final raw = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _JsonImportSheet(),
+    );
+    if (raw == null || raw.trim().isEmpty || !mounted) return;
+    await _importJson(raw);
+  }
+
+  /// Liest die Antwort einer externen KI (siehe AiService.externalTaskPrompt)
+  /// und hängt die Aufgaben an – geprüft wird wie bei der App-KI.
+  Future<void> _importJson(String raw) async {
+    final ({List<InteractiveTaskDraft> drafts, int dropped}) result;
+    try {
+      result = AiService.parseImportedTasks(raw);
+    } on AiServiceException catch (e) {
+      setState(() {
+        _error = e.message;
+        _raw = e.rawResponse;
+      });
+      return;
+    }
+    if (result.drafts.isEmpty) {
+      setState(() {
+        _error = 'In der Datei steht keine Aufgabe'
+            '${result.dropped > 0 ? ' (${result.dropped} unvollständige Einträge übersprungen)' : ''}.';
+        _raw = raw;
+      });
+      return;
+    }
+    final drafts = [
+      for (final r in result.drafts)
+        _Draft(r, '')
+          ..page = r.page
+          ..sourceName = 'JSON-Import',
+    ];
+    if (!_drafts.any((d) => d.expanded)) {
+      (drafts.where((d) => d.savable).firstOrNull ?? drafts.first).expanded = true;
+    }
+    final tasks = drafts.where((d) => d.hasTask).length;
+    final ready = drafts.where((d) => d.ready).length;
+    setState(() {
+      _drafts.addAll(drafts);
+      _fromJson = true;
+      _error = null;
+      _raw = null;
+      _importNote = '${drafts.length} ${drafts.length == 1 ? 'Eintrag' : 'Einträge'} importiert: $tasks interaktiv, '
+          '$ready fertige ${ready == 1 ? 'Frage' : 'Fragen'}'
+          '${result.dropped > 0 ? ', ${result.dropped} unvollständige übersprungen' : ''}.';
+    });
+    await _collectUnsupported(drafts);
+  }
+
+  // -- Auf Richtigkeit prüfen ------------------------------------------------
+
+  /// Die zweite KI (Modell „Gegenprüfung“ aus den Einstellungen).
+  AiService? _verifierAi() {
+    final settings = context.read<SettingsRepository>().settings;
+    if (!settings.hasApiKey) return null;
+    return TaskImportScreen.aiFactory?.call(settings.openRouterApiKey!, settings.crosscheckModelId) ??
+        AiService(apiKey: settings.openRouterApiKey!, model: settings.crosscheckModelId);
+  }
+
+  Map<String, dynamic>? _taskDataOf(_Draft d) => switch (d.kind) {
+    InteractiveKind.steps => d.steps?.toMap(),
+    InteractiveKind.gantt => d.gantt?.toMap(),
+    InteractiveKind.crystal => d.crystal?.toMap(),
+    InteractiveKind.bom => d.bom?.toMap(),
+    InteractiveKind.sketch => d.sketch?.toMap(),
+    null => d.questionData,
+  };
+
+  /// Lässt die zweite KI jede Aufgabe und fertige Frage nachrechnen – sie
+  /// meldet Fehler und schlägt eine Korrektur vor, die die App danach wieder
+  /// selbst prüft.
+  Future<void> _verifyAll() async {
+    final ai = _verifierAi();
+    if (ai == null) return _snack('Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
+    final todo = [for (final d in _drafts) if (d.savable) d];
+    if (todo.isEmpty) return;
+    var wrong = 0;
+    var failed = 0;
+    for (final (i, d) in todo.indexed) {
+      if (!mounted) return;
+      setState(() {
+        _verifyProgress = 'Prüfe ${i + 1} von ${todo.length} …';
+        d.verifying = true;
+      });
+      try {
+        final result = await ai.verifyTask(
+          kind: d.kind?.name ?? (d.questionData?['type'] ?? 'frage').toString(),
+          front: d.front.text,
+          back: d.back.text,
+          data: _taskDataOf(d) ?? const {},
+          appFindings: [?_missing(d), if (d.hasTask) ..._warnings(d)],
+        );
+        if (result.verdict == TaskVerdict.wrong) wrong++;
+        if (mounted) setState(() => d.verification = result);
+      } catch (_) {
+        failed++;
+      } finally {
+        if (mounted) setState(() => d.verifying = false);
+      }
+    }
+    if (!mounted) return;
+    setState(() => _verifyProgress = null);
+    _snack([
+      wrong == 0 ? 'Die KI hat keine Fehler gefunden.' : 'Die KI hat bei $wrong ${wrong == 1 ? 'Aufgabe' : 'Aufgaben'} einen Fehler gefunden.',
+      if (failed > 0) '$failed ${failed == 1 ? 'Prüfung ist' : 'Prüfungen sind'} fehlgeschlagen.',
+    ].join(' '));
+  }
+
+  /// Korrektur der zweiten KI übernehmen – die App rechnet danach selbst nach.
+  void _applyFix(_Draft d) {
+    final corrected = d.verification?.corrected;
+    if (corrected == null) return;
+    final verification = d.verification;
+    if (d.ready) {
+      final normalized = QuestionParsing.normalizeGeneratedFlashcard(corrected);
+      if (normalized == null) return _snack('Die Korrektur ist unvollständig – bitte von Hand anpassen.');
+      setState(() {
+        d.questionData = normalized;
+        final front = '${normalized['front'] ?? ''}'.trim();
+        if (front.isNotEmpty) d.front.text = front;
+        d.back.text = '${normalized['back'] ?? d.back.text}'.trim();
+        d.fixApplied = true;
+      });
+      return;
+    }
+    final parsed = AiService.parseInteractiveTask({
+      'kind': d.kind!.name,
+      'front': d.front.text,
+      'back': d.back.text,
+      'taskData': corrected,
+    });
+    if (!parsed.isUsable) return _snack('Die Korrektur ist unvollständig – bitte von Hand anpassen.');
+    setState(() {
+      d.apply(parsed, d.front.text);
+      d.verification = verification;
+      d.fixApplied = true;
+      d.expanded = true;
+    });
+  }
+
+  /// Gewählte Vorlesung (Folien-PDF des Fachs), in der die Lösung gesucht wird.
+  MaterialItem? get _lecture => _lectureId.isEmpty
+      ? null
+      : context.read<MaterialRepository?>()?.forModule(widget.moduleId).where((m) => m.id == _lectureId).firstOrNull;
+
+  String? get _unitId => widget.unitId ?? widget.replaceCard?.unitId ?? _lecture?.unitId;
+
+  /// Fertige Frage als Karte – wie beim Fragen-Import aus einer PDF.
+  Flashcard _questionCard(_Draft d, DateTime at) {
+    final materialId = _materialOf(d);
+    final material = materialId == null
+        ? null
+        : context.read<MaterialRepository?>()?.forModule(widget.moduleId).where((m) => m.id == materialId).firstOrNull;
+    return PdfQuestionImportService.toFlashcards(
+      [
+        ScannedQuestion(
+          page: _pageOf(d) ?? 0,
+          data: {...d.questionData!, 'front': d.front.text.trim()},
+          solutionByAi: false,
+        ),
+      ],
+      moduleId: widget.moduleId,
+      unitId: _unitId,
+      sourceMaterialId: materialId,
+      sourceKind: material?.kind ?? MaterialKind.exercise,
+      now: at,
+    ).single;
+  }
+
   /// Karte aus dem aktuellen Stand – zum Ausprobieren und Speichern.
   Flashcard _card(_Draft d, {DateTime? now}) {
     final at = now ?? DateTime.now();
+    if (d.ready) return _questionCard(d, at);
     final kind = d.kind!;
     final materialId = _materialOf(d);
     final material = materialId == null
@@ -458,7 +686,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       imageBase64: _attachImage && _imagesOf(d).isNotEmpty && (kind == InteractiveKind.steps || kind == InteractiveKind.bom)
           ? base64Encode(_imagesOf(d).first)
           : null,
-      unitId: widget.unitId ?? widget.replaceCard?.unitId,
+      unitId: _unitId,
       sourceMaterialId: _materialOf(d),
       sourcePage: _pageOf(d),
       // Selbst übernommene Aufgaben sollen bald drankommen, unabhängig vom
@@ -471,6 +699,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   /// Was vor dem Speichern noch fehlt (null = alles da).
   String? _missing(_Draft d) {
     if (d.front.text.trim().isEmpty) return 'Die Aufgabe (Text) darf nicht leer sein.';
+    // Fertige Frage: schon beim Einlesen auf Vollständigkeit geprüft.
+    if (d.ready) return null;
     switch (d.kind) {
       case InteractiveKind.steps:
         final steps = d.steps;
@@ -541,7 +771,20 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
 
   /// Kurzer Stand in der Kopfzeile der Teilaufgabe.
   ({String text, bool ok}) _status(_Draft d) {
+    if (d.verifying) return (text: 'KI prüft …', ok: true);
+    final base = _baseStatus(d);
+    final v = d.verification;
+    if (v == null) return base;
+    if (d.fixApplied) return (text: '${base.text} · Korrektur übernommen', ok: base.ok);
+    return (text: '${base.text} · ${v.verdict.label}', ok: base.ok && v.verdict != TaskVerdict.wrong);
+  }
+
+  ({String text, bool ok}) _baseStatus(_Draft d) {
     if (d.busy) return (text: 'KI liest …', ok: true);
+    if (d.ready) {
+      final type = _typeLabel(d.questionType);
+      return (text: type.isEmpty ? 'fertige Frage' : 'fertige Frage ($type)', ok: true);
+    }
     if (!d.hasTask) {
       if (d.incomplete) return (text: 'unvollständig', ok: false);
       if (d.createdQuestions > 0) return (text: 'als normale Frage erstellt', ok: true);
@@ -628,6 +871,14 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
             ? '${cards.single.type.label}-Aufgabe gespeichert – sie kommt bald im Lernplan dran.'
             : '${cards.length} Aufgaben gespeichert – sie kommen bald im Lernplan dran.',
       );
+      // Wo steht die Lösung? In der gewählten Vorlesung bzw. (bei Aufgaben
+      // aus einem Übungsblatt) im Skript des Fachs – läuft im Hintergrund.
+      final lecture = _lecture;
+      if (lecture != null) {
+        unawaited(matchCardsToLecture(context, cards, lecture));
+      } else {
+        unawaited(matchNewCardsToScript(context, cards));
+      }
       Navigator.of(context).pop(cards);
     } catch (e) {
       setState(() {
@@ -669,6 +920,12 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
             ],
           ),
           actions: [
+            IconButton(
+              key: const ValueKey('task-import-json'),
+              tooltip: 'Aufgaben importieren (JSON einer externen KI)',
+              onPressed: _openJsonImport,
+              icon: const Icon(Icons.file_upload_outlined),
+            ),
             IconButton(
               key: const ValueKey('task-import-list'),
               tooltip: 'Liste „Noch nicht interaktiv“',
@@ -847,6 +1104,16 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
                 style: TextStyle(fontSize: 12.5, color: c.warn),
               ),
             ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const ValueKey('task-import-json-input'),
+              onPressed: _busy ? null : _openJsonImport,
+              icon: const Icon(Icons.file_upload_outlined, size: 18),
+              label: const Text('Oder importieren: JSON von ChatGPT, Gemini & Co.'),
+            ),
+          ),
         ],
       ),
     );
@@ -875,7 +1142,9 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     return [
       const SizedBox(height: 20),
       Text(
-        _drafts.length == 1
+        _fromJson
+            ? '${_drafts.length} ${_drafts.length == 1 ? 'Aufgabe' : 'Aufgaben'} zum Übernehmen'
+            : _drafts.length == 1
             ? 'Vorschau'
             : 'Die KI hat ${_drafts.length} ${widget.fromDocument ? 'Aufgaben im Dokument' : 'Teilaufgaben'} gefunden'
                   '${usable == _drafts.length ? '' : ' – $usable davon interaktiv'}.',
@@ -883,10 +1152,20 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
       ),
       const SizedBox(height: 4),
+      if (_importNote != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(
+            _importNote!,
+            key: const ValueKey('task-import-json-note'),
+            style: TextStyle(fontSize: 12.5, height: 1.4, color: c.ink),
+          ),
+        ),
       Text(
         'Prüf jede Aufgabe mit dem Blatt – was gezeichnet oder gerechnet wird, prüft die App selbst nach.',
         style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
       ),
+      if (_hasTasks) ...[const SizedBox(height: 10), _afterImportPanel(c)],
       if (listed > 0) ...[const SizedBox(height: 10), _listNote(c, listed)],
       for (final (i, d) in _drafts.indexed) ...[const SizedBox(height: 12), _draftCard(c, i, d)],
       if (_hasTasks) ...[
@@ -921,6 +1200,142 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           ),
         ),
       ],
+    ];
+  }
+
+  /// Nach dem Import: auf Richtigkeit prüfen lassen und einer Vorlesung
+  /// zuordnen (dort sucht die KI nach dem Speichern die Lösung).
+  Widget _afterImportPanel(AppColors c) {
+    final lectures = SourceLocator.scriptPdfs(
+      context.watch<MaterialRepository?>()?.forModule(widget.moduleId) ?? const <MaterialItem>[],
+    );
+    final selected = lectures.any((m) => m.id == _lectureId) ? _lectureId : '';
+    return _panel(
+      c,
+      key: const ValueKey('task-import-after'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _verifyProgress ??
+                      'Eine zweite KI rechnet jede Aufgabe nach und meldet Fehler – mit Vorschlag zur Korrektur.',
+                  style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                key: const ValueKey('task-import-verify'),
+                onPressed: _verifyProgress != null || _saving ? null : _verifyAll,
+                icon: _verifyProgress != null
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.fact_check_outlined, size: 18),
+                label: const Text('Auf Richtigkeit prüfen'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (lectures.isEmpty)
+            Text(
+              'Tipp: Lade die Vorlesung (Folien-PDF) ins Fach hoch – dann kannst du die Aufgaben ihr zuordnen und die '
+              'KI sucht dort, wo die Lösung erklärt wird.',
+              style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted),
+            )
+          else
+            DropdownButtonFormField<String>(
+              key: const ValueKey('task-import-lecture'),
+              initialValue: selected,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Vorlesung zuordnen',
+                helperText: 'Nach dem Speichern sucht die KI dort, wo die Lösung steht („Im Skript“).',
+                helperMaxLines: 2,
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem(value: '', child: Text('Keine bestimmte (Skript des Fachs)')),
+                for (final m in lectures)
+                  DropdownMenuItem(value: m.id, child: Text(m.fileName, overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: _saving ? null : (v) => setState(() => _lectureId = v ?? ''),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Urteil der zweiten KI mit Korrektur-Knopf.
+  List<Widget> _verificationNote(AppColors c, int i, _Draft d) {
+    final v = d.verification;
+    if (v == null) return const [];
+    final bad = v.verdict == TaskVerdict.wrong;
+    final tint = v.verdict == TaskVerdict.ok ? c.goodSoft : c.warnSoft;
+    final ink = v.verdict == TaskVerdict.ok ? c.good : c.warn;
+    return [
+      Container(
+        key: ValueKey('task-import-verdict-$i'),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              d.fixApplied ? '${v.verdict.label} – Korrektur übernommen' : v.verdict.label,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: ink),
+            ),
+            if (v.comment.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              MathText(v.comment, style: TextStyle(fontSize: 13, height: 1.4, color: c.ink)),
+            ],
+            if (bad && v.corrected != null && !d.fixApplied) ...[
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                key: ValueKey('task-import-apply-fix-$i'),
+                onPressed: () => _applyFix(d),
+                icon: const Icon(Icons.auto_fix_high, size: 18),
+                label: const Text('Korrektur übernehmen'),
+              ),
+            ],
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+    ];
+  }
+
+  /// Fertige Frage (aus der JSON-Datei): Wortlaut anpassen, Lösung ansehen,
+  /// ausprobieren – gespeichert wird sie mit den Aufgaben.
+  List<Widget> _readyBody(AppColors c, int i, _Draft d) {
+    final answer = _questionCard(d, DateTime.now()).answerSummary;
+    return [
+      ..._verificationNote(c, i, d),
+      TextField(
+        key: ValueKey('task-import-front-$i'),
+        controller: d.front,
+        minLines: 2,
+        maxLines: 12,
+        onChanged: (_) => setState(() {}),
+        decoration: const InputDecoration(labelText: 'Frage', border: OutlineInputBorder()),
+      ),
+      if (answer.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Text('Lösung', style: TextStyle(fontSize: 12, color: c.inkMuted)),
+        const SizedBox(height: 2),
+        MathText(answer, key: ValueKey('task-import-answer-$i'), style: TextStyle(fontSize: 13, height: 1.4, color: c.ink)),
+      ],
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerRight,
+        child: OutlinedButton.icon(
+          key: ValueKey('task-import-try-$i'),
+          onPressed: _saving ? null : () => _try(d),
+          icon: const Icon(Icons.play_arrow_outlined, size: 18),
+          label: const Text('Ausprobieren'),
+        ),
+      ),
     ];
   }
 
@@ -981,7 +1396,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
               padding: const EdgeInsets.fromLTRB(4, 6, 10, 6),
               child: Row(
                 children: [
-                  if (d.hasTask)
+                  if (d.savable)
                     Checkbox(
                       key: ValueKey('task-import-include-$i'),
                       value: d.include,
@@ -989,7 +1404,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
                     )
                   else
                     const SizedBox(width: 12),
-                  Icon(d.asQuestion ? Icons.quiz_outlined : _icon(d.kind), size: 20, color: d.hasTask ? c.accent : c.inkMuted),
+                  Icon(d.asQuestion ? Icons.quiz_outlined : _icon(d.kind), size: 20, color: d.savable ? c.accent : c.inkMuted),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -1019,7 +1434,11 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: d.hasTask ? _taskBody(c, i, d) : _unsuitableBody(c, i, d),
+                children: d.hasTask
+                    ? _taskBody(c, i, d)
+                    : d.ready
+                    ? _readyBody(c, i, d)
+                    : _unsuitableBody(c, i, d),
               ),
             ),
         ],
@@ -1030,6 +1449,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   List<Widget> _taskBody(AppColors c, int i, _Draft d) {
     final kind = d.kind!;
     return [
+      ..._verificationNote(c, i, d),
       Text(switch (kind) {
         InteractiveKind.steps =>
           'Prüf die Schritte und erwarteten Antworten. Die App setzt jede Antwort selbst ein und meldet Widersprüche.',
@@ -1492,4 +1912,117 @@ class _ListNeedsDialogState extends State<_ListNeedsDialog> {
       ),
     ],
   );
+}
+
+/// „Aufgaben importieren“: Prompt für eine externe KI kopieren, deren Antwort
+/// als JSON-Datei wählen oder einfügen. Gibt den Text zurück.
+class _JsonImportSheet extends StatefulWidget {
+  const _JsonImportSheet();
+
+  @override
+  State<_JsonImportSheet> createState() => _JsonImportSheetState();
+}
+
+class _JsonImportSheetState extends State<_JsonImportSheet> {
+  final _text = TextEditingController();
+  bool _copied = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: AiService.externalTaskPrompt));
+    if (mounted) setState(() => _copied = true);
+  }
+
+  Future<void> _pickFile() async {
+    try {
+      final hook = TaskImportScreen.pickJsonHook;
+      String? content;
+      if (hook != null) {
+        content = await hook();
+      } else {
+        final files = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: const ['json', 'txt']);
+        if (files.isEmpty) return;
+        content = utf8.decode(await files.first.readAsBytes(), allowMalformed: true);
+      }
+      if (content == null || !mounted) return;
+      Navigator.of(context).pop(content);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Datei konnte nicht gelesen werden: \$e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Aufgaben importieren', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            Text(
+              '1. Prompt kopieren und in ChatGPT, Gemini, Claude o.ä. einfügen, das Übungsblatt anhängen.\n'
+              '2. Die Antwort als .json-Datei speichern – oder einfach unten einfügen.\n'
+              '3. Die App rechnet alles selbst nach. Danach kannst du die Aufgaben auf Richtigkeit prüfen lassen und '
+              'einer Vorlesung zuordnen.',
+              style: TextStyle(fontSize: 13, height: 1.45, color: c.inkMuted),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  key: const ValueKey('task-import-json-copy'),
+                  onPressed: _copy,
+                  icon: Icon(_copied ? Icons.check : Icons.copy_outlined, size: 18),
+                  label: Text(_copied ? 'Prompt kopiert' : 'Prompt kopieren'),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('task-import-json-file'),
+                  onPressed: _pickFile,
+                  icon: const Icon(Icons.upload_file, size: 18),
+                  label: const Text('JSON-Datei hochladen'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              key: const ValueKey('task-import-json-text'),
+              controller: _text,
+              minLines: 3,
+              maxLines: 8,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Oder die Antwort hier einfügen',
+                hintText: '{"tasks": [...]}',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(fontSize: 12.5, color: c.danger)),
+            ],
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const ValueKey('task-import-json-apply'),
+              onPressed: _text.text.trim().isEmpty ? null : () => Navigator.of(context).pop(_text.text),
+              icon: const Icon(Icons.download_done, size: 18),
+              label: const Text('Importieren'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

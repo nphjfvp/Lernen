@@ -807,6 +807,23 @@ class _PdfQuestionImportScreenState extends State<PdfQuestionImportScreen>
           title: Text(
             _interactive && _step != _Step.preview ? 'Interaktive Aufgaben aus PDF' : 'Fragen aus PDF importieren',
           ),
+          actions: [
+            if (_step == _Step.pick)
+              TextButton.icon(
+                key: const ValueKey('import-json'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => TaskImportScreen(
+                      moduleId: widget.moduleId,
+                      moduleName: widget.moduleName,
+                      startWithJsonImport: true,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.file_upload_outlined, size: 18),
+                label: const Text('JSON importieren'),
+              ),
+          ],
         ),
         body: SafeArea(
           child: switch (_step) {

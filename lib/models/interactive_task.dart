@@ -53,6 +53,7 @@ class InteractiveTaskDraft {
     this.asQuestion = false,
     this.questionType = '',
     this.page,
+    this.questionData,
   });
 
   /// null = die Aufgabe passt (noch) nicht als interaktive Aufgabe.
@@ -90,7 +91,16 @@ class InteractiveTaskDraft {
   /// Seite im Dokument (1-basiert), wenn ein ganzes Dokument gelesen wurde.
   final int? page;
 
-  InteractiveTaskDraft withPage(int? page) => InteractiveTaskDraft(
+  /// Fertige Quizfrage (normalisiert, siehe
+  /// QuestionParsing.normalizeGeneratedFlashcard) – z.B. aus der JSON-Datei
+  /// einer externen KI. Dann muss die App-KI die Frage nicht erst bauen.
+  final Map<String, dynamic>? questionData;
+
+  InteractiveTaskDraft withPage(int? page) => _copy(page: page);
+
+  InteractiveTaskDraft withQuestionData(Map<String, dynamic>? data) => _copy(questionData: data);
+
+  InteractiveTaskDraft _copy({Object? page = _keep, Object? questionData = _keep}) => InteractiveTaskDraft(
         kind: kind,
         front: front,
         back: back,
@@ -104,8 +114,11 @@ class InteractiveTaskDraft {
         incomplete: incomplete,
         asQuestion: asQuestion,
         questionType: questionType,
-        page: page,
+        page: page == _keep ? this.page : page as int?,
+        questionData: questionData == _keep ? this.questionData : questionData as Map<String, dynamic>?,
       );
+
+  static const _keep = Object();
 
   bool get isUsable => switch (kind) {
         InteractiveKind.steps => steps?.isUsable ?? false,

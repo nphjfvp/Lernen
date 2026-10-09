@@ -238,7 +238,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       icon: Icons.manage_search,
                       title: 'Fragen aus PDF importieren',
                       subtitle: 'KI liest beliebig viele PDFs fortlaufend und übernimmt jede vorhandene Frage/Aufgabe ins '
-                          'Quiz – oder macht daraus interaktive Aufgaben (z.B. alle Mathe-Aufgaben als Rechenweg)',
+                          'Quiz – oder macht daraus interaktive Aufgaben (z.B. alle Mathe-Aufgaben als Rechenweg); '
+                          'auch JSON einer externen KI importieren',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PdfQuestionImportScreen(moduleId: module.id, moduleName: module.name),

@@ -45,6 +45,16 @@ class TaskFolderScreen extends StatelessWidget {
         title: Text('Aufgaben-Ordner · $moduleName'),
         actions: [
           IconButton(
+            key: const ValueKey('task-folder-json-import'),
+            tooltip: 'Aufgaben importieren (JSON einer externen KI)',
+            icon: const Icon(Icons.file_upload_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => TaskImportScreen(moduleId: moduleId, moduleName: moduleName, startWithJsonImport: true),
+              ),
+            ),
+          ),
+          IconButton(
             key: const ValueKey('task-folder-import'),
             tooltip: 'Rechenweg / Terminierung übernehmen',
             icon: const Icon(Icons.functions),

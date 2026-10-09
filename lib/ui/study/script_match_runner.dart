@@ -56,13 +56,15 @@ class ScriptMatchContext {
   }
 
   /// Gleicht [cards] eines Fachs ab und speichert die Fundstellen. `null`,
-  /// wenn es nichts zu tun gab (keine Folien-PDF auf diesem Gerät).
+  /// wenn es nichts zu tun gab (keine Folien-PDF auf diesem Gerät). Mit
+  /// [only] wird nur in diesen Vorlesungen gesucht.
   Future<ScriptMatchRun?> run(
     String moduleId,
     List<Flashcard> cards, {
     void Function(int done, int total)? onProgress,
+    List<MaterialItem>? only,
   }) async {
-    final mats = await materialsOf(moduleId);
+    final mats = only ?? await materialsOf(moduleId);
     if (SourceLocator.scriptPdfs(mats).isEmpty || cards.isEmpty) return null;
     final result = await ScriptMatchService().match(
       cards,
@@ -118,5 +120,30 @@ Future<void> matchNewCardsToScript(BuildContext context, List<Flashcard> saved) 
     }
   } catch (_) {
     // Bewusst still: der Abgleich ist ein Zusatz, "Im Skript" geht auch ohne.
+  }
+}
+
+/// Nach dem Speichern: die Lösung bzw. Erklärung von [saved] gezielt in der
+/// Vorlesung [lecture] suchen (auch für Aufgaben ohne bekannte Quelle, z.B.
+/// aus der JSON-Datei einer externen KI). Läuft im Hintergrund weiter, auch
+/// wenn der Screen schließt; meldet das Ergebnis als SnackBar.
+Future<void> matchCardsToLecture(BuildContext context, List<Flashcard> saved, MaterialItem lecture) async {
+  final env = ScriptMatchContext.of(context);
+  if (env == null || saved.isEmpty) return;
+  try {
+    env.messenger?.showSnackBar(SnackBar(
+      content: Text('Suche die Lösungen zu ${saved.length} '
+          '${saved.length == 1 ? 'Aufgabe' : 'Aufgaben'} in „${lecture.fileName}“ …'),
+      duration: const Duration(seconds: 3),
+    ));
+    final result = await env.run(lecture.moduleId, saved, only: [lecture]);
+    env.messenger?.showSnackBar(SnackBar(
+      content: Text(result == null
+          ? '„${lecture.fileName}“ liegt auf diesem Gerät nicht als PDF vor – die Lösung wird beim Öffnen gesucht.'
+          : ScriptMatchContext.summary(result, saved.length)),
+      duration: const Duration(seconds: 6),
+    ));
+  } catch (_) {
+    // Bewusst still: der Abgleich ist ein Zusatz.
   }
 }
