@@ -57,11 +57,24 @@ enum QuestionType {
   /// Kennwerte markieren – die App prüft grob die Merkmale (Sprung, Maximum
   /// …), siehe SketchTask (sketch_task.dart) in [Flashcard.taskData].
   sketch,
+
+  /// Zustandsdiagramm: Zweistoffsystem mit Eutektikum/Eutektoid – Phasen,
+  /// Hebelgesetz, Gefügeanteile, Abkühlkurven, Gebiete; die App rechnet aus
+  /// den Eckdaten selbst, siehe PhaseTask (phase_task.dart) in
+  /// [Flashcard.taskData].
+  phase,
 }
 
 /// Interaktive Aufgabentypen, deren Daten (`taskData`) ihren Typ als `kind`
 /// mitführen.
-const _taskTypes = {QuestionType.steps, QuestionType.gantt, QuestionType.crystal, QuestionType.bom, QuestionType.sketch};
+const _taskTypes = {
+  QuestionType.steps,
+  QuestionType.gantt,
+  QuestionType.crystal,
+  QuestionType.bom,
+  QuestionType.sketch,
+  QuestionType.phase,
+};
 
 /// Typ einer gespeicherten Karte. Eine ältere App-Version kennt neue
 /// Aufgabentypen nicht, zeigt sie als Karteikarte und speichert sie beim
@@ -100,6 +113,7 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.crystal => 'Kristallgitter',
         QuestionType.bom => 'Stückliste',
         QuestionType.sketch => 'Diagramm skizzieren',
+        QuestionType.phase => 'Zustandsdiagramm',
       };
 }
 
@@ -687,7 +701,8 @@ class Flashcard {
         QuestionType.gantt ||
         QuestionType.crystal ||
         QuestionType.bom ||
-        QuestionType.sketch =>
+        QuestionType.sketch ||
+        QuestionType.phase =>
           back,
         QuestionType.singleChoice ||
         QuestionType.multipleChoice =>

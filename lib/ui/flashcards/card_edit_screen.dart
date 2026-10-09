@@ -3,18 +3,21 @@ import 'package:flutter/material.dart';
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
+import '../../models/phase_task.dart';
 import '../../models/sketch_task.dart';
 import '../../models/gantt_task.dart';
 import '../../models/step_task.dart';
 import '../../services/calc_task_detector.dart';
 import '../../services/bom_calculator.dart';
 import '../../services/crystal_geometry.dart';
+import '../../services/phase_calculator.dart';
 import '../../services/sketch_checker.dart';
 import '../../services/gantt_scheduler.dart';
 import '../../services/question_parsing.dart';
 import '../../services/stage_gate_service.dart';
 import '../tasks/bom_task_editor.dart';
 import '../tasks/crystal_task_editor.dart';
+import '../tasks/phase_task_editor.dart';
 import '../tasks/sketch_task_editor.dart';
 import '../tasks/gantt_task_editor.dart';
 import '../tasks/step_task_editor.dart';
@@ -83,6 +86,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   late CrystalTask? _crystal = _type == QuestionType.crystal ? CrystalTask.fromMap(widget.card.taskData) : null;
   late BomTask? _bom = _type == QuestionType.bom ? BomTask.fromMap(widget.card.taskData) : null;
   late SketchTask? _sketch = _type == QuestionType.sketch ? SketchTask.fromMap(widget.card.taskData) : null;
+  late PhaseTask? _phase = _type == QuestionType.phase ? PhaseTask.fromMap(widget.card.taskData) : null;
 
   QuestionType get _type => widget.card.type;
   bool get _isChoice => _type == QuestionType.singleChoice || _type == QuestionType.multipleChoice;
@@ -283,6 +287,17 @@ class _CardEditScreenState extends State<CardEditScreen> {
       taskData = sketch.confirmed().toMap();
       if (back.isEmpty) back = SketchChecker.solutionText(sketch);
     }
+    if (_type == QuestionType.phase) {
+      final phase = _phase;
+      if (phase == null || !phase.isUsable) {
+        return _fail('Das Zustandsdiagramm braucht stimmige Eckdaten und mindestens eine vollständige Teilaufgabe.');
+      }
+      final problems = PhaseCalculator(phase).problems();
+      if (problems.isNotEmpty) return _fail(problems.first);
+      taskData = phase.confirmed().toMap();
+      // Die Musterlösung rechnet beim Zustandsdiagramm die App.
+      back = PhaseCalculator(phase).fullSolution();
+    }
     final edited = widget.card.copyWithContent(
       front: front,
       back: back,
@@ -363,6 +378,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
             SketchTaskEditor(task: _sketch!, onChanged: (t) => setState(() => _sketch = t)),
             const SizedBox(height: 16),
           ],
+          if (_phase != null) ...[
+            PhaseTaskEditor(task: _phase!, onChanged: (t) => setState(() => _phase = t)),
+            const SizedBox(height: 16),
+          ],
           if (_type == QuestionType.freeText) ...[
             TextField(
               key: const ValueKey('card-edit-correct-text'),
@@ -372,7 +391,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
             ),
             const SizedBox(height: 16),
           ],
-          if (_type != QuestionType.diagramLabel && _type != QuestionType.gantt && _type != QuestionType.bom)
+          if (_type != QuestionType.diagramLabel &&
+              _type != QuestionType.gantt &&
+              _type != QuestionType.bom &&
+              _type != QuestionType.phase)
             TextField(
               key: const ValueKey('card-edit-back'),
               controller: _back,

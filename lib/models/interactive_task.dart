@@ -2,6 +2,7 @@ import 'bom_task.dart';
 import 'crystal_task.dart';
 import 'flashcard.dart';
 import 'gantt_task.dart';
+import 'phase_task.dart';
 import 'sketch_task.dart';
 import 'step_task.dart';
 
@@ -11,7 +12,8 @@ enum InteractiveKind {
   gantt('Terminierung', QuestionType.gantt),
   crystal('Kristallgitter', QuestionType.crystal),
   bom('Stückliste', QuestionType.bom),
-  sketch('Diagramm skizzieren', QuestionType.sketch);
+  sketch('Diagramm skizzieren', QuestionType.sketch),
+  phase('Zustandsdiagramm', QuestionType.phase);
 
   const InteractiveKind(this.label, this.type);
   final String label;
@@ -20,6 +22,10 @@ enum InteractiveKind {
 
 InteractiveKind? interactiveKindFrom(Object? raw) {
   final v = '${raw ?? ''}'.toLowerCase();
+  // Vor "diagramm" (Skizze): Zustandsdiagramm, Phasendiagramm, Zweistoffsystem.
+  if (v.contains('phase') || v.contains('zustand') || v.contains('zweistoff') || v.contains('eutekt') || v.contains('hebelgesetz')) {
+    return InteractiveKind.phase;
+  }
   if (v.contains('gantt') || v.contains('termin') || v.contains('schedul')) return InteractiveKind.gantt;
   if (v.contains('crystal') || v.contains('kristall') || v.contains('miller') || v.contains('würfel') || v.contains('wuerfel')) {
     return InteractiveKind.crystal;
@@ -47,6 +53,7 @@ class InteractiveTaskDraft {
     this.crystal,
     this.bom,
     this.sketch,
+    this.phase,
     this.reason = '',
     this.needs = '',
     this.incomplete = false,
@@ -69,6 +76,7 @@ class InteractiveTaskDraft {
   final CrystalTask? crystal;
   final BomTask? bom;
   final SketchTask? sketch;
+  final PhaseTask? phase;
 
   /// Warum nicht geeignet (bei [kind] null).
   final String reason;
@@ -109,6 +117,7 @@ class InteractiveTaskDraft {
         crystal: crystal,
         bom: bom,
         sketch: sketch,
+        phase: phase,
         reason: reason,
         needs: needs,
         incomplete: incomplete,
@@ -126,6 +135,7 @@ class InteractiveTaskDraft {
         InteractiveKind.crystal => crystal?.isUsable ?? false,
         InteractiveKind.bom => bom?.isUsable ?? false,
         InteractiveKind.sketch => sketch?.isUsable ?? false,
+        InteractiveKind.phase => phase?.isUsable ?? false,
         null => false,
       };
 
@@ -135,6 +145,7 @@ class InteractiveTaskDraft {
         InteractiveKind.crystal => crystal?.toMap(),
         InteractiveKind.bom => bom?.toMap(),
         InteractiveKind.sketch => sketch?.toMap(),
+        InteractiveKind.phase => phase?.toMap(),
         null => null,
       };
 }

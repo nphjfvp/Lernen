@@ -1393,6 +1393,30 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zk. Zustandsdiagramme (Zweistoffsysteme)
+
+Neuer Aufgabentyp **„Zustandsdiagramm“** für Werkstoffkunde (z.B. Blei-Zinn,
+Kupfer-Silber oder die Stahlecke des Eisen-Kohlenstoff-Diagramms):
+
+- Die KI liest nur die **Eckdaten** ab: Schmelzpunkte, eutektischer
+  (eutektoider) Punkt, maximale Löslichkeiten, bei Bedarf Zwischenpunkte
+  gekrümmter Linien. Das Diagramm zeichnet und **rechnet die App selbst**.
+- Teilaufgaben: **Phasen** an einem Punkt wählen, **Hebelgesetz** (die beiden
+  Enden im Diagramm antippen, Anteile eintragen – Folgefehler aus falsch
+  abgelesenen Werten werden erkannt), **Gefügeanteile** unter der eutektischen
+  Temperatur, **Abkühlkurven** zeichnen (eine Kurve je Legierung, geprüft an
+  Knicken und Haltepunkten), **Zusammensetzung** zu einer Liquidustemperatur,
+  **maximale Löslichkeit**, **eutektische Linie**, **Gebiete benennen** und
+  **Gebiet im Diagramm zeigen**.
+- Ablesetoleranz 3 % der Achse, bei Anteilen 5 Prozentpunkte. Tipps in zwei
+  Stufen, „Lösung zeigen“, Probeklausur ohne Rückmeldung.
+- Übernehmen per Foto/Text („Aufgabe übernehmen“ → „Zustandsdiagramm“), aus dem
+  ganzen Dokument oder per JSON-Import einer externen KI. Im Editor lassen sich
+  alle Eckdaten und Teilaufgaben ändern; die Vorschau zeigt Diagramm und
+  Musterlösung.
+- Sync-Datenversion 3: Ein Gerät mit älterer App zeigt diese Aufgaben nur als
+  Karteikarte (mit Musterlösung) und meldet, dass ein Update nötig ist.
+
 ### 5zj. Skizzen mit mehreren Kurven, Haltepunkten und Knicken
 
 Der Typ „Diagramm skizzieren“ kann jetzt mehr:
@@ -1421,7 +1445,7 @@ deren Ergebnis direkt importieren:
   importieren“ („JSON importieren“).
 - **Prompt kopieren** → in die externe KI einfügen, Blatt anhängen. Der Prompt
   beschreibt dasselbe Format wie die App-KI (Rechenweg, Terminierung,
-  Kristallgitter, Stückliste, Skizze) und liefert für alles andere gleich die
+  Kristallgitter, Stückliste, Skizze, Zustandsdiagramm) und liefert für alles andere gleich die
   **fertige Quizfrage** mit (Auswahl, Lücken, Freitext, Tabelle, Zuordnen).
 - **JSON-Datei hochladen** oder die Antwort einfügen. Auch eine Liste
   fertiger Fragen (Format aus „JSON einfügen“ im Nachbereiten) geht.

@@ -87,7 +87,8 @@ class StageGate {
       type == QuestionType.gantt ||
       type == QuestionType.crystal ||
       type == QuestionType.bom ||
-      type == QuestionType.sketch;
+      type == QuestionType.sketch ||
+      type == QuestionType.phase;
 
   /// Stufe aus dem Fragetyp, wenn keine gesetzt ist: Wiedererkennen ist
   /// leicht, Ergänzen/Zuordnen mittel, frei Formulieren schwer.
@@ -107,7 +108,8 @@ class StageGate {
         QuestionType.gantt ||
         QuestionType.crystal ||
         QuestionType.bom ||
-        QuestionType.sketch =>
+        QuestionType.sketch ||
+        QuestionType.phase =>
           StageLevel.schwer,
       };
 

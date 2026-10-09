@@ -1475,6 +1475,7 @@ class _AnswerDetail extends StatelessWidget {
       case QuestionType.crystal:
       case QuestionType.bom:
       case QuestionType.sketch:
+      case QuestionType.phase:
         return TaskAnswerPreview(card: card);
     }
   }

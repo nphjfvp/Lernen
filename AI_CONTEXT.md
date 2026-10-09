@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1455 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1484 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1494,6 +1494,25 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `sketch-edit-curve-i-name-*`/`-remove`, `sketch-edit-reference-i`, Merkmal `-curve`/`-other`.
     KI-Prompt: taskData.curves + "curve" je Merkmal. Tests: `sketch_multi_curve_test`,
     `sketch_task_view_test`.
+67. Zustandsdiagramm (`QuestionType.phase`, `InteractiveKind.phase`, taskData kind 'phase').
+    models/phase_task.dart: `PhaseSystem` (Eckdaten meltA, eutecticC/T, rightC/T, alphaMax/Low,
+    betaMax/Low, Namen liquid/alpha/beta/eutecticName, `eutectoid`, optionale `lines` je
+    `PhaseLine`, sonst Geraden), `PhaseRegion`, `PhasePart{kind, c, t, compositions, side,
+    region, prompt}` (`PhasePartKind` phases/lever/structure/cooling/composition/solubility/
+    eutecticLine/regions/pickRegion), `PhaseTask{system, parts, uncertain}`; fromMap mit
+    deutschen Aliasen. services/phase_calculator.dart: `regionAt`, `phasesAt`, `lever`
+    (`PhaseLever`), `structure`, `compositionsForLiquidus`, `coolingEvents`, `coolingSketch`
+    (erzeugt mehrkurvige SketchTask mit kink/plateau), `regionLabels`, `check*` (Toleranz
+    3 % Achse, Anteile 5 Punkte, Hebel-Folgefehler), `hints`, `solutionText`, `fullSolution`
+    (= back), `problems`; `fmt` kürzt nur Nachkommanullen. UI: `PhaseDiagramCanvas`
+    (Ränder 46/14/14/36, `phase-diagram-tap`), `PhaseTaskView` (`phase-part-i`,
+    `phase-$i-<feld>`, `phase-choice-i`, `phase-region-i`, `phase-curve-i`,
+    `phase-cooling-canvas`, `phase-check`/`-reveal`/`-next`/`-next-part`/`-submit`),
+    `PhaseTaskEditor` (`phase-edit-*`) + `PhaseTaskPreview`. Eingebunden in
+    QuestionAnswerView, Kartenliste, Review, Karte bearbeiten, TaskImportScreen
+    (`_KindChoice.phase`), QuestionParsing (Aliase zustandsdiagramm/phasendiagramm/
+    zweistoffsystem/hebelgesetz), KI-Prompt ("phase"). `syncDataVersion` = 3.
+    Tests: `phase_calculator_test`, `phase_task_view_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

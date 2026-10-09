@@ -27,8 +27,8 @@ class CollectionMerge {
 /// oder Sammlungen dazukommen, die ältere App-Versionen nicht kennen – dann
 /// meldet der Abgleich, dass ein Gerät aktualisiert werden sollte (ältere
 /// Versionen zeigen unbekannte Aufgaben nur als Karteikarte und speichern sie
-/// beim Lernen auch so). 2 = Stückliste und Diagramm-Skizze.
-const syncDataVersion = 2;
+/// beim Lernen auch so). 2 = Stückliste und Diagramm-Skizze, 3 = Zustandsdiagramm.
+const syncDataVersion = 3;
 
 /// Datenformat eines Sync-Stands (0 = von einer Version vor [syncDataVersion]).
 int dataVersionOf(Map<String, dynamic> payload) => (payload['dataVersion'] as num?)?.toInt() ?? 0;
@@ -37,7 +37,7 @@ int dataVersionOf(Map<String, dynamic> payload) => (payload['dataVersion'] as nu
 String? dataVersionNotice(int remoteVersion) {
   if (remoteVersion < syncDataVersion) {
     return 'Ein anderes Gerät hat zuletzt mit einer älteren App-Version abgeglichen – bitte dort die App '
-        'aktualisieren. Sonst zeigt es neue Aufgaben (Stückliste, Skizze …) nur als Karteikarte.';
+        'aktualisieren. Sonst zeigt es neue Aufgaben (Stückliste, Skizze, Zustandsdiagramm …) nur als Karteikarte.';
   }
   if (remoteVersion > syncDataVersion) {
     return 'Auf einem anderen Gerät läuft eine neuere App-Version – bitte hier aktualisieren, sonst erscheinen '

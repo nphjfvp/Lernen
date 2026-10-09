@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
+import '../../models/phase_task.dart';
 import '../../models/sketch_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/gantt_task.dart';
@@ -23,6 +24,7 @@ import '../../repositories/unsupported_task_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/bom_calculator.dart';
 import '../../services/crystal_geometry.dart';
+import '../../services/phase_calculator.dart';
 import '../../services/sketch_checker.dart';
 import '../../services/source_locator.dart';
 import '../../services/fsrs_service.dart';
@@ -44,6 +46,8 @@ import 'bom_task_editor.dart';
 import 'bom_task_view.dart';
 import 'crystal_task_editor.dart';
 import 'crystal_task_view.dart';
+import 'phase_task_editor.dart';
+import 'phase_task_view.dart';
 import 'sketch_task_editor.dart';
 import 'sketch_task_view.dart';
 import 'gantt_task_editor.dart';
@@ -52,7 +56,7 @@ import 'step_task_editor.dart';
 import 'step_task_view.dart';
 import 'unsupported_tasks_screen.dart';
 
-enum _KindChoice { auto, steps, gantt, crystal, bom, sketch }
+enum _KindChoice { auto, steps, gantt, crystal, bom, sketch, phase }
 
 /// Eine von der KI gefundene (Teil-)Aufgabe im Bildschirm – bearbeitbar,
 /// bis sie gespeichert wird.
@@ -67,6 +71,7 @@ class _Draft {
   CrystalTask? crystal;
   BomTask? bom;
   SketchTask? sketch;
+  PhaseTask? phase;
   final front = TextEditingController();
   final back = TextEditingController();
   String reason = '';
@@ -119,6 +124,7 @@ class _Draft {
     InteractiveKind.crystal => crystal != null,
     InteractiveKind.bom => bom != null,
     InteractiveKind.sketch => sketch != null,
+    InteractiveKind.phase => phase != null,
     null => false,
   };
 
@@ -129,6 +135,7 @@ class _Draft {
     crystal = d.crystal;
     bom = d.bom;
     sketch = d.sketch;
+    phase = d.phase;
     front.text = d.front.trim().isNotEmpty ? d.front.trim() : fallbackFront;
     back.text = d.back.trim();
     reason = d.reason.trim();
@@ -241,6 +248,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     InteractiveKind.crystal => _KindChoice.crystal,
     InteractiveKind.bom => _KindChoice.bom,
     InteractiveKind.sketch => _KindChoice.sketch,
+    InteractiveKind.phase => _KindChoice.phase,
     null => _KindChoice.auto,
   };
 
@@ -323,6 +331,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     _KindChoice.crystal => InteractiveKind.crystal,
     _KindChoice.bom => InteractiveKind.bom,
     _KindChoice.sketch => InteractiveKind.sketch,
+    _KindChoice.phase => InteractiveKind.phase,
   };
 
   Future<void> _pickImages() async {
@@ -542,6 +551,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     InteractiveKind.crystal => d.crystal?.toMap(),
     InteractiveKind.bom => d.bom?.toMap(),
     InteractiveKind.sketch => d.sketch?.toMap(),
+    InteractiveKind.phase => d.phase?.toMap(),
     null => d.questionData,
   };
 
@@ -667,6 +677,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       InteractiveKind.bom => BomCalculator(d.bom!).fullSolution(),
       InteractiveKind.sketch =>
         d.back.text.trim().isNotEmpty ? d.back.text.trim() : SketchChecker.solutionText(d.sketch!),
+      InteractiveKind.phase => PhaseCalculator(d.phase!).fullSolution(),
     };
     return Flashcard(
       id: const Uuid().v4(),
@@ -682,6 +693,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         InteractiveKind.crystal => d.crystal?.confirmed().toMap(),
         InteractiveKind.bom => d.bom?.confirmed().toMap(),
         InteractiveKind.sketch => d.sketch?.confirmed().toMap(),
+        InteractiveKind.phase => d.phase?.confirmed().toMap(),
       },
       imageBase64: _attachImage && _imagesOf(d).isNotEmpty && (kind == InteractiveKind.steps || kind == InteractiveKind.bom)
           ? base64Encode(_imagesOf(d).first)
@@ -735,6 +747,13 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
         if (sketch == null || !sketch.isUsable) {
           return 'Die Skizze braucht Achsen (von < bis), eine Musterkurve und gültige Merkmale.';
         }
+      case InteractiveKind.phase:
+        final phase = d.phase;
+        if (phase == null || !phase.isUsable) {
+          return 'Das Zustandsdiagramm braucht stimmige Eckdaten und mindestens eine vollständige Teilaufgabe.';
+        }
+        final problems = PhaseCalculator(phase).problems();
+        if (problems.isNotEmpty) return problems.first;
       case null:
         return 'Erst eine Aufgabe erstellen.';
     }
@@ -757,6 +776,9 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     InteractiveKind.sketch => [
       if (d.sketch!.uncertain) 'Achsen oder Merkmale waren unklar und sind noch nicht bestätigt.',
       ...SketchChecker.selfCheck(d.sketch!),
+    ],
+    InteractiveKind.phase => [
+      if (d.phase!.uncertain) 'Eckdaten des Diagramms waren unklar und sind noch nicht bestätigt.',
     ],
     null => const [],
   };
@@ -1023,6 +1045,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
                 ButtonSegment(value: _KindChoice.crystal, label: Text('Kristall')),
                 ButtonSegment(value: _KindChoice.bom, label: Text('Stückliste')),
                 ButtonSegment(value: _KindChoice.sketch, label: Text('Skizze')),
+                ButtonSegment(value: _KindChoice.phase, label: Text('Zustandsdiagramm')),
               ],
               selected: {_choice},
               showSelectedIcon: false,
@@ -1371,6 +1394,7 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
     InteractiveKind.crystal => Icons.view_in_ar_outlined,
     InteractiveKind.bom => Icons.account_tree_outlined,
     InteractiveKind.sketch => Icons.show_chart,
+    InteractiveKind.phase => Icons.stacked_line_chart,
     null => Icons.block_outlined,
   };
 
@@ -1459,6 +1483,8 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           'Vergleiche den Baum (Sach-Nr., Mengen an den Linien) mit dem Blatt – die Stücklisten rechnet die App selbst.',
         InteractiveKind.sketch =>
           'Prüf Achsen, Musterkurve und Merkmale – die App prüft Skizzen grob an diesen Merkmalen, nicht pixelgenau.',
+        InteractiveKind.phase =>
+          'Vergleiche die Eckdaten (Schmelzpunkte, eutektischer Punkt, Löslichkeiten) mit dem Blatt – Hebelgesetz, Gefüge und Abkühlkurven rechnet die App selbst.',
       }, style: TextStyle(fontSize: 12.5, height: 1.4, color: c.inkMuted)),
       const SizedBox(height: 12),
       TextField(
@@ -1497,8 +1523,13 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
           task: d.sketch!,
           onChanged: (t) => setState(() => d.sketch = t),
         ),
+        InteractiveKind.phase => PhaseTaskEditor(
+          key: ValueKey('task-import-phase-$i-${d.revision}'),
+          task: d.phase!,
+          onChanged: (t) => setState(() => d.phase = t),
+        ),
       },
-      if (kind != InteractiveKind.gantt && kind != InteractiveKind.bom) ...[
+      if (kind != InteractiveKind.gantt && kind != InteractiveKind.bom && kind != InteractiveKind.phase) ...[
         const SizedBox(height: 12),
         TextField(
           key: ValueKey('task-import-back-$i'),
@@ -1833,6 +1864,7 @@ class _TryTaskScreen extends StatelessWidget {
     final crystal = card.type == QuestionType.crystal ? CrystalTask.fromMap(card.taskData) : null;
     final bom = card.type == QuestionType.bom ? BomTask.fromMap(card.taskData) : null;
     final sketch = card.type == QuestionType.sketch ? SketchTask.fromMap(card.taskData) : null;
+    final phase = card.type == QuestionType.phase ? PhaseTask.fromMap(card.taskData) : null;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(title: const Text('Ausprobieren')),
@@ -1853,6 +1885,8 @@ class _TryTaskScreen extends StatelessWidget {
                   ? BomTaskView(card: card, task: bom, isNew: true, onComplete: done)
                   : sketch != null
                   ? SketchTaskView(card: card, task: sketch, isNew: true, onComplete: done)
+                  : phase != null
+                  ? PhaseTaskView(card: card, task: phase, isNew: true, onComplete: done)
                   : const Center(child: Text('Die Aufgabe ist noch nicht vollständig.')),
             ),
           ),

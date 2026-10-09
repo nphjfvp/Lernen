@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../models/bom_task.dart';
+import '../models/phase_task.dart';
 import '../models/crystal_task.dart';
 import '../models/sketch_task.dart';
 import '../models/flashcard.dart';
@@ -408,6 +409,8 @@ class AnswerChecker {
         return BomTask.fromMap(q.taskData)?.isUsable ?? false;
       case QuestionType.sketch:
         return SketchTask.fromMap(q.taskData)?.isUsable ?? false;
+      case QuestionType.phase:
+        return PhaseTask.fromMap(q.taskData)?.isUsable ?? false;
     }
   }
 

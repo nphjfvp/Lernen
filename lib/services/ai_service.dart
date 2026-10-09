@@ -15,6 +15,7 @@ import '../models/gantt_task.dart';
 import '../models/interactive_task.dart';
 import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import '../models/paper_review.dart';
+import '../models/phase_task.dart';
 import '../models/step_task.dart';
 import '../models/step_task_review.dart';
 import '../models/task_verification.dart';
@@ -2172,7 +2173,8 @@ Antworte in der Sprache der Vorlage.
         QuestionType.gantt ||
         QuestionType.crystal ||
         QuestionType.bom ||
-        QuestionType.sketch =>
+        QuestionType.sketch ||
+        QuestionType.phase =>
           _variantTypeRule(QuestionType.learn),
         QuestionType.learn =>
           'Zieltyp "learn" (Aufgabe zum Verstehen): "front" ist die Aufgabe '
@@ -3980,7 +3982,10 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       InteractiveKind.bom => 'Gewünscht: "kind": "bom" (Stückliste) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.sketch =>
         'Gewünscht: "kind": "sketch" (Diagramm skizzieren) – nur wenn das gar nicht geht, "none" mit Begründung.',
-      null => 'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "bom", "sketch", "question" oder "none".',
+      InteractiveKind.phase =>
+        'Gewünscht: "kind": "phase" (Zustandsdiagramm) – nur wenn das gar nicht geht, "none" mit Begründung.',
+      null =>
+        'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "bom", "sketch", "phase", "question" oder "none".',
     });
     if (instruction.trim().isNotEmpty) {
       buffer
@@ -4071,7 +4076,9 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
                 ? InteractiveKind.steps
                 : data['items'] is List
                     ? InteractiveKind.gantt
-                    : data['root'] is Map
+                    : data['system'] is Map
+                        ? InteractiveKind.phase
+                        : data['root'] is Map
                         ? InteractiveKind.bom
                         : data['features'] is List
                         ? InteractiveKind.sketch
@@ -4089,6 +4096,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       crystal: kind == InteractiveKind.crystal ? CrystalTask.fromMap(data) : null,
       bom: kind == InteractiveKind.bom ? BomTask.fromMap(data) : null,
       sketch: kind == InteractiveKind.sketch ? SketchTask.fromMap(data) : null,
+      phase: kind == InteractiveKind.phase ? PhaseTask.fromMap(data) : null,
       reason: reason,
       needs: needs,
     );
@@ -4219,6 +4227,7 @@ Art ("kind") je Eintrag:
 - "crystal" (Kristallgitter): Richtungen [u v w] bzw. Ebenen (h k l) im kubischen Einheitswürfel einzeichnen oder ablesen, Richtungsfamilien ⟨u v w⟩, Atome in einer Ebene (kubisch primitiv, krz, kfz).
 - "bom" (Stückliste): aus einem Erzeugnisbaum / einer Erzeugnis- bzw. Produktstruktur eine Mengenübersichts-, Struktur- oder Baukastenstückliste (auch "Baustellen-" oder "Baustückliste") aufstellen.
 - "sketch" (Diagramm skizzieren): eine oder mehrere Kurven qualitativ in ein Diagramm zeichnen bzw. skizzieren (z.B. Längenänderung über der Temperatur, Spannungs-Dehnungs-Kurve, Potentialkurve, Abkühlkurven mehrerer Legierungen, Hall-Petch-Geraden für zwei Temperaturen, Härteverlauf für drei Auslagerungstemperaturen, Streckgrenze und Bruchdehnung über der Glühtemperatur) und ggf. Kennwerte darin markieren. Verlangt die Aufgabe zusätzlich eine Erklärung/Begründung ("Erläutern Sie …"), liefere die als EIGENEN Eintrag "question" mit "questionType": "free_text".
+- "phase" (Zustandsdiagramm): Aufgaben zu einem Zweistoffsystem mit Eutektikum (z.B. Pb-Sn) oder Eutektoid (Stahlecke des Eisen-Kohlenstoff-Diagramms): Phasen an einem Punkt, Hebelgesetz/Phasenanteile, Gefügeanteile, Abkühlkurven bestimmter Legierungen zeichnen, Zusammensetzung aus einer Abkühlkurve bestimmen, maximale Löslichkeit, Bereich der eutektischen Linie, Gebiete benennen, ein Gebiet zeigen (z.B. Bereich für das Lösungsglühen). ALLE Teilaufgaben zum selben Diagramm gehören in EINEN Eintrag ("parts"); reine Erklär- oder Begründungsfragen dazu als eigene "question"-Einträge.
 - "question": wenn es als NORMALE Quizfrage gut geht – die App hat dafür schon Fragetypen: Freitext/Erklären/Begründen/Kurzantwort ("free_text"), Auswahl ("single_choice"/"multiple_choice"), Zuordnen bzw. in Kategorien/Kriterien einordnen ("drag_category"), Tabelle ausfüllen mit festen Einträgen ("table"), Stellen in einer Abbildung markieren ("mark_image") oder beschriften ("diagram_label"), Lückentext ("fill_blank"). Dann "questionType" (einer dieser Werte) und "reason" mit einem kurzen Satz. "front" wortgetreu.
 - "none": NUR wenn weder interaktiv noch als normale Frage sinnvoll übbar (z.B. einen Netzplan oder Schaltplan selbst zeichnen) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte (z.B. "Kurve in Diagramm zeichnen", "Netzplan zeichnen", "Schaltplan zeichnen").
 - Fehlt für eine Rechnung nur ein Wert, den man üblicherweise nachschlägt (Werkstoffkennwert wie Streckgrenze, Naturkonstante), nimm einen üblichen Tabellenwert, schreib ihn als Annahme in "front" ("angenommen: R_{p0,2} = 355 MPa") und erstelle den Rechenweg trotzdem.
@@ -4289,8 +4298,17 @@ Bei "sketch":
 - Die Musterkurve muss alle Merkmale selbst erfüllen (die App prüft das nach): ein Haltepunkt braucht ein deutlich waagerechtes Stück (mind. 5 % der x-Achse), ein Knick einen deutlichen Steigungswechsel.
 - "back": kurze Beschreibung des richtigen Verlaufs.
 
+Bei "phase":
+- "front": die Aufgabe WORTGETREU mit allen Teilaufgaben zum Diagramm.
+- taskData.system: die Eckdaten, aus dem Diagramm abgelesen: {"a": linke Komponente (z.B. "Pb", "Fe"), "b": rechte (z.B. "Sn", "C"), "unit": "Masse-%" (bzw. wie auf dem Blatt, z.B. "Gew.-%"), "cMax": rechtes Ende der Zusammensetzungsachse (meist 100, Stahlecke z.B. 2.1), "tMin"/"tMax": Temperaturbereich der Achse, "liquid": Name des oberen Gebiets ("Schmelze"; Stahlecke: "γ"), "alpha": linke Phase ("α" bzw. "α-MK"; Stahlecke: "α"), "beta": rechte Phase ("β"; Stahlecke: "Fe₃C"), "eutecticName": "Eutektikum" (Stahlecke: "Perlit"), "eutectoid": true nur bei einer Umwandlung im festen Zustand (Stahlecke), "meltA": Schmelz- bzw. Umwandlungstemperatur der reinen Komponente A (Pb: 327; Stahlecke Punkt G: 911), "eutecticC"/"eutecticT": eutektischer bzw. eutektoider Punkt (61.9/183; Stahlecke Punkt S: 0.8/723), "rightC"/"rightT": rechtes Ende der rechten Liquidus- bzw. Umwandlungslinie (reines B: cMax und Schmelzpunkt von B, z.B. 100/232; Stahlecke Punkt E: 2.06/1147), "alphaMax": größte Löslichkeit von B in α bei der eutektischen Temperatur (18.3; Stahlecke Punkt P: 0.02), "alphaLow": Löslichkeit von B in α bei tMin, "betaMax"/"betaLow": Zusammensetzung von β bei der eutektischen Temperatur bzw. bei tMin (97.8/99; Fe₃C: 6.67/6.67)}.
+  Sind Linien deutlich gekrümmt, zusätzlich "lines": {"liquidusLeft" | "liquidusRight" | "solidusLeft" | "solidusRight" | "solvusLeft" | "solvusRight": [[c, T], …] mit 3–6 abgelesenen Punkten entlang der Linie, Endpunkte wie die Eckdaten}.
+- taskData.parts: je Teilaufgabe in der Reihenfolge des Blatts {"kind": …, …, "prompt": optional der Wortlaut der Teilaufgabe}:
+  "phases" (welche Phasen liegen vor, mit "c" und "t"), "lever" (Hebelgesetz/Phasenanteile bei "c" und "t" – bei zwei Temperaturen zwei Einträge), "structure" (Gefügeanteile von "c" direkt unter der eutektischen Temperatur), "cooling" (Abkühlkurven zeichnen, "compositions": z.B. [10, 20, 61.9, 100]), "composition" (Legierungen, deren Erstarrung bei "t" beginnt, z.B. aus einer Abkühlkurve abgelesen), "solubility" (maximale Löslichkeit, "side": "b" = von B in α, "a" = von A in β), "eutecticLine" (Bereich der eutektischen Linie), "regions" (Gebiete benennen), "pickRegion" (Gebiet im Diagramm zeigen, "region": "liquid" | "liquidAlpha" | "alpha" | "liquidBeta" | "beta" | "alphaBeta").
+- taskData.uncertain: true, wenn Werte schlecht ablesbar waren.
+- Rechne NICHTS selbst aus – Phasen, Hebel, Anteile und Abkühlkurven rechnet die App aus den Eckdaten. "back" darf leer bleiben.
+
 Antworte NUR mit einem JSON-Objekt:
-{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
+{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "phase" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
 
   // -- Aufgaben von einer externen KI (JSON) -------------------------------
 
@@ -4454,6 +4472,7 @@ Je nach Art:
 - "crystal" (Kristallgitter): Passen Gitter und Indizes (Vorzeichen!) zur Aufgabe?
 - "bom" (Stückliste): Passt der Erzeugnisbaum (Sach-Nr., Mengen, Struktur) und welche Listen gefragt sind? Die Listen rechnet die App selbst.
 - "sketch" (Diagramm): Ist die Musterkurve fachlich richtig, stimmen die Merkmale?
+- "phase" (Zustandsdiagramm): Passen die Eckdaten (Schmelzpunkte, eutektischer Punkt, Löslichkeitsgrenzen) zum System und die Teilaufgaben (Punkte, Zusammensetzungen) zur Aufgabe? Phasen und Anteile rechnet die App selbst.
 - Quizfrage (Typ wie "single_choice", "free_text", "fill_blank", "table" …): Ist die als richtig hinterlegte Antwort fachlich richtig und vollständig, sind falsche Optionen wirklich falsch, passt die Frage zur Aufgabe?
 
 Urteil:
