@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1442 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1455 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1481,6 +1481,19 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `matchCardsToLecture` (script_match_runner, `ScriptMatchContext.run(only: [...])`), sonst
     `matchNewCardsToScript`. Einstiege: Aufgaben-Ordner `task-folder-json-import`,
     PdfQuestionImportScreen `import-json`. Tests: `test/ui/task_json_import_test.dart`.
+66. Skizze mit mehreren Kurven (Werkstoffkunde-Übungen 5–9: Abkühlkurven, Hall-Petch,
+    Auslagerung, Rekristallisation). `SketchTask.curves` (`SketchNamedCurve{name, reference}`),
+    `reference` = erste Kurve, `isMulti`, `resolve('')` = erste, `curveNamed`; toMap schreibt
+    "curves" nur bei mehreren/benannten Kurven (+ immer "reference" für ältere Versionen).
+    `SketchFeature.curve/other`, neue Arten `plateau` (y, optional x/x2), `kink` (y oder x),
+    Vergleiche `above/below/parallel/steeper/maxEarlier/maxHigher` (`isComparison`).
+    `SketchChecker.check(task, strokes, marks, byCurve:)`, SketchCurve `slope/flatRuns/
+    crossings/kinkScore` (Knick ab Verhältnis 1,5, Haltepunkt ≥ 3,5 % der x-Achse), Meldungen
+    mit Kurvenname. SketchCanvas `strokesByCurve`, `colorOf`, Namen an den Kurvenenden;
+    SketchTaskView Kurven-Chips `sketch-curve-i`; Editor `sketch-edit-add-curve`,
+    `sketch-edit-curve-i-name-*`/`-remove`, `sketch-edit-reference-i`, Merkmal `-curve`/`-other`.
+    KI-Prompt: taskData.curves + "curve" je Merkmal. Tests: `sketch_multi_curve_test`,
+    `sketch_task_view_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

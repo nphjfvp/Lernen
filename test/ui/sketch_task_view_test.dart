@@ -53,6 +53,37 @@ final _tensile = SketchTask(
   ],
 );
 
+/// Hall-Petch für zwei Temperaturen: T₂ liegt parallel unter T₁.
+final _hallPetch = SketchTask(
+  xAxis: const SketchAxis(label: '1/√L', min: 0, max: 1, showNumbers: false),
+  yAxis: const SketchAxis(label: 'R_eL', min: 0, max: 500, showNumbers: false),
+  curves: [
+    SketchNamedCurve(
+      name: 'T₁',
+      reference: [
+        _line([
+          [0.05, 150],
+          [0.95, 420],
+        ]),
+      ],
+    ),
+    SketchNamedCurve(
+      name: 'T₂',
+      reference: [
+        _line([
+          [0.05, 60],
+          [0.95, 330],
+        ]),
+      ],
+    ),
+  ],
+  features: const [
+    SketchFeature(kind: SketchFeatureKind.rising, x: 0.1, x2: 0.9, curve: 'T₁'),
+    SketchFeature(kind: SketchFeatureKind.below, curve: 'T₂', other: 'T₁'),
+    SketchFeature(kind: SketchFeatureKind.parallel, curve: 'T₂', other: 'T₁'),
+  ],
+);
+
 Flashcard _card(SketchTask task) => Flashcard(
   id: 's1',
   moduleId: 'm1',
@@ -271,5 +302,67 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('sketch-edit-numbers')));
     await tester.pump();
     expect(task.xAxis.showNumbers, isFalse);
+  });
+
+  testWidgets('mehrere Kurven: Kurve wählen, jede in ihrer Farbe zeichnen, Vergleich wird geprüft', (tester) async {
+    await pump(tester, _hallPetch);
+    expect(find.byKey(const ValueKey('sketch-curve-0')), findsOneWidget);
+    expect(find.text('Wähle oben die Kurve und zeichne sie – jede Kurve hat ihre Farbe.'), findsOneWidget);
+
+    // Erst nur T₁ gezeichnet: T₂ fehlt.
+    await tester.ensureVisible(find.byKey(const ValueKey('sketch-canvas')));
+    await draw(tester, _hallPetch, [
+      [0.05, 140],
+      [0.5, 290],
+      [0.95, 430],
+    ]);
+    await tap(tester, 'sketch-check');
+    expect(text(tester, 'sketch-verdict'), contains('Zeichne auch „T₂“'));
+
+    // T₂ wählen und darunter zeichnen.
+    await tap(tester, 'sketch-curve-1');
+    await tester.ensureVisible(find.byKey(const ValueKey('sketch-canvas')));
+    await draw(tester, _hallPetch, [
+      [0.05, 55],
+      [0.5, 200],
+      [0.95, 335],
+    ]);
+    await tap(tester, 'sketch-check');
+    expect(text(tester, 'sketch-verdict'), contains('Alle Merkmale stimmen'));
+    expect(text(tester, 'sketch-verdict'), contains('„T₂“ verläuft parallel zu „T₁“'));
+  });
+
+  testWidgets('Editor: weitere Kurve hinzufügen, umbenennen – Merkmale ziehen mit', (tester) async {
+    tester.view.physicalSize = const Size(700, 3600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var task = _tensile;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: const [AppColors.light]),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => SingleChildScrollView(
+              child: SketchTaskEditor(task: task, onChanged: (t) => setState(() => task = t)),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('sketch-edit-add-curve')));
+    await tester.pump();
+    expect(task.curveNames, ['Kurve 1', 'Kurve 2']);
+    expect(task.features.every((f) => f.curve == 'Kurve 1'), isTrue);
+    expect(find.byKey(const ValueKey('sketch-edit-reference-1')), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('sketch-edit-curve-0-name-1')), 'Stahl');
+    await tester.pump();
+    expect(task.curveNames.first, 'Stahl');
+    expect(task.features.every((f) => f.curve == 'Stahl'), isTrue);
+    expect(task.isUsable, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('sketch-edit-curve-1-remove')));
+    await tester.pump();
+    expect(task.curves, hasLength(1));
   });
 }

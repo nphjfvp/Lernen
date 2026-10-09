@@ -1393,6 +1393,24 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zj. Skizzen mit mehreren Kurven, Haltepunkten und Knicken
+
+Der Typ „Diagramm skizzieren“ kann jetzt mehr:
+
+- **Mehrere Kurven im selben Diagramm**, jede mit Namen und eigener Farbe
+  (Abkühlkurven für 10/20/61,9/100 % Sn, Hall-Petch-Geraden für T₁/T₂ bzw.
+  ε₁/ε₂, Härteverläufe für T₁ < T₂ < T₃, Streckgrenze und Bruchdehnung über der
+  Glühtemperatur). Beim Lernen wählt man oben die Kurve und zeichnet sie.
+- **Haltepunkt** (waagerechtes Stück bei einer Temperatur, z.B. 183 °C) und
+  **Knick** (deutlicher Steigungswechsel, z.B. an der Liquidus) als Merkmale.
+- **Vergleiche zwischen Kurven**: liegt über/unter, parallel verschoben,
+  steiler als, Maximum früher bzw. höher als.
+- Im Editor: „Weitere Kurve im selben Diagramm“, Name und Musterkurve je
+  Kurve, bei jedem Merkmal die Kurve (und bei Vergleichen die zweite Kurve).
+  Umbenennen nimmt die Merkmale mit.
+- Eine einzelne Kurve wird wie bisher gespeichert – ältere App-Versionen
+  zeigen auch Skizzen mit mehreren Kurven (dann nur mit der ersten).
+
 ### 5zi. Aufgaben von einer externen KI importieren (JSON)
 
 Wer lieber ChatGPT, Gemini oder Claude.ai das Übungsblatt lesen lässt, kann

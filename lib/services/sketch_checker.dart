@@ -65,6 +65,69 @@ class SketchCurve {
     return s.reduce((a, b) => (max ? b.$2 > a.$2 : b.$2 < a.$2) ? b : a);
   }
 
+  /// Steigung (normiert) der Ausgleichsgeraden im Bereich [a]..[b]; null,
+  /// wenn dort zu wenig gezeichnet ist.
+  double? slope(double a, double b) {
+    final s = samples(a, b, 30);
+    if (s.length < 6) return null;
+    final mu = s.map((p) => p.$1).reduce((x, y) => x + y) / s.length;
+    final mv = s.map((p) => p.$2).reduce((x, y) => x + y) / s.length;
+    var num = 0.0, den = 0.0;
+    for (final (u, v) in s) {
+      num += (u - mu) * (v - mv);
+      den += (u - mu) * (u - mu);
+    }
+    return den < 1e-9 ? null : num / den;
+  }
+
+  /// Waagerechte Stücke im Bereich [a]..[b] (Steigung über ein kurzes Stück
+  /// klein): (Anfang, Ende, mittlere Höhe).
+  List<(double, double, double)> flatRuns(double a, double b, {double maxSlope = 0.4}) {
+    const step = 0.004, span = 5;
+    final s = samples(a, b, ((b - a) / step).ceil().clamp(2, 500));
+    bool flat(int i) {
+      final du = s[i + span].$1 - s[i].$1;
+      return du > 1e-6 && ((s[i + span].$2 - s[i].$2) / du).abs() <= maxSlope;
+    }
+
+    final runs = <(double, double, double)>[];
+    var i = 0;
+    while (i + span < s.length) {
+      if (!flat(i)) {
+        i++;
+        continue;
+      }
+      var j = i;
+      while (j + 1 + span < s.length && flat(j + 1)) {
+        j++;
+      }
+      final part = s.sublist(i, j + span + 1);
+      runs.add((part.first.$1, part.last.$1, part.map((p) => p.$2).reduce((x, y) => x + y) / part.length));
+      i = j + 1;
+    }
+    return runs;
+  }
+
+  /// Wo die Kurve die Höhe [v] erreicht (Stellen u).
+  List<double> crossings(double v) {
+    if (isEmpty) return const [];
+    final s = samples(uMin, uMax, 300);
+    return [
+      for (var i = 0; i + 1 < s.length; i++)
+        if ((s[i].$2 - v) * (s[i + 1].$2 - v) <= 0 && s[i].$2 != s[i + 1].$2) (s[i].$1 + s[i + 1].$1) / 2,
+    ];
+  }
+
+  /// Wie deutlich die Steigung an der Stelle [u] wechselt (Verhältnis der
+  /// Steigungen links und rechts, ≥ 1; Vorzeichenwechsel zählt hoch).
+  double kinkScore(double u, {double w = 0.06}) {
+    final l = slope(u - w, u - 0.004), r = slope(u + 0.004, u + w);
+    if (l == null || r == null) return 0;
+    if (l * r < 0 && (l - r).abs() > 0.3) return 3;
+    final big = math.max(l.abs(), r.abs()), small = math.max(math.min(l.abs(), r.abs()), 0.05);
+    return big / small;
+  }
+
   /// Wo die Kurve am stärksten fällt (bzw. steigt) im Bereich [a]..[b] –
   /// gemessen über ein kurzes Stück (2 % der Achse), damit auch ein steil,
   /// aber nicht ganz senkrecht gezeichneter Sprung zählt. (Stelle, Höhe des Sprungs)
@@ -119,19 +182,84 @@ class SketchChecker {
 
   static String _what(SketchFeature f) => f.text.trim().isNotEmpty ? ' (${f.text.trim()})' : '';
 
-  static SketchVerdict check(SketchTask task, List<List<SketchPoint>> strokes, List<SketchMark> marks) {
-    final curve = SketchCurve(task, strokes);
-    return SketchVerdict([for (final f in task.features) _check(task, curve, marks, f)]);
+  /// [strokes] = die gezeichnete (erste) Kurve; bei mehreren Kurven
+  /// [byCurve] = Striche je Kurvenname.
+  static SketchVerdict check(
+    SketchTask task,
+    List<List<SketchPoint>> strokes,
+    List<SketchMark> marks, {
+    Map<String, List<List<SketchPoint>>>? byCurve,
+  }) {
+    final drawn = byCurve ?? {task.curves.first.name: strokes};
+    final curves = {for (final c in task.curves) c.name: SketchCurve(task, drawn[c.name] ?? const [])};
+    return SketchVerdict([
+      for (final f in task.features)
+        _named(task, f, _check(task, curves[task.resolve(f.curve)] ?? SketchCurve(task, const []), marks, f, curves)),
+    ]);
   }
 
-  static SketchFeatureResult _check(SketchTask task, SketchCurve curve, List<SketchMark> marks, SketchFeature f) {
+  /// Bei mehreren Kurven: welche gemeint ist.
+  static SketchFeatureResult _named(SketchTask task, SketchFeature f, SketchFeatureResult r) {
+    if (!task.isMulti || f.kind.isComparison) return r;
+    return SketchFeatureResult(r.feature, r.ok, '${task.resolve(f.curve)}: ${r.message}');
+  }
+
+  static SketchFeatureResult _check(
+    SketchTask task,
+    SketchCurve curve,
+    List<SketchMark> marks,
+    SketchFeature f,
+    Map<String, SketchCurve> curves,
+  ) {
     SketchFeatureResult ok(String m) => SketchFeatureResult(f, true, m);
     SketchFeatureResult no(String m) => SketchFeatureResult(f, false, m);
-    final xs = task.xAxis;
+    final xs = task.xAxis, ys = task.yAxis;
     double nx(double? x) => xs.norm(x ?? xs.min);
-    if (curve.isEmpty && f.kind != SketchFeatureKind.mark) return no('Noch keine Kurve gezeichnet.');
+    if (curve.isEmpty && f.kind.isComparison) return no('Zeichne auch „${task.resolve(f.curve)}“.');
+    if (curve.isEmpty && f.kind != SketchFeatureKind.mark) {
+      return no(task.isMulti ? 'Diese Kurve fehlt noch.' : 'Noch keine Kurve gezeichnet.');
+    }
 
     switch (f.kind) {
+      case SketchFeatureKind.plateau:
+        final target = ys.norm(f.y!), tol = math.max(f.tol, 0.04);
+        final a = f.x == null ? curve.uMin : math.max(curve.uMin, nx(f.x) - f.tol);
+        final b = f.x2 == null ? curve.uMax : math.min(curve.uMax, nx(f.x2) + f.tol);
+        final runs = b - a < 0.02 ? <(double, double, double)>[] : curve.flatRuns(a, b);
+        final long = [for (final r in runs) if (r.$2 - r.$1 >= 0.035) r];
+        if (long.any((r) => (r.$3 - target).abs() <= tol)) return ok('Haltepunkt bei ${_x(task, f.y)}.');
+        if (long.isNotEmpty) {
+          final nearest = long.reduce((p, q) => (p.$3 - target).abs() <= (q.$3 - target).abs() ? p : q);
+          return no('Der Haltepunkt liegt bei ${_pos(ys, ys.denorm(nearest.$3))} statt bei ${_x(task, f.y)}${_what(f)}.');
+        }
+        return no('Bei ${_x(task, f.y)} fehlt der Haltepunkt – ein waagerechtes Stück${_what(f)}.');
+
+      case SketchFeatureKind.kink:
+        final candidates = f.y != null
+            ? [
+                for (final u in curve.crossings(ys.norm(f.y!)))
+                  if (f.x == null || (u - nx(f.x)).abs() <= f.tol * 2) u,
+              ]
+            : [for (var i = 0; i <= 10; i++) nx(f.x) - f.tol + 2 * f.tol * i / 10];
+        final where = f.y != null ? 'bei ${_x(task, f.y)}' : 'bei x ≈ ${_x(task, f.x)}';
+        if (candidates.isEmpty) return no('Die Kurve soll $where einen Knick haben${_what(f)}.');
+        // Etwas Spielraum: der Knick darf knapp neben der Stelle sitzen.
+        final probes = [
+          for (final u in candidates)
+            for (var d = -0.04; d <= 0.0401; d += 0.01) u + d,
+        ];
+        final best = probes.map(curve.kinkScore).reduce(math.max);
+        return best >= 1.5 ? ok('Knick $where.') : no('$where soll die Kurve einen deutlichen Knick haben${_what(f)}.');
+
+      case SketchFeatureKind.above:
+      case SketchFeatureKind.below:
+      case SketchFeatureKind.parallel:
+      case SketchFeatureKind.steeper:
+      case SketchFeatureKind.maxEarlier:
+      case SketchFeatureKind.maxHigher:
+        return _compare(task, f, curve, curves[task.resolve(f.other)], ok, no);
+
+
       case SketchFeatureKind.rising:
       case SketchFeatureKind.falling:
       case SketchFeatureKind.linear:
@@ -258,14 +386,80 @@ class SketchChecker {
     }
   }
 
+  /// Vergleich zweier Kurven.
+  static SketchFeatureResult _compare(
+    SketchTask task,
+    SketchFeature f,
+    SketchCurve a,
+    SketchCurve? b,
+    SketchFeatureResult Function(String) ok,
+    SketchFeatureResult Function(String) no,
+  ) {
+    final na = task.resolve(f.curve), nb = task.resolve(f.other);
+    if (b == null || b.isEmpty) return no('Zeichne auch „$nb“.');
+    final xs = task.xAxis;
+    var lo = math.max(a.uMin, b.uMin), hi = math.min(a.uMax, b.uMax);
+    if (f.x != null) lo = math.max(lo, xs.norm(f.x!));
+    if (f.x2 != null) hi = math.min(hi, xs.norm(f.x2!));
+    final pairs = hi - lo < 0.03
+        ? <(double, double)>[]
+        : [
+            for (var i = 0; i <= 30; i++)
+              if ((a.vAt(lo + (hi - lo) * i / 30), b.vAt(lo + (hi - lo) * i / 30)) case (final va?, final vb?))
+                (va, vb),
+          ];
+    final why = _what(f);
+    switch (f.kind) {
+      case SketchFeatureKind.above:
+      case SketchFeatureKind.below:
+        if (pairs.length < 5) return no('„$na“ und „$nb“ sollen sich über einen gemeinsamen Bereich erstrecken.');
+        final sign = f.kind == SketchFeatureKind.above ? 1 : -1;
+        final share = pairs.where((p) => (p.$1 - p.$2) * sign > 0.005).length / pairs.length;
+        final mean = pairs.map((p) => (p.$1 - p.$2) * sign).reduce((x, y) => x + y) / pairs.length;
+        final word = f.kind == SketchFeatureKind.above ? 'über' : 'unter';
+        return share >= 0.8 && mean >= 0.02
+            ? ok('„$na“ liegt $word „$nb“.')
+            : no('„$na“ soll $word „$nb“ liegen$why.');
+      case SketchFeatureKind.parallel:
+      case SketchFeatureKind.steeper:
+        final sa = a.slope(lo, hi), sb = b.slope(lo, hi);
+        if (sa == null || sb == null) return no('„$na“ und „$nb“ sollen sich über einen gemeinsamen Bereich erstrecken.');
+        if (f.kind == SketchFeatureKind.steeper) {
+          return sa.abs() >= 1.25 * sb.abs() + 0.03
+              ? ok('„$na“ ist steiler als „$nb“.')
+              : no('„$na“ soll steiler verlaufen als „$nb“$why.');
+        }
+        final gap = pairs.isEmpty ? 0.0 : pairs.map((p) => (p.$1 - p.$2).abs()).reduce((x, y) => x + y) / pairs.length;
+        if ((sa - sb).abs() > 0.3 * math.max(sa.abs(), sb.abs()) + 0.08) {
+          return no('„$na“ soll parallel zu „$nb“ verlaufen (gleiche Steigung)$why.');
+        }
+        if (gap < 0.03) return no('„$na“ soll parallel verschoben sein, nicht auf „$nb“ liegen$why.');
+        return ok('„$na“ verläuft parallel zu „$nb“.');
+      case SketchFeatureKind.maxEarlier:
+      case SketchFeatureKind.maxHigher:
+        final pa = a.maxPoint, pb = b.maxPoint;
+        if (pa == null || pb == null) return no('Beide Kurven brauchen ein Maximum.');
+        if (f.kind == SketchFeatureKind.maxEarlier) {
+          return pa.$1 < pb.$1 - 0.01
+              ? ok('Das Maximum von „$na“ liegt früher als das von „$nb“.')
+              : no('Das Maximum von „$na“ soll früher (weiter links) liegen als das von „$nb“$why.');
+        }
+        return pa.$2 > pb.$2 + 0.02
+            ? ok('Das Maximum von „$na“ liegt höher als das von „$nb“.')
+            : no('Das Maximum von „$na“ soll höher liegen als das von „$nb“$why.');
+      default:
+        return no('');
+    }
+  }
+
   static double _dist((double, double) a, (double, double) b) =>
       math.sqrt(math.pow(a.$1 - b.$1, 2) + math.pow(a.$2 - b.$2, 2));
 
   /// Wo die Markierungen in der Musterlösung sitzen.
   static List<SketchMark> referenceMarks(SketchTask task) {
-    final curve = SketchCurve(task, task.reference);
     final out = <SketchMark>[];
     for (final f in task.marks) {
+      final curve = SketchCurve(task, task.curveNamed(f.curve)?.reference ?? const []);
       final (double, double)? p = switch (f.anchor) {
         SketchAnchor.max => curve.maxPoint,
         SketchAnchor.min => curve.minPoint,
@@ -291,7 +485,12 @@ class SketchChecker {
   /// ein Merkmal oder die Kurve nicht (Hinweis beim Speichern).
   static List<String> selfCheck(SketchTask task) {
     if (!task.isUsable) return const [];
-    final v = check(task, task.reference, referenceMarks(task));
+    final v = check(
+      task,
+      task.reference,
+      referenceMarks(task),
+      byCurve: {for (final c in task.curves) c.name: c.reference},
+    );
     return [
       for (final r in v.results)
         if (!r.ok)
@@ -320,15 +519,22 @@ class SketchChecker {
   static String _describe(SketchTask t, SketchFeature f) => switch (f.kind) {
     SketchFeatureKind.rising ||
     SketchFeatureKind.falling ||
-    SketchFeatureKind.linear => '${f.kind.label} zwischen ${_x(t, f.x)} und ${_x(t, f.x2)}',
-    SketchFeatureKind.approaches => 'nähert sich ${_x(t, f.y)} an',
-    SketchFeatureKind.max || SketchFeatureKind.min => '${f.kind.label}${f.x == null ? '' : ' bei ≈ ${_x(t, f.x)}'}',
-    _ => '${f.kind.label} ${_x(t, f.x)}',
+    SketchFeatureKind.linear => '${_of(t, f)}${f.kind.label} zwischen ${_x(t, f.x)} und ${_x(t, f.x2)}',
+    SketchFeatureKind.approaches => '${_of(t, f)}nähert sich ${_x(t, f.y)} an',
+    SketchFeatureKind.max || SketchFeatureKind.min => '${_of(t, f)}${f.kind.label}${f.x == null ? '' : ' bei ≈ ${_x(t, f.x)}'}',
+    SketchFeatureKind.plateau => '${_of(t, f)}Haltepunkt (waagerecht) bei ${_x(t, f.y)}',
+    SketchFeatureKind.kink => '${_of(t, f)}Knick bei ${f.y != null ? _x(t, f.y) : 'x ≈ ${_x(t, f.x)}'}',
+    _ when f.kind.isComparison => '„${t.resolve(f.curve)}“ ${f.kind.label} „${t.resolve(f.other)}“',
+    _ => '${_of(t, f)}${f.kind.label} ${_x(t, f.x)}',
   };
+
+  /// "T₁: " bei mehreren Kurven.
+  static String _of(SketchTask t, SketchFeature f) => t.isMulti ? '${t.resolve(f.curve)}: ' : '';
 
   /// Musterlösung als Text (Rückseite der Karte).
   static String solutionText(SketchTask task) => [
-    'Skizze: ${task.yAxis.label.isEmpty ? 'y' : task.yAxis.label} über ${task.xAxis.label.isEmpty ? 'x' : task.xAxis.label}',
+    'Skizze: ${task.yAxis.label.isEmpty ? 'y' : task.yAxis.label} über ${task.xAxis.label.isEmpty ? 'x' : task.xAxis.label}'
+        '${task.isMulti ? ' – Kurven: ${task.curveNames.join(', ')}' : ''}',
     for (final f in task.features)
       '- ${f.kind == SketchFeatureKind.mark ? '${f.label} ${f.anchor.label}' : _describe(task, f)}'
           '${f.text.isNotEmpty && f.kind != SketchFeatureKind.mark ? ': ${f.text}' : (f.text.isNotEmpty ? ' – ${f.text}' : '')}',

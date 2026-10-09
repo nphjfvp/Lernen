@@ -1,8 +1,11 @@
 /// Diagramm-Skizzen ([QuestionType.sketch]): in vorgegebene Achsen eine
 /// Kurve skizzieren (z.B. Längenänderung über der Temperatur mit Sprung bei
-/// 911 °C, Spannungs-Dehnungs-Kurve mit R_p0,2/R_m/A, Potentialkurve). Die KI
-/// liefert Achsen, eine Musterkurve und die Merkmale, auf die es ankommt –
-/// geprüft wird grob in der App (SketchChecker), nicht pixelgenau.
+/// 911 °C, Spannungs-Dehnungs-Kurve mit R_p0,2/R_m/A, Potentialkurve) – oder
+/// mehrere benannte Kurven im selben Diagramm (Abkühlkurven je Legierung,
+/// Hall-Petch-Geraden für T₁/T₂, Härteverläufe je Temperatur). Die KI liefert
+/// Achsen, Musterkurven und die Merkmale, auf die es ankommt (auch Haltepunkt,
+/// Knick und Vergleiche zwischen Kurven) – geprüft wird grob in der App
+/// (SketchChecker), nicht pixelgenau.
 library;
 
 /// Ein Punkt in Achsen-Einheiten.
@@ -76,13 +79,31 @@ enum SketchFeatureKind {
   endsAt('endet bei'),
   approaches('nähert sich an'),
   steeperLeft('links steiler als rechts'),
-  mark('Markierung');
+  mark('Markierung'),
+
+  /// Waagerechtes Stück bei der Höhe y (Haltepunkt einer Abkühlkurve).
+  plateau('Haltepunkt (waagerecht)'),
+
+  /// Steigungswechsel bei der Höhe y bzw. Stelle x (Knick einer Abkühlkurve).
+  kink('Knick'),
+
+  // Vergleiche zwischen zwei Kurven (curve gegenüber other).
+  above('liegt über'),
+  below('liegt unter'),
+  parallel('parallel zu'),
+  steeper('steiler als'),
+  maxEarlier('Maximum früher als'),
+  maxHigher('Maximum höher als');
 
   const SketchFeatureKind(this.label);
   final String label;
 
   /// Bereich von–bis statt einer Stelle.
   bool get isRange => this == rising || this == falling || this == linear;
+
+  /// Vergleicht zwei Kurven.
+  bool get isComparison =>
+      this == above || this == below || this == parallel || this == steeper || this == maxEarlier || this == maxHigher;
 }
 
 SketchFeatureKind? sketchFeatureKindFrom(Object? raw) {
@@ -104,6 +125,14 @@ SketchFeatureKind? sketchFeatureKindFrom(Object? raw) {
     'asymptote' || 'approach' || 'annähern' => SketchFeatureKind.approaches,
     'asymmetric' || 'asymmetrie' || 'asymmetry' => SketchFeatureKind.steeperLeft,
     'label' || 'point' || 'punkt' || 'kennwert' || 'markieren' => SketchFeatureKind.mark,
+    'haltepunkt' || 'halt' || 'horizontal' || 'waagerecht' || 'hold' || 'plateaux' => SketchFeatureKind.plateau,
+    'knick' || 'knickpunkt' || 'bend' || 'slopechange' => SketchFeatureKind.kink,
+    'über' || 'ueber' || 'higher' || 'oberhalb' || 'abovecurve' => SketchFeatureKind.above,
+    'unter' || 'lower' || 'unterhalb' || 'belowcurve' => SketchFeatureKind.below,
+    'parallelzu' || 'parallelverschoben' || 'shifted' => SketchFeatureKind.parallel,
+    'steiler' || 'steeperthan' => SketchFeatureKind.steeper,
+    'earliermax' || 'maxfrueher' || 'maxfrüher' || 'früher' => SketchFeatureKind.maxEarlier,
+    'highermax' || 'maxhoeher' || 'maxhöher' => SketchFeatureKind.maxHigher,
     _ => null,
   };
 }
@@ -149,9 +178,17 @@ class SketchFeature {
     this.label = '',
     this.anchor = SketchAnchor.point,
     this.text = '',
+    this.curve = '',
+    this.other = '',
   });
 
   final SketchFeatureKind kind;
+
+  /// Kurve, für die das Merkmal gilt ('' = die erste bzw. einzige).
+  final String curve;
+
+  /// Vergleichskurve (nur bei [SketchFeatureKind.isComparison]).
+  final String other;
 
   /// Stelle bzw. Bereichsanfang.
   final double? x;
@@ -184,6 +221,9 @@ class SketchFeature {
             _ => true,
           },
     SketchFeatureKind.max || SketchFeatureKind.min => true,
+    SketchFeatureKind.plateau => y != null && (x == null || x2 == null || x2! > x!),
+    SketchFeatureKind.kink => y != null || x != null,
+    _ when kind.isComparison => other.trim().isNotEmpty && other.trim() != curve.trim(),
     _ => x != null,
   };
 
@@ -199,6 +239,8 @@ class SketchFeature {
     String? label,
     SketchAnchor? anchor,
     String? text,
+    String? curve,
+    String? other,
   }) => SketchFeature(
     kind: kind ?? this.kind,
     x: clearX ? null : (x ?? this.x),
@@ -208,10 +250,14 @@ class SketchFeature {
     label: label ?? this.label,
     anchor: anchor ?? this.anchor,
     text: text ?? this.text,
+    curve: curve ?? this.curve,
+    other: other ?? this.other,
   );
 
   Map<String, dynamic> toMap() => {
     'kind': kind.name,
+    if (curve.trim().isNotEmpty) 'curve': curve.trim(),
+    if (kind.isComparison) 'other': other.trim(),
     if (x != null) 'x': x,
     if (x2 != null) 'x2': x2,
     if (y != null) 'y': y,
@@ -236,26 +282,78 @@ class SketchFeature {
       label: '${raw['label'] ?? raw['name'] ?? ''}'.trim(),
       anchor: sketchAnchorFrom(raw['anchor'] ?? raw['where'] ?? raw['ort']),
       text: '${raw['text'] ?? raw['feedback'] ?? raw['description'] ?? ''}'.trim(),
+      curve: '${raw['curve'] ?? raw['kurve'] ?? ''}'.trim(),
+      other: '${raw['other'] ?? raw['than'] ?? raw['vs'] ?? raw['vergleich'] ?? ''}'.trim(),
     );
   }
 }
 
+/// Eine benannte Kurve mit ihrer Musterlösung (z.B. "10 % Sn", "T₁").
+class SketchNamedCurve {
+  const SketchNamedCurve({this.name = '', required this.reference});
+
+  final String name;
+
+  /// Linienzüge (mehrere bei einem Sprung).
+  final List<List<SketchPoint>> reference;
+
+  SketchNamedCurve copyWith({String? name, List<List<SketchPoint>>? reference}) =>
+      SketchNamedCurve(name: name ?? this.name, reference: reference ?? this.reference);
+
+  Map<String, dynamic> toMap() => {
+    'name': name,
+    'reference': [
+      for (final s in reference) [for (final p in s) p.toList()],
+    ],
+  };
+}
+
+/// Linienzüge aus der KI-Antwort: [[x, y], …] oder [[[x, y], …], …].
+List<List<SketchPoint>> _strokesFrom(Object? ref) {
+  final strokes = <List<SketchPoint>>[];
+  if (ref is List && ref.isNotEmpty) {
+    final nested = ref.first is List && (ref.first as List).isNotEmpty && (ref.first as List).first is! num;
+    for (final s in nested ? ref : [ref]) {
+      if (s is! List) continue;
+      final points = [for (final p in s) ?SketchPoint.fromRaw(p)];
+      if (points.isNotEmpty) strokes.add(points);
+    }
+  }
+  return strokes;
+}
+
 /// Die ganze Aufgabe.
 class SketchTask {
-  const SketchTask({
+  SketchTask({
     required this.xAxis,
     required this.yAxis,
-    required this.reference,
+    List<List<SketchPoint>> reference = const [],
+    List<SketchNamedCurve>? curves,
     required this.features,
     this.uncertain = false,
-  });
+  }) : curves = curves == null || curves.isEmpty ? [SketchNamedCurve(reference: reference)] : curves;
 
   final SketchAxis xAxis;
   final SketchAxis yAxis;
 
-  /// Musterkurve als Linienzüge (mehrere bei einem Sprung).
-  final List<List<SketchPoint>> reference;
+  /// Die Kurven – meist eine (ohne Namen), sonst mehrere benannte im selben
+  /// Diagramm.
+  final List<SketchNamedCurve> curves;
   final List<SketchFeature> features;
+
+  /// Musterkurve der ersten (bzw. einzigen) Kurve als Linienzüge.
+  List<List<SketchPoint>> get reference => curves.first.reference;
+
+  bool get isMulti => curves.length > 1;
+  List<String> get curveNames => [for (final c in curves) c.name];
+
+  /// Name der Kurve, die mit [name] gemeint ist ('' = die erste).
+  String resolve(String name) => name.trim().isEmpty ? curves.first.name : name.trim();
+
+  SketchNamedCurve? curveNamed(String name) {
+    final n = resolve(name);
+    return curves.where((c) => c.name == n).firstOrNull;
+  }
 
   /// Achsen oder Merkmale waren unklar – vor dem Speichern prüfen.
   final bool uncertain;
@@ -268,31 +366,43 @@ class SketchTask {
   bool get isUsable =>
       xAxis.isValid &&
       yAxis.isValid &&
-      reference.any((s) => s.length >= 2) &&
+      curves.every((c) => c.reference.any((s) => s.length >= 2)) &&
+      (!isMulti || (curves.every((c) => c.name.trim().isNotEmpty) && curveNames.toSet().length == curves.length)) &&
       features.isNotEmpty &&
-      features.every((f) => f.isValid);
+      features.every(
+        (f) =>
+            f.isValid &&
+            curveNamed(f.curve) != null &&
+            (!f.kind.isComparison || (curveNamed(f.other) != null && resolve(f.other) != resolve(f.curve))),
+      );
 
   SketchTask confirmed() => copyWith(uncertain: false);
 
+  /// [reference] ersetzt die Musterkurve der ersten Kurve.
   SketchTask copyWith({
     SketchAxis? xAxis,
     SketchAxis? yAxis,
     List<List<SketchPoint>>? reference,
+    List<SketchNamedCurve>? curves,
     List<SketchFeature>? features,
     bool? uncertain,
   }) => SketchTask(
     xAxis: xAxis ?? this.xAxis,
     yAxis: yAxis ?? this.yAxis,
-    reference: reference ?? this.reference,
+    curves: curves ?? (reference == null ? this.curves : [this.curves.first.copyWith(reference: reference), ...this.curves.skip(1)]),
     features: features ?? this.features,
     uncertain: uncertain ?? this.uncertain,
   );
 
   /// Kurzfassung (Kartenliste, Antwort-Vorschau).
   String describe() =>
-      '${yAxis.label.isEmpty ? 'y' : yAxis.label} über ${xAxis.label.isEmpty ? 'x' : xAxis.label}: '
+      '${yAxis.label.isEmpty ? 'y' : yAxis.label} über ${xAxis.label.isEmpty ? 'x' : xAxis.label}'
+      '${isMulti ? ' (${curveNames.join(', ')})' : ''}: '
       '${[for (final f in features) f.kind == SketchFeatureKind.mark ? f.label : f.kind.label].join(', ')}';
 
+  /// Eine Kurve ohne Namen bleibt im alten Format ("reference"), damit ältere
+  /// App-Versionen sie lesen; mehrere stehen unter "curves" (die erste
+  /// zusätzlich als "reference").
   Map<String, dynamic> toMap() => {
     'kind': 'sketch',
     'xAxis': xAxis.toMap(),
@@ -300,6 +410,7 @@ class SketchTask {
     'reference': [
       for (final s in reference) [for (final p in s) p.toList()],
     ],
+    if (isMulti || curves.first.name.trim().isNotEmpty) 'curves': [for (final c in curves) c.toMap()],
     'features': [for (final f in features) f.toMap()],
     if (uncertain) 'uncertain': true,
   };
@@ -309,21 +420,22 @@ class SketchTask {
     final features = raw['features'] ?? raw['merkmale'] ?? raw['checks'];
     if (features is! List) return null;
     final ref = raw['reference'] ?? raw['curve'] ?? raw['kurve'] ?? raw['musterkurve'];
-    final strokes = <List<SketchPoint>>[];
-    if (ref is List && ref.isNotEmpty) {
-      // Ein Linienzug [[x, y], …] oder mehrere [[[x, y], …], …].
-      final nested = ref.first is List && (ref.first as List).isNotEmpty && (ref.first as List).first is! num;
-      for (final s in nested ? ref : [ref]) {
-        if (s is! List) continue;
-        final points = [for (final p in s) ?SketchPoint.fromRaw(p)];
-        if (points.isNotEmpty) strokes.add(points);
-      }
-    }
+    final rawCurves = raw['curves'] ?? raw['kurven'];
+    final curves = <SketchNamedCurve>[
+      if (rawCurves is List)
+        for (final (i, c) in rawCurves.indexed)
+          if (c is Map)
+            SketchNamedCurve(
+              name: '${c['name'] ?? c['label'] ?? 'Kurve ${i + 1}'}'.trim(),
+              reference: _strokesFrom(c['reference'] ?? c['points'] ?? c['curve'] ?? c['kurve']),
+            ),
+    ];
     final u = raw['uncertain'] ?? raw['unsicher'];
     return SketchTask(
       xAxis: SketchAxis.fromMap(raw['xAxis'] ?? raw['x']),
       yAxis: SketchAxis.fromMap(raw['yAxis'] ?? raw['y']),
-      reference: strokes,
+      reference: _strokesFrom(ref),
+      curves: curves.isEmpty ? null : curves,
       features: [for (final f in features) ?SketchFeature.fromMap(f)],
       uncertain: u == true || '$u'.toLowerCase() == 'true',
     );

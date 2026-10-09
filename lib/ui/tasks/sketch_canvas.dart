@@ -16,6 +16,7 @@ class SketchCanvas extends StatelessWidget {
     super.key,
     required this.task,
     this.strokes = const [],
+    this.strokesByCurve = const {},
     this.marks = const [],
     this.showReference = false,
     this.referenceMarks = const [],
@@ -28,7 +29,27 @@ class SketchCanvas extends StatelessWidget {
 
   final SketchTask task;
   final List<List<SketchPoint>> strokes;
+
+  /// Bei mehreren Kurven: die Striche je Kurvenname (statt [strokes]).
+  final Map<String, List<List<SketchPoint>>> strokesByCurve;
   final List<SketchMark> marks;
+
+  /// Farben der Kurven (in der Reihenfolge der Aufgabe).
+  static const curveColors = [
+    Color(0xFF2F6FED),
+    Color(0xFFD9480F),
+    Color(0xFF7B2FBE),
+    Color(0xFF0B8A6A),
+    Color(0xFFC2255C),
+    Color(0xFF8D6E00),
+  ];
+
+  /// Farbe der Kurve [name] (bei einer einzigen: Akzentfarbe).
+  static Color colorOf(SketchTask task, String name, Color accent) {
+    if (!task.isMulti) return accent;
+    final i = task.curveNames.indexOf(name);
+    return curveColors[(i < 0 ? 0 : i) % curveColors.length];
+  }
   final bool showReference;
   final List<SketchMark> referenceMarks;
   final ValueChanged<SketchPoint>? onStrokeStart;
@@ -64,9 +85,19 @@ class SketchCanvas extends StatelessWidget {
             painter: _SketchPainter(
               task: task,
               plot: plot,
-              strokes: strokes,
+              user: strokesByCurve.isNotEmpty
+                  ? [
+                      for (final e in strokesByCurve.entries)
+                        (name: task.isMulti ? e.key : '', strokes: e.value, color: colorOf(task, e.key, c.accent)),
+                    ]
+                  : [(name: '', strokes: strokes, color: c.accent)],
               marks: marks,
-              reference: showReference ? task.reference : const [],
+              reference: showReference
+                  ? [
+                      for (final curve in task.curves)
+                        (name: task.isMulti ? curve.name : '', strokes: curve.reference, color: c.good),
+                    ]
+                  : const [],
               referenceMarks: showReference ? referenceMarks : const [],
               ink: c.ink,
               muted: c.inkMuted,
@@ -117,7 +148,7 @@ class _SketchPainter extends CustomPainter {
   _SketchPainter({
     required this.task,
     required this.plot,
-    required this.strokes,
+    required this.user,
     required this.marks,
     required this.reference,
     required this.referenceMarks,
@@ -130,9 +161,9 @@ class _SketchPainter extends CustomPainter {
 
   final SketchTask task;
   final Rect plot;
-  final List<List<SketchPoint>> strokes;
+  final List<({String name, List<List<SketchPoint>> strokes, Color color})> user;
   final List<SketchMark> marks;
-  final List<List<SketchPoint>> reference;
+  final List<({String name, List<List<SketchPoint>> strokes, Color color})> reference;
   final List<SketchMark> referenceMarks;
   final Color ink, muted, grid, accent, good;
 
@@ -234,26 +265,32 @@ class _SketchPainter extends CustomPainter {
       ..color = good
       ..strokeWidth = 2.2
       ..style = PaintingStyle.stroke;
-    for (final s in reference) {
-      for (var i = 0; i + 1 < s.length; i++) {
-        _dashed(canvas, _px(s[i]), _px(s[i + 1]), refPaint);
+    for (final r in reference) {
+      for (final s in r.strokes) {
+        for (var i = 0; i + 1 < s.length; i++) {
+          _dashed(canvas, _px(s[i]), _px(s[i + 1]), refPaint);
+        }
       }
+      _curveLabel(canvas, r.name, r.strokes, r.color, below: true);
     }
-    // Eigene Kurve.
-    final pen = Paint()
-      ..color = accent
-      ..strokeWidth = 2.6
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-    for (final s in strokes) {
-      if (s.isEmpty) continue;
-      final path = Path()..moveTo(_px(s.first).dx, _px(s.first).dy);
-      for (final p in s.skip(1)) {
-        path.lineTo(_px(p).dx, _px(p).dy);
+    // Eigene Kurve(n).
+    for (final u in user) {
+      final pen = Paint()
+        ..color = u.color
+        ..strokeWidth = 2.6
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+      for (final s in u.strokes) {
+        if (s.isEmpty) continue;
+        final path = Path()..moveTo(_px(s.first).dx, _px(s.first).dy);
+        for (final p in s.skip(1)) {
+          path.lineTo(_px(p).dx, _px(p).dy);
+        }
+        if (s.length == 1) path.lineTo(_px(s.first).dx + 0.1, _px(s.first).dy);
+        canvas.drawPath(path, pen);
       }
-      if (s.length == 1) path.lineTo(_px(s.first).dx + 0.1, _px(s.first).dy);
-      canvas.drawPath(path, pen);
+      _curveLabel(canvas, u.name, u.strokes, u.color);
     }
     for (final m in referenceMarks) {
       _mark(canvas, m, good, below: true);
@@ -261,6 +298,24 @@ class _SketchPainter extends CustomPainter {
     for (final m in marks) {
       _mark(canvas, m, accent);
     }
+  }
+
+  /// Name einer Kurve neben ihrem rechten Ende.
+  void _curveLabel(Canvas canvas, String name, List<List<SketchPoint>> strokes, Color color, {bool below = false}) {
+    if (name.isEmpty) return;
+    final points = [for (final s in strokes) ...s];
+    if (points.isEmpty) return;
+    final end = points.reduce((a, b) => b.x > a.x ? b : a);
+    final o = _px(end);
+    _text(
+      canvas,
+      name,
+      Offset(math.min(o.dx, plot.right - 4), o.dy + (below ? 10 : -10)),
+      color: color,
+      bold: true,
+      size: 11.5,
+      align: below ? Alignment.topRight : Alignment.bottomRight,
+    );
   }
 
   void _mark(Canvas canvas, SketchMark m, Color color, {bool below = false}) {

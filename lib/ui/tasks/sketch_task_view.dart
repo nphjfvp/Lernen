@@ -44,7 +44,13 @@ class SketchTaskView extends StatefulWidget {
 }
 
 class _SketchTaskViewState extends State<SketchTaskView> {
-  final List<List<SketchPoint>> _strokes = [];
+  /// Gezeichnete Striche je Kurve (bei einer Kurve nur eine).
+  late final Map<String, List<List<SketchPoint>>> _byCurve = {for (final c in widget.task.curves) c.name: []};
+
+  /// Kurve, die gerade gezeichnet wird.
+  late String _current = widget.task.curves.first.name;
+  List<List<SketchPoint>> get _strokes => _byCurve[_current]!;
+  bool get _drawnAny => _byCurve.values.any((s) => s.isNotEmpty);
   final Map<String, SketchPoint> _marks = {};
   late final List<SketchMark> _referenceMarks = SketchChecker.referenceMarks(widget.task);
   late final List<String> _hints = SketchChecker.hints(widget.task);
@@ -74,7 +80,12 @@ class _SketchTaskViewState extends State<SketchTaskView> {
   }
 
   void _check() {
-    final v = SketchChecker.check(widget.task, _strokes, _markList);
+    final v = SketchChecker.check(
+      widget.task,
+      _byCurve[widget.task.curves.first.name]!,
+      _markList,
+      byCurve: _byCurve,
+    );
     if (widget.examMode) return _submit(isCorrect: v.ok);
     setState(() {
       _verdict = v;
@@ -103,7 +114,7 @@ class _SketchTaskViewState extends State<SketchTaskView> {
       key: const ValueKey('sketch-canvas'),
       task: task,
       height: wide ? 420 : 300,
-      strokes: _strokes,
+      strokesByCurve: _byCurve,
       marks: _markList,
       showReference: _finished && !widget.examMode,
       referenceMarks: _referenceMarks,
@@ -164,6 +175,24 @@ class _SketchTaskViewState extends State<SketchTaskView> {
           ),
         ),
         const SizedBox(height: 12),
+        if (task.isMulti && !_finished && !_markMode) ...[
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final (i, curve) in task.curves.indexed)
+                ChoiceChip(
+                  key: ValueKey('sketch-curve-$i'),
+                  avatar: CircleAvatar(radius: 6, backgroundColor: SketchCanvas.colorOf(task, curve.name, c.accent)),
+                  label: Text(curve.name),
+                  selected: _current == curve.name,
+                  showCheckmark: false,
+                  onSelected: (_) => setState(() => _current = curve.name),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         if (hasMarks && !_finished) ...[
           SegmentedButton<bool>(
             key: const ValueKey('sketch-mode'),
@@ -200,6 +229,8 @@ class _SketchTaskViewState extends State<SketchTaskView> {
               ? 'Grün gestrichelt: die Musterkurve zum Vergleich.'
               : _markMode
               ? 'Wähle oben einen Kennwert und tippe die Stelle im Diagramm an.'
+              : task.isMulti
+              ? 'Wähle oben die Kurve und zeichne sie – jede Kurve hat ihre Farbe.'
               : 'Zeichne die Kurve mit dem Finger bzw. der Maus – ein Sprung darf ein neuer Strich sein.',
           style: TextStyle(fontSize: 12.5, color: c.inkMuted),
         ),
@@ -217,10 +248,12 @@ class _SketchTaskViewState extends State<SketchTaskView> {
               ),
               TextButton.icon(
                 key: const ValueKey('sketch-clear'),
-                onPressed: _strokes.isEmpty && _marks.isEmpty
+                onPressed: !_drawnAny && _marks.isEmpty
                     ? null
                     : () => _changed(() {
-                        _strokes.clear();
+                        for (final s in _byCurve.values) {
+                          s.clear();
+                        }
                         _marks.clear();
                       }),
                 icon: const Icon(Icons.delete_outline, size: 18),
