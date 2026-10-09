@@ -1380,8 +1380,9 @@ class _AnswerDetail extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
-          children: options
-              .map((o) => Padding(
+          children: [
+            for (final (i, o) in options.indexed)
+              Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1394,7 +1395,7 @@ class _AnswerDetail extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: MathText(
-                            o.text,
+                            o.hasImage ? '${o.labelAt(i)} (Bild)' : o.text,
                             style: TextStyle(
                               fontSize: 12.5,
                               height: 1.4,
@@ -1405,8 +1406,8 @@ class _AnswerDetail extends StatelessWidget {
                         ),
                       ],
                     ),
-                  ))
-              .toList(),
+                  ),
+          ],
         );
 
       case QuestionType.freeText:
@@ -1476,6 +1477,7 @@ class _AnswerDetail extends StatelessWidget {
       case QuestionType.bom:
       case QuestionType.sketch:
       case QuestionType.phase:
+      case QuestionType.drawing:
         return TaskAnswerPreview(card: card);
     }
   }

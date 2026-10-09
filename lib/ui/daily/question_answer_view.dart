@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../models/flashcard.dart';
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
+import '../../models/drawing_task.dart';
 import '../../models/phase_task.dart';
 import '../../models/sketch_task.dart';
 import '../../models/gantt_task.dart';
@@ -25,6 +26,7 @@ import '../study/explain_chat.dart';
 import '../study/study_aids.dart';
 import '../tasks/bom_task_view.dart';
 import '../tasks/crystal_task_view.dart';
+import '../tasks/drawing_task_view.dart';
 import '../tasks/phase_task_view.dart';
 import '../tasks/sketch_task_view.dart';
 import '../tasks/gantt_task_view.dart';
@@ -487,6 +489,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.bom:
       case QuestionType.sketch:
       case QuestionType.phase:
+      case QuestionType.drawing:
         return false;
       case QuestionType.singleChoice:
         return _selectedIndex != null;
@@ -558,6 +561,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.bom:
       case QuestionType.sketch:
       case QuestionType.phase:
+      case QuestionType.drawing:
         return null; // eigene build()-Zweige.
     }
   }
@@ -791,10 +795,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     switch (card.type) {
       case QuestionType.singleChoice:
         final i = _selectedIndex;
-        return i == null || i >= options.length ? null : options[i].text;
+        return i == null || i >= options.length ? null : options[i].labelAt(i);
       case QuestionType.multipleChoice:
         final indices = _selectedIndices.toList()..sort();
-        return [for (final i in indices) if (i < options.length) options[i].text].join('; ');
+        return [for (final i in indices) if (i < options.length) options[i].labelAt(i)].join('; ');
       case QuestionType.freeText:
         return _freeTextController.text;
       case QuestionType.fillBlank:
@@ -833,6 +837,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.bom:
       case QuestionType.sketch:
       case QuestionType.phase:
+      case QuestionType.drawing:
         return null;
     }
   }
@@ -1060,6 +1065,17 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       return SketchTaskView(
         card: widget.card,
         task: SketchTask.fromMap(widget.card.taskData)!,
+        isNew: widget.isNew,
+        examMode: widget.examMode,
+        onComplete: _submit,
+        onSkip: widget.onSkip,
+        canGiveUp: widget.canGiveUp,
+      );
+    }
+    if (_answerable && widget.card.type == QuestionType.drawing) {
+      return DrawingTaskView(
+        card: widget.card,
+        task: DrawingTask.fromMap(widget.card.taskData)!,
         isNew: widget.isNew,
         examMode: widget.examMode,
         onComplete: _submit,
@@ -1490,6 +1506,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
       case QuestionType.bom:
       case QuestionType.sketch:
       case QuestionType.phase:
+      case QuestionType.drawing:
         return const SizedBox.shrink(); // eigene build()-Zweige.
       case QuestionType.singleChoice:
         return _buildChoiceOptions(c, multiple: false);
@@ -1655,7 +1672,18 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                     color: c.inkMuted,
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: MathText(option.text)),
+                  Expanded(
+                    child: option.hasImage
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _optionImage(option.imageBase64!, i),
+                              const SizedBox(height: 4),
+                              MathText(option.labelAt(i), style: TextStyle(fontSize: 13, color: c.inkMuted)),
+                            ],
+                          )
+                        : MathText(option.text),
+                  ),
                   if (trailingIcon != null) Icon(trailingIcon, size: 18, color: trailingColor),
                 ],
               ),
@@ -1663,6 +1691,45 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
           ),
         );
       }).toList(),
+    );
+  }
+
+  /// Bild einer Antwortoption: 160 px hoch, Lupe zum Vergrößern.
+  Widget _optionImage(String base64, int index) {
+    final Uint8List bytes;
+    try {
+      bytes = base64Decode(base64);
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            height: 160,
+            width: double.infinity,
+            child: Image.memory(bytes, key: ValueKey('question-option-image-$index'), fit: BoxFit.contain),
+          ),
+        ),
+        Positioned(
+          right: 4,
+          top: 4,
+          child: IconButton.filledTonal(
+            key: ValueKey('question-option-zoom-$index'),
+            tooltip: 'Bild vergrößern',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.zoom_in, size: 18),
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (ctx) => Dialog(
+                insetPadding: const EdgeInsets.all(12),
+                child: InteractiveViewer(maxScale: 6, child: Image.memory(bytes, fit: BoxFit.contain)),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

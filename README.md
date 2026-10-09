@@ -1393,6 +1393,31 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zl. Gefüge skizzieren (Freihand mit KI-Bewertung) und Bilder als Antworten
+
+- **Neuer Aufgabentyp „Freihand-Skizze“**: frei zeichnen – z.B. das Korngefüge
+  vor und nach dem Walzen, nach primärer und sekundärer Rekristallisation,
+  Perlit, eine Versetzung. Mehrere Zeichenflächen nebeneinander (Chips oben),
+  Rückgängig/Leeren, oder **Foto der Papier-Skizze** statt Zeichnung.
+- **„Von der KI prüfen lassen“**: Die Zeichnung geht als Bild an das
+  Bild-Modell (Einstellungen) und wird an den hinterlegten **Kriterien**
+  bewertet (je Kriterium ✓/✗/? mit Kommentar und kurzer Rückmeldung). Die
+  Kriterien bleiben bis dahin verborgen. Nicht bestanden → ergänzen und
+  nochmal prüfen (zählt dann als „Schwer“).
+- **„Selbst prüfen“** (auch ohne KI-Key): Kriterien und Musterlösung abhaken;
+  nicht alles getroffen zählt als „Nochmal“. Probeklausur: „Antwort abgeben“
+  lässt die KI werten.
+- Übernehmen per „Aufgabe übernehmen“ („Freihand“), aus dem ganzen Dokument
+  oder per JSON-Import; im Editor Flächen, Kriterien (Pflicht/optional, je
+  Fläche) und Beschreibung der Musterskizze.
+- **Bilder als Antwortoptionen** bei Single-/Multiple-Choice (z.B.
+  „Welches Gefügebild zeigt …?“): Beim PDF-Import mit Seitenbildern schneidet
+  die App das Bild jeder Option aus der Seite aus; im Karten-Editor lässt sich
+  je Option ein Bild hinzufügen oder entfernen. Beim Lernen werden die Bilder
+  groß angezeigt (Lupe zum Vergrößern).
+- Sync-Datenversion 4: ältere App-Versionen zeigen Freihand-Aufgaben als
+  Karteikarte und Bild-Optionen nur mit ihrer Beschriftung.
+
 ### 5zk. Zustandsdiagramme (Zweistoffsysteme)
 
 Neuer Aufgabentyp **„Zustandsdiagramm“** für Werkstoffkunde (z.B. Blei-Zinn,
@@ -1445,7 +1470,7 @@ deren Ergebnis direkt importieren:
   importieren“ („JSON importieren“).
 - **Prompt kopieren** → in die externe KI einfügen, Blatt anhängen. Der Prompt
   beschreibt dasselbe Format wie die App-KI (Rechenweg, Terminierung,
-  Kristallgitter, Stückliste, Skizze, Zustandsdiagramm) und liefert für alles andere gleich die
+  Kristallgitter, Stückliste, Skizze, Zustandsdiagramm, Freihand-Skizze) und liefert für alles andere gleich die
   **fertige Quizfrage** mit (Auswahl, Lücken, Freitext, Tabelle, Zuordnen).
 - **JSON-Datei hochladen** oder die Antwort einfügen. Auch eine Liste
   fertiger Fragen (Format aus „JSON einfügen“ im Nachbereiten) geht.

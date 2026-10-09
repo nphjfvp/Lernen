@@ -1,6 +1,7 @@
 import '../models/bom_task.dart';
 import '../models/crystal_task.dart';
 import '../models/phase_task.dart';
+import '../models/drawing_task.dart';
 import '../models/sketch_task.dart';
 import '../models/flashcard.dart';
 import '../models/gantt_task.dart';
@@ -26,11 +27,13 @@ class QuestionParsing {
     for (final o in raw) {
       if (o is Map) {
         final text = o['text'];
-        if (text == null) continue;
+        final image = (o['image'] ?? o['imageBase64'])?.toString() ?? '';
+        if (text == null && image.isEmpty) continue;
         final isCorrect = o['isCorrect'];
         options.add(QuizOption(
-          text: text.toString(),
+          text: text?.toString() ?? '',
           isCorrect: isCorrect == true || isCorrect == 1 || const {'true', '1'}.contains(isCorrect.toString().toLowerCase()),
+          imageBase64: image.isEmpty ? null : image,
         ));
       } else if (o != null) {
         options.add(QuizOption(text: o.toString(), isCorrect: false));
@@ -81,6 +84,7 @@ class QuestionParsing {
     'bom': QuestionType.bom,
     'sketch': QuestionType.sketch,
     'phase': QuestionType.phase,
+    'drawing': QuestionType.drawing,
   };
 
   /// Wandelt den von der KI gelieferten "type"-String (snake_case, siehe
@@ -211,6 +215,16 @@ class QuestionParsing {
     'phase_diagram': 'phase',
     'zweistoffsystem': 'phase',
     'hebelgesetz': 'phase',
+    'freihand': 'drawing',
+    'freihandskizze': 'drawing',
+    'freihand_skizze': 'drawing',
+    'freehand': 'drawing',
+    'zeichnung': 'drawing',
+    'zeichnen': 'drawing',
+    'gefuege_skizze': 'drawing',
+    'gefüge_skizze': 'drawing',
+    'gefuege_skizzieren': 'drawing',
+    'gefüge_skizzieren': 'drawing',
   };
 
   static QuestionType? _parseTypeOrNull(String? value) {
@@ -364,7 +378,13 @@ class QuestionParsing {
           if (text == null) continue;
           final flag = _first(Map<String, dynamic>.from(o),
               const ['isCorrect', 'correct', 'is_correct', 'isRight', 'right', 'richtig', 'isTrue']);
-          options.add({'text': text.toString(), 'isCorrect': _truthy(flag)});
+          options.add({
+            'text': text.toString(),
+            'isCorrect': _truthy(flag),
+            // Bild-Antworten: Bild bzw. Bereich auf der Seite mitnehmen.
+            for (final key in const ['image', 'imageBox'])
+              if (o[key] != null) key: o[key],
+          });
         } else if (o != null && o is! List) {
           options.add({'text': o.toString(), 'isCorrect': false});
         }
@@ -426,7 +446,7 @@ class QuestionParsing {
 
     // Interaktive Aufgaben: die Daten unter "taskData" (oder flach im
     // Eintrag: "steps", "items" bzw. "parts").
-    final task = _first(raw, const ['taskData', 'task_data', 'stepTask', 'ganttTask', 'crystalTask', 'bomTask', 'sketchTask', 'phaseTask']);
+    final task = _first(raw, const ['taskData', 'task_data', 'stepTask', 'ganttTask', 'crystalTask', 'bomTask', 'sketchTask', 'phaseTask', 'drawingTask']);
     if (task is Map) {
       fill('taskData', Map<String, dynamic>.from(task));
     } else if (raw['steps'] is List && (declared == null || declared == QuestionType.steps)) {
@@ -442,6 +462,11 @@ class QuestionParsing {
     } else if (raw['system'] is Map && (declared == null || declared == QuestionType.phase)) {
       fill('taskData', {
         for (final key in const ['system', 'parts'])
+          if (raw[key] != null) key: raw[key],
+      });
+    } else if (raw['criteria'] is List && (declared == null || declared == QuestionType.drawing)) {
+      fill('taskData', {
+        for (final key in const ['panels', 'criteria', 'solution'])
           if (raw[key] != null) key: raw[key],
       });
     } else if (raw['features'] is List && (declared == null || declared == QuestionType.sketch)) {
@@ -561,6 +586,7 @@ class QuestionParsing {
     if (StepTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.steps;
     if (GanttTask.fromMap(entry['taskData']) != null) return QuestionType.gantt;
     if (PhaseTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.phase;
+    if (DrawingTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.drawing;
     if (BomTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.bom;
     if (SketchTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.sketch;
     if (CrystalTask.fromMap(entry['taskData'])?.isUsable ?? false) return QuestionType.crystal;
@@ -619,7 +645,7 @@ class QuestionParsing {
       (parseBlanks(raw['blanks']) ?? const []).where((b) => b.trim().isNotEmpty).toList();
 
   static List<QuizOption> _nonEmptyOptions(Map<String, dynamic> raw) =>
-      (parseOptions(raw['options']) ?? const []).where((o) => o.text.trim().isNotEmpty).toList();
+      (parseOptions(raw['options']) ?? const []).where((o) => o.text.trim().isNotEmpty || o.hasImage).toList();
 
   static List<DragPair> _usablePairs(Map<String, dynamic> raw) => [
         for (final p in parseDragPairs(raw['dragPairs']) ?? const <DragPair>[])
@@ -635,11 +661,13 @@ class QuestionParsing {
     switch (type) {
       case QuestionType.singleChoice:
       case QuestionType.multipleChoice:
-        final options = _nonEmptyOptions(entry);
-        if (options.length != (entry['options'] as List).length) {
-          return {...entry, 'options': options.map((o) => o.toMap()).toList()};
-        }
-        return entry;
+        final raw = entry['options'] as List;
+        // Die Einträge selbst behalten (Bild-Bereiche "imageBox" gehen sonst verloren).
+        final kept = [
+          for (final o in raw)
+            if ((parseOptions([o]) ?? const <QuizOption>[]).any((q) => q.text.trim().isNotEmpty || q.hasImage)) o,
+        ];
+        return kept.length == raw.length ? entry : {...entry, 'options': kept};
       case QuestionType.fillBlank:
         final blanks = _nonEmptyBlanks(entry);
         if (blanks.length != (entry['blanks'] as List).length) return {...entry, 'blanks': blanks};
@@ -690,6 +718,8 @@ class QuestionParsing {
         return {...entry, 'taskData': SketchTask.fromMap(entry['taskData'])!.toMap()};
       case QuestionType.phase:
         return {...entry, 'taskData': PhaseTask.fromMap(entry['taskData'])!.toMap()};
+      case QuestionType.drawing:
+        return {...entry, 'taskData': DrawingTask.fromMap(entry['taskData'])!.toMap()};
       case QuestionType.flashcard:
       case QuestionType.learn:
       case QuestionType.freeText:
@@ -762,6 +792,8 @@ class QuestionParsing {
         return SketchTask.fromMap(raw['taskData'])?.isUsable ?? false;
       case QuestionType.phase:
         return PhaseTask.fromMap(raw['taskData'])?.isUsable ?? false;
+      case QuestionType.drawing:
+        return DrawingTask.fromMap(raw['taskData'])?.isUsable ?? false;
       case QuestionType.html:
         final html = (raw['htmlContent'] ?? '').toString();
         // Grobe Vertragsprüfung: die Seite muss den JS-Rückkanal tatsächlich

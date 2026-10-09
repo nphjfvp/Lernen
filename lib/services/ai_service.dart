@@ -15,6 +15,7 @@ import '../models/gantt_task.dart';
 import '../models/interactive_task.dart';
 import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import '../models/paper_review.dart';
+import '../models/drawing_task.dart';
 import '../models/phase_task.dart';
 import '../models/step_task.dart';
 import '../models/step_task_review.dart';
@@ -1286,7 +1287,11 @@ zusammen mit den neuen Seiten liest. Alle weiteren Seiten sind NEU.
       'Keine imageBox für reinen Text, der schon in der Frage steht. Steht in '
       'der Abbildung die Lösung (z.B. ausgefüllte Beschriftungen in einer '
       'Musterlösung), gib "imageCovers": [[links, oben, rechts, unten], …] an '
-      '(Seitenkoordinaten) – diese Stellen werden abgedeckt.';
+      '(Seitenkoordinaten) – diese Stellen werden abgedeckt. Sind die '
+      'Antwortoptionen einer Auswahlfrage selbst Bilder (z.B. Gefügebilder a–d '
+      'zum Zuordnen), gib bei JEDER Option "imageBox": [links, oben, rechts, '
+      'unten] um ihr Bild an und als "text" nur die Beschriftung (z.B. "Bild a") '
+      '– die App schneidet jedes Bild aus und zeigt es als Antwort.';
 
   static const _scanFiguresFromPdf =
       'Bezieht sich eine Frage auf eine Abbildung, beschreibe das Nötige kurz '
@@ -2174,7 +2179,8 @@ Antworte in der Sprache der Vorlage.
         QuestionType.crystal ||
         QuestionType.bom ||
         QuestionType.sketch ||
-        QuestionType.phase =>
+        QuestionType.phase ||
+        QuestionType.drawing =>
           _variantTypeRule(QuestionType.learn),
         QuestionType.learn =>
           'Zieltyp "learn" (Aufgabe zum Verstehen): "front" ist die Aufgabe '
@@ -3984,8 +3990,10 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
         'Gewünscht: "kind": "sketch" (Diagramm skizzieren) – nur wenn das gar nicht geht, "none" mit Begründung.',
       InteractiveKind.phase =>
         'Gewünscht: "kind": "phase" (Zustandsdiagramm) – nur wenn das gar nicht geht, "none" mit Begründung.',
+      InteractiveKind.drawing =>
+        'Gewünscht: "kind": "drawing" (Freihand-Skizze) – nur wenn das gar nicht geht, "none" mit Begründung.',
       null =>
-        'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "bom", "sketch", "phase", "question" oder "none".',
+        'Entscheide je Teilaufgabe selbst: "steps", "gantt", "crystal", "bom", "sketch", "phase", "drawing", "question" oder "none".',
     });
     if (instruction.trim().isNotEmpty) {
       buffer
@@ -4078,6 +4086,8 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
                     ? InteractiveKind.gantt
                     : data['system'] is Map
                         ? InteractiveKind.phase
+                        : data['criteria'] is List
+                        ? InteractiveKind.drawing
                         : data['root'] is Map
                         ? InteractiveKind.bom
                         : data['features'] is List
@@ -4097,6 +4107,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       bom: kind == InteractiveKind.bom ? BomTask.fromMap(data) : null,
       sketch: kind == InteractiveKind.sketch ? SketchTask.fromMap(data) : null,
       phase: kind == InteractiveKind.phase ? PhaseTask.fromMap(data) : null,
+      drawing: kind == InteractiveKind.drawing ? DrawingTask.fromMap(data) : null,
       reason: reason,
       needs: needs,
     );
@@ -4216,6 +4227,65 @@ Antworte NUR mit JSON:
     return review;
   }
 
+  /// Bewertet eine Freihand-Skizze (gezeichnet oder als Foto) an den
+  /// Kriterien der Aufgabe. Je Fläche ein Bild; die App wertet das Urteil
+  /// selbst aus ([DrawingReview.passes]). Für Bilder ein Vision-Modell wählen.
+  Future<DrawingReview> reviewDrawing({
+    required String task,
+    required DrawingTask drawing,
+    required List<({String panel, Uint8List image})> images,
+  }) async {
+    if (images.isEmpty) throw AiServiceException('Zeichne zuerst etwas – oder lade ein Foto deiner Skizze hoch.');
+    final multi = drawing.panels.length > 1;
+    final text = StringBuffer()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(task.trim(), _interactiveTaskCap))
+      ..writeln();
+    if (drawing.solution.trim().isNotEmpty) {
+      text
+        ..writeln('So sieht die Musterskizze aus: ${drawing.solution.trim()}')
+        ..writeln();
+    }
+    text.writeln('Kriterien:');
+    for (final (i, c) in drawing.criteria.indexed) {
+      text.writeln('${i + 1}. ${multi && c.panel.isNotEmpty ? '[${c.panel}] ' : ''}${c.text}'
+          '${c.required ? '' : ' (optional)'}');
+    }
+    final missing = [
+      for (final p in drawing.surfaces)
+        if (multi && !images.any((i) => i.panel == p)) p,
+    ];
+    if (missing.isNotEmpty) {
+      text.writeln('\nNicht gezeichnet (Kriterien dazu sind nicht erfüllt): ${missing.join(', ')}.');
+    }
+    final content = <Map<String, dynamic>>[
+      {'type': 'text', 'text': text.toString()},
+      for (final (i, img) in images.indexed) ...[
+        {
+          'type': 'text',
+          'text': 'Bild ${i + 1}${multi ? ' – Fläche „${img.panel}“' : ''}:',
+        },
+        {
+          'type': 'image_url',
+          'image_url': {'url': 'data:${_imageMime(img.image)};base64,${base64Encode(img.image)}'},
+        },
+      ],
+    ];
+    final raw = await _complete(_drawingReviewSystemPrompt, content, temperature: 0);
+    final review = DrawingReview.fromJson(_parseJsonObject(raw), drawing.criteria.length);
+    if (review.marks.every((m) => m == DrawingMark.unclear) && review.feedback.isEmpty) {
+      throw AiServiceException('Die KI hat die Zeichnung nicht bewertet – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return review;
+  }
+
+  static const _drawingReviewSystemPrompt = r'''
+Du bewertest für eine Lern-App eine Skizze eines Studierenden. Sie ist meist mit Finger oder Maus gezeichnet (grob, ohne Lineal) oder ein Foto einer Papier-Skizze. Beurteile NUR, ob die genannten Kriterien fachlich erkennbar sind – nicht Schönheit, Genauigkeit oder Strichqualität. Ein Merkmal gilt als erfüllt, wenn es klar angedeutet ist (z.B. gestreckte Körner als langgezogene Zellen). Beschriftungen sind nur nötig, wenn ein Kriterium sie verlangt. Bei mehreren Flächen gehört jedes Bild zu der genannten Fläche; prüfe Kriterien mit [Fläche] nur im Bild dieser Fläche.
+Sei fair, aber ehrlich: Fehlt ein Merkmal oder ist etwas fachlich falsch (z.B. Körner gestreckt, wo sie gleichachsig sein sollen), ist es "nein". "unklar" nur, wenn man es im Bild wirklich nicht beurteilen kann.
+
+Antworte NUR mit JSON:
+{"results": [{"n": Nummer des Kriteriums, "met": "ja" | "nein" | "unklar", "comment": "kurz, was du siehst (bei nein: was fehlt)"}], "feedback": "1–3 Sätze, du-Form: was gut ist und was noch fehlt"}''';
+
   static const _interactiveTaskSystemPrompt = r"""
 Du wandelst Übungsaufgaben in interaktive Aufgaben für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen, Kristallgitter und Stücklisten rechnet und zeichnet sie selbst, Skizzen prüft sie anhand von Merkmalen. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
 
@@ -4228,8 +4298,9 @@ Art ("kind") je Eintrag:
 - "bom" (Stückliste): aus einem Erzeugnisbaum / einer Erzeugnis- bzw. Produktstruktur eine Mengenübersichts-, Struktur- oder Baukastenstückliste (auch "Baustellen-" oder "Baustückliste") aufstellen.
 - "sketch" (Diagramm skizzieren): eine oder mehrere Kurven qualitativ in ein Diagramm zeichnen bzw. skizzieren (z.B. Längenänderung über der Temperatur, Spannungs-Dehnungs-Kurve, Potentialkurve, Abkühlkurven mehrerer Legierungen, Hall-Petch-Geraden für zwei Temperaturen, Härteverlauf für drei Auslagerungstemperaturen, Streckgrenze und Bruchdehnung über der Glühtemperatur) und ggf. Kennwerte darin markieren. Verlangt die Aufgabe zusätzlich eine Erklärung/Begründung ("Erläutern Sie …"), liefere die als EIGENEN Eintrag "question" mit "questionType": "free_text".
 - "phase" (Zustandsdiagramm): Aufgaben zu einem Zweistoffsystem mit Eutektikum (z.B. Pb-Sn) oder Eutektoid (Stahlecke des Eisen-Kohlenstoff-Diagramms): Phasen an einem Punkt, Hebelgesetz/Phasenanteile, Gefügeanteile, Abkühlkurven bestimmter Legierungen zeichnen, Zusammensetzung aus einer Abkühlkurve bestimmen, maximale Löslichkeit, Bereich der eutektischen Linie, Gebiete benennen, ein Gebiet zeigen (z.B. Bereich für das Lösungsglühen). ALLE Teilaufgaben zum selben Diagramm gehören in EINEN Eintrag ("parts"); reine Erklär- oder Begründungsfragen dazu als eigene "question"-Einträge.
+- "drawing" (Freihand-Skizze): etwas frei zeichnen, das sich nicht als Kurve in einem Diagramm prüfen lässt – z.B. ein Gefüge skizzieren (Korngefüge vor und nach dem Walzen, nach primärer und sekundärer Rekristallisation, Perlit, Ledeburit), eine Versetzung, eine Elementarzelle, ein einfaches Schema. Eine Bild-KI prüft die Zeichnung später an Kriterien. Verlangt die Aufgabe zusätzlich eine Erklärung, liefere die als EIGENEN "question"-Eintrag.
 - "question": wenn es als NORMALE Quizfrage gut geht – die App hat dafür schon Fragetypen: Freitext/Erklären/Begründen/Kurzantwort ("free_text"), Auswahl ("single_choice"/"multiple_choice"), Zuordnen bzw. in Kategorien/Kriterien einordnen ("drag_category"), Tabelle ausfüllen mit festen Einträgen ("table"), Stellen in einer Abbildung markieren ("mark_image") oder beschriften ("diagram_label"), Lückentext ("fill_blank"). Dann "questionType" (einer dieser Werte) und "reason" mit einem kurzen Satz. "front" wortgetreu.
-- "none": NUR wenn weder interaktiv noch als normale Frage sinnvoll übbar (z.B. einen Netzplan oder Schaltplan selbst zeichnen) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte (z.B. "Kurve in Diagramm zeichnen", "Netzplan zeichnen", "Schaltplan zeichnen").
+- "none": NUR wenn weder interaktiv noch als normale Frage sinnvoll übbar (z.B. einen großen Netzplan oder Schaltplan selbst zeichnen) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte (z.B. "Kurve in Diagramm zeichnen", "Netzplan zeichnen", "Schaltplan zeichnen").
 - Fehlt für eine Rechnung nur ein Wert, den man üblicherweise nachschlägt (Werkstoffkennwert wie Streckgrenze, Naturkonstante), nimm einen üblichen Tabellenwert, schreib ihn als Annahme in "front" ("angenommen: R_{p0,2} = 355 MPa") und erstelle den Rechenweg trotzdem.
 
 Bei "steps":
@@ -4307,8 +4378,15 @@ Bei "phase":
 - taskData.uncertain: true, wenn Werte schlecht ablesbar waren.
 - Rechne NICHTS selbst aus – Phasen, Hebel, Anteile und Abkühlkurven rechnet die App aus den Eckdaten. "back" darf leer bleiben.
 
+Bei "drawing":
+- "front": die Aufgabe WORTGETREU (ohne einen Erklärungsteil, der als eigener "question"-Eintrag kommt).
+- taskData.panels: Namen der Zeichenflächen, wenn mehrere Zustände nebeneinander gezeichnet werden sollen (z.B. ["vor dem Walzen", "nach dem Walzen"], ["primäre Rekristallisation", "sekundäre Rekristallisation"]); sonst weglassen.
+- taskData.criteria: 2–8 Merkmale, die eine richtige Skizze ZEIGEN muss – konkret und im Bild erkennbar (z.B. "Körner in Walzrichtung gestreckt", "Viele kleine, gleichachsige Körner", "Einzelne sehr große Körner zwischen kleinen"), je {"text", "panel": Name der Fläche (bei mehreren Flächen), "required": false nur für Nebensächliches wie Beschriftungen oder Pfeile}.
+- taskData.solution: 1–3 Sätze, wie die Musterskizze aussieht.
+- taskData.uncertain: true, wenn die Aufgabe nicht eindeutig war.
+
 Antworte NUR mit einem JSON-Objekt:
-{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "phase" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
+{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "phase" | "drawing" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
 
   // -- Aufgaben von einer externen KI (JSON) -------------------------------
 
@@ -4473,6 +4551,7 @@ Je nach Art:
 - "bom" (Stückliste): Passt der Erzeugnisbaum (Sach-Nr., Mengen, Struktur) und welche Listen gefragt sind? Die Listen rechnet die App selbst.
 - "sketch" (Diagramm): Ist die Musterkurve fachlich richtig, stimmen die Merkmale?
 - "phase" (Zustandsdiagramm): Passen die Eckdaten (Schmelzpunkte, eutektischer Punkt, Löslichkeitsgrenzen) zum System und die Teilaufgaben (Punkte, Zusammensetzungen) zur Aufgabe? Phasen und Anteile rechnet die App selbst.
+- "drawing" (Freihand-Skizze): Sind die Kriterien fachlich richtig, vollständig und im Bild erkennbar formuliert?
 - Quizfrage (Typ wie "single_choice", "free_text", "fill_blank", "table" …): Ist die als richtig hinterlegte Antwort fachlich richtig und vollständig, sind falsche Optionen wirklich falsch, passt die Frage zur Aufgabe?
 
 Urteil:

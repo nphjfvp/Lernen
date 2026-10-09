@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1484 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1499 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1513,6 +1513,24 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (`_KindChoice.phase`), QuestionParsing (Aliase zustandsdiagramm/phasendiagramm/
     zweistoffsystem/hebelgesetz), KI-Prompt ("phase"). `syncDataVersion` = 3.
     Tests: `phase_calculator_test`, `phase_task_view_test`.
+68. Freihand-Skizze (`QuestionType.drawing`, `InteractiveKind.drawing`, taskData kind 'drawing')
+    und Bilder als Antwortoptionen. models/drawing_task.dart: `DrawingCriterion{text, panel,
+    required}`, `DrawingTask{panels, criteria, solution, uncertain}` (`surfaces`, `criteriaFor`,
+    `solutionText` = back), `DrawingMark`, `DrawingReview{marks, comments, feedback}` (`passes`:
+    alle Pflicht-Kriterien met). `AiService.reviewDrawing` (Bild-Modell, je Fläche ein Bild,
+    `_drawingReviewSystemPrompt`). UI: `drawing_canvas.dart` (Striche 0..1, weißes Papier,
+    `renderDrawingPng`), `DrawingTaskView` (`drawing-panel-i`, `drawing-canvas`, `-undo`/`-clear`/
+    `-photo`/`-photo-remove`, `drawing-check` KI, `drawing-self` + `drawing-tick-i` +
+    `drawing-self-done`, `drawing-review`/`drawing-result-i`, `drawing-reveal`, `-next`,
+    `-submit`; Test-Hooks `aiFactory`, `pickPhotoHook`, `renderHook`), `DrawingTaskEditor`
+    (`drawing-edit-*`) + `DrawingTaskPreview`. Eingebunden wie phase (QuestionAnswerView,
+    Kartenliste, Review, Karte bearbeiten, TaskImportScreen `_KindChoice.drawing`,
+    QuestionParsing-Aliase freihand/zeichnung/gefüge_skizze, KI-Prompt "drawing").
+    `QuizOption.imageBase64` (JSON "image", `hasImage`, `labelAt(i)` = "Bild a" bei leerem Text);
+    QuestionAnswerView `_optionImage` (`question-option-image-i`, Lupe `question-option-zoom-i`);
+    Import: Option "imageBox" → `PdfQuestionImportService.attachOptionImages` (in attachFigure);
+    Karten-Editor `card-edit-option-image-i` (Hook `CardEditScreen.pickImageHook`).
+    `syncDataVersion` = 4. Tests: `drawing_task_view_test`, `image_options_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

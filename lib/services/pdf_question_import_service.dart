@@ -598,6 +598,7 @@ class PdfQuestionImportService {
   /// Stellen und Abdeckungen kommen in Seitenkoordinaten und werden auf den
   /// Ausschnitt umgerechnet; Abdeckungen werden fest eingezeichnet.
   static Future<void> attachFigure(Map<String, dynamic> data, Map<String, dynamic> entry, Uint8List pageImage) async {
+    await attachOptionImages(data, pageImage);
     final type = QuestionParsing.parseType(data['type'] as String?);
     final isImageType = type == QuestionType.diagramLabel || type == QuestionType.markImage;
     final box = _boxOf(entry['imageBox'] ?? entry['figureBox'] ?? entry['imageRegion']);
@@ -644,6 +645,34 @@ class PdfQuestionImportService {
           if (t.x >= 0 && t.x <= 1 && t.y >= 0 && t.y <= 1) t.toMap(),
       ];
     }
+  }
+
+  /// Bild-Antworten: schneidet bei Auswahlfragen das Bild jeder Option
+  /// ("imageBox" in Seitenkoordinaten) aus dem Seitenbild aus und legt es als
+  /// "image" an die Option.
+  static Future<void> attachOptionImages(Map<String, dynamic> data, Uint8List pageImage) async {
+    final options = data['options'];
+    if (options is! List) return;
+    final result = <Object?>[];
+    var changed = false;
+    for (final o in options) {
+      if (o is! Map || o['imageBox'] == null) {
+        result.add(o);
+        continue;
+      }
+      final option = Map<String, dynamic>.from(o)..remove('imageBox');
+      final box = _boxOf(o['imageBox']);
+      if (box != null) {
+        final rect = _clampUnit(box.inflate(0.01));
+        if (rect.width >= 0.02 && rect.height >= 0.02) {
+          final crop = await cropImageRelative(pageImage, rect);
+          if (crop != null) option['image'] = base64Encode(await downscaleImage(crop, maxSide: 800) ?? crop);
+        }
+      }
+      result.add(option);
+      changed = true;
+    }
+    if (changed) data['options'] = result;
   }
 
   /// Die ausgewählten Fragen als neue Karten eines Fachs – in

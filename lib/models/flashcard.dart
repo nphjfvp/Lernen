@@ -63,6 +63,11 @@ enum QuestionType {
   /// den Eckdaten selbst, siehe PhaseTask (phase_task.dart) in
   /// [Flashcard.taskData].
   phase,
+
+  /// Freihand zeichnen (z.B. ein Gefüge skizzieren): zeichnen oder Foto der
+  /// Papier-Skizze, die Bild-KI prüft an Kriterien (oder man hakt selbst
+  /// ab), siehe DrawingTask (drawing_task.dart) in [Flashcard.taskData].
+  drawing,
 }
 
 /// Interaktive Aufgabentypen, deren Daten (`taskData`) ihren Typ als `kind`
@@ -74,6 +79,7 @@ const _taskTypes = {
   QuestionType.bom,
   QuestionType.sketch,
   QuestionType.phase,
+  QuestionType.drawing,
 };
 
 /// Typ einer gespeicherten Karte. Eine ältere App-Version kennt neue
@@ -114,6 +120,7 @@ extension QuestionTypeLabel on QuestionType {
         QuestionType.bom => 'Stückliste',
         QuestionType.sketch => 'Diagramm skizzieren',
         QuestionType.phase => 'Zustandsdiagramm',
+        QuestionType.drawing => 'Freihand-Skizze',
       };
 }
 
@@ -238,20 +245,37 @@ class ImageTarget {
 
 /// Eine Antwortmöglichkeit bei Single-/Multiple-Choice.
 class QuizOption {
-  const QuizOption({required this.text, required this.isCorrect});
+  const QuizOption({required this.text, required this.isCorrect, this.imageBase64});
 
   final String text;
   final bool isCorrect;
 
-  Map<String, dynamic> toMap() => {'text': text, 'isCorrect': isCorrect};
+  /// Bild als Antwort (z.B. ein Gefügebild) – [text] ist dann nur die
+  /// Beschriftung ("Bild a") und darf leer sein.
+  final String? imageBase64;
+
+  bool get hasImage => (imageBase64 ?? '').isNotEmpty;
+
+  /// Text zum Anzeigen, auch wenn die Option nur ein Bild ist.
+  String labelAt(int index) => text.trim().isNotEmpty ? text : 'Bild ${String.fromCharCode(97 + index)}';
+
+  QuizOption copyWith({String? text, bool? isCorrect, String? imageBase64, bool clearImage = false}) => QuizOption(
+        text: text ?? this.text,
+        isCorrect: isCorrect ?? this.isCorrect,
+        imageBase64: clearImage ? null : (imageBase64 ?? this.imageBase64),
+      );
+
+  Map<String, dynamic> toMap() => {'text': text, 'isCorrect': isCorrect, if (hasImage) 'image': imageBase64};
 
   /// Tolerant gegenüber importierten/älteren Daten (fehlender Text,
   /// `isCorrect` als 1 oder "true") statt beim Laden abzustürzen.
   factory QuizOption.fromMap(Map<String, dynamic> map) {
     final isCorrect = map['isCorrect'];
+    final image = (map['image'] ?? map['imageBase64'])?.toString() ?? '';
     return QuizOption(
       text: map['text']?.toString() ?? '',
       isCorrect: isCorrect == true || isCorrect == 1 || const {'true', '1'}.contains(isCorrect?.toString()),
+      imageBase64: image.isEmpty ? null : image,
     );
   }
 }
@@ -682,7 +706,7 @@ class Flashcard {
   /// allein ("Fülle die Tabelle aus") gäbe der KI zu wenig Zusammenhang.
   String get promptText => switch (type) {
         QuestionType.singleChoice || QuestionType.multipleChoice when (options ?? const []).isNotEmpty =>
-          '$front\nAntwortoptionen: ${options!.map((o) => o.text).join(' | ')}',
+          '$front\nAntwortoptionen: ${[for (final (i, o) in options!.indexed) o.labelAt(i)].join(' | ')}',
         QuestionType.dragDrop || QuestionType.dragCategory when (dragPairs ?? const []).isNotEmpty =>
           '$front\nBegriffe: ${dragPairs!.map((p) => p.source).where((s) => s.trim().isNotEmpty).join(' | ')}',
         QuestionType.table when (tableRows ?? const []).isNotEmpty => [
@@ -702,11 +726,15 @@ class Flashcard {
         QuestionType.crystal ||
         QuestionType.bom ||
         QuestionType.sketch ||
-        QuestionType.phase =>
+        QuestionType.phase ||
+        QuestionType.drawing =>
           back,
         QuestionType.singleChoice ||
         QuestionType.multipleChoice =>
-          (options ?? const []).where((o) => o.isCorrect).map((o) => o.text).join('; '),
+          [
+            for (final (i, o) in (options ?? const <QuizOption>[]).indexed)
+              if (o.isCorrect) o.labelAt(i),
+          ].join('; '),
         QuestionType.freeText => correctText ?? '',
         // Varianten einer Lücke ("a; b") als "a / b" – sonst wären sie von
         // den übrigen Lücken nicht zu unterscheiden.

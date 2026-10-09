@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../models/bom_task.dart';
 import '../models/phase_task.dart';
+import '../models/drawing_task.dart';
 import '../models/crystal_task.dart';
 import '../models/sketch_task.dart';
 import '../models/flashcard.dart';
@@ -46,7 +47,10 @@ class AnswerChecker {
         options[selectedIndex].isCorrect;
     return AnswerCheckResult(
       isCorrect: ok,
-      correctAnswerLabel: options.where((o) => o.isCorrect).map((o) => o.text).join(', '),
+      correctAnswerLabel: [
+        for (final (i, o) in options.indexed)
+          if (o.isCorrect) o.labelAt(i),
+      ].join(', '),
     );
   }
 
@@ -59,7 +63,7 @@ class AnswerChecker {
     final ok = correctSet.length == selectedIndices.length && correctSet.containsAll(selectedIndices);
     return AnswerCheckResult(
       isCorrect: ok,
-      correctAnswerLabel: correctSet.map((i) => options[i].text).join(', '),
+      correctAnswerLabel: correctSet.map((i) => options[i].labelAt(i)).join(', '),
     );
   }
 
@@ -411,6 +415,8 @@ class AnswerChecker {
         return SketchTask.fromMap(q.taskData)?.isUsable ?? false;
       case QuestionType.phase:
         return PhaseTask.fromMap(q.taskData)?.isUsable ?? false;
+      case QuestionType.drawing:
+        return DrawingTask.fromMap(q.taskData)?.isUsable ?? false;
     }
   }
 

@@ -1,7 +1,12 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
+import '../../models/drawing_task.dart';
 import '../../models/flashcard.dart';
 import '../../models/phase_task.dart';
 import '../../models/sketch_task.dart';
@@ -13,10 +18,12 @@ import '../../services/crystal_geometry.dart';
 import '../../services/phase_calculator.dart';
 import '../../services/sketch_checker.dart';
 import '../../services/gantt_scheduler.dart';
+import '../../services/image_crop.dart';
 import '../../services/question_parsing.dart';
 import '../../services/stage_gate_service.dart';
 import '../tasks/bom_task_editor.dart';
 import '../tasks/crystal_task_editor.dart';
+import '../tasks/drawing_task_editor.dart';
 import '../tasks/phase_task_editor.dart';
 import '../tasks/sketch_task_editor.dart';
 import '../tasks/gantt_task_editor.dart';
@@ -40,14 +47,20 @@ class CardEditScreen extends StatefulWidget {
 
   final Flashcard card;
 
+  /// Test-Hook statt Dateiauswahl (Bild als Antwortoption).
+  static Future<Uint8List?> Function()? pickImageHook;
+
   @override
   State<CardEditScreen> createState() => _CardEditScreenState();
 }
 
 class _OptionRow {
-  _OptionRow(String text, this.isCorrect) : controller = TextEditingController(text: text);
+  _OptionRow(String text, this.isCorrect, [this.image]) : controller = TextEditingController(text: text);
   final TextEditingController controller;
   bool isCorrect;
+
+  /// Bild als Antwort (base64).
+  String? image;
 }
 
 class _PairRow {
@@ -87,6 +100,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
   late BomTask? _bom = _type == QuestionType.bom ? BomTask.fromMap(widget.card.taskData) : null;
   late SketchTask? _sketch = _type == QuestionType.sketch ? SketchTask.fromMap(widget.card.taskData) : null;
   late PhaseTask? _phase = _type == QuestionType.phase ? PhaseTask.fromMap(widget.card.taskData) : null;
+  late DrawingTask? _drawing = _type == QuestionType.drawing ? DrawingTask.fromMap(widget.card.taskData) : null;
 
   QuestionType get _type => widget.card.type;
   bool get _isChoice => _type == QuestionType.singleChoice || _type == QuestionType.multipleChoice;
@@ -100,7 +114,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
     _back = TextEditingController(text: card.back);
     _correctText = TextEditingController(text: card.correctText ?? '');
     for (final o in card.options ?? const <QuizOption>[]) {
-      _options.add(_OptionRow(o.text, o.isCorrect));
+      _options.add(_OptionRow(o.text, o.isCorrect, o.imageBase64));
     }
     if (_isChoice) {
       while (_options.length < 2) {
@@ -184,6 +198,38 @@ class _CardEditScreenState extends State<CardEditScreen> {
     super.dispose();
   }
 
+  Future<void> _pickOptionImage(int i) async {
+    Uint8List? bytes;
+    final hook = CardEditScreen.pickImageHook;
+    if (hook != null) {
+      bytes = await hook();
+    } else {
+      final files = await FilePicker.pickFiles(type: FileType.image);
+      if (files.isEmpty) return;
+      bytes = await files.first.readAsBytes();
+    }
+    if (bytes == null) return;
+    final small = await downscaleImage(bytes, maxSide: 800) ?? bytes;
+    if (!mounted || i >= _options.length) return;
+    setState(() => _options[i].image = base64Encode(small));
+  }
+
+  Widget _optionThumb(int i) {
+    Uint8List? bytes;
+    try {
+      bytes = base64Decode(_options[i].image!);
+    } catch (_) {}
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: bytes == null
+          ? const Text('Bild nicht lesbar')
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(bytes, key: ValueKey('card-edit-option-thumb-$i'), height: 90, fit: BoxFit.contain),
+            ),
+    );
+  }
+
   /// Zeigt [message] oben im Formular und scrollt dorthin.
   void _fail(String message) {
     setState(() => _error = message);
@@ -203,7 +249,8 @@ class _CardEditScreenState extends State<CardEditScreen> {
     if (_isChoice) {
       options = [
         for (final o in _options)
-          if (o.controller.text.trim().isNotEmpty) QuizOption(text: o.controller.text.trim(), isCorrect: o.isCorrect),
+          if (o.controller.text.trim().isNotEmpty || o.image != null)
+            QuizOption(text: o.controller.text.trim(), isCorrect: o.isCorrect, imageBase64: o.image),
       ];
       final correct = options.where((o) => o.isCorrect).length;
       if (options.length < 2) return _fail('Mindestens zwei Antwortoptionen eintragen.');
@@ -298,6 +345,14 @@ class _CardEditScreenState extends State<CardEditScreen> {
       // Die Musterlösung rechnet beim Zustandsdiagramm die App.
       back = PhaseCalculator(phase).fullSolution();
     }
+    if (_type == QuestionType.drawing) {
+      final drawing = _drawing;
+      if (drawing == null || !drawing.isUsable) {
+        return _fail('Die Skizze braucht mindestens ein Pflicht-Kriterium, und kein Kriterium darf leer sein.');
+      }
+      taskData = drawing.confirmed().toMap();
+      back = drawing.solutionText();
+    }
     final edited = widget.card.copyWithContent(
       front: front,
       back: back,
@@ -382,6 +437,10 @@ class _CardEditScreenState extends State<CardEditScreen> {
             PhaseTaskEditor(task: _phase!, onChanged: (t) => setState(() => _phase = t)),
             const SizedBox(height: 16),
           ],
+          if (_drawing != null) ...[
+            DrawingTaskEditor(task: _drawing!, onChanged: (t) => setState(() => _drawing = t)),
+            const SizedBox(height: 16),
+          ],
           if (_type == QuestionType.freeText) ...[
             TextField(
               key: const ValueKey('card-edit-correct-text'),
@@ -394,7 +453,8 @@ class _CardEditScreenState extends State<CardEditScreen> {
           if (_type != QuestionType.diagramLabel &&
               _type != QuestionType.gantt &&
               _type != QuestionType.bom &&
-              _type != QuestionType.phase)
+              _type != QuestionType.phase &&
+              _type != QuestionType.drawing)
             TextField(
               key: const ValueKey('card-edit-back'),
               controller: _back,
@@ -480,12 +540,29 @@ class _CardEditScreenState extends State<CardEditScreen> {
                     onChanged: (v) => setState(() => _options[i].isCorrect = v ?? false),
                   ),
                 Expanded(
-                  child: TextField(
-                    key: ValueKey('card-edit-option-$i'),
-                    controller: _options[i].controller,
-                    maxLines: null,
-                    decoration: InputDecoration(labelText: 'Option ${i + 1}', border: const OutlineInputBorder()),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_options[i].image != null) _optionThumb(i),
+                      TextField(
+                        key: ValueKey('card-edit-option-$i'),
+                        controller: _options[i].controller,
+                        maxLines: null,
+                        decoration: InputDecoration(
+                          labelText: _options[i].image != null ? 'Beschriftung (optional)' : 'Option ${i + 1}',
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                IconButton(
+                  key: ValueKey('card-edit-option-image-$i'),
+                  tooltip: _options[i].image == null ? 'Bild als Antwort' : 'Bild entfernen',
+                  icon: Icon(_options[i].image == null ? Icons.add_photo_alternate_outlined : Icons.hide_image_outlined),
+                  onPressed: () => _options[i].image == null
+                      ? _pickOptionImage(i)
+                      : setState(() => _options[i].image = null),
                 ),
                 IconButton(
                   tooltip: 'Option entfernen',

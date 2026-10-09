@@ -15,6 +15,7 @@ import '../../models/app_settings.dart';
 import '../../models/concept.dart';
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
+import '../../models/drawing_task.dart';
 import '../../models/phase_task.dart';
 import '../../models/sketch_task.dart';
 import '../../models/flashcard.dart';
@@ -2069,6 +2070,7 @@ class _PreviewView extends StatelessWidget {
         QuestionType.bom => Icons.account_tree_outlined,
         QuestionType.sketch => Icons.show_chart,
         QuestionType.phase => Icons.stacked_line_chart,
+        QuestionType.drawing => Icons.draw_outlined,
       };
 
   String _answerPreview(Map<String, dynamic> f, QuestionType type) {
@@ -2122,6 +2124,9 @@ class _PreviewView extends StatelessWidget {
       case QuestionType.phase:
         final phase = PhaseTask.fromMap(parseTaskData(f['taskData']));
         return phase == null ? (f['back'] ?? '').toString() : phase.describe();
+      case QuestionType.drawing:
+        final drawing = DrawingTask.fromMap(parseTaskData(f['taskData']));
+        return drawing == null ? (f['back'] ?? '').toString() : drawing.solutionText();
     }
   }
 }

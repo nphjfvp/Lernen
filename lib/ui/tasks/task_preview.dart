@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/bom_task.dart';
 import '../../models/crystal_task.dart';
 import '../../models/flashcard.dart';
+import '../../models/drawing_task.dart';
 import '../../models/phase_task.dart';
 import '../../models/sketch_task.dart';
 import '../../models/gantt_task.dart';
@@ -12,6 +13,7 @@ import '../widgets/math_text.dart';
 import 'bom_task_editor.dart';
 import 'crystal_task_editor.dart';
 import 'gantt_task_editor.dart';
+import 'drawing_task_editor.dart';
 import 'phase_task_editor.dart';
 import 'sketch_task_editor.dart';
 
@@ -92,6 +94,10 @@ class TaskAnswerPreview extends StatelessWidget {
         final phase = PhaseTask.fromMap(card.taskData);
         if (phase == null) return Text('Kein Zustandsdiagramm hinterlegt.', style: muted.copyWith(color: c.danger));
         return PhaseTaskPreview(task: phase, height: 200);
+      case QuestionType.drawing:
+        final drawing = DrawingTask.fromMap(card.taskData);
+        if (drawing == null) return Text('Keine Kriterien hinterlegt.', style: muted.copyWith(color: c.danger));
+        return DrawingTaskPreview(task: drawing);
       default:
         return MathText(card.back, style: muted);
     }
