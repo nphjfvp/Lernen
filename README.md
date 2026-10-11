@@ -1412,6 +1412,22 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zv. KI läuft im Hintergrund weiter (Android) und mehr Themen je PDF
+
+- **App kurz verlassen bricht nichts mehr ab (Android)**: Android friert Apps
+  im Hintergrund ein – dabei riss die Verbindung zu OpenRouter ab. Jetzt laufen
+  alle KI-Anfragen als Hintergrund-Job des Systems (WorkManager) weiter; die
+  Antwort ist da, wenn du zurückkommst. Gilt für alles mit KI (Lektionen,
+  Themenliste, Importe, Erklärungen …). Klappt der Hintergrund-Weg einmal nicht,
+  geht die Anfrage automatisch auf dem normalen Weg raus.
+- Grenze: Wird die App ganz geschlossen (weggewischt), läuft die gerade
+  laufende Anfrage zwar noch zu Ende, die App kann das Ergebnis danach aber
+  nicht mehr übernehmen.
+- **Themenliste ohne feste 8er-Grenze**: Lange PDFs werden in Abschnitten
+  gelesen (je etwa 30.000 Zeichen bzw. 40 Seiten), damit auch der hintere Teil
+  vorkommt; je Abschnitt bis zu etwa ein Thema pro 2 Seiten (4–15). Gleiche
+  Themen aus mehreren Abschnitten werden zusammengelegt.
+
 ### 5zu. Visuell lernen: räumliche Szenen (3D), wo es nötig ist
 
 Ergänzung zu den 2D-Szenen – **2D bleibt die erste Wahl**, 3D nimmt die KI nur,

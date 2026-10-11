@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,6 +22,7 @@ import 'repositories/visual_lesson_repository.dart';
 import 'repositories/summary_repository.dart';
 import 'repositories/unsupported_task_repository.dart';
 import 'services/auto_sync_service.dart';
+import 'services/background_transport.dart';
 import 'services/database_service.dart';
 import 'services/sync_backup_service.dart';
 import 'services/ai_service.dart';
@@ -84,6 +85,11 @@ Future<void> main() async {
 
   // Antwortet die KI lange nicht: fragen statt abbrechen.
   AiService.onSlowResponse = SlowAiPrompt.ask;
+  // Android friert Apps im Hintergrund ein – KI-Anfragen laufen deshalb als
+  // WorkManager-Job weiter, auch wenn man die App kurz verlässt.
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    AiService.backgroundTransport = BackgroundTransport.send;
+  }
   runApp(LernenApp(settingsRepository: settingsRepository, moduleRepository: moduleRepository));
 }
 

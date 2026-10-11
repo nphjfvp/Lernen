@@ -40,6 +40,33 @@ class VisualLearnScreen extends StatefulWidget {
   /// Bis zu so vielen Seiten gehen auch als Bild an die KI (Formeln, Grafiken).
   static const maxImagePages = 4;
 
+  /// Ein Abschnitt der Themensuche: höchstens so viele Zeichen bzw. Seiten.
+  static const topicWindowChars = 30000;
+  static const topicWindowPages = 40;
+
+  /// Teilt [pages] für die Themensuche in Abschnitte ([texts] = Text je Seite).
+  static List<List<int>> topicWindows(List<int> pages, List<String> texts) {
+    final windows = <List<int>>[];
+    var current = <int>[];
+    var chars = 0;
+    for (final p in pages) {
+      final len = p - 1 < texts.length ? texts[p - 1].length : 0;
+      if (current.isNotEmpty && (chars + len > topicWindowChars || current.length >= topicWindowPages)) {
+        windows.add(current);
+        current = [];
+        chars = 0;
+      }
+      current.add(p);
+      chars += len;
+    }
+    if (current.isNotEmpty) windows.add(current);
+    return windows;
+  }
+
+  /// Wie viele Themen die KI je Abschnitt höchstens liefert – wächst mit der
+  /// Seitenzahl (etwa eins je 2 Seiten, 4 bis 15).
+  static int maxTopicsFor(int pages) => (pages / 2).ceil().clamp(4, 15);
+
   @override
   State<VisualLearnScreen> createState() => _VisualLearnScreenState();
 }
@@ -308,35 +335,71 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
       _progress = 'PDF wird gelesen …';
     });
     try {
-      final read = await _readPages(pages);
-      setState(() => _progress = 'Die KI sucht Themen …');
-      final topics = await ai.findVisualTopics(
-        topic: topic,
-        material: read.material,
-        images: read.images,
-        imagePages: read.imagePages,
-      );
+      // Große PDFs in Abschnitten: so liest die KI alles (statt nur den
+      // Anfang) und findet je Abschnitt eigene Themen.
+      final texts = PdfService().extractPageTexts(_pdfBytes!);
+      final windows = VisualLearnScreen.topicWindows(pages, texts);
+      final topics = <VisualTopicIdea>[];
+      final failed = <String>[];
+      for (final (k, window) in windows.indexed) {
+        setState(
+          () => _progress = windows.length == 1
+              ? 'Die KI sucht Themen …'
+              : 'Die KI sucht Themen (Teil ${k + 1} von ${windows.length}) …',
+        );
+        try {
+          final read = await _readPages(window);
+          final found = await ai.findVisualTopics(
+            topic: topic,
+            material: read.material,
+            images: read.images,
+            imagePages: read.imagePages,
+            maxTopics: VisualLearnScreen.maxTopicsFor(window.length),
+          );
+          for (final t in found) {
+            // Nur Seiten aus diesem Abschnitt; gleiche Themen zusammenlegen.
+            final own = [
+              for (final p in t.pages)
+                if (window.contains(p)) p,
+            ];
+            final same = topics.indexWhere((o) => o.title.toLowerCase() == t.title.toLowerCase());
+            if (same < 0) {
+              topics.add((
+                title: t.title,
+                summary: t.summary,
+                pages: own,
+                how: t.how,
+                visual: t.visual,
+                reason: t.reason,
+              ));
+            } else {
+              final o = topics[same];
+              topics[same] = (
+                title: o.title,
+                summary: o.summary,
+                pages: ({...o.pages, ...own}.toList()..sort()),
+                how: o.how,
+                visual: o.visual || t.visual,
+                reason: o.reason,
+              );
+            }
+          }
+        } on AiServiceException catch (e) {
+          failed.add('S. ${window.first}–${window.last}: ${e.message}');
+        }
+        if (!mounted) return;
+      }
+      if (topics.isEmpty) {
+        throw AiServiceException(failed.isEmpty ? 'Die KI hat keine Themen gefunden.' : failed.join(' · '));
+      }
       setState(() {
         _topicPages = pages;
-        _topics = [
-          for (final t in topics)
-            (
-              title: t.title,
-              summary: t.summary,
-              // Nur Seiten aus der Auswahl.
-              pages: [
-                for (final p in t.pages)
-                  if (pages.contains(p)) p,
-              ],
-              how: t.how,
-              visual: t.visual,
-              reason: t.reason,
-            ),
-        ];
+        _topics = topics;
         _chosen = {
           for (final (i, t) in topics.indexed)
             if (t.visual) i,
         };
+        if (failed.isNotEmpty) _error = 'Teilweise nicht gelesen: ${failed.join(' · ')}';
       });
     } on AiServiceException catch (e) {
       setState(() => _error = e.message);

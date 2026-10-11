@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1534 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1539 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1619,6 +1619,15 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     sortiert; Keys `visual-scene3d`, `scene3d-play`/`-restart`/`-time`/`-param`/`-caption`/
     `-rot-left`/`-rot-right`/`-view`). Prompt `_visualToolsSpec` Punkt 1b: nur bei räumlichem
     Aufbau, sonst 2D. Tests: `visual_scene3d_test`, `visual_scene3d_view_test`.
+78. Hintergrund-KI (Android): `AiService.backgroundTransport` (in main.dart nur für Android auf
+    `BackgroundTransport.send` gesetzt, services/background_transport.dart: `DataTask` +
+    `FileDownloader().transmit` aus background_downloader, `Config.requestTimeout` 15 min).
+    `_complete` nutzt ihn, wenn `background` (Standard: kein eigener Client); scheitert die
+    Übertragung selbst (keine HTTP-Antwort, `BackgroundTransportException`), normaler `http`-Weg;
+    echte HTTP-Fehler kommen durch. Themensuche in Abschnitten:
+    `VisualLearnScreen.topicWindows` (30.000 Zeichen/40 Seiten), `maxTopicsFor` (Seiten/2, 4–15),
+    gleiche Titel zusammengelegt, Fehler je Abschnitt gesammelt. Test:
+    `ai_background_transport_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

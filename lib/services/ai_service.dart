@@ -99,12 +99,22 @@ typedef VisualTopicIdea = ({
 });
 
 class AiService {
-  AiService({required this.apiKey, required this.model, http.Client? client})
-      : _client = client ?? http.Client();
+  /// [background]: Darf [backgroundTransport] übernehmen? Standard: nur ohne
+  /// eigenen [client] (Tests geben einen vor).
+  AiService({required this.apiKey, required this.model, http.Client? client, bool? background})
+      : _client = client ?? http.Client(),
+        _useBackground = background ?? client == null;
 
   final String apiKey;
   final String model;
   final http.Client _client;
+
+  final bool _useBackground;
+
+  /// Übertragung, die weiterläuft, wenn die App im Hintergrund ist (unter
+  /// Android über WorkManager, gesetzt in main.dart). Scheitert sie selbst
+  /// (keine HTTP-Antwort), geht die Anfrage auf dem normalen Weg raus.
+  static Future<http.Response> Function(Uri url, Map<String, String> headers, String body)? backgroundTransport;
 
   static const _endpoint = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -287,25 +297,38 @@ Hier ist der Dokumenttext:
           'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
     }
 
+    final url = Uri.parse(_endpoint);
+    final headers = {
+      'Authorization': 'Bearer $apiKey',
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://github.com/nphjfvp/lernen',
+      'X-Title': 'Lernen',
+    };
+    final body = jsonEncode({
+      'model': model,
+      'temperature': temperature,
+      'messages': [
+        {'role': 'system', 'content': systemPrompt},
+        {'role': 'user', 'content': userContent},
+      ],
+    });
+    Future<http.Response> send() async {
+      final background = _useBackground ? backgroundTransport : null;
+      if (background != null) {
+        try {
+          return await background(url, headers, body);
+        } on AiServiceException {
+          rethrow;
+        } catch (_) {
+          // Hintergrund-Übertragung nicht verfügbar – normaler Weg.
+        }
+      }
+      return _client.post(url, headers: headers, body: body);
+    }
+
     final http.Response response;
     try {
-      response = await _awaitPatiently(_client.post(
-            Uri.parse(_endpoint),
-            headers: {
-              'Authorization': 'Bearer $apiKey',
-              'Content-Type': 'application/json',
-              'HTTP-Referer': 'https://github.com/nphjfvp/lernen',
-              'X-Title': 'Lernen',
-            },
-            body: jsonEncode({
-              'model': model,
-              'temperature': temperature,
-              'messages': [
-                {'role': 'system', 'content': systemPrompt},
-                {'role': 'user', 'content': userContent},
-              ],
-            }),
-          ));
+      response = await _awaitPatiently(send());
     } on http.ClientException catch (e) {
       throw AiServiceException('Keine Verbindung zu OpenRouter: ${e.message}');
     }
