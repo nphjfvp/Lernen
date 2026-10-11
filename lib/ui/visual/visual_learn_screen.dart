@@ -736,7 +736,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                         leading: Icon(
                           l.hasCar
                               ? Icons.directions_car_outlined
-                              : ([...l.steps, ?l.result].any((s) => s.show.scene != null)
+                              : ([...l.steps, ?l.result].any((s) => s.show.scene != null || s.show.scene3d != null)
                                     ? Icons.animation
                                     : Icons.show_chart),
                           color: c.accent,

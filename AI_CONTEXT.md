@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1529 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1534 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1610,6 +1610,15 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `generateVisualLessons`; `VisualLesson.cardId`, `VisualLessonRepository.forCard`. Knopf
     `aid-visual` in `StudyAidsBar` (nur mit Key und VisualLessonRepository). Tests:
     `card_flag_sync_test`, `card_flags_ui_test`.
+77. Visuell lernen 3D: `VisualShow.scene3d` = `VisualScene3D` (models/visual_scene3d.dart: box
+    (z oben), frame, axes, spin, captions/param/seconds wie 2D; `Scene3DObject` sphere/line/arrow/
+    box/polygon/text mit `at`/`from`/`to`/`dims`-Vektoren, Zahlen r/opacity/width/draw/size,
+    `keys` mit Zeit „t“ (`Scene3DKey`), `repeat` n/d je Richtung ≤ 8, `maxObjects` 400; Aliase
+    pos/center, size als Vektor bei box). Zeichnen: `VisualScene3DView` + `Scene3DPainter`
+    (ui/visual/visual_scene3d_view.dart, `CubeProjection` aus crystal_cube.dart, nach Tiefe
+    sortiert; Keys `visual-scene3d`, `scene3d-play`/`-restart`/`-time`/`-param`/`-caption`/
+    `-rot-left`/`-rot-right`/`-view`). Prompt `_visualToolsSpec` Punkt 1b: nur bei räumlichem
+    Aufbau, sonst 2D. Tests: `visual_scene3d_test`, `visual_scene3d_view_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

@@ -9,6 +9,7 @@ library;
 
 import 'step_task.dart';
 import 'visual_diagram.dart';
+import 'visual_scene3d.dart';
 
 double? _num(Object? raw) => raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
 
@@ -101,6 +102,7 @@ class VisualShow {
     this.area,
     this.transform = const [],
     this.scene,
+    this.scene3d,
   });
 
   /// Funktion, die das Auto fährt (null = kein Auto).
@@ -123,8 +125,17 @@ class VisualShow {
   /// und kein Funktionsgraph ist.
   final VisualDiagram? scene;
 
+  /// Räumliche Szene – nur, wo der räumliche Aufbau wesentlich ist.
+  final VisualScene3D? scene3d;
+
   bool get isEmpty =>
-      car == null && plot.isEmpty && tangent == null && area == null && transform.isEmpty && scene == null;
+      car == null &&
+      plot.isEmpty &&
+      tangent == null &&
+      area == null &&
+      transform.isEmpty &&
+      scene == null &&
+      scene3d == null;
 
   /// Alle Funktionen, auf die sich die Anzeige bezieht.
   Set<String> get keys => {?car, ...plot, ?tangent, ?area};
@@ -141,6 +152,7 @@ class VisualShow {
     area: area != null && known.contains(area) ? area : null,
     transform: transform,
     scene: scene,
+    scene3d: scene3d,
   );
 
   Map<String, dynamic> toMap() => {
@@ -151,6 +163,7 @@ class VisualShow {
     if (area != null) 'area': area,
     if (transform.isNotEmpty) 'transform': [for (final t in transform) t.toMap()],
     if (scene != null) 'scene': scene!.toMap(),
+    if (scene3d != null) 'scene3d': scene3d!.toMap(),
   };
 
   static VisualShow fromMap(Object? raw) {
@@ -177,6 +190,7 @@ class VisualShow {
           for (final t in transform) ?TransformState.fromRaw(t),
       ],
       scene: VisualDiagram.fromMap(raw['scene'] ?? raw['diagram'] ?? raw['szene']),
+      scene3d: VisualScene3D.fromMap(raw['scene3d'] ?? raw['scene3D'] ?? raw['3d']),
     );
   }
 }

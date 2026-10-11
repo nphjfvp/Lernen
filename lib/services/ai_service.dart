@@ -4550,7 +4550,7 @@ Antworte NUR mit JSON:
  "reached": true | false,
  "transform": [{"latex": "Gleichung ohne $", "note": "…"}],
  "functions": [{"key": "neu", "label": "…", "expr": "Eingabe-Schreibweise, nur die Variable der Lektion"}],
- "show": {"scene": {…}, "car": key, "carFrom": "position"|"velocity", "plot": [keys], "tangent": key, "area": key}}
+ "show": {"scene": {…}, "scene3d": {…}, "car": key, "carFrom": "position"|"velocity", "plot": [keys], "tangent": key, "area": key}}
 Felder, die du nicht brauchst, weglassen.''';
 
   /// Werkzeugkasten der Visualisierung – Teil aller Prompts von „Visuell
@@ -4575,6 +4575,22 @@ WERKZEUGE DER APP (je Schritt in "show", alles optional, frei kombinierbar – w
    - Farben: accent (blau), red, green, orange, purple, brown, gray, ink (schwarz), white, cyan, pink oder #RRGGBB. Text mittig an (x, y), Größe "size" in Szenen-Einheiten.
    - Höchstens 600 Formen. Zeichne SAUBER: sinnvolle Koordinaten, nichts überlappt ungewollt, Beschriftungen gut lesbar, alles innerhalb von width × height.
    - Erzähl mit der Animation: Was passiert nacheinander? Nutze "captions", damit der Text zur Bewegung passt.
+1b. "scene3d" – RÄUMLICHE SZENE, NUR wenn der räumliche Aufbau das Wesentliche ist und 2D ihn nicht zeigen kann: Elementarzellen (krz/kfz/hdp), Packungsdichte (Kugeln wachsen, bis sie sich berühren), Tetraeder-/Oktaederlücken, Gleitebenen und -richtungen im Würfel, Moleküle, Kräfte/Momente im Raum. Sonst IMMER 2D ("scene") – das ist fast immer klarer. Der Nutzer kann die Szene mit dem Finger drehen.
+   {"box": [1, 1, 1],                      ← Raum 0…box, z nach OBEN (z.B. eine Elementarzelle mit a = 1)
+    "frame": true, "axes": true,           ← Kanten des Raums und x/y/z-Achsen zeigen (Standard true)
+    "spin": false,                         ← beim Abspielen langsam mitdrehen
+    "seconds": 6, "param": {…}, "captions": [{"at": 0, "text": "…"}],   ← wie bei "scene"
+    "objects": [
+      {"type": "sphere", "at": [0, 0, 0], "r": 0.2, "fill": "accent", "text": "Fe", "repeat": {"n": [2, 2, 2], "d": [1, 1, 1]}},
+      {"type": "sphere", "at": [0.5, 0.5, 0.5], "r": 0.2, "fill": "orange"},
+      {"type": "line", "from": [0, 0, 0], "to": [1, 1, 1], "stroke": "red", "dashed": true},
+      {"type": "arrow", "from": [0, 0, 0], "to": [1, 1, 0], "stroke": "green", "text": "[110]"},
+      {"type": "polygon", "points": [[1,0,0],[0,1,0],[0,0,1]], "fill": "purple", "text": "(111)"},
+      {"type": "box", "at": [0, 0, 0], "dims": [0.5, 0.5, 0.5], "fill": "orange"},
+      {"type": "text", "at": [0.5, 0.5, 1.15], "text": "kfz"}]}
+   - "keys" wie bei "scene", die Zeit heißt hier "t": [{"t": 1, "r": 0.354}]. Animierbar: at, from, to, dims (je [x, y, z]), r, opacity, width, draw, size, points, fill/stroke, text.
+   - "repeat": {"n": [nx, ny, nz], "d": [dx, dy, dz]} für Gitter (je Richtung höchstens 8). Höchstens 400 Objekte.
+   - Rechne Radien und Abstände korrekt (kfz: Atome berühren sich auf der Flächendiagonale, r = a·√2/4 ≈ 0,354·a; krz: auf der Raumdiagonale, r = a·√3/4 ≈ 0,433·a).
 2. "plot" (+ "tangent", "area") – Funktionsgraphen von "functions" über der Variablen der Lektion mit laufender Markierung; "tangent": key (Tangente = Steigung/Ableitung an der laufenden Stelle), "area": key (Fläche bis zur laufenden Stelle = Integral). Für jeden Zusammenhang y = f(x): Spannung–Dehnung, Kosten–Menge, Temperatur–Zeit …
 3. "car" (+ "carFrom": "position" | "velocity") – ein Auto auf einer Straße, gesteuert von einer Funktion (Weg oder Geschwindigkeit über der Zeit). NUR für Bewegungen (Kinematik, Ableitung/Integral von Weg und Geschwindigkeit) – nicht für andere Themen.
 4. "transform": [{"latex": "Gleichung ohne $", "note": "was passiert und warum"}] – eine Gleichung/Rechnung langsam Schritt für Schritt umformen (jeder Zwischenstand einzeln).
@@ -4585,7 +4601,7 @@ WERKZEUGE DER APP (je Schritt in "show", alles optional, frei kombinierbar – w
 Du erstellst Lektionen für den Modus "Visuell lernen" einer Lern-App – für JEDES Fach (Mathe, Physik, Werkstoffkunde, Chemie, Elektrotechnik, Mechanik, Biologie, BWL …). Die App ZEIGT und ANIMIERT selbst; du lieferst Struktur, Texte, Funktionsterme und Szenen.
 
 Ziel: Der Lernende versteht, WARUM jeder Schritt gemacht wird, WELCHE Formel/Regel gilt und WAS dabei anschaulich passiert. Wähle die Darstellung FREI nach dem Thema – kein festes Schema:
-- Werkstoffkunde z.B.: Atome im Gitter (repeat), die beim Erwärmen stärker schwingen und Abstand gewinnen (Wärmeausdehnung); eine Versetzung, die durch das Gitter wandert (plastische Verformung); Körner, die wachsen (Rekristallisation); Kohlenstoffatome, die ins Gitter diffundieren; eine Abkühlkurve, die gezeichnet wird, während sich Kristalle bilden; Spannungs-Dehnungs-Kurve mit Probe, die sich längt und einschnürt.
+- Werkstoffkunde z.B.: Atome im Gitter (repeat), die beim Erwärmen stärker schwingen und Abstand gewinnen (Wärmeausdehnung); eine Versetzung, die durch das Gitter wandert (plastische Verformung); Körner, die wachsen (Rekristallisation); Kohlenstoffatome, die ins Gitter diffundieren; eine Abkühlkurve, die gezeichnet wird, während sich Kristalle bilden; Spannungs-Dehnungs-Kurve mit Probe, die sich längt und einschnürt. Räumlich (scene3d) z.B.: kfz-Elementarzelle, deren Atome wachsen, bis sie sich auf der Flächendiagonale berühren – mit Packungsdichte 74 % als mitlaufender Größe; Oktaederlücke im kfz-Gitter; Gleitebene (111) mit Gleitrichtung.
 - Physik/Mechanik z.B.: Kräfte als Pfeile an einem Balken, Hebel, schiefe Ebene; Welle, Pendel, Feldlinien; Bewegung mit dem Auto.
 - Mathe z.B.: Graph mit Tangente/Fläche, Umformungen, geometrische Konstruktionen als Szene.
 - Wirtschaft/Sonstiges z.B.: Angebot/Nachfrage als Graph, Abläufe als animierte Kästen und Pfeile.
@@ -4635,7 +4651,7 @@ Antworte NUR mit JSON:
 {"text": "Erklärung, du-Form, Formeln in $…$ (Backslashes verdoppeln)",
  "transform": [{"latex": "Gleichung ohne $", "note": "was passiert und warum"}],
  "functions": [{"key": "neu", "label": "…", "expr": "Eingabe-Schreibweise, nur die Variable der Lektion", "unit": "…"}],
- "show": {"scene": {…}, "car": key, "carFrom": "position"|"velocity", "plot": [keys], "tangent": key, "area": key}}
+ "show": {"scene": {…}, "scene3d": {…}, "car": key, "carFrom": "position"|"velocity", "plot": [keys], "tangent": key, "area": key}}
 
 - "transform": langsam, jeder Zwischenstand einzeln (z.B. bei y' = dy/dx: was dy und dx bedeuten, Differenzenquotient → Grenzwert → Schreibweise).
 - "functions" nur, wenn du für die Erklärung neue Funktionen brauchst (z.B. die falsche Antwort des Nutzers als Funktion, um sie neben der richtigen zu zeigen); "show" darf auf die Funktionen der Lektion und die neuen verweisen.

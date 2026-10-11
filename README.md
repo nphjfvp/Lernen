@@ -1412,6 +1412,22 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zu. Visuell lernen: räumliche Szenen (3D), wo es nötig ist
+
+Ergänzung zu den 2D-Szenen – **2D bleibt die erste Wahl**, 3D nimmt die KI nur,
+wenn der räumliche Aufbau das Wesentliche ist:
+
+- **Elementarzellen** (krz, kfz, hdp), **Packungsdichte** (Atome wachsen, bis
+  sie sich berühren – die Packungsdichte läuft als Wert mit), **Lücken** im
+  Gitter, **Gleitebenen und -richtungen**, Moleküle, Kräfte im Raum.
+- Bausteine: Kugeln, Linien, Pfeile, Quader, ebene Flächen und Text im Raum,
+  mit Schlüsselbildern (Position, Radius, Deckkraft, Farbe, „wird gezeichnet“)
+  und Raster für ganze Gitter; Beschriftungen im Zeitverlauf.
+- Bedienung wie beim Würfel der Kristallgitter-Aufgaben: **ziehen zum
+  Drehen**, ◀ ▶ in 15°-Schritten, „Ansicht“ setzt zurück; optional dreht sich
+  die Szene beim Abspielen langsam mit.
+- Funktioniert in Lektionen, Rückfragen und im sokratischen Modus.
+
 ### 5zt. Fragen markieren und aus Fragen visuell lernen
 
 - **Markieren im Daily Quiz**: Oben neben dem Fach sitzt ein Lesezeichen. Damit
