@@ -310,8 +310,9 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               children: [
                 Text(
-                  'Die KI erklärt ein Thema Schritt für Schritt – die App simuliert es (z.B. ein Auto zu Weg und '
-                  'Geschwindigkeit), zeigt Umformungen langsam und gibt dir danach eine Übung.',
+                  'Die KI erklärt ein Thema Schritt für Schritt und wählt selbst, wie es sich am besten zeigen lässt – '
+                  'z.B. schwingende Atome im Gitter, Kräfte als Pfeile, eine Kurve, die entsteht, ein fahrendes Auto '
+                  'oder eine Umformung in Zeitlupe. Danach bekommst du eine Übung.',
                   style: TextStyle(color: c.inkMuted, height: 1.4),
                 ),
                 const SizedBox(height: 16),
@@ -325,7 +326,9 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                   enabled: !_busy,
                   decoration: const InputDecoration(
                     labelText: 'Thema, eigenes Beispiel oder Aufgabe (optional)',
-                    hintText: 'z.B. „Ableitung: vom Weg zur Geschwindigkeit“ oder „∫ 2t dt mit einem Auto“',
+                    hintText:
+                        'z.B. „Warum dehnt sich Metall beim Erwärmen aus?“, „Versetzungsbewegung“ oder '
+                        '„Ableitung: vom Weg zur Geschwindigkeit“',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -500,7 +503,14 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         key: ValueKey('visual-lesson-$i'),
-                        leading: Icon(l.hasCar ? Icons.directions_car_outlined : Icons.show_chart, color: c.accent),
+                        leading: Icon(
+                          l.hasCar
+                              ? Icons.directions_car_outlined
+                              : ([...l.steps, ?l.result].any((s) => s.show.scene != null)
+                                    ? Icons.animation
+                                    : Icons.show_chart),
+                          color: c.accent,
+                        ),
                         title: Text(l.title),
                         subtitle: Text(
                           [

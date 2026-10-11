@@ -1412,6 +1412,29 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zr. Visuell lernen für jedes Fach: freie Animationen
+
+Bisher konnte „Visuell lernen“ nur Auto, Funktionsgraph und Umformung – darum
+landete die KI oft beim Auto-Beispiel, auch wenn es gar nicht um Mathe ging.
+Jetzt wählt sie die Darstellung **frei nach dem Thema**:
+
+- **Freie Szenen**: Die KI zeichnet mit Kreisen (z.B. Atome), Rechtecken
+  (Körner, Bauteile), Linien, Pfeilen (Kräfte), Flächen, Kurvenzügen und Text –
+  und bewegt sie über Schlüsselbilder (Position, Größe, Farbe, Drehung,
+  Durchsichtigkeit, eine Kurve, die nach und nach gezeichnet wird).
+  - **Raster** für Gitter (z.B. 6 × 4 Atome mit einer Angabe).
+  - **Beschriftungen**, die zur Bewegung wechseln.
+  - Eine **mitlaufende Größe** neben dem Zeitregler (z.B. „Temperatur =
+    460 °C“).
+- Beispiele: Atome, die beim Erwärmen stärker schwingen (Wärmeausdehnung), eine
+  wandernde Versetzung, wachsende Körner, Diffusion, Kräfte an einem Balken,
+  eine Abkühlkurve, die entsteht.
+- Das **Auto nur noch bei Bewegungen**; Graphen und Umformungen weiterhin, wo
+  sie passen. Mit PDF hält sich die KI an deren Inhalt und Beispiele.
+- Die Übung sucht auch bei eher qualitativen Themen eine prüfbare Frage (Anzahl,
+  Anteil, Abschätzung). Szenen gibt es auch in Rückfragen und im sokratischen
+  Modus.
+
 ### 5zq. Visuell lernen: Erklären oder sokratisch
 
 Beim Erstellen einer Lektion (und jederzeit oben in der Lektion umschaltbar)

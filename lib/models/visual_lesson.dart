@@ -8,6 +8,7 @@
 library;
 
 import 'step_task.dart';
+import 'visual_diagram.dart';
 
 double? _num(Object? raw) => raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
 
@@ -99,6 +100,7 @@ class VisualShow {
     this.tangent,
     this.area,
     this.transform = const [],
+    this.scene,
   });
 
   /// Funktion, die das Auto fährt (null = kein Auto).
@@ -117,7 +119,12 @@ class VisualShow {
   /// Umformung Schritt für Schritt.
   final List<TransformState> transform;
 
-  bool get isEmpty => car == null && plot.isEmpty && tangent == null && area == null && transform.isEmpty;
+  /// Freie Szene (Formen mit Schlüsselbildern) – für alles, was kein Auto
+  /// und kein Funktionsgraph ist.
+  final VisualDiagram? scene;
+
+  bool get isEmpty =>
+      car == null && plot.isEmpty && tangent == null && area == null && transform.isEmpty && scene == null;
 
   /// Alle Funktionen, auf die sich die Anzeige bezieht.
   Set<String> get keys => {?car, ...plot, ?tangent, ?area};
@@ -133,6 +140,7 @@ class VisualShow {
     tangent: tangent != null && known.contains(tangent) ? tangent : null,
     area: area != null && known.contains(area) ? area : null,
     transform: transform,
+    scene: scene,
   );
 
   Map<String, dynamic> toMap() => {
@@ -142,6 +150,7 @@ class VisualShow {
     if (tangent != null) 'tangent': tangent,
     if (area != null) 'area': area,
     if (transform.isNotEmpty) 'transform': [for (final t in transform) t.toMap()],
+    if (scene != null) 'scene': scene!.toMap(),
   };
 
   static VisualShow fromMap(Object? raw) {
@@ -167,6 +176,7 @@ class VisualShow {
         if (transform is List)
           for (final t in transform) ?TransformState.fromRaw(t),
       ],
+      scene: VisualDiagram.fromMap(raw['scene'] ?? raw['diagram'] ?? raw['szene']),
     );
   }
 }

@@ -11,6 +11,7 @@ import '../../services/visual_math.dart';
 import '../../theme/app_colors.dart';
 import '../tasks/step_task_view.dart';
 import '../widgets/math_text.dart';
+import 'visual_diagram_view.dart';
 import 'visual_scene.dart';
 
 /// KI für Rückfragen in „Visuell lernen“ (Hilfe-Modell) – null ohne Key.
@@ -213,6 +214,10 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       const SizedBox(height: 12),
       EquationTransformView(key: ValueKey('visual-transform-$_page'), states: step.show.transform),
     ],
+    if (step.show.scene != null) ...[
+      const SizedBox(height: 12),
+      VisualDiagramView(key: ValueKey('visual-diagram-$_page'), diagram: step.show.scene!),
+    ],
     if (VisualSceneView.hasScene(step.show)) ...[
       const SizedBox(height: 12),
       VisualSceneView(key: ValueKey('visual-scene-$_page'), math: _math, show: step.show),
@@ -259,7 +264,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
   /// beim ersten Schritt nur das Auto, sonst der Stand des vorigen Schritts.
   VisualShow _thinkingShow(int i) {
     final step = _l.steps[i];
-    if (i == 0) return VisualShow(car: step.show.car, carSource: step.show.carSource);
+    if (i == 0) return VisualShow(car: step.show.car, carSource: step.show.carSource, scene: step.show.scene);
     final prev = _l.steps[i - 1].show;
     return VisualShow(
       car: prev.car,
@@ -267,6 +272,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       plot: prev.plot,
       tangent: prev.tangent,
       area: prev.area,
+      scene: prev.scene,
     );
   }
 
@@ -288,6 +294,10 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       ),
       const SizedBox(height: 4),
       Text('Finde diesen Schritt selbst heraus – die KI führt dich hin.', style: TextStyle(color: c.inkMuted)),
+      if (show.scene != null) ...[
+        const SizedBox(height: 12),
+        VisualDiagramView(key: ValueKey('socratic-diagram-$i-${s.turns.length}'), diagram: show.scene!),
+      ],
       if (VisualSceneView.hasScene(show)) ...[
         const SizedBox(height: 12),
         VisualSceneView(key: ValueKey('socratic-scene-$i-${s.turns.length}'), math: math, show: show),
@@ -430,7 +440,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
           if (json['transform'] is List)
             for (final t in json['transform'] as List) ?TransformState.fromRaw(t),
         ];
-        if (VisualSceneView.hasScene(show)) {
+        if (VisualSceneView.hasScene(show) || show.scene != null) {
           s.show = show;
           s.math = VisualMath(derived);
         }
@@ -748,6 +758,10 @@ class _VisualAskSheetState extends State<VisualAskSheet> {
           if (_transform.isNotEmpty) ...[
             const SizedBox(height: 12),
             EquationTransformView(states: _transform, autoplay: true),
+          ],
+          if (_show.scene != null) ...[
+            const SizedBox(height: 12),
+            VisualDiagramView(key: const ValueKey('visual-answer-diagram'), diagram: _show.scene!),
           ],
           if (math != null && VisualSceneView.hasScene(_show)) ...[
             const SizedBox(height: 12),

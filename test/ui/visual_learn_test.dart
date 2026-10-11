@@ -388,6 +388,8 @@ void main() {
     expect(sent, isNot(contains('--- Seite 1 ---')));
     expect(sent, contains('Detailgrad: ausführlich'));
     expect(sent, contains('Lernweg: SOKRATISCH'));
+    expect(sent, contains('FREIE SZENE'), reason: 'Werkzeuge für jedes Fach');
+    expect(sent, contains('Das Auto NUR, wenn es wirklich um Bewegung geht'));
     expect(sent.split('"type":"image_url"').length - 1, 2, reason: 'zwei Seiten als Bild');
 
     // Geöffnet …

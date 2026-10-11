@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1516 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1522 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1580,6 +1580,15 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `socratic-answer`/`-send`/`-hint`/`-reveal`, ohne guide eröffnet die KI; aufgedeckt mit
     Banner `socratic-reached`/`socratic-revealed` + normalem Schritt. Erstellen:
     `visual-create-style`.
+74. Visuell lernen fachneutral: `VisualShow.scene` = `VisualDiagram` (models/visual_diagram.dart:
+    width/height, y nach unten, `DiagramElement` circle/rect/line/arrow/polygon/path/text mit
+    `keys` (`DiagramKey` at 0–1: Zahlen aus `diagramNumberProps`, fill/stroke, text, points; linear,
+    Grundwert bei 0), `repeat` nx×ny/dx/dy, captions, param name/unit/from/to, seconds 2–30,
+    `maxShapes` 600). Zeichnen: `VisualDiagramView` + `DiagramPainter`
+    (ui/visual/visual_diagram_view.dart, `diagramColor`, Keys `visual-diagram`, `diagram-play`/
+    `-restart`/`-time`/`-param`/`-caption`) in Schritt, Rückfrage (`visual-answer-diagram`) und
+    sokratisch. Prompts teilen `_visualToolsSpec`; Auto nur bei Bewegung. Tests:
+    `visual_diagram_test`, `visual_diagram_view_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
