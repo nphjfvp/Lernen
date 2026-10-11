@@ -62,6 +62,12 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
 
   bool _busy = false;
   String _progress = '';
+  String? _info;
+
+  /// Themenliste bei mehreren Seiten (null = keine offen), gewählte Themen.
+  List<VisualTopicIdea>? _topics;
+  Set<int> _chosen = {};
+  List<int> _topicPages = const [];
   String? _error;
 
   @override
@@ -183,6 +189,57 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
     }
   }
 
+  /// Text der Seiten (mit „--- Seite N ---“) und – bei wenigen Seiten oder
+  /// ohne Text – die Seiten als Bild.
+  Future<({String material, List<Uint8List> images, List<int> imagePages})> _readPages(List<int> pages) async {
+    final texts = PdfService().extractPageTexts(_pdfBytes!);
+    final material = [
+      for (final p in pages)
+        if (p - 1 < texts.length && texts[p - 1].trim().isNotEmpty) '--- Seite $p ---\n${texts[p - 1].trim()}',
+    ].join('\n\n');
+    var imagePages = pages.length <= VisualLearnScreen.maxImagePages ? pages : const <int>[];
+    if (material.isEmpty && imagePages.isEmpty) imagePages = pages.take(VisualLearnScreen.maxImagePages).toList();
+    final images = imagePages.isEmpty ? const <Uint8List>[] : await _render(_pdfBytes!, imagePages);
+    return (material: material, images: images, imagePages: imagePages);
+  }
+
+  String _sourceOf(List<int> pages) =>
+      '$_pdfName, ${pages.length == 1 ? 'S. ${pages.first}' : 'S. ${pages.first}–${pages.last}'}';
+
+  /// Eine Lektion erzeugen und speichern; null, wenn die KI-Antwort unbrauchbar ist.
+  Future<VisualLesson?> _generate(
+    AiService ai, {
+    required String topic,
+    String material = '',
+    List<Uint8List> images = const [],
+    required String source,
+  }) async {
+    final repo = context.read<VisualLessonRepository>();
+    final raws = await ai.generateVisualLessons(
+      topic: topic,
+      material: material,
+      images: images,
+      detail: _detail,
+      socratic: _style == VisualStyle.socratic,
+    );
+    final lesson = [
+      for (final raw in raws)
+        ?VisualLesson.fromMap(
+          raw,
+          id: const Uuid().v4(),
+          moduleId: widget.moduleId,
+          createdAt: DateTime.now(),
+          source: source,
+          detail: _detail,
+          style: _style,
+        ),
+    ].map(VisualMath.sanitize).where((l) => l.isUsable).firstOrNull;
+    if (lesson != null) await repo.save(lesson);
+    return lesson;
+  }
+
+  /// „Lektion erstellen“: aus Thema oder einer Seite direkt; bei mehreren
+  /// Seiten erst die Themenliste (was lässt sich wie zeigen?).
   Future<void> _create() async {
     final pages = _pages;
     final topic = _topic.text.trim();
@@ -190,72 +247,39 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
       setState(() => _error = 'Gib ein Thema oder Beispiel ein – oder wähle eine PDF.');
       return;
     }
-    final withImages = pages.isNotEmpty && pages.length <= VisualLearnScreen.maxImagePages;
-    final ai = _ai(vision: withImages);
+    if (pages.length > 1) return _findTopics(pages, topic);
+    final ai = _ai(vision: pages.isNotEmpty);
     if (ai == null) {
       setState(() => _error = 'Für „Visuell lernen“ braucht die App deinen OpenRouter-Key (Einstellungen).');
       return;
     }
-    final repo = context.read<VisualLessonRepository>();
     setState(() {
       _busy = true;
       _error = null;
+      _info = null;
       _progress = pages.isEmpty ? 'Die KI baut die Lektion …' : 'PDF wird gelesen …';
     });
     try {
-      var material = '';
-      var images = const <Uint8List>[];
+      var read = (material: '', images: const <Uint8List>[], imagePages: const <int>[]);
       if (pages.isNotEmpty) {
-        final texts = PdfService().extractPageTexts(_pdfBytes!);
-        material = [
-          for (final p in pages)
-            if (p - 1 < texts.length && texts[p - 1].trim().isNotEmpty) '--- Seite $p ---\n${texts[p - 1].trim()}',
-        ].join('\n\n');
-        if (withImages) images = await _render(_pdfBytes!, pages);
-        if (material.isEmpty && images.isEmpty) {
-          images = await _render(_pdfBytes!, pages.take(VisualLearnScreen.maxImagePages).toList());
-        }
+        read = await _readPages(pages);
         setState(() => _progress = 'Die KI baut die Lektion …');
       }
-      final maxLessons = switch (_scope) {
-        _ when pages.isEmpty => 1,
-        VisualScope.page => 1,
-        VisualScope.range => pages.length > 3 ? 3 : 1,
-        VisualScope.all => 6,
-      };
-      final raws = await ai.generateVisualLessons(
+      final lesson = await _generate(
+        ai,
         topic: topic,
-        material: material,
-        images: images,
-        detail: _detail,
-        maxLessons: maxLessons,
-        socratic: _style == VisualStyle.socratic,
+        material: read.material,
+        images: read.images,
+        source: pages.isEmpty ? (topic.isEmpty ? '' : 'eigenes Beispiel') : _sourceOf(pages),
       );
-      final now = DateTime.now();
-      final source = pages.isEmpty
-          ? (topic.isEmpty ? '' : 'eigenes Beispiel')
-          : '$_pdfName, ${pages.length == 1 ? 'S. ${pages.first}' : 'S. ${pages.first}–${pages.last}'}';
-      final lessons = <VisualLesson>[
-        for (final (i, raw) in raws.indexed)
-          ?VisualLesson.fromMap(
-            raw,
-            id: const Uuid().v4(),
-            moduleId: widget.moduleId,
-            createdAt: now.add(Duration(milliseconds: raws.length - i)),
-            source: source,
-            detail: _detail,
-            style: _style,
-          ),
-      ].map(VisualMath.sanitize).where((l) => l.isUsable).toList();
-      if (lessons.isEmpty) {
+      if (lesson == null) {
         throw AiServiceException('Die KI-Antwort ließ sich nicht als Lektion lesen – bitte erneut versuchen.');
       }
-      await repo.saveAll(lessons);
       if (!mounted) return;
       _topic.clear();
       await _load();
       if (!mounted) return;
-      _open(lessons.first);
+      _open(lesson);
     } on AiServiceException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
@@ -266,6 +290,128 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
         _progress = '';
       });
     }
+  }
+
+  /// Schritt 1 bei mehreren Seiten: Die KI listet die Themen mit Idee, wie
+  /// sie sich zeigen lassen – und was sich nicht lohnt (mit Grund).
+  Future<void> _findTopics(List<int> pages, String topic) async {
+    final ai = _ai(vision: pages.length <= VisualLearnScreen.maxImagePages);
+    if (ai == null) {
+      setState(() => _error = 'Für „Visuell lernen“ braucht die App deinen OpenRouter-Key (Einstellungen).');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _info = null;
+      _topics = null;
+      _progress = 'PDF wird gelesen …';
+    });
+    try {
+      final read = await _readPages(pages);
+      setState(() => _progress = 'Die KI sucht Themen …');
+      final topics = await ai.findVisualTopics(
+        topic: topic,
+        material: read.material,
+        images: read.images,
+        imagePages: read.imagePages,
+      );
+      setState(() {
+        _topicPages = pages;
+        _topics = [
+          for (final t in topics)
+            (
+              title: t.title,
+              summary: t.summary,
+              // Nur Seiten aus der Auswahl.
+              pages: [
+                for (final p in t.pages)
+                  if (pages.contains(p)) p,
+              ],
+              how: t.how,
+              visual: t.visual,
+              reason: t.reason,
+            ),
+        ];
+        _chosen = {
+          for (final (i, t) in topics.indexed)
+            if (t.visual) i,
+        };
+      });
+    } on AiServiceException catch (e) {
+      setState(() => _error = e.message);
+    } catch (e) {
+      setState(() => _error = 'Das hat nicht geklappt: $e');
+    } finally {
+      setState(() {
+        _busy = false;
+        _progress = '';
+      });
+    }
+  }
+
+  /// Schritt 2: je gewähltem Thema eine eigene (kleinere) Anfrage – mit den
+  /// Seiten des Themas und der Idee zur Darstellung.
+  Future<void> _createFromTopics() async {
+    final topics = _topics;
+    if (topics == null) return;
+    final chosen = [
+      for (final (i, t) in topics.indexed)
+        if (_chosen.contains(i)) t,
+    ];
+    if (chosen.isEmpty) return;
+    final wish = _topic.text.trim();
+    setState(() {
+      _busy = true;
+      _error = null;
+      _info = null;
+    });
+    final created = <VisualLesson>[];
+    final failed = <String>[];
+    for (final (k, t) in chosen.indexed) {
+      setState(() => _progress = 'Lektion ${k + 1} von ${chosen.length}: ${t.title} …');
+      final pages = t.pages.isEmpty ? _topicPages : t.pages;
+      try {
+        final read = await _readPages(pages);
+        final ai = _ai(vision: read.images.isNotEmpty);
+        if (ai == null) throw AiServiceException('Kein OpenRouter-Key.');
+        final lesson = await _generate(
+          ai,
+          topic: [
+            'Thema: ${t.title}',
+            if (t.summary.isNotEmpty) 'Worum es geht: ${t.summary}',
+            if (t.how.isNotEmpty) 'Idee zur Darstellung: ${t.how}',
+            if (wish.isNotEmpty) 'Wunsch des Nutzers: $wish',
+          ].join('\n'),
+          material: read.material,
+          images: read.images,
+          source: _sourceOf(pages),
+        );
+        if (lesson == null) {
+          failed.add('„${t.title}“: Antwort unbrauchbar');
+        } else {
+          created.add(lesson);
+        }
+      } on AiServiceException catch (e) {
+        failed.add('„${t.title}“: ${e.message}');
+      } catch (e) {
+        failed.add('„${t.title}“: $e');
+      }
+      if (!mounted) return;
+    }
+    await _load();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _progress = '';
+      if (created.isNotEmpty) {
+        _topics = null;
+        _topic.clear();
+        _info = created.length == 1 ? null : '${created.length} Lektionen erstellt – unten in der Liste.';
+      }
+      _error = failed.isEmpty ? null : 'Nicht geklappt: ${failed.join(' · ')}';
+    });
+    if (created.length == 1) _open(created.single);
   }
 
   void _open(VisualLesson lesson) =>
@@ -291,6 +437,77 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
     await context.read<VisualLessonRepository>().delete(lesson.id);
     await _load();
   }
+
+  List<Widget> _topicList(AppColors c, List<VisualTopicIdea> topics) => [
+    const SizedBox(height: 18),
+    Text('Themen in der Auswahl', style: Theme.of(context).textTheme.titleMedium),
+    const SizedBox(height: 2),
+    Text(
+      'Wähle, wozu du eine Lektion willst – je Thema eine eigene, mit passender Darstellung.',
+      style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+    ),
+    const SizedBox(height: 8),
+    for (final (i, t) in topics.indexed)
+      Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: CheckboxListTile(
+          key: ValueKey('visual-topic-$i'),
+          value: _chosen.contains(i),
+          onChanged: _busy
+              ? null
+              : (v) => setState(() {
+                  if (v == true) {
+                    _chosen.add(i);
+                  } else {
+                    _chosen.remove(i);
+                  }
+                }),
+          controlAffinity: ListTileControlAffinity.leading,
+          title: Text(t.title, style: TextStyle(color: t.visual ? null : c.inkMuted)),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (t.pages.isNotEmpty)
+                Text(
+                  t.pages.length == 1 ? 'S. ${t.pages.first}' : 'S. ${t.pages.first}–${t.pages.last}',
+                  style: TextStyle(fontSize: 12, color: c.inkMuted),
+                ),
+              if (t.summary.isNotEmpty) Text(t.summary),
+              if (t.visual && t.how.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text('So: ${t.how}', style: TextStyle(color: c.accent)),
+                ),
+              if (!t.visual)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    'Lässt sich kaum sinnvoll animieren${t.reason.isEmpty ? '' : ': ${t.reason}'}',
+                    key: ValueKey('visual-topic-reason-$i'),
+                    style: TextStyle(color: c.warn),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    Row(
+      children: [
+        TextButton(
+          key: const ValueKey('visual-topics-discard'),
+          onPressed: _busy ? null : () => setState(() => _topics = null),
+          child: const Text('Verwerfen'),
+        ),
+        const Spacer(),
+        FilledButton.icon(
+          key: const ValueKey('visual-topics-create'),
+          onPressed: _busy || _chosen.isEmpty ? null : _createFromTopics,
+          icon: const Icon(Icons.auto_awesome),
+          label: Text(_chosen.length == 1 ? '1 Lektion erstellen' : '${_chosen.length} Lektionen erstellen'),
+        ),
+      ],
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -477,7 +694,11 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                   icon: _busy
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.auto_awesome),
-                  label: Text(_busy ? _progress : 'Lektion erstellen'),
+                  label: Text(
+                    _busy ? _progress : (_pages.length > 1 ? 'Themen finden' : 'Lektion erstellen'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 10),
@@ -487,6 +708,15 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                     style: TextStyle(color: c.danger),
                   ),
                 ],
+                if (_info != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _info!,
+                    key: const ValueKey('visual-info'),
+                    style: TextStyle(color: c.good, fontWeight: FontWeight.w600),
+                  ),
+                ],
+                if (_topics != null) ..._topicList(c, _topics!),
                 const SizedBox(height: 24),
                 Text('Deine Lektionen', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 6),

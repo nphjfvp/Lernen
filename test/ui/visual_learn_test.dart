@@ -333,38 +333,100 @@ void main() {
     expect(saved!.single.style, VisualStyle.explain, reason: 'Wahl wird gemerkt');
   });
 
-  testWidgets('Neue Lektion aus Thema und PDF-Bereich: KI bekommt Seiten, Lektion wird gespeichert und geöffnet', (
-    tester,
-  ) async {
-    VisualLearnScreen.aiFactory = replying(
-      (_) => {
-        'lessons': [carLessonJson()],
-      },
-    );
+  /// Fach-Bildschirm mit hochgeladener PDF (3 Seiten), Liste geladen.
+  Future<void> openWithPdf(WidgetTester tester, String moduleId) async {
     final pdf = _pdf(['Seite eins: Grundlagen', 'Seite zwei: Ableitung von Weg-Zeit-Funktionen', 'Seite drei']);
     VisualLearnScreen.pickPdfHook = () async => (name: 'Kinematik.pdf', bytes: pdf);
     VisualLearnScreen.renderPagesHook = (_, pages) async => [
       for (final _ in pages) Uint8List.fromList([137, 80, 78, 71]),
     ];
-    await pumpApp(tester, const VisualLearnScreen(moduleId: 'm1', moduleName: 'Physik'));
+    await pumpApp(tester, VisualLearnScreen(moduleId: moduleId, moduleName: 'Physik'));
     for (var i = 0; i < 40 && find.byType(CircularProgressIndicator).evaluate().isNotEmpty; i++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
       await tester.pump();
     }
-    await tester.scrollUntilVisible(
-      find.text('Noch keine – erstelle oben die erste.'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Noch keine – erstelle oben die erste.'), findsOneWidget);
-
-    await tester.enterText(find.byKey(const ValueKey('visual-topic')), 'Ableitung mit einem Auto erklären');
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('visual-upload')));
       await Future<void>.delayed(const Duration(milliseconds: 200));
     });
     await tester.pump();
     expect(find.text('Kinematik.pdf · 3 Seiten'), findsOneWidget);
+  }
+
+  /// Tippen und die KI (echte Zeit) arbeiten lassen.
+  Future<void> tapAndWait(WidgetTester tester, String key) async {
+    await tester.ensureVisible(find.byKey(ValueKey(key)));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(ValueKey(key)));
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    });
+    await run(tester, 2);
+  }
+
+  testWidgets('Eine Seite: Lektion direkt erstellt, gespeichert und geöffnet', (tester) async {
+    VisualLearnScreen.aiFactory = replying(
+      (_) => {
+        'lessons': [carLessonJson()],
+      },
+    );
+    await openWithPdf(tester, 'm1');
+    await tester.scrollUntilVisible(
+      find.text('Noch keine – erstelle oben die erste.'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('visual-topic')),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.enterText(find.byKey(const ValueKey('visual-page-from')), '2');
+    await tester.pump();
+    expect(find.text('Lektion erstellen'), findsOneWidget);
+    await tapAndWait(tester, 'visual-create');
+    final sent = jsonEncode(requests.single);
+    expect(sent, contains('--- Seite 2 ---'));
+    expect(sent, isNot(contains('--- Seite 3 ---')));
+    expect(sent, contains('FREIE SZENE'), reason: 'Werkzeuge für jedes Fach');
+    expect(sent, contains('Das Auto NUR, wenn es wirklich um Bewegung geht'));
+    expect(find.byType(VisualLessonScreen), findsOneWidget);
+    await run(tester);
+    final saved = await tester.runAsync(() => VisualLessonRepository().forModule('m1'));
+    expect(saved!.single.source, 'Kinematik.pdf, S. 2');
+    expect(saved.single.functions.map((f) => f.key), ['s', 'v'], reason: 'unlesbare Funktion aussortiert');
+  });
+
+  testWidgets('PDF-Bereich: erst Themenliste (was lässt sich zeigen), dann Lektion je Thema mit seinen Seiten', (
+    tester,
+  ) async {
+    VisualLearnScreen.aiFactory = replying(
+      (text) => text.startsWith('Höchstens')
+          ? {
+              'topics': [
+                {
+                  'title': 'Ableitung von Weg-Zeit-Funktionen',
+                  'summary': 'Vom Weg zur Geschwindigkeit.',
+                  'pages': [2, 1],
+                  'how': 'Auto fährt, Tangente am Weg zeigt das Tempo.',
+                  'visual': true,
+                },
+                {
+                  'title': 'Literatur',
+                  'pages': [3],
+                  'visual': false,
+                  'reason': 'nur eine Liste von Büchern',
+                },
+              ],
+            }
+          : {
+              'lessons': [carLessonJson()],
+            },
+    );
+    await openWithPdf(tester, 'm2');
+    await tester.enterText(find.byKey(const ValueKey('visual-topic')), 'Ableitung mit einem Auto erklären');
     await tester.tap(find.text('Bereich'));
     await tester.pump();
     await tester.enterText(find.byKey(const ValueKey('visual-page-from')), '2');
@@ -374,33 +436,89 @@ void main() {
     await tester.ensureVisible(find.text('Sokratisch'));
     await tester.tap(find.text('Sokratisch'));
     await tester.pump();
+    expect(find.text('Themen finden'), findsOneWidget);
 
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey('visual-create')));
-      for (var i = 0; i < 20; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-      }
-    });
-    await run(tester, 2);
-    final sent = jsonEncode(requests.single);
-    expect(sent, contains('Ableitung mit einem Auto erklären'));
+    await tapAndWait(tester, 'visual-create');
+    var sent = jsonEncode(requests.single);
+    expect(sent, contains('Wunsch des Nutzers (Schwerpunkt): Ableitung mit einem Auto erklären'));
     expect(sent, contains('--- Seite 2 ---'));
     expect(sent, isNot(contains('--- Seite 1 ---')));
+    expect(sent, contains('Seite 2, 3'), reason: 'welches Bild welche Seite ist');
+    expect(sent.split('"type":"image_url"').length - 1, 2, reason: 'zwei Seiten als Bild');
+    expect(find.byKey(const ValueKey('visual-topic-0')), findsOneWidget);
+    expect(find.textContaining('So: Auto fährt'), findsOneWidget);
+    expect(find.textContaining('nur eine Liste von Büchern'), findsOneWidget);
+    expect(tester.widget<CheckboxListTile>(find.byKey(const ValueKey('visual-topic-0'))).value, isTrue);
+    expect(tester.widget<CheckboxListTile>(find.byKey(const ValueKey('visual-topic-1'))).value, isFalse);
+    expect(find.text('1 Lektion erstellen'), findsOneWidget);
+
+    await tapAndWait(tester, 'visual-topics-create');
+    expect(requests, hasLength(2));
+    sent = jsonEncode(requests.last);
+    expect(sent, contains('Thema: Ableitung von Weg-Zeit-Funktionen'));
+    expect(sent, contains('Idee zur Darstellung: Auto fährt'));
+    expect(sent, contains('Wunsch des Nutzers: Ableitung mit einem Auto erklären'));
+    expect(sent, contains('--- Seite 2 ---'));
+    expect(sent, isNot(contains('--- Seite 3 ---')), reason: 'nur die Seiten des Themas (in der Auswahl)');
     expect(sent, contains('Detailgrad: ausführlich'));
     expect(sent, contains('Lernweg: SOKRATISCH'));
-    expect(sent, contains('FREIE SZENE'), reason: 'Werkzeuge für jedes Fach');
-    expect(sent, contains('Das Auto NUR, wenn es wirklich um Bewegung geht'));
-    expect(sent.split('"type":"image_url"').length - 1, 2, reason: 'zwei Seiten als Bild');
 
-    // Geöffnet …
+    // Eine Lektion → gleich geöffnet und gespeichert.
     expect(find.byType(VisualLessonScreen), findsOneWidget);
     await run(tester);
-    // … und gespeichert.
-    final saved = await tester.runAsync(() => VisualLessonRepository().forModule('m1'));
+    final saved = await tester.runAsync(() => VisualLessonRepository().forModule('m2'));
     expect(saved!.single.title, 'Vom Weg zur Geschwindigkeit');
-    expect(saved.single.source, 'Kinematik.pdf, S. 2–3');
+    expect(saved.single.source, 'Kinematik.pdf, S. 2');
     expect(saved.single.detail, 'ausführlich');
     expect(saved.single.style, VisualStyle.socratic);
-    expect(saved.single.functions.map((f) => f.key), ['s', 'v'], reason: 'unlesbare Funktion aussortiert');
+  });
+
+  testWidgets('Ganze PDF: mehrere Themen gewählt, eins scheitert – die anderen werden gespeichert', (tester) async {
+    VisualLearnScreen.aiFactory = replying((text) {
+      if (text.startsWith('Höchstens')) {
+        return {
+          'topics': [
+            {
+              'title': 'Grundlagen',
+              'pages': [1],
+              'how': 'Szene',
+              'visual': true,
+            },
+            {
+              'title': 'Ableitung',
+              'pages': [2],
+              'how': 'Graph',
+              'visual': true,
+            },
+            {
+              'title': 'Schwieriges',
+              'pages': [3],
+              'how': 'Szene',
+              'visual': true,
+            },
+          ],
+        };
+      }
+      if (text.contains('Thema: Schwieriges')) return {'lessons': []};
+      final json = carLessonJson();
+      json['title'] = text.contains('Thema: Grundlagen') ? 'Grundlagen' : 'Ableitung';
+      return {
+        'lessons': [json],
+      };
+    });
+    await openWithPdf(tester, 'm3');
+    await tester.tap(find.text('Ganze PDF'));
+    await tester.pump();
+    await tapAndWait(tester, 'visual-create');
+    expect(find.text('3 Lektionen erstellen'), findsOneWidget);
+    await tapAndWait(tester, 'visual-topics-create');
+    await run(tester, 1);
+    expect(requests, hasLength(4));
+    expect(find.byType(VisualLessonScreen), findsNothing, reason: 'mehrere → in der Liste statt öffnen');
+    expect(find.text('2 Lektionen erstellt – unten in der Liste.'), findsOneWidget);
+    expect(find.textContaining('Nicht geklappt: „Schwieriges“'), findsOneWidget);
+    final saved = await tester.runAsync(() => VisualLessonRepository().forModule('m3'));
+    expect(saved!.map((l) => l.title).toSet(), {'Grundlagen', 'Ableitung'});
+    expect(saved.map((l) => l.source).toSet(), {'Kinematik.pdf, S. 1', 'Kinematik.pdf, S. 2'});
   });
 }

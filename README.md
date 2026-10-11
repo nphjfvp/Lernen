@@ -1412,6 +1412,23 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zs. Visuell lernen: Themenliste bei mehreren PDF-Seiten
+
+Wie bei den interaktiven Aufgaben schaut die KI bei einem **Seitenbereich oder
+der ganzen PDF** erst, was drinsteckt:
+
+- **„Themen finden“** listet die Themen der Auswahl mit Seiten, einem Satz
+  Inhalt und einer **Idee, wie die App es zeigt** („So: Atome im Gitter
+  schwingen stärker …“).
+- Was sich **kaum sinnvoll animieren** lässt (reine Aufzählungen, Literatur,
+  Organisatorisches), ist markiert – mit Grund – und nicht vorausgewählt.
+- Du hakst an, was du willst → **je Thema eine eigene Lektion** mit genau
+  dessen Seiten und der Darstellungs-Idee. Mehrere kleinere Anfragen statt
+  einer riesigen: bessere Lektionen und seltener „KI braucht länger“.
+- Eine Lektion öffnet sich gleich; bei mehreren stehen sie unten in der Liste.
+  Scheitert ein Thema, bleiben die anderen erhalten (mit Hinweis).
+- Eine einzelne Seite oder ein Thema ohne PDF geht wie bisher direkt.
+
 ### 5zr. Visuell lernen für jedes Fach: freie Animationen
 
 Bisher konnte „Visuell lernen“ nur Auto, Funktionsgraph und Umformung – darum

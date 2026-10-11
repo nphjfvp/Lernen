@@ -86,6 +86,18 @@ typedef ScanWindowReply = ({
 /// [AiService.expandQuestionStages]).
 typedef StageExpansion = ({int? level, String? group, List<Map<String, dynamic>> variants});
 
+/// Ein Thema aus einer PDF für „Visuell lernen“ (siehe
+/// [AiService.findVisualTopics]): Seiten, Idee zur Darstellung und ob sich
+/// eine Animation lohnt ([visual] false → [reason]).
+typedef VisualTopicIdea = ({
+  String title,
+  String summary,
+  List<int> pages,
+  String how,
+  bool visual,
+  String reason,
+});
+
 class AiService {
   AiService({required this.apiKey, required this.model, http.Client? client})
       : _client = client ?? http.Client();
@@ -4327,6 +4339,87 @@ Antworte NUR mit JSON:
     }
     return lessons.take(maxLessons).toList();
   }
+
+  /// Analysiert Material für „Visuell lernen“ (wie die Themenliste bei
+  /// interaktiven Aufgaben): abgeschlossene Themen mit Seiten, einer Idee, wie
+  /// die App es zeigen kann, und ob sich das lohnt. [imagePages]: welche
+  /// Seite jedes Bild ist. [topic]: Wunsch des Nutzers als Schwerpunkt.
+  Future<List<VisualTopicIdea>> findVisualTopics({
+    String topic = '',
+    String material = '',
+    List<Uint8List> images = const [],
+    List<int> imagePages = const [],
+    int maxTopics = 8,
+  }) async {
+    if (material.trim().isEmpty && images.isEmpty) {
+      throw AiServiceException('Die PDF enthält keinen lesbaren Inhalt.');
+    }
+    final buffer = StringBuffer()..writeln('Höchstens $maxTopics Themen, Wichtiges zuerst.');
+    if (topic.trim().isNotEmpty) {
+      buffer.writeln('Wunsch des Nutzers (Schwerpunkt): ${_cap(topic.trim(), 2000)}');
+    }
+    if (material.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Material (Text):')
+        ..writeln(_cap(material.trim(), 40000));
+    }
+    if (images.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Dem Text folgen ${images.length} Seiten als Bild'
+            '${imagePages.length == images.length ? ' (der Reihe nach Seite ${imagePages.join(', ')})' : ''}.');
+    }
+    final raw = await _complete(
+      _visualTopicsSystemPrompt,
+      _textWithImages(buffer.toString(), images, 'Bild'),
+      temperature: 0.1,
+    );
+    final json = _parseJsonObject(raw);
+    final list = json['topics'] ?? json['themen'];
+    final topics = <VisualTopicIdea>[
+      if (list is List)
+        for (final t in list)
+          if (t is Map && '${t['title'] ?? ''}'.trim().isNotEmpty)
+            (
+              title: '${t['title']}'.trim(),
+              summary: '${t['summary'] ?? ''}'.trim(),
+              pages: [
+                if (t['pages'] is List)
+                  for (final p in t['pages'] as List) ?int.tryParse('$p'),
+              ],
+              how: '${t['how'] ?? t['idea'] ?? ''}'.trim(),
+              visual: t['visual'] != false && '${t['visual']}'.toLowerCase() != 'false',
+              reason: '${t['reason'] ?? ''}'.trim(),
+            ),
+    ];
+    if (topics.isEmpty) {
+      throw AiServiceException('Die KI hat keine Themen gefunden – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return topics.take(maxTopics).toList();
+  }
+
+  static const _visualTopicsSystemPrompt =
+      r'''
+Du analysierst Lernmaterial (z.B. Vorlesungsfolien, Skript, Übungsblatt) für den Modus "Visuell lernen" einer Lern-App. Teile es in abgeschlossene THEMEN und beurteile je Thema, ob und wie die App es anschaulich animieren kann.
+''' +
+      _visualToolsSpec +
+      r'''
+
+Antworte NUR mit JSON:
+{"topics": [{
+  "title": "kurzer Titel des Themas (Begriffe aus dem Material)",
+  "summary": "worum es geht, 1 Satz",
+  "pages": [Seitenzahlen, laut "--- Seite N ---" bzw. Bildangabe],
+  "how": "konkrete Idee, wie die App es zeigt (welches Werkzeug, was sich bewegt) – 1–2 Sätze",
+  "visual": true | false,
+  "reason": "nur bei false: warum sich eine Animation hier nicht lohnt"
+}]}
+
+- "visual": true, wenn eine Animation das Verständnis wirklich verbessert (Vorgänge, Mechanismen, Zusammenhänge, Rechenwege, Diagramme). false bei reinen Aufzählungen, Definitionen ohne Vorgang, Organisatorischem, Geschichte, Literaturangaben – dann kurz begründen.
+- Fasse zusammengehörige Seiten zu EINEM Thema zusammen; Titelseiten/Gliederungen nicht als Thema.
+- Gibt der Nutzer einen Schwerpunkt vor, nimm nur Themen dazu.
+- Deutsch, Formeln in $…$ (Backslashes verdoppeln).''';
 
   /// Rückfrage zu einem Schritt einer Lektion bzw. Erklärung eines Fehlers in
   /// der Übung. [mode]: "visual", "text" oder "both". Antwort:

@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1522 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1524 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1589,6 +1589,14 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `-restart`/`-time`/`-param`/`-caption`) in Schritt, Rückfrage (`visual-answer-diagram`) und
     sokratisch. Prompts teilen `_visualToolsSpec`; Auto nur bei Bewegung. Tests:
     `visual_diagram_test`, `visual_diagram_view_test`.
+75. Visuell lernen Themenliste: bei mehr als einer gewählten Seite `_findTopics` →
+    `AiService.findVisualTopics(topic, material, images, imagePages)` → `VisualTopicIdea`
+    (title, summary, pages, how, visual, reason; Prompt `_visualTopicsSystemPrompt` mit
+    `_visualToolsSpec`). Liste `visual-topic-i` (CheckboxListTile, visual vorausgewählt,
+    `visual-topic-reason-i`), `visual-topics-create`/`-discard`; `_createFromTopics`: je Thema
+    `_readPages(Seiten des Themas)` + `generateVisualLessons(topic: Thema/Idee/Wunsch)`, Fehler
+    gesammelt (`visual-error`), mehrere → `visual-info`, eine → öffnen. Knopf heißt dann
+    „Themen finden“.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
