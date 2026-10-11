@@ -243,6 +243,96 @@ void main() {
     expect(find.textContaining('viel zu langsam'), findsOneWidget);
   });
 
+  testWidgets('Sokratisch: Leitfrage, eigene Antwort, Tipp mit Simulation, selbst gefunden oder auflösen', (
+    tester,
+  ) async {
+    final json = carLessonJson();
+    (json['steps'] as List)[0]['guide'] = 'Was fällt dir am Auto auf, wenn du es fahren lässt?';
+    final socratic = VisualLesson.fromMap(
+      json,
+      id: 'l-sok',
+      moduleId: 'm-sokratisch',
+      createdAt: DateTime(2026, 10, 11),
+      style: VisualStyle.socratic,
+    )!;
+    expect(socratic.steps.first.guide, startsWith('Was fällt dir'));
+    expect(VisualLesson.fromMap(socratic.toMap())!.style, VisualStyle.socratic);
+
+    VisualLessonScreen.aiFactory = replying((text) {
+      if (text.contains('TIPP')) {
+        return {
+          'reply': 'Achte darauf, wie weit das Auto in jeder Sekunde kommt. Was bedeutet das?',
+          'show': {
+            'plot': ['s'],
+            'tangent': 's',
+          },
+        };
+      }
+      if (text.contains('Antwort des Lernenden: Es wird immer schneller')) {
+        return {'reply': r'Genau – der Weg $s(t)$ wächst immer schneller.', 'reached': true};
+      }
+      if (text.contains('Antwort des Lernenden:')) {
+        return {'reply': 'Fast – schau nochmal genau hin.', 'reached': false};
+      }
+      return {'reply': 'Wie könntest du aus dem Weg ablesen, wie schnell das Auto gerade ist?'};
+    });
+    await pumpApp(tester, VisualLessonScreen(lesson: socratic));
+    await tester.pump();
+
+    // Schritt 1: Leitfrage aus der Lektion (ohne KI-Aufruf), Erklärung verdeckt.
+    expect(textOf(tester, 'socratic-turn-0'), contains('Was fällt dir am Auto auf'));
+    expect(find.textContaining('Der Weg wächst immer schneller.'), findsNothing);
+    expect(find.byKey(const ValueKey('visual-car')), findsOneWidget, reason: 'Auto zum Beobachten');
+    expect(requests, isEmpty);
+
+    await tester.enterText(find.byKey(const ValueKey('socratic-answer')), 'Es steht still');
+    await tap(tester, 'socratic-send');
+    expect(textOf(tester, 'socratic-turn-1'), 'Es steht still');
+    expect(textOf(tester, 'socratic-turn-2'), contains('Fast'));
+    expect(find.byKey(const ValueKey('socratic-reached')), findsNothing);
+
+    // Tipp: die KI zeigt die Tangente zum Beobachten.
+    await tap(tester, 'socratic-hint');
+    expect(textOf(tester, 'socratic-turn-4'), contains('in jeder Sekunde'));
+    expect(find.byKey(const ValueKey('visual-slope')), findsOneWidget);
+    var sent = jsonEncode(requests.last);
+    expect(sent, contains('AKTUELLER SCHRITT'));
+    expect(sent, contains('Lernender: Es steht still'));
+
+    await tester.enterText(find.byKey(const ValueKey('socratic-answer')), 'Es wird immer schneller');
+    await tap(tester, 'socratic-send');
+    expect(find.byKey(const ValueKey('socratic-reached')), findsOneWidget);
+    expect(find.text('Selbst herausgefunden!'), findsOneWidget);
+    expect(find.textContaining('Der Weg wächst immer schneller.'), findsOneWidget, reason: 'Schritt aufgedeckt');
+
+    // Schritt 2 ohne gespeicherte Leitfrage: die KI eröffnet; dann auflösen.
+    await tap(tester, 'visual-next');
+    await run(tester, 1);
+    sent = jsonEncode(requests.last);
+    expect(sent, contains('Eröffne den Schritt'));
+    expect(textOf(tester, 'socratic-turn-0'), contains('aus dem Weg ablesen'));
+    expect(find.byKey(const ValueKey('visual-formula')), findsNothing);
+    expect(find.byKey(const ValueKey('visual-transform')), findsNothing);
+    await tap(tester, 'socratic-reveal');
+    expect(find.byKey(const ValueKey('socratic-revealed')), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-formula')), findsOneWidget);
+
+    // Umschalten auf „Erklären“: alles offen wie gewohnt.
+    await tap(tester, 'visual-page-2');
+    expect(find.byKey(const ValueKey('socratic-answer')), findsOneWidget);
+    // (Speichern der Wahl braucht echte Zeit.)
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Erklären'));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pump();
+    await run(tester, 1);
+    expect(find.byKey(const ValueKey('socratic-answer')), findsNothing);
+    expect(find.byKey(const ValueKey('visual-ask')), findsOneWidget);
+    final saved = await tester.runAsync(() => VisualLessonRepository().forModule('m-sokratisch'));
+    expect(saved!.single.style, VisualStyle.explain, reason: 'Wahl wird gemerkt');
+  });
+
   testWidgets('Neue Lektion aus Thema und PDF-Bereich: KI bekommt Seiten, Lektion wird gespeichert und geöffnet', (
     tester,
   ) async {
@@ -261,6 +351,11 @@ void main() {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
       await tester.pump();
     }
+    await tester.scrollUntilVisible(
+      find.text('Noch keine – erstelle oben die erste.'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Noch keine – erstelle oben die erste.'), findsOneWidget);
 
     await tester.enterText(find.byKey(const ValueKey('visual-topic')), 'Ableitung mit einem Auto erklären');
@@ -276,6 +371,9 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('visual-page-to')), '3');
     await tester.tap(find.text('Ausführlich'));
     await tester.pump();
+    await tester.ensureVisible(find.text('Sokratisch'));
+    await tester.tap(find.text('Sokratisch'));
+    await tester.pump();
 
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('visual-create')));
@@ -289,6 +387,7 @@ void main() {
     expect(sent, contains('--- Seite 2 ---'));
     expect(sent, isNot(contains('--- Seite 1 ---')));
     expect(sent, contains('Detailgrad: ausführlich'));
+    expect(sent, contains('Lernweg: SOKRATISCH'));
     expect(sent.split('"type":"image_url"').length - 1, 2, reason: 'zwei Seiten als Bild');
 
     // Geöffnet …
@@ -299,6 +398,7 @@ void main() {
     expect(saved!.single.title, 'Vom Weg zur Geschwindigkeit');
     expect(saved.single.source, 'Kinematik.pdf, S. 2–3');
     expect(saved.single.detail, 'ausführlich');
+    expect(saved.single.style, VisualStyle.socratic);
     expect(saved.single.functions.map((f) => f.key), ['s', 'v'], reason: 'unlesbare Funktion aussortiert');
   });
 }

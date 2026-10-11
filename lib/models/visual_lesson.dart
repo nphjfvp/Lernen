@@ -173,7 +173,13 @@ class VisualShow {
 
 /// Ein Erklärschritt.
 class VisualStep {
-  const VisualStep({required this.title, this.text = '', this.formula = '', this.show = const VisualShow()});
+  const VisualStep({
+    required this.title,
+    this.text = '',
+    this.formula = '',
+    this.show = const VisualShow(),
+    this.guide = '',
+  });
 
   final String title;
 
@@ -184,11 +190,19 @@ class VisualStep {
   final String formula;
   final VisualShow show;
 
+  /// Sokratisch lernen: Leitfrage, mit der man diesen Schritt selbst
+  /// herausfindet (verrät die Lösung nicht).
+  final String guide;
+
+  VisualStep copyWith({VisualShow? show}) =>
+      VisualStep(title: title, text: text, formula: formula, show: show ?? this.show, guide: guide);
+
   Map<String, dynamic> toMap() => {
     'title': title,
     if (text.isNotEmpty) 'text': text,
     if (formula.isNotEmpty) 'formula': formula,
     if (!show.isEmpty) 'show': show.toMap(),
+    if (guide.isNotEmpty) 'guide': guide,
   };
 
   static VisualStep? fromMap(Object? raw) {
@@ -201,9 +215,14 @@ class VisualStep {
       text: text,
       formula: TransformState._stripDollar(_str(raw['formula'] ?? raw['formel'])),
       show: VisualShow.fromMap(raw['show'] ?? raw['visual'] ?? raw['anzeige']),
+      guide: _str(raw['guide'] ?? raw['leitfrage'] ?? raw['question']),
     );
   }
 }
+
+/// Wie die Lektion durchgegangen wird: Schritte erklärt bekommen oder
+/// sokratisch – mit Leitfragen selbst darauf kommen.
+enum VisualStyle { explain, socratic }
 
 /// Wie eine falsche Antwort in der Übung simuliert wird.
 enum ExerciseSimulation { graph, position, velocity }
@@ -226,6 +245,7 @@ class VisualLesson {
     this.simulation = ExerciseSimulation.graph,
     this.source = '',
     this.detail = 'normal',
+    this.style = VisualStyle.explain,
     required this.createdAt,
   });
 
@@ -260,6 +280,9 @@ class VisualLesson {
 
   /// "kurz", "normal" oder "ausführlich".
   final String detail;
+
+  /// Gewählter Lernweg (in der Lektion umschaltbar).
+  final VisualStyle style;
   final DateTime createdAt;
 
   VisualFunction? function(String key) {
@@ -273,7 +296,7 @@ class VisualLesson {
 
   bool get isUsable => title.trim().isNotEmpty && steps.isNotEmpty && domainMax > domainMin;
 
-  VisualLesson copyWith({String? title, String? moduleId, String? id}) => VisualLesson(
+  VisualLesson copyWith({String? title, String? moduleId, String? id, VisualStyle? style}) => VisualLesson(
     id: id ?? this.id,
     moduleId: moduleId ?? this.moduleId,
     title: title ?? this.title,
@@ -289,6 +312,7 @@ class VisualLesson {
     simulation: simulation,
     source: source,
     detail: detail,
+    style: style ?? this.style,
     createdAt: createdAt,
   );
 
@@ -327,6 +351,7 @@ class VisualLesson {
     if (simulation != ExerciseSimulation.graph) 'simulate': simulation.name,
     if (source.isNotEmpty) 'source': source,
     'detail': detail,
+    if (style != VisualStyle.explain) 'style': style.name,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -339,6 +364,7 @@ class VisualLesson {
     DateTime? createdAt,
     String? source,
     String? detail,
+    VisualStyle? style,
   }) {
     if (raw is! Map) return null;
     final functions = <VisualFunction>[];
@@ -358,9 +384,7 @@ class VisualLesson {
       }
     }
     final known = {for (final f in functions) f.key};
-    VisualStep? clean(VisualStep? s) => s == null
-        ? null
-        : VisualStep(title: s.title, text: s.text, formula: s.formula, show: s.show.restrictedTo(known));
+    VisualStep? clean(VisualStep? s) => s?.copyWith(show: s.show.restrictedTo(known));
     final rawSteps = raw['steps'] ?? raw['schritte'];
     final steps = [
       if (rawSteps is List)
@@ -407,6 +431,7 @@ class VisualLesson {
       },
       source: source ?? _str(raw['source']),
       detail: detail ?? (_str(raw['detail']).isEmpty ? 'normal' : _str(raw['detail'])),
+      style: style ?? (_str(raw['style']) == VisualStyle.socratic.name ? VisualStyle.socratic : VisualStyle.explain),
       createdAt: created,
     );
   }

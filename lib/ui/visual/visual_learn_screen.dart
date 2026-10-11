@@ -58,6 +58,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
   int _pageCount = 0;
   VisualScope _scope = VisualScope.page;
   String _detail = 'normal';
+  VisualStyle _style = VisualStyle.explain;
 
   bool _busy = false;
   String _progress = '';
@@ -228,6 +229,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
         images: images,
         detail: _detail,
         maxLessons: maxLessons,
+        socratic: _style == VisualStyle.socratic,
       );
       final now = DateTime.now();
       final source = pages.isEmpty
@@ -242,6 +244,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
             createdAt: now.add(Duration(milliseconds: raws.length - i)),
             source: source,
             detail: _detail,
+            style: _style,
           ),
       ].map(VisualMath.sanitize).where((l) => l.isUsable).toList();
       if (lessons.isEmpty) {
@@ -436,6 +439,35 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                   onSelectionChanged: _busy ? null : (s) => setState(() => _detail = s.first),
                 ),
                 const SizedBox(height: 14),
+                Text(
+                  'Wie lernen?',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.inkMuted),
+                ),
+                const SizedBox(height: 6),
+                SegmentedButton<VisualStyle>(
+                  key: const ValueKey('visual-create-style'),
+                  segments: const [
+                    ButtonSegment(
+                      value: VisualStyle.explain,
+                      label: Text('Erklären'),
+                      icon: Icon(Icons.menu_book_outlined),
+                    ),
+                    ButtonSegment(
+                      value: VisualStyle.socratic,
+                      label: Text('Sokratisch'),
+                      icon: Icon(Icons.psychology_alt_outlined),
+                    ),
+                  ],
+                  selected: {_style},
+                  showSelectedIcon: false,
+                  onSelectionChanged: _busy ? null : (s) => setState(() => _style = s.first),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _style == VisualStyle.explain ? 'Jeder Schritt wird dir erklärt und gezeigt.' : 'Du erarbeitest dir jeden Schritt selbst – die KI führt dich mit Fragen hin, ohne die Lösung zu verraten.',
+                  style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+                ),
+                const SizedBox(height: 14),
                 FilledButton.icon(
                   key: const ValueKey('visual-create'),
                   onPressed: _busy ? null : _create,
@@ -473,6 +505,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                         subtitle: Text(
                           [
                             '${l.steps.length} Schritte',
+                            if (l.style == VisualStyle.socratic) 'sokratisch',
                             if (l.exercise != null) 'mit Übung',
                             if (l.source.isNotEmpty) l.source,
                           ].join(' · '),

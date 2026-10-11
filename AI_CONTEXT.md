@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1515 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1516 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1570,6 +1570,16 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (ui/widgets/slow_ai_dialog.dart, `appNavigatorKey` in MaterialApp): ein geteilter Dialog
     `ai-slow-dialog` mit `ai-slow-wait`/`ai-slow-cancel`, schließt sich bei Antwort selbst.
     Test: `ai_slow_response_test`.
+73. Visuell lernen sokratisch: `VisualStyle {explain, socratic}` an `VisualLesson.style`
+    (nur socratic gespeichert), `VisualStep.guide` (Leitfrage, KI liefert sie immer mit).
+    `generateVisualLessons(socratic:)`, neu `AiService.visualSocraticTurn(lesson, stepIndex,
+    step, history, answer, hint)` → `{reply, reached, transform, functions, show}` (nicht
+    verwechseln mit `socraticTurn` für Quizfragen). `VisualLessonScreen`: Umschalter
+    `visual-style` (speichert die Wahl), je Schritt `_Socratic` (Dialog, reached/revealed):
+    verdeckt mit `_thinkingShow` (Stand des vorigen Schritts), `socratic-turn-i`,
+    `socratic-answer`/`-send`/`-hint`/`-reveal`, ohne guide eröffnet die KI; aufgedeckt mit
+    Banner `socratic-reached`/`socratic-revealed` + normalem Schritt. Erstellen:
+    `visual-create-style`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

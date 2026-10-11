@@ -1412,6 +1412,27 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zq. Visuell lernen: Erklären oder sokratisch
+
+Beim Erstellen einer Lektion (und jederzeit oben in der Lektion umschaltbar)
+wählst du, **wie** du lernst:
+
+- **Erklären** – wie bisher: jeder Schritt wird erklärt, gezeigt und simuliert.
+- **Sokratisch** – du erarbeitest dir jeden Schritt **selbst**:
+  - Der Schritt bleibt zunächst verdeckt. Du siehst das Auto bzw. den Graphen
+    vom Stand davor und eine **Leitfrage** (z.B. „Wie könntest du aus dem Weg
+    ablesen, wie schnell das Auto gerade ist?“).
+  - Du antwortest in eigenen Worten. Die KI prüft, würdigt, was stimmt, zeigt
+    Widersprüche auf und stellt eine kleinere Frage – **ohne die Lösung zu
+    verraten**. Dabei kann sie dir in der Simulation etwas zum Beobachten zeigen
+    (z.B. die Tangente).
+  - **„Tipp“** gibt einen konkreteren Hinweis, **„Auflösen“** deckt den Schritt
+    auf.
+  - Hast du es selbst herausgefunden: **„Selbst herausgefunden!“** – dann
+    erscheinen Erklärung, Formel, Umformung und Simulation des Schritts als
+    Bestätigung.
+- Die Wahl wird an der Lektion gemerkt.
+
 ### 5zp. KI braucht länger: „Weiter warten“ statt Abbruch
 
 - Antwortet OpenRouter 3 Minuten lang nicht, bricht die App nicht mehr einfach

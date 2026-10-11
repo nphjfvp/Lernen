@@ -4266,14 +4266,17 @@ Antworte NUR mit JSON:
   /// Erzeugt Lektionen für „Visuell lernen“: aus einem Thema / eigenen Beispiel
   /// des Nutzers ([topic]) und/oder Material ([material], [images] = Seiten).
   /// [detail]: "kurz", "normal", "ausführlich". [maxLessons]: bei einer ganzen
-  /// PDF mehrere Lektionen (je Thema eine), sonst 1. Liefert die rohen
-  /// Lektions-Objekte (siehe VisualLesson.fromMap).
+  /// PDF mehrere Lektionen (je Thema eine), sonst 1. [socratic]: der Nutzer
+  /// will sich die Schritte selbst erarbeiten (Leitfragen besonders
+  /// sorgfältig). Liefert die rohen Lektions-Objekte (siehe
+  /// VisualLesson.fromMap).
   Future<List<Map<String, dynamic>>> generateVisualLessons({
     String topic = '',
     String material = '',
     List<Uint8List> images = const [],
     String detail = 'normal',
     int maxLessons = 1,
+    bool socratic = false,
   }) async {
     if (topic.trim().isEmpty && material.trim().isEmpty && images.isEmpty) {
       throw AiServiceException('Gib ein Thema oder Beispiel ein oder wähle eine PDF.');
@@ -4286,6 +4289,10 @@ Antworte NUR mit JSON:
       }}')
       ..writeln('Höchstens $maxLessons Lektion${maxLessons == 1 ? '' : 'en'}'
           '${maxLessons > 1 ? ' – je abgeschlossenem Thema des Materials eine, Wichtiges zuerst' : ''}.')
+      ..writeln(socratic
+          ? 'Lernweg: SOKRATISCH – der Nutzer erarbeitet sich jeden Schritt selbst. Die "guide"-Fragen sind '
+              'besonders wichtig: so gestellt, dass man mit Nachdenken und Blick auf die Simulation selbst darauf kommt.'
+          : 'Lernweg: erklären (die "guide"-Fragen trotzdem mitliefern).')
       ..writeln();
     if (topic.trim().isNotEmpty) {
       buffer
@@ -4374,6 +4381,81 @@ Antworte NUR mit JSON:
     return json;
   }
 
+  /// Sokratisch lernen: ein Zug im Dialog zu einem Schritt der Lektion. Die
+  /// KI bewertet [answer] (leer = Eröffnungsfrage), führt mit Gegenfragen hin
+  /// und verrät die Lösung nicht (auflösen kann die App selbst). [hint]: der Nutzer
+  /// will einen konkreteren Tipp. [history]: bisheriger Dialog (user = Nutzer).
+  /// Antwort: `{"reply", "reached": bool, "transform", "functions", "show"}`.
+  Future<Map<String, dynamic>> visualSocraticTurn({
+    required Map<String, dynamic> lesson,
+    required int stepIndex,
+    required Map<String, dynamic> step,
+    List<({bool user, String text})> history = const [],
+    String answer = '',
+    bool hint = false,
+  }) async {
+    final steps = lesson['steps'] as List? ?? const [];
+    final buffer = StringBuffer()
+      ..writeln('Lektion (JSON):')
+      ..writeln(_cap(jsonEncode({
+        for (final k in const ['title', 'intro', 'variable', 'domain', 'functions']) k: lesson[k],
+        'bisherige Schritte (schon erarbeitet)': [
+          for (final s in steps.take(stepIndex))
+            if (s is Map) {'title': s['title'], 'formula': s['formula']},
+        ],
+      }), 8000))
+      ..writeln()
+      ..writeln('AKTUELLER SCHRITT (Lösung – NICHT verraten):')
+      ..writeln(_cap(jsonEncode({
+        for (final k in const ['title', 'text', 'formula', 'guide']) k: step[k],
+      }), 4000))
+      ..writeln();
+    if (history.isNotEmpty) {
+      buffer.writeln('Bisheriger Dialog:');
+      for (final turn in history.length > 16 ? history.sublist(history.length - 16) : history) {
+        buffer.writeln('${turn.user ? 'Lernender' : 'Tutor'}: ${_cap(turn.text, 1500)}');
+      }
+      buffer.writeln();
+    }
+    if (hint) {
+      buffer.writeln('Der Lernende bittet um einen TIPP: gib einen konkreteren Hinweis als bisher (gern mit Blick auf die '
+          'Simulation), aber noch nicht die Lösung, und ende mit einer Frage.');
+    } else if (answer.trim().isEmpty) {
+      buffer.writeln('Eröffne den Schritt mit einer Leitfrage (gern auf Basis von "guide").');
+    } else {
+      buffer.writeln('Antwort des Lernenden: ${_cap(answer.trim(), 3000)}');
+    }
+    final raw = await _complete(_visualSocraticSystemPrompt, buffer.toString(), temperature: 0.3);
+    final json = _parseJsonObject(raw);
+    if ('${json['reply'] ?? json['text'] ?? ''}'.trim().isEmpty) {
+      throw AiServiceException('Die KI hat nicht geantwortet – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return {
+      ...json,
+      'reply': '${json['reply'] ?? json['text']}'.trim(),
+      'reached': json['reached'] == true || '${json['reached']}'.toLowerCase() == 'true',
+    };
+  }
+
+  static const _visualSocraticSystemPrompt = r'''
+Du bist ein sokratischer Tutor in einer Lern-App (Modus "Visuell lernen"). Der Lernende soll sich den AKTUELLEN SCHRITT einer Lektion SELBST erarbeiten. Die App kann zeigen: ein Auto auf einer Straße (Weg/Geschwindigkeit), Funktionsgraphen mit Tangente (Steigung) und Fläche (Integral) sowie Umformungen Schritt für Schritt.
+
+So gehst du vor:
+- Verrate die Lösung, Formel oder das Ergebnis des Schritts NICHT (auflösen kann der Lernende selbst per Knopf). Führe mit EINER kurzen, konkreten Frage pro Zug hin.
+- Prüfe die Antwort des Lernenden ehrlich. Ist sie richtig oder im Kern getroffen (eigene Worte genügen, Schreibweise egal), setze "reached": true, bestätige kurz, was er gut erkannt hat, und fasse den Schritt in 1–2 Sätzen zusammen.
+- Ist sie teilweise richtig: würdige den richtigen Teil und frag gezielt nach dem fehlenden.
+- Ist sie falsch: sag nicht nur "falsch", sondern zeig einen Widerspruch auf (z.B. "Wenn das stimmt, was müsste das Auto dann bei t = 0 tun? Schau es dir an.") und stell eine kleinere Frage.
+- Nutze die Simulation als Denkhilfe: Du darfst "show" setzen, damit der Lernende etwas beobachtet (z.B. die Tangente an s, ohne v zu zeigen), und "functions" für Hilfsfunktionen (z.B. die Vermutung des Lernenden, um sie neben dem Original zu zeigen). Zeig dabei NICHT das Ergebnis des Schritts, solange "reached" false ist.
+- Kurz bleiben: 1–4 Sätze, du-Form, ermutigend, Formeln in $…$.
+
+Antworte NUR mit JSON:
+{"reply": "deine Antwort/Frage (Backslashes verdoppeln)",
+ "reached": true | false,
+ "transform": [{"latex": "Gleichung ohne $", "note": "…"}],
+ "functions": [{"key": "neu", "label": "…", "expr": "Eingabe-Schreibweise, nur die Variable der Lektion"}],
+ "show": {"car": key, "carFrom": "position"|"velocity", "plot": [keys], "tangent": key, "area": key}}
+Felder, die du nicht brauchst, weglassen.''';
+
   static const _visualLessonSystemPrompt = r'''
 Du erstellst Lektionen für den Modus "Visuell lernen" einer Lern-App. Die App ZEIGT und SIMULIERT selbst: ein Auto auf einer Straße (Weg, Geschwindigkeit), Funktionsgraphen mit laufender Markierung, Tangente (Steigung = Ableitung) und Fläche unter der Kurve (Integral) sowie das Umformen von Gleichungen Schritt für Schritt. Du lieferst nur Struktur, Texte und Funktionsterme – die App rechnet alles nach.
 
@@ -4386,7 +4468,7 @@ Antworte NUR mit JSON:
   "variable": "t",
   "domain": [0, 10],
   "functions": [{"key": "s", "label": "Weg s(t)", "expr": "0.5*t^2 + 2*t", "unit": "m"}, {"key": "v", "label": "Geschwindigkeit v(t)", "expr": "t + 2", "unit": "m/s"}],
-  "steps": [{"title": "…", "text": "Warum wir das machen, was es bedeutet, was das Auto tut", "formula": "LaTeX ohne $, z.B. v(t)=\\frac{ds}{dt}", "show": {…}}],
+  "steps": [{"title": "…", "text": "Warum wir das machen, was es bedeutet, was das Auto tut", "formula": "LaTeX ohne $, z.B. v(t)=\\frac{ds}{dt}", "show": {…}, "guide": "Leitfrage, mit der man den Schritt selbst findet"}],
   "result": {"title": "Ergebnis", "text": "…", "formula": "…", "show": {…}},
   "exercise": {"front": "Neue, ähnliche Aufgabe WORTGETREU mit allen Zahlen (LaTeX in $…$)", "simulate": "position" | "velocity" | "graph", "steps": [ … wie unten … ]}
 }]}
@@ -4401,6 +4483,10 @@ Regeln für "show" (alles optional, nur Bezüge auf vorhandene "key"):
 - "plot": [keys] im Graphen; "tangent": key (Tangente an der laufenden Stelle, zeigt die Steigung = Ableitung); "area": key (Fläche unter der Kurve bis zur laufenden Stelle = Integral).
 - "transform": [{"latex": "Gleichung ohne $", "note": "was in diesem Schritt gemacht wird und warum"}] – für jede Umformung/Rechnung die Zwischenstände EINZELN (z.B. Potenzregel Summand für Summand), damit die App sie langsam nacheinander zeigt.
 - Zeige in möglichst vielen Schritten etwas: Auto am Anfang und beim Ergebnis, Zwischenschritte am Auto, wenn sinnvoll; sonst Graph oder Umformung.
+
+Regeln für "guide" (sokratisches Lernen – JEDER Schritt bekommt eine):
+- Eine offene Leitfrage, mit der der Lernende den Schritt SELBST herausfinden kann, OHNE dass sie die Lösung, Formel oder das Ergebnis verrät. Knüpft an Vorwissen oder an das an, was die Simulation gerade zeigt (z.B. "Das Auto wird immer schneller – wie könntest du aus dem Weg ablesen, wie schnell es gerade ist?").
+- Der Titel des Schritts darf das Ergebnis ebenfalls nicht verraten (z.B. "Wie schnell ist das Auto?" statt "v(t) = t + 2").
 
 Regeln für "exercise" (eine Übung wie ein Rechenweg):
 - "steps": 2–5 Schritte; jeder {"title", "prompt" (Frage ohne Lösung), "fields": [{"label": z.B. "v(t) =", "kind": "formula" | "number", "answer": in Eingabe-Schreibweise, "variables": ["t"], "tolerance": nur bei gerundeten Zahlen, "mistakes": [{"answer": typischer Fehler, "feedback": kurze Rückmeldung, die zum Nachdenken anregt}]}], "hints": [2 gestufte Tipps], "result": Ergebnis des Schritts (LaTeX in $…$), "explanation": 1–2 Sätze}.

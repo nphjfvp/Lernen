@@ -5,6 +5,7 @@ import '../../models/flashcard.dart';
 import '../../models/step_task.dart';
 import '../../models/visual_lesson.dart';
 import '../../repositories/settings_repository.dart';
+import '../../repositories/visual_lesson_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/visual_math.dart';
 import '../../theme/app_colors.dart';
@@ -24,7 +25,9 @@ AiService? visualAi(BuildContext context) {
 /// Simulation (Auto, Graph, Umformung), zu jedem Schritt eine Rückfrage
 /// (visuell, schriftlich oder beides), das Ergebnis simuliert und am Ende eine
 /// Übung wie ein Rechenweg – eine falsche Antwort lässt sich neben der
-/// richtigen simulieren und erklären.
+/// richtigen simulieren und erklären. Wahlweise sokratisch: Jeder Schritt
+/// bleibt verdeckt, bis man ihn mit Leitfragen der KI selbst gefunden (oder
+/// aufgelöst) hat.
 class VisualLessonScreen extends StatefulWidget {
   const VisualLessonScreen({super.key, required this.lesson});
 
@@ -39,15 +42,56 @@ class VisualLessonScreen extends StatefulWidget {
 
 enum _PageKind { step, result, exercise }
 
+/// Sokratischer Dialog zu einem Schritt.
+class _Socratic {
+  final turns = <({bool user, String text})>[];
+  final answer = TextEditingController();
+  bool reached = false;
+  bool revealed = false;
+  bool busy = false;
+  String? error;
+
+  /// Was die KI zum Beobachten zeigt (null = Standardansicht).
+  VisualShow? show;
+  VisualMath? math;
+  List<TransformState> transform = const [];
+
+  bool get unlocked => reached || revealed;
+}
+
 class _VisualLessonScreenState extends State<VisualLessonScreen> {
   late final VisualMath _math = VisualMath(widget.lesson);
   int _page = 0;
+  late VisualStyle _style = widget.lesson.style;
+  final _socratic = <int, _Socratic>{};
 
   /// Letzte falsche Antwort in der Übung.
   ({StepField field, String input})? _wrong;
   bool _exerciseDone = false;
 
   VisualLesson get _l => widget.lesson;
+
+  @override
+  void dispose() {
+    for (final s in _socratic.values) {
+      s.answer.dispose();
+    }
+    super.dispose();
+  }
+
+  _Socratic _socraticFor(int i) => _socratic.putIfAbsent(i, () {
+    final state = _Socratic();
+    final guide = _l.steps[i].guide;
+    if (guide.isNotEmpty) state.turns.add((user: false, text: guide));
+    return state;
+  });
+
+  void _setStyle(VisualStyle style) {
+    setState(() => _style = style);
+    // Wahl merken, damit die Lektion beim nächsten Mal so startet.
+    final repo = context.read<VisualLessonRepository?>();
+    if (repo != null && _l.id.isNotEmpty) repo.save(_l.copyWith(style: style));
+  }
 
   List<({_PageKind kind, VisualStep? step, String label})> get _pages => [
     for (final (i, s) in _l.steps.indexed) (kind: _PageKind.step, step: s, label: '${i + 1}'),
@@ -90,6 +134,27 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                     ],
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                  child: SegmentedButton<VisualStyle>(
+                    key: const ValueKey('visual-style'),
+                    segments: const [
+                      ButtonSegment(
+                        value: VisualStyle.explain,
+                        label: Text('Erklären'),
+                        icon: Icon(Icons.menu_book_outlined),
+                      ),
+                      ButtonSegment(
+                        value: VisualStyle.socratic,
+                        label: Text('Sokratisch'),
+                        icon: Icon(Icons.psychology_alt_outlined),
+                      ),
+                    ],
+                    selected: {_style},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => _setStyle(s.first),
+                  ),
+                ),
                 Expanded(
                   child: page.kind == _PageKind.exercise
                       ? _exercise(c)
@@ -106,7 +171,15 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                               ),
                               const SizedBox(height: 14),
                             ],
-                            ..._stepBody(c, page.step!, isResult: page.kind == _PageKind.result),
+                            if (_style == VisualStyle.socratic && page.kind == _PageKind.step) ...[
+                              if (_socraticFor(_page).unlocked) ...[
+                                _unlockedBanner(c, _socratic[_page]!),
+                                const SizedBox(height: 12),
+                                ..._stepBody(c, page.step!, isResult: false),
+                              ] else
+                                ..._socraticBody(c, _page, page.step!),
+                            ] else
+                              ..._stepBody(c, page.step!, isResult: page.kind == _PageKind.result),
                           ],
                         ),
                 ),
@@ -177,6 +250,199 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       ],
     ),
   );
+
+  // -------------------------------------------------------------------------
+  // Sokratisch
+  // -------------------------------------------------------------------------
+
+  /// Was man beim Nachdenken sieht, ohne dass das Ergebnis verraten wird:
+  /// beim ersten Schritt nur das Auto, sonst der Stand des vorigen Schritts.
+  VisualShow _thinkingShow(int i) {
+    final step = _l.steps[i];
+    if (i == 0) return VisualShow(car: step.show.car, carSource: step.show.carSource);
+    final prev = _l.steps[i - 1].show;
+    return VisualShow(
+      car: prev.car,
+      carSource: prev.carSource,
+      plot: prev.plot,
+      tangent: prev.tangent,
+      area: prev.area,
+    );
+  }
+
+  List<Widget> _socraticBody(AppColors c, int i, VisualStep step) {
+    final s = _socraticFor(i);
+    if (s.turns.isEmpty && !s.busy && s.error == null) {
+      // Keine Leitfrage gespeichert: die KI eröffnet.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && s.turns.isEmpty && !s.busy) _socraticTurn(i);
+      });
+    }
+    final show = s.show ?? _thinkingShow(i);
+    final math = s.show != null ? s.math ?? _math : _math;
+    return [
+      Text(
+        step.title,
+        key: const ValueKey('visual-step-title'),
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 4),
+      Text('Finde diesen Schritt selbst heraus – die KI führt dich hin.', style: TextStyle(color: c.inkMuted)),
+      if (VisualSceneView.hasScene(show)) ...[
+        const SizedBox(height: 12),
+        VisualSceneView(key: ValueKey('socratic-scene-$i-${s.turns.length}'), math: math, show: show),
+      ],
+      const SizedBox(height: 12),
+      for (final (j, t) in s.turns.indexed)
+        Align(
+          alignment: t.user ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            key: ValueKey('socratic-turn-$j'),
+            constraints: const BoxConstraints(maxWidth: 620),
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: t.user ? c.surfaceAlt : c.accentSoft,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: MathText(t.text, style: const TextStyle(fontSize: 14.5, height: 1.45)),
+          ),
+        ),
+      if (s.transform.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        EquationTransformView(key: ValueKey('socratic-transform-$i-${s.turns.length}'), states: s.transform),
+        const SizedBox(height: 8),
+      ],
+      if (s.busy)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
+        ),
+      if (s.error != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            s.error!,
+            key: const ValueKey('socratic-error'),
+            style: TextStyle(color: c.danger),
+          ),
+        ),
+      TextField(
+        key: const ValueKey('socratic-answer'),
+        controller: s.answer,
+        minLines: 1,
+        maxLines: 5,
+        enabled: !s.busy,
+        decoration: const InputDecoration(
+          labelText: 'Deine Überlegung',
+          hintText: 'Eigene Worte genügen, Formeln z.B. als v(t) = …',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          FilledButton.icon(
+            key: const ValueKey('socratic-send'),
+            onPressed: s.busy ? null : () => _socraticTurn(i, answer: s.answer.text),
+            icon: const Icon(Icons.send, size: 18),
+            label: const Text('Antworten'),
+          ),
+          OutlinedButton.icon(
+            key: const ValueKey('socratic-hint'),
+            onPressed: s.busy ? null : () => _socraticTurn(i, hint: true),
+            icon: const Icon(Icons.lightbulb_outline, size: 18),
+            label: const Text('Tipp'),
+          ),
+          TextButton.icon(
+            key: const ValueKey('socratic-reveal'),
+            onPressed: s.busy ? null : () => setState(() => s.revealed = true),
+            icon: const Icon(Icons.visibility_outlined, size: 18),
+            label: const Text('Auflösen'),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _unlockedBanner(AppColors c, _Socratic s) {
+    final last = s.turns.lastOrNull;
+    return Container(
+      key: ValueKey(s.reached ? 'socratic-reached' : 'socratic-revealed'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: s.reached ? c.goodSoft : c.surfaceAlt, borderRadius: BorderRadius.circular(14)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            s.reached ? 'Selbst herausgefunden!' : 'Aufgelöst – so geht der Schritt:',
+            style: TextStyle(fontWeight: FontWeight.w700, color: s.reached ? c.good : null),
+          ),
+          if (s.reached && last != null && !last.user) ...[
+            const SizedBox(height: 4),
+            MathText(last.text, style: const TextStyle(fontSize: 14, height: 1.4)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _socraticTurn(int i, {String answer = '', bool hint = false}) async {
+    final s = _socraticFor(i);
+    final ai = visualAi(context);
+    if (ai == null) {
+      setState(() => s.error = 'Für sokratisches Lernen braucht die App deinen OpenRouter-Key (Einstellungen).');
+      return;
+    }
+    final text = answer.trim();
+    if (!hint && text.isEmpty && s.turns.isNotEmpty) return;
+    final history = [...s.turns];
+    setState(() {
+      s.busy = true;
+      s.error = null;
+      if (text.isNotEmpty) s.turns.add((user: true, text: text));
+      if (hint) s.turns.add((user: true, text: 'Kannst du mir einen Tipp geben?'));
+      s.answer.clear();
+    });
+    try {
+      final json = await ai.visualSocraticTurn(
+        lesson: _l.toMap(),
+        stepIndex: i,
+        step: _l.steps[i].toMap(),
+        history: history,
+        answer: text,
+        hint: hint,
+      );
+      if (!mounted) return;
+      final extra = [
+        if (json['functions'] is List)
+          for (final f in json['functions'] as List) ?VisualFunction.fromMap(f),
+      ];
+      final derived = extra.isEmpty ? _l : _l.withFunctions(_l.functions, extra: extra);
+      final known = {for (final f in derived.functions) f.key};
+      final show = VisualShow.fromMap(json['show']).restrictedTo(known);
+      setState(() {
+        s.turns.add((user: false, text: '${json['reply']}'));
+        s.reached = json['reached'] == true;
+        s.transform = [
+          if (json['transform'] is List)
+            for (final t in json['transform'] as List) ?TransformState.fromRaw(t),
+        ];
+        if (VisualSceneView.hasScene(show)) {
+          s.show = show;
+          s.math = VisualMath(derived);
+        }
+      });
+    } on AiServiceException catch (e) {
+      if (mounted) setState(() => s.error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => s.error = 'Das hat nicht geklappt: $e');
+    } finally {
+      if (mounted) setState(() => s.busy = false);
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Übung
