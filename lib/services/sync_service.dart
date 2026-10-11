@@ -213,6 +213,7 @@ Future<Map<String, dynamic>> buildSyncPayload(DatabaseClient db) async {
     'flashcards': (await DatabaseService.flashcards.find(db)).map((r) => r.value).toList(),
     'lectureUnits': (await DatabaseService.lectureUnits.find(db)).map((r) => r.value).toList(),
     'labExperiments': (await DatabaseService.labExperiments.find(db)).map((r) => r.value).toList(),
+    'visualLessons': (await DatabaseService.visualLessons.find(db)).map((r) => r.value).toList(),
     // Verlauf und Statistik – ohne sie finge jedes weitere Gerät bei null
     // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
     'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
@@ -247,6 +248,8 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
   if (data.containsKey('lectureUnits')) await DatabaseService.lectureUnits.delete(txn);
   // Laborversuche gibt es erst seit kurzem – ältere Stände kennen sie nicht.
   if (data.containsKey('labExperiments')) await DatabaseService.labExperiments.delete(txn);
+  // Ältere Stände kennen „Visuell lernen“ nicht – dann die lokalen behalten.
+  if (data.containsKey('visualLessons')) await DatabaseService.visualLessons.delete(txn);
 
   for (final m in (data['modules'] as List? ?? [])) {
     final module = Module.fromMap(Map<String, dynamic>.from(m as Map));
@@ -282,6 +285,11 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     final experiment = LabExperiment.fromMap(Map<String, dynamic>.from(e as Map));
     await DatabaseService.labExperiments.record(experiment.id).put(txn, experiment.toMap());
   }
+  for (final l in (data['visualLessons'] as List? ?? [])) {
+    final map = Map<String, dynamic>.from(l as Map);
+    final id = map['id']?.toString() ?? '';
+    if (id.isNotEmpty) await DatabaseService.visualLessons.record(id).put(txn, map);
+  }
 
   await applySyncedHistory(txn, data);
 
@@ -296,6 +304,10 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );
   await DatabaseService.labExperiments.delete(
+    txn,
+    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+  );
+  await DatabaseService.visualLessons.delete(
     txn,
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );

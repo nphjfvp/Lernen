@@ -17,6 +17,7 @@ import 'repositories/material_repository.dart';
 import 'repositories/model_catalog_repository.dart';
 import 'repositories/module_repository.dart';
 import 'repositories/settings_repository.dart';
+import 'repositories/visual_lesson_repository.dart';
 import 'repositories/summary_repository.dart';
 import 'repositories/unsupported_task_repository.dart';
 import 'services/auto_sync_service.dart';
@@ -102,6 +103,7 @@ class LernenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LectureUnitRepository()),
         ChangeNotifierProvider(create: (_) => LabExperimentRepository()..loadAll()),
         ChangeNotifierProvider(create: (_) => LabPhotoRepository()),
+        ChangeNotifierProvider(create: (_) => VisualLessonRepository()),
         ChangeNotifierProvider.value(value: settingsRepository),
         ChangeNotifierProvider(create: (_) => ModelCatalogRepository()..loadCached()),
         ChangeNotifierProvider(

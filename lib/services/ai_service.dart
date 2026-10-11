@@ -4227,6 +4227,168 @@ Antworte NUR mit JSON:
     return review;
   }
 
+  // -- Visuell lernen ------------------------------------------------------------
+
+  /// Erzeugt Lektionen für „Visuell lernen“: aus einem Thema / eigenen Beispiel
+  /// des Nutzers ([topic]) und/oder Material ([material], [images] = Seiten).
+  /// [detail]: "kurz", "normal", "ausführlich". [maxLessons]: bei einer ganzen
+  /// PDF mehrere Lektionen (je Thema eine), sonst 1. Liefert die rohen
+  /// Lektions-Objekte (siehe VisualLesson.fromMap).
+  Future<List<Map<String, dynamic>>> generateVisualLessons({
+    String topic = '',
+    String material = '',
+    List<Uint8List> images = const [],
+    String detail = 'normal',
+    int maxLessons = 1,
+  }) async {
+    if (topic.trim().isEmpty && material.trim().isEmpty && images.isEmpty) {
+      throw AiServiceException('Gib ein Thema oder Beispiel ein oder wähle eine PDF.');
+    }
+    final buffer = StringBuffer()
+      ..writeln('Detailgrad: $detail – ${switch (detail) {
+        'kurz' => '3–4 Schritte, knappe Texte (1–2 Sätze).',
+        'ausführlich' => '6–10 Schritte, ausführliche Texte (3–6 Sätze), jede Umformung einzeln.',
+        _ => '4–7 Schritte, Texte mit 2–4 Sätzen.',
+      }}')
+      ..writeln('Höchstens $maxLessons Lektion${maxLessons == 1 ? '' : 'en'}'
+          '${maxLessons > 1 ? ' – je abgeschlossenem Thema des Materials eine, Wichtiges zuerst' : ''}.')
+      ..writeln();
+    if (topic.trim().isNotEmpty) {
+      buffer
+        ..writeln('Wunsch des Nutzers (Thema, eigenes Beispiel oder Aufgabe – genau daran halten):')
+        ..writeln(_cap(topic.trim(), _interactiveTaskCap))
+        ..writeln();
+    } else {
+      buffer.writeln('Kein eigenes Beispiel: Such dir selbst ein anschauliches, sinnvolles Beispiel zum Material.');
+    }
+    if (material.trim().isNotEmpty) {
+      buffer
+        ..writeln('Material (Text):')
+        ..writeln(_cap(material.trim(), 24000))
+        ..writeln();
+    }
+    if (images.isNotEmpty) buffer.writeln('Dem Text folgen ${images.length} Seite${images.length == 1 ? '' : 'n'} als Bild.');
+    final raw = await _complete(
+      _visualLessonSystemPrompt,
+      _textWithImages(buffer.toString(), images, 'Seite'),
+      temperature: 0.2,
+    );
+    final json = _parseJsonObject(raw);
+    final list = json['lessons'] ?? json['lektionen'];
+    final lessons = <Map<String, dynamic>>[
+      if (list is List)
+        for (final l in list)
+          if (l is Map) Map<String, dynamic>.from(l),
+      if (list is! List && (json['steps'] is List)) json,
+    ];
+    if (lessons.isEmpty) {
+      throw AiServiceException('Die KI hat keine Lektion geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return lessons.take(maxLessons).toList();
+  }
+
+  /// Rückfrage zu einem Schritt einer Lektion bzw. Erklärung eines Fehlers in
+  /// der Übung. [mode]: "visual", "text" oder "both". Antwort:
+  /// `{"text", "transform": [...], "functions": [...], "show": {...}}`.
+  Future<Map<String, dynamic>> explainVisual({
+    required Map<String, dynamic> lesson,
+    String stepTitle = '',
+    String stepText = '',
+    String question = '',
+    String mode = 'both',
+    String wrongAnswer = '',
+    String expectedAnswer = '',
+    String fieldLabel = '',
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Lektion (JSON):')
+      ..writeln(_cap(jsonEncode({
+        for (final k in const ['title', 'intro', 'variable', 'domain', 'functions']) k: lesson[k],
+        'steps': [
+          for (final s in (lesson['steps'] as List? ?? const []))
+            if (s is Map) {'title': s['title'], 'formula': s['formula']},
+        ],
+      }), 8000))
+      ..writeln();
+    if (stepTitle.isNotEmpty) {
+      buffer
+        ..writeln('Gefragter Schritt: $stepTitle')
+        ..writeln(_cap(stepText, 3000))
+        ..writeln();
+    }
+    if (wrongAnswer.isNotEmpty) {
+      buffer
+        ..writeln('In der Übung hat der Nutzer bei "$fieldLabel" FALSCH geantwortet: $wrongAnswer')
+        ..writeln('Richtig wäre: $expectedAnswer')
+        ..writeln('Erkläre genau, WARUM das falsch ist und was die falsche Antwort im echten Leben bedeuten würde '
+            '(z.B. was das Auto dann täte). Zeig, wo der Fehler beim Umstellen/Rechnen passiert.')
+        ..writeln();
+    }
+    buffer
+      ..writeln('Frage des Nutzers: ${question.trim().isEmpty ? '(keine – erkläre den Schritt bzw. Fehler)' : question.trim()}')
+      ..writeln('Gewünschte Erklärung: ${switch (mode) {
+        'visual' => 'VISUELL – vor allem "transform" und/oder "show", Text nur 1–2 Sätze',
+        'text' => 'SCHRIFTLICH – ausführlicher Text, "transform" und "show" weglassen',
+        _ => 'BEIDES – Text und Visualisierung',
+      }}');
+    final raw = await _complete(_visualExplainSystemPrompt, buffer.toString(), temperature: 0.2);
+    final json = _parseJsonObject(raw);
+    final text = '${json['text'] ?? ''}'.trim();
+    if (text.isEmpty && json['transform'] is! List && json['show'] is! Map) {
+      throw AiServiceException('Die KI hat keine Erklärung geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return json;
+  }
+
+  static const _visualLessonSystemPrompt = r'''
+Du erstellst Lektionen für den Modus "Visuell lernen" einer Lern-App. Die App ZEIGT und SIMULIERT selbst: ein Auto auf einer Straße (Weg, Geschwindigkeit), Funktionsgraphen mit laufender Markierung, Tangente (Steigung = Ableitung) und Fläche unter der Kurve (Integral) sowie das Umformen von Gleichungen Schritt für Schritt. Du lieferst nur Struktur, Texte und Funktionsterme – die App rechnet alles nach.
+
+Ziel: Der Lernende versteht, WARUM jeder Schritt gemacht wird, WELCHE Formel benutzt wird und WAS das anschaulich bedeutet (z.B. was das Auto gerade tut). Wähle ein anschauliches Beispiel (Physik: Auto mit Weg s(t), Geschwindigkeit v(t), Beschleunigung a(t); sonst passende Größen wie Füllstand, Temperatur, Kosten). Bei Ableitungen z.B.: Weg-Zeit-Funktion geben, Auto fahren lassen, ableiten → Geschwindigkeit, am Auto zeigen. Bei Integralen z.B.: Geschwindigkeit v(t) gegeben, Auto über v fahren lassen, Fläche unter v = zurückgelegter Weg.
+
+Antworte NUR mit JSON:
+{"lessons": [{
+  "title": "kurzer Titel",
+  "intro": "Ausgangslage/Beispiel in 1–3 Sätzen (LaTeX in $…$)",
+  "variable": "t",
+  "domain": [0, 10],
+  "functions": [{"key": "s", "label": "Weg s(t)", "expr": "0.5*t^2 + 2*t", "unit": "m"}, {"key": "v", "label": "Geschwindigkeit v(t)", "expr": "t + 2", "unit": "m/s"}],
+  "steps": [{"title": "…", "text": "Warum wir das machen, was es bedeutet, was das Auto tut", "formula": "LaTeX ohne $, z.B. v(t)=\\frac{ds}{dt}", "show": {…}}],
+  "result": {"title": "Ergebnis", "text": "…", "formula": "…", "show": {…}},
+  "exercise": {"front": "Neue, ähnliche Aufgabe WORTGETREU mit allen Zahlen (LaTeX in $…$)", "simulate": "position" | "velocity" | "graph", "steps": [ … wie unten … ]}
+}]}
+
+Regeln für "functions":
+- "expr" in EINGABE-SCHREIBWEISE, KEIN LaTeX: + - * / ^, sqrt(), exp(), ln(), sin(), cos(), pi; Dezimalpunkt; NUR die Variable (meist t) – keine weiteren Buchstaben/Konstanten, setz Zahlen ein.
+- "domain": sinnvoller Bereich, auf dem alle Funktionen definiert sind und das Beispiel gut aussieht.
+- Lege ALLE Funktionen an, die gezeigt werden sollen (auch Ableitungen/Stammfunktionen als eigene Funktion, korrekt berechnet!). Rechne sorgfältig.
+
+Regeln für "show" (alles optional, nur Bezüge auf vorhandene "key"):
+- "car": key der Funktion, die das Auto fährt; "carFrom": "position" (Funktion ist der Weg, Standard) oder "velocity" (Funktion ist die Geschwindigkeit – die App summiert den Weg auf).
+- "plot": [keys] im Graphen; "tangent": key (Tangente an der laufenden Stelle, zeigt die Steigung = Ableitung); "area": key (Fläche unter der Kurve bis zur laufenden Stelle = Integral).
+- "transform": [{"latex": "Gleichung ohne $", "note": "was in diesem Schritt gemacht wird und warum"}] – für jede Umformung/Rechnung die Zwischenstände EINZELN (z.B. Potenzregel Summand für Summand), damit die App sie langsam nacheinander zeigt.
+- Zeige in möglichst vielen Schritten etwas: Auto am Anfang und beim Ergebnis, Zwischenschritte am Auto, wenn sinnvoll; sonst Graph oder Umformung.
+
+Regeln für "exercise" (eine Übung wie ein Rechenweg):
+- "steps": 2–5 Schritte; jeder {"title", "prompt" (Frage ohne Lösung), "fields": [{"label": z.B. "v(t) =", "kind": "formula" | "number", "answer": in Eingabe-Schreibweise, "variables": ["t"], "tolerance": nur bei gerundeten Zahlen, "mistakes": [{"answer": typischer Fehler, "feedback": kurze Rückmeldung, die zum Nachdenken anregt}]}], "hints": [2 gestufte Tipps], "result": Ergebnis des Schritts (LaTeX in $…$), "explanation": 1–2 Sätze}.
+- Das letzte Feld des letzten Schritts ist das Endergebnis. Ist es eine Funktion der Variablen, setz "simulate": "position" (wenn sie ein Weg ist), "velocity" (Geschwindigkeit) oder "graph" – dann simuliert die App eine falsche Antwort neben der richtigen.
+- Rechne jede erwartete Antwort selbst nach.
+
+Allgemein: Deutsch, du-Form, Fachbegriffe erklären. Formeln in Texten in $…$, in JSON jeden Backslash verdoppeln. Halte dich bei einem Wunsch des Nutzers genau an sein Beispiel; bei Material an dessen Inhalte und Bezeichnungen.''';
+
+  static const _visualExplainSystemPrompt = r'''
+Du beantwortest in einer Lern-App eine Rückfrage zu einer visuellen Lektion (siehe JSON) – zu einem Schritt oder zu einem Fehler in der Übung. Die App kann zeigen: Auto auf einer Straße (Weg/Geschwindigkeit), Funktionsgraphen mit Tangente/Fläche und Umformungen Schritt für Schritt.
+
+Antworte NUR mit JSON:
+{"text": "Erklärung, du-Form, Formeln in $…$ (Backslashes verdoppeln)",
+ "transform": [{"latex": "Gleichung ohne $", "note": "was passiert und warum"}],
+ "functions": [{"key": "neu", "label": "…", "expr": "Eingabe-Schreibweise, nur die Variable der Lektion", "unit": "…"}],
+ "show": {"car": key, "carFrom": "position"|"velocity", "plot": [keys], "tangent": key, "area": key}}
+
+- "transform": langsam, jeder Zwischenstand einzeln (z.B. bei y' = dy/dx: was dy und dx bedeuten, Differenzenquotient → Grenzwert → Schreibweise).
+- "functions" nur, wenn du für die Erklärung neue Funktionen brauchst (z.B. die falsche Antwort des Nutzers als Funktion, um sie neben der richtigen zu zeigen); "show" darf auf die Funktionen der Lektion und die neuen verweisen.
+- Bei einem Fehler: sag genau, welcher Rechenschritt falsch ist, wie es richtig geht und was die falsche Antwort im echten Leben bedeuten würde.
+- Halte dich an den gewünschten Modus (visuell/schriftlich/beides). Felder, die du nicht brauchst, weglassen.''';
+
   /// Bewertet eine Freihand-Skizze (gezeichnet oder als Foto) an den
   /// Kriterien der Aufgabe. Je Fläche ein Bild; die App wertet das Urteil
   /// selbst aus ([DrawingReview.passes]). Für Bilder ein Vision-Modell wählen.

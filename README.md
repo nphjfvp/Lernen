@@ -1412,6 +1412,36 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zo. Visuell lernen
+
+Im Fach unter **„Visuell lernen“** erklärt die App Mathe, Physik & Co. mit
+bewegten Bildern statt nur Text:
+
+- **Thema oder PDF**: Ein eigenes Beispiel bzw. Thema eintippen (z. B.
+  „Ableitung mit einem Auto erklären“) oder leer lassen – dann sucht die KI
+  selbst ein passendes Beispiel. Optional eine PDF aus dem Fach wählen oder neu
+  hochladen und festlegen: **eine Seite, ein Bereich oder die ganze PDF**.
+- **Detailgrad**: Kurz, Normal oder Ausführlich.
+- **Lektion Schritt für Schritt**: Jeder Schritt erklärt, *warum* man ihn macht,
+  *welche Formel* benutzt wird und *was das für das Beispiel bedeutet*. Dazu:
+  - ein **simuliertes Auto** (Weg aus s(t) oder aufsummiert aus v(t)), mit
+    Geschwindigkeitspfeil und Anzeige von Weg und Tempo,
+  - **Funktionsgraphen** mit wanderndem Punkt, **Tangente** (Steigung =
+    Ableitung) und **Fläche** (Integral),
+  - **Umformungen langsam nacheinander** (z. B. von Δy/Δx zu dy/dx), vor- und
+    zurückspulbar.
+  Die KI liefert nur die Terme – alle Werte, Ableitungen und Flächen rechnet
+  die App selbst nach.
+- **Rückfrage zu jedem Schritt**: „Frage zu diesem Schritt“ – und wählen, ob
+  die Antwort **visuell, schriftlich oder beides** sein soll (z. B. „Warum ist
+  y′ = dy/dx?“ → die Umformung wird gezeigt und erklärt).
+- **Danach selbst rechnen** wie bei den Rechenweg-Aufgaben. Bei einem Fehler:
+  **„Simulieren“** zeigt, was deine Antwort in echt bedeuten würde (zweites,
+  halb durchsichtiges Auto bzw. zweite Kurve neben der richtigen), **„Warum
+  falsch?“** erklärt den Fehler visuell und schriftlich.
+- Lektionen werden im Fach gespeichert und synchronisiert (Sync-Version 5 –
+  alle Geräte aktualisieren).
+
 ### 5zn. Lerneinheiten zu den falschen Fragen nach dem Daily Quiz
 
 - Ist das Daily Quiz geschafft und war heute etwas falsch (auch wenn es in der

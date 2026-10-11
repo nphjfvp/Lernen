@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1504 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1511 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1550,6 +1550,19 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `MiniLessonContent` (study_aids.dart, auch im `MiniLessonSheet`), lädt bei Kartenwechsel neu
     und verwirft veraltete KI-Antworten; `studyAidsAi(context, card)`. Tests:
     `missed_lessons_test`.
+71. Visuell lernen: Modell `VisualLesson` (models/visual_lesson.dart: `VisualFunction`,
+    `VisualStep`, `VisualShow` mit car/carSource/plot/tangent/area/transform, `TransformState`,
+    Übung als `StepTask` + `ExerciseSimulation`; `fromMap` tolerant, unbekannte Bezüge fallen weg).
+    `VisualMath` (services/visual_math.dart): Kurven nur in der Variablen, Ableitung numerisch,
+    Integral per Trapez, Auto aus Weg oder Geschwindigkeit, `sanitize`, `fmt`. Store
+    `visual_lessons` (`VisualLessonRepository`), in Sync/Merge/AutoSync/Löschkaskade,
+    `syncDataVersion = 5`. UI ui/visual/: `VisualLearnScreen` (Thema, PDF aus Fach oder Upload,
+    Seite/Bereich/ganz, Detailgrad, Liste; Hooks `aiFactory`/`pickPdfHook`/`renderPagesHook`),
+    `VisualLessonScreen` (Seiten Schritte → Ergebnis → Übung, `VisualAskSheet` mit Modus
+    visuell/schriftlich/beides, falsche Antwort simulieren/erklären), `VisualSceneView`
+    (Auto + Graph, Play/Slider) und `EquationTransformView`. `StepTaskView.onWrongAnswer` neu.
+    KI: `generateVisualLessons`, `explainVisual`. Karte `module-visual-learn` im Fach. Tests:
+    `visual_math_test`, `visual_learn_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

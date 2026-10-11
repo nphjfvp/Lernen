@@ -53,6 +53,7 @@ import '../widgets/mastery_dot.dart';
 import '../widgets/ocr_notice.dart';
 import 'material_opener.dart';
 import 'module_form_screen.dart';
+import '../visual/visual_learn_screen.dart';
 
 class ModuleDetailScreen extends StatefulWidget {
   const ModuleDetailScreen({super.key, required this.moduleId});
@@ -232,6 +233,21 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: _ModeCard(
+                        key: const ValueKey('module-visual-learn'),
+                        icon: Icons.animation_outlined,
+                        title: 'Visuell lernen',
+                        subtitle: 'Thema oder PDF → Schritt für Schritt erklärt und simuliert, dann selbst lösen',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => VisualLearnScreen(moduleId: module.id, moduleName: module.name),
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     _SoftRow(
@@ -1208,7 +1224,7 @@ class _RoundIconButton extends StatelessWidget {
 }
 
 class _ModeCard extends StatelessWidget {
-  const _ModeCard({required this.icon, required this.title, required this.subtitle, required this.onTap});
+  const _ModeCard({super.key, required this.icon, required this.title, required this.subtitle, required this.onTap});
   final IconData icon;
   final String title;
   final String subtitle;

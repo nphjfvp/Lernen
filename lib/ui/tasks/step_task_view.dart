@@ -61,10 +61,15 @@ class StepTaskView extends StatefulWidget {
     this.examMode = false,
     this.onSkip,
     this.canGiveUp = false,
+    this.onWrongAnswer,
   });
 
   final Flashcard card;
   final StepTask task;
+
+  /// Eine Eingabe war falsch (nicht leer, lesbar) – z.B. um sie in „Visuell
+  /// lernen“ zu simulieren.
+  final void Function(StepField field, String input)? onWrongAnswer;
   final bool isNew;
   final bool examMode;
   final void Function({Grade? selfGrade, bool? isCorrect}) onComplete;
@@ -146,6 +151,9 @@ class _StepTaskViewState extends State<StepTaskView> {
         for (final (i, f) in step.fields.indexed) StepChecker.check(f, p.controllers[i].text),
       ];
       p.verdicts = verdicts;
+      for (final (i, v) in verdicts.indexed) {
+        if (v.isAttempt && !v.isCorrect) widget.onWrongAnswer?.call(step.fields[i], p.controllers[i].text);
+      }
       // Was die App nicht nachrechnen kann, zählt (mit Hinweis) als richtig.
       final ok = verdicts.every((v) => v.isCorrect || v.kind == FieldVerdictKind.uncheckable);
       if (ok) {
@@ -201,6 +209,7 @@ class _StepTaskViewState extends State<StepTaskView> {
         _resultSolved = true;
       } else if (verdict.isAttempt) {
         _resultWrong++;
+        widget.onWrongAnswer?.call(field, _resultController.text);
       }
     });
   }

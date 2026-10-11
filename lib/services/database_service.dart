@@ -37,6 +37,9 @@ class DatabaseService {
   static final chatMessages = stringMapStoreFactory.store('chat_messages');
   static final labExperiments = stringMapStoreFactory.store('lab_experiments');
 
+  /// Lektionen aus „Visuell lernen“.
+  static final visualLessons = stringMapStoreFactory.store('visual_lessons');
+
   /// Aufgaben, die die App noch nicht interaktiv prüfen kann (Sammelliste).
   static final unsupportedTasks = stringMapStoreFactory.store('unsupported_tasks');
 
