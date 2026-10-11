@@ -1,19 +1,23 @@
 name: Backup wiederherstellen
 
-# Stellt den Code-Stand eines Backup-Tags (backup-…) auf dem App-Zweig wieder
-# her – als NEUER Commit: nichts geht verloren, und die Rückkehr lässt sich
-# ihrerseits wieder rückgängig machen. Danach werden Android- und Windows-Build
-# angestoßen; die App holt sich die wiederhergestellte Version ganz normal über
-# den Update-Check (höhere Build-Nummer, die Lerndaten auf dem Gerät bleiben).
+# Stellt den Code-Stand eines Backups (Commit-SHA, Tag oder Zweig) auf dem
+# App-Zweig wieder her – als NEUER Commit: nichts geht verloren, und die
+# Rückkehr lässt sich ihrerseits wieder rückgängig machen. Danach werden
+# Android- und Windows-Build angestoßen; die App holt sich die
+# wiederhergestellte Version ganz normal über den Update-Check (höhere
+# Build-Nummer, die Lerndaten auf dem Gerät bleiben).
 #
 # Starten: GitHub → Actions → "Backup wiederherstellen" → "Run workflow".
+#
+# Backups (siehe README, "Backup und Wiederherstellen"):
+#   8043a211bb436cd880851f7a52a517d0a46ad5ab – vor dem Modus "Visuell lernen"
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: Backup-Tag, dessen Stand wiederhergestellt wird
+      backup:
+        description: Backup (Commit-SHA, Tag oder Zweig)
         required: true
-        default: backup-vor-visuell-lernen
+        default: 8043a211bb436cd880851f7a52a517d0a46ad5ab
       branch:
         description: Zweig, aus dem die App gebaut wird
         required: true
@@ -27,7 +31,7 @@ jobs:
   restore:
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ inputs.tag }}
+      BACKUP: ${{ inputs.backup }}
       BRANCH: ${{ inputs.branch }}
     steps:
       - uses: actions/checkout@v4
@@ -40,20 +44,29 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --tags --force
-          if ! git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
-            echo "::error::Backup-Tag $TAG gibt es nicht."
+          target=""
+          for candidate in "$BACKUP" "origin/$BACKUP"; do
+            if git rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
+              target=$(git rev-parse "$candidate^{commit}")
+              break
+            fi
+          done
+          if [ -z "$target" ]; then
+            echo "::error::Backup $BACKUP gibt es nicht."
             exit 1
           fi
           # Ganzen Dateibaum durch den des Backups ersetzen (auch später
-          # hinzugekommene Dateien fallen weg).
+          # hinzugekommene Dateien fallen weg) – nur dieser Workflow bleibt,
+          # damit man jederzeit wieder zurück kann.
           git rm -r -q .
-          git checkout "refs/tags/$TAG" -- .
+          git checkout "$target" -- .
+          git checkout HEAD -- .github/workflows/restore-backup.yml
           if git diff --cached --quiet; then
-            echo "Der Zweig ist schon auf dem Stand von $TAG."
+            echo "Der Zweig ist schon auf dem Stand von $BACKUP."
             echo "UNCHANGED=1" >> "$GITHUB_ENV"
             exit 0
           fi
-          git commit -q -m "Backup $TAG wiederhergestellt"
+          git commit -q -m "Backup ${target:0:7} wiederhergestellt"
           git push origin "HEAD:$BRANCH"
 
       # Pushes mit dem GITHUB_TOKEN starten keine Workflows – die Builds

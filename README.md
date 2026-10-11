@@ -1395,20 +1395,22 @@ Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
 ### Backup und Wiederherstellen
 
-Vor großen Umbauten wird der Stand als Git-Tag `backup-…` gesichert
-(z.B. `backup-vor-visuell-lernen`). Der Tag hat ein eigenes Release mit
-fertiger APK und Windows-App, das von späteren Pushes nicht überschrieben wird.
+Vor großen Umbauten wird der Stand als Backup festgehalten – als Commit in der
+Historie des App-Zweigs (bleibt dauerhaft erhalten):
+
+| Backup | Commit |
+| --- | --- |
+| vor dem Modus „Visuell lernen“ | `8043a211bb436cd880851f7a52a517d0a46ad5ab` |
 
 - **Wiederherstellen** (ohne Hilfe): GitHub → *Actions* → *Backup
-  wiederherstellen* → *Run workflow* (Tag ist vorausgefüllt). Der Code-Stand
-  des Backups kommt als neuer Commit auf den App-Zweig, die Builds starten
-  automatisch, und die App bietet das Update wie gewohnt an. Die Lerndaten auf
-  dem Gerät bleiben erhalten; nichts geht verloren – auch das Wiederherstellen
-  lässt sich wieder rückgängig machen.
-- **Direkt installieren**: Im Release des Backup-Tags liegen APK und
-  Lernen-Setup.exe. Achtung Android: Eine ältere APK lässt sich nicht über eine
-  neuere installieren (nur nach Deinstallieren – dabei gehen lokale Daten ohne
-  Sync verloren). Deshalb besser den Weg über *Backup wiederherstellen*.
+  wiederherstellen* → *Run workflow* (das letzte Backup ist vorausgefüllt). Der
+  Code-Stand des Backups kommt als neuer Commit auf den App-Zweig, die Builds
+  starten automatisch, und die App bietet das Update wie gewohnt an. Die
+  Lerndaten auf dem Gerät bleiben erhalten; nichts geht verloren – auch das
+  Wiederherstellen lässt sich wieder rückgängig machen (Workflow mit dem Commit
+  davor erneut starten).
+- Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
+  die ältere Version als Karteikarte; sie gehen nicht verloren.
 
 ### 5zn. Lerneinheiten zu den falschen Fragen nach dem Daily Quiz
 
