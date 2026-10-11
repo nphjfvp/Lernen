@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1501 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1504 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1540,6 +1540,16 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     der eutektischen Linie, gestrichelte Trennlinie). `PhaseCalculator.cAtT(line, t)` (Instanz,
     mit Randwert), statisch jetzt `cAtTOf`. KI-Prompt: Werte vom Blatt ablesen, Fragen als
     Teile. TaskImportScreen hängt die Abbildung an phase/drawing-Karten.
+70. Lerneinheiten nach dem Daily Quiz: `DailySessionState.missedIds` (heute mind. einmal falsch,
+    `outcome.wasWrong` in `_handleComplete`) und `lessonsDone`; `_SessionDoneView` zeigt
+    `daily-lessons-offer` (`daily-lessons` / `daily-lessons-decline` → `_finishLessons`).
+    `MissedLessonsScreen` (ui/daily/missed_lessons_screen.dart): Gruppen je Fach (alphabetisch),
+    Phasen lesson → retryOffer → retry (QuestionAnswerView, ohne recordReview) → retryDone → done;
+    Keys `lessons-next`/`-skip`/`-skip-module`/`-retry`/`-retry-wrong`/`-next-module`/`-end`/
+    `-close`, `lessons-progress`, Test-Hook `aiFactory`. Lerneinheit-Inhalt jetzt
+    `MiniLessonContent` (study_aids.dart, auch im `MiniLessonSheet`), lädt bei Kartenwechsel neu
+    und verwirft veraltete KI-Antworten; `studyAidsAi(context, card)`. Tests:
+    `missed_lessons_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

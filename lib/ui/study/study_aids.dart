@@ -76,6 +76,9 @@ Future<void> openCardSource(BuildContext context, Flashcard card, {bool preferSc
   await openMaterialAt(context, source.material, page: source.page);
 }
 
+/// KI für Lernhilfen zur Karte (mit Bild das Vision-Modell) – null ohne Key.
+AiService? studyAidsAi(BuildContext context, Flashcard card) => _ai(context, card);
+
 AiService? _ai(BuildContext context, Flashcard card) {
   final settings = context.read<SettingsRepository?>()?.settings;
   if (settings == null || !settings.hasApiKey) return null;
@@ -231,18 +234,50 @@ class StudyAidsBar extends StatelessWidget {
   }
 }
 
-/// Inhalt des Lerneinheit-Sheets (siehe [showMiniLesson]).
-class MiniLessonSheet extends StatefulWidget {
+/// Lerneinheit-Sheet (siehe [showMiniLesson]).
+class MiniLessonSheet extends StatelessWidget {
   const MiniLessonSheet({super.key, required this.card, this.ai});
 
   final Flashcard card;
   final AiService? ai;
 
   @override
-  State<MiniLessonSheet> createState() => _MiniLessonSheetState();
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
+      builder: (context, controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        children: [
+          Text('Kurze Lerneinheit', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          MathText(card.front, style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+          const SizedBox(height: 16),
+          MiniLessonContent(card: card, ai: ai),
+        ],
+      ),
+    );
+  }
 }
 
-class _MiniLessonSheetState extends State<MiniLessonSheet> {
+/// Die Lerneinheit selbst (ohne Rahmen): beim ersten Mal von der KI erzeugt
+/// und an der Karte gespeichert, danach sofort da; mit Fundstelle im Skript
+/// und "Neu erstellen". Für das Sheet und die Lerneinheiten nach dem Daily
+/// Quiz.
+class MiniLessonContent extends StatefulWidget {
+  const MiniLessonContent({super.key, required this.card, this.ai});
+
+  final Flashcard card;
+  final AiService? ai;
+
+  @override
+  State<MiniLessonContent> createState() => _MiniLessonContentState();
+}
+
+class _MiniLessonContentState extends State<MiniLessonContent> {
   String? _lesson;
   CardSource? _source;
   bool _loading = true;
@@ -254,7 +289,21 @@ class _MiniLessonSheetState extends State<MiniLessonSheet> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void didUpdateWidget(MiniLessonContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.card.id != widget.card.id) {
+      _lesson = null;
+      _source = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
+  }
+
   Future<void> _load({bool regenerate = false}) async {
+    final cardId = widget.card.id;
+    // Inzwischen eine andere Karte (Lerneinheiten nach dem Daily Quiz): das
+    // Ergebnis dieses Aufrufs gehört nicht mehr hierher.
+    bool current() => mounted && widget.card.id == cardId;
     setState(() {
       _loading = true;
       _error = null;
@@ -264,10 +313,11 @@ class _MiniLessonSheetState extends State<MiniLessonSheet> {
     try {
       // Gespeicherten Stand lesen: die Lerneinheit kann in dieser Sitzung
       // schon erzeugt worden sein, die übergebene Karte ist ein Schnappschuss.
-      final stored = await flashcards?.loadById(widget.card.id) ?? widget.card;
-      if (!mounted) return;
-      _source ??= await findCardSource(context, stored);
-      if (!mounted) return;
+      final stored = await flashcards?.loadById(cardId) ?? widget.card;
+      if (!mounted || !current()) return;
+      final source = _source ?? await findCardSource(context, stored);
+      if (!current()) return;
+      _source = source;
       final cached = stored.miniLesson;
       if (cached != null && cached.trim().isNotEmpty && !regenerate) {
         setState(() => _lesson = cached);
@@ -285,16 +335,16 @@ class _MiniLessonSheetState extends State<MiniLessonSheet> {
       final lesson = await ai.generateMiniLesson(
         question: stored.promptText,
         correctAnswer: answerTextOf(stored),
-        sourceText: _source?.pageText,
+        sourceText: source?.pageText,
         conceptExplanation: conceptExplanation,
         image: _imageOf(stored),
       );
       await flashcards?.updateStudyAids(stored.id, miniLesson: lesson);
-      if (mounted) setState(() => _lesson = lesson);
+      if (current()) setState(() => _lesson = lesson);
     } catch (e) {
-      if (mounted) setState(() => _error = e is AiServiceException ? e.message : 'Lerneinheit fehlgeschlagen: $e');
+      if (current()) setState(() => _error = e is AiServiceException ? e.message : 'Lerneinheit fehlgeschlagen: $e');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (current()) setState(() => _loading = false);
     }
   }
 
@@ -332,47 +382,37 @@ class _MiniLessonSheetState extends State<MiniLessonSheet> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final source = _source;
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.7,
-      maxChildSize: 0.95,
-      builder: (context, controller) => ListView(
-        controller: controller,
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        children: [
-          Text('Kurze Lerneinheit', style: Theme.of(context).textTheme.titleMedium),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Text(_error!, key: const ValueKey('lesson-error'), style: TextStyle(color: c.danger))
+        else
+          SelectionArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: _paragraphs(c))),
+        if (source != null) ...[
           const SizedBox(height: 4),
-          MathText(widget.card.front, style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
-          const SizedBox(height: 16),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_error != null)
-            Text(_error!, style: TextStyle(color: c.danger))
-          else
-            SelectionArea(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: _paragraphs(c))),
-          if (source != null) ...[
-            const SizedBox(height: 4),
-            OutlinedButton.icon(
-              key: const ValueKey('lesson-open-source'),
-              onPressed: () => openMaterialAt(context, source.material, page: source.page),
-              icon: const Icon(Icons.menu_book_outlined, size: 18),
-              label: Text('${source.guessed ? 'Vermutlich ' : ''}${source.material.fileName}, Seite ${source.page}'),
-            ),
-          ],
-          if (!_loading && widget.ai != null && _lesson != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => _load(regenerate: true),
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Neu erstellen'),
-              ),
-            ),
+          OutlinedButton.icon(
+            key: const ValueKey('lesson-open-source'),
+            onPressed: () => openMaterialAt(context, source.material, page: source.page),
+            icon: const Icon(Icons.menu_book_outlined, size: 18),
+            label: Text('${source.guessed ? 'Vermutlich ' : ''}${source.material.fileName}, Seite ${source.page}'),
+          ),
         ],
-      ),
+        if (!_loading && widget.ai != null && _lesson != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _load(regenerate: true),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Neu erstellen'),
+            ),
+          ),
+      ],
     );
   }
 }

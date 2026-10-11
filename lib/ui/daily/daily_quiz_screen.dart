@@ -19,6 +19,7 @@ import '../../theme/app_colors.dart';
 import '../widgets/calc_tasks_toggle.dart';
 import '../widgets/floating_nav_bar.dart';
 import 'card_review_mixin.dart';
+import 'missed_lessons_screen.dart';
 import 'question_answer_view.dart';
 
 /// Welche Runde einer Session eine Karte gerade angezeigt wird – steuert in
@@ -66,6 +67,13 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
   /// verhindert eine Endlosschleife bei einer Karte, die immer wieder falsch
   /// beantwortet wird.
   final Map<String, int> _wrongAttempts = {};
+
+  /// Heute mindestens einmal falsch beantwortete Karten (Reihenfolge wie
+  /// beantwortet) – nach dem Quiz gibt es dazu Lerneinheiten.
+  final List<String> _missedIds = [];
+
+  /// Lerneinheiten für heute erledigt oder abgelehnt.
+  bool _lessonsDone = false;
   static const int _maxWrongRequeueAttempts = 3;
 
   /// Freiwillige Zusatzrunde über das Tagesbudget hinaus (siehe
@@ -205,6 +213,10 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       _wrongAttempts
         ..clear()
         ..addAll(session.wrongAttempts);
+      _missedIds
+        ..clear()
+        ..addAll(session.missedIds);
+      _lessonsDone = session.lessonsDone;
       _bonusQueue.clear();
       _skipQueue.clear();
       _lastLoadedDay = DailySessionState.dayOf(now);
@@ -224,7 +236,32 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       introducedIds: wasNew ? {..._session.introducedIds, answered.id} : null,
       wrongIds: _wrongQueue.map((c) => c.id).toList(),
       wrongAttempts: Map.of(_wrongAttempts),
+      missedIds: List.of(_missedIds),
     );
+    unawaited(DailySessionRepository().save(_session));
+  }
+
+  /// Lerneinheiten zu den heute falsch beantworteten Fragen (nach Fächern).
+  Future<void> _openLessons() async {
+    final repo = context.read<FlashcardRepository>();
+    final all = await repo.loadAll();
+    final byId = {for (final c in all) c.id: c};
+    final cards = [
+      for (final id in _missedIds)
+        if (byId[id] != null) byId[id]!,
+    ];
+    if (!mounted) return;
+    if (cards.isNotEmpty) {
+      await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => MissedLessonsScreen(cards: cards)));
+    }
+    if (mounted) _finishLessons();
+  }
+
+  /// Lerneinheiten erledigt oder abgelehnt – das Angebot verschwindet für heute.
+  void _finishLessons() {
+    setState(() => _lessonsDone = true);
+    if (!_session.isFor(DateTime.now())) return;
+    _session = _session.copyWith(lessonsDone: true, missedIds: List.of(_missedIds));
     unawaited(DailySessionRepository().save(_session));
   }
 
@@ -296,6 +333,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       for (final easier in outcome.reopened) {
         if (!_wrongQueue.any((c) => c.id == easier.id)) _wrongQueue.add(easier);
       }
+      if (outcome.wasWrong && !outcome.cardDeleted && !_missedIds.contains(card.id)) _missedIds.add(card.id);
       switch (stage) {
         case _QuizStage.main:
           _index += 1;
@@ -436,6 +474,9 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         onRestart: _loadPlan,
         onContinue: _continueVoluntarily,
         loading: _bonusLoading,
+        missedCount: _lessonsDone ? 0 : _missedIds.length,
+        onLessons: _openLessons,
+        onDeclineLessons: _finishLessons,
       );
     }
     if (_hasCalcCards && plan != null) {
@@ -515,11 +556,19 @@ class _SessionDoneView extends StatelessWidget {
     required this.onRestart,
     required this.onContinue,
     required this.loading,
+    required this.missedCount,
+    required this.onLessons,
+    required this.onDeclineLessons,
   });
   final int count;
   final VoidCallback onRestart;
   final VoidCallback onContinue;
   final bool loading;
+
+  /// Heute falsch beantwortete Fragen ohne erledigte Lerneinheiten (0 = kein Angebot).
+  final int missedCount;
+  final VoidCallback onLessons;
+  final VoidCallback onDeclineLessons;
 
   @override
   Widget build(BuildContext context) {
@@ -534,6 +583,45 @@ class _SessionDoneView extends StatelessWidget {
             const SizedBox(height: 16),
             Text('Für heute geschafft! $count Karten wiederholt.', textAlign: TextAlign.center),
             const SizedBox(height: 16),
+            if (missedCount > 0) ...[
+              Container(
+                key: const ValueKey('daily-lessons-offer'),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(16)),
+                child: Column(
+                  children: [
+                    Text(
+                      missedCount == 1
+                          ? '1 Frage war heute falsch. Willst du eine kurze Lerneinheit dazu?'
+                          : '$missedCount Fragen waren heute falsch. Willst du zu jeder eine kurze Lerneinheit – '
+                                'nach Fächern sortiert, danach nochmal versuchen?',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(height: 1.4),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          key: const ValueKey('daily-lessons'),
+                          onPressed: onLessons,
+                          icon: const Icon(Icons.school_outlined),
+                          label: const Text('Lerneinheiten'),
+                        ),
+                        TextButton(
+                          key: const ValueKey('daily-lessons-decline'),
+                          onPressed: onDeclineLessons,
+                          child: const Text('Nein danke'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 8,

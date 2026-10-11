@@ -14,6 +14,8 @@ class DailySessionState {
     this.introducedIds = const {},
     this.wrongIds = const [],
     this.wrongAttempts = const {},
+    this.missedIds = const [],
+    this.lessonsDone = false,
   });
 
   factory DailySessionState.empty(DateTime now) => DailySessionState(day: dayOf(now));
@@ -30,6 +32,14 @@ class DailySessionState {
 
   /// Wie oft eine Karte in der Wiederholungsrunde schon drankam.
   final Map<String, int> wrongAttempts;
+
+  /// Heute mindestens einmal falsch beantwortete Karten (in Reihenfolge) –
+  /// Grundlage für die Lerneinheiten nach dem Daily Quiz.
+  final List<String> missedIds;
+
+  /// Die Lerneinheiten nach dem Daily Quiz sind für heute erledigt
+  /// (durchgegangen oder abgelehnt) – das Angebot erscheint nicht erneut.
+  final bool lessonsDone;
 
   static DateTime dayOf(DateTime when) => DateTime(when.year, when.month, when.day);
 
@@ -62,6 +72,8 @@ class DailySessionState {
         ...other.wrongAttempts,
         for (final e in wrongAttempts.entries) e.key: max(e.value, other.wrongAttempts[e.key] ?? 0),
       },
+      missedIds: [...missedIds, ...other.missedIds.where((id) => !missedIds.contains(id))],
+      lessonsDone: lessonsDone || other.lessonsDone,
     );
   }
 
@@ -70,6 +82,8 @@ class DailySessionState {
     Set<String>? introducedIds,
     List<String>? wrongIds,
     Map<String, int>? wrongAttempts,
+    List<String>? missedIds,
+    bool? lessonsDone,
   }) {
     return DailySessionState(
       day: day,
@@ -77,6 +91,8 @@ class DailySessionState {
       introducedIds: introducedIds ?? this.introducedIds,
       wrongIds: wrongIds ?? this.wrongIds,
       wrongAttempts: wrongAttempts ?? this.wrongAttempts,
+      missedIds: missedIds ?? this.missedIds,
+      lessonsDone: lessonsDone ?? this.lessonsDone,
     );
   }
 
@@ -86,6 +102,8 @@ class DailySessionState {
         'introducedIds': introducedIds.toList(),
         'wrongIds': wrongIds,
         'wrongAttempts': wrongAttempts,
+        if (missedIds.isNotEmpty) 'missedIds': missedIds,
+        if (lessonsDone) 'lessonsDone': true,
       };
 
   factory DailySessionState.fromMap(Map<String, dynamic> map) => DailySessionState(
@@ -97,5 +115,7 @@ class DailySessionState {
           for (final e in ((map['wrongAttempts'] as Map?) ?? const {}).entries)
             e.key.toString(): (e.value as num?)?.toInt() ?? 0,
         },
+        missedIds: [...?(map['missedIds'] as List?)?.map((e) => e.toString())],
+        lessonsDone: map['lessonsDone'] == true,
       );
 }

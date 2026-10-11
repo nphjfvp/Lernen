@@ -1393,6 +1393,22 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### 5zn. Lerneinheiten zu den falschen Fragen nach dem Daily Quiz
+
+- Ist das Daily Quiz geschafft und war heute etwas falsch (auch wenn es in der
+  Wiederholung danach klappte), bietet die App **Lerneinheiten** dazu an –
+  oder „Nein danke“.
+- **Nach Fächern sortiert**, nicht durcheinander: erst alle Fragen eines
+  Fachs, dann das nächste (Fach-Leiste oben). Je Frage: die Frage, die richtige
+  Antwort und die kurze Lerneinheit (von der KI, an der Karte gespeichert, mit
+  Fundstelle im Skript).
+- Jede Lerneinheit lässt sich **überspringen**, ebenso der Rest eines Fachs;
+  „Beenden“ bricht ganz ab.
+- Nach den Lerneinheiten eines Fachs: **die Fragen nochmal versuchen** – danach
+  „x von y richtig“ und die falschen erneut. Das zählt nicht für die Planung
+  (die Karten wurden heute schon bewertet).
+- Erledigt oder abgelehnt, erscheint das Angebot an dem Tag nicht wieder.
+
 ### 5zm. Zustandsdiagramm-Aufgaben 1:1 wie auf dem Blatt
 
 Beispiel Blatt 6, Aufgabe 1 (Pb-Sn mit gemessener Abkühlkurve):
