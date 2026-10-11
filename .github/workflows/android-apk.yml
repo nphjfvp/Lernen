@@ -69,11 +69,13 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
+      # Ein Backup-Tag (backup-…) bekommt ein eigenes, festes Release – das
+      # "latest"-Release für den Update-Check bleibt dabei unberührt.
       - name: Aktuellen Stand als Release veröffentlichen
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-latest
-          name: Android APK (aktueller Stand)
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/backup-') && github.ref_name || 'android-latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/backup-') && format('Android APK (Backup {0})', github.ref_name) || 'Android APK (aktueller Stand)' }}
           body: |
             Automatisch gebaut aus Commit ${{ github.sha }} auf ${{ github.ref_name }}.
             Mit dem Debug-Keystore signiert (siehe android/app/build.gradle.kts) -

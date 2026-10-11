@@ -1393,6 +1393,23 @@ Laufzeit gebraucht. Das Setup versteckt diesen Ordner nur. Die Lerndaten
 liegen ohnehin getrennt davon in `%APPDATA%` und bleiben bei Updates,
 Neuinstallation oder dem Wechsel vom ZIP zum Setup erhalten.
 
+### Backup und Wiederherstellen
+
+Vor großen Umbauten wird der Stand als Git-Tag `backup-…` gesichert
+(z.B. `backup-vor-visuell-lernen`). Der Tag hat ein eigenes Release mit
+fertiger APK und Windows-App, das von späteren Pushes nicht überschrieben wird.
+
+- **Wiederherstellen** (ohne Hilfe): GitHub → *Actions* → *Backup
+  wiederherstellen* → *Run workflow* (Tag ist vorausgefüllt). Der Code-Stand
+  des Backups kommt als neuer Commit auf den App-Zweig, die Builds starten
+  automatisch, und die App bietet das Update wie gewohnt an. Die Lerndaten auf
+  dem Gerät bleiben erhalten; nichts geht verloren – auch das Wiederherstellen
+  lässt sich wieder rückgängig machen.
+- **Direkt installieren**: Im Release des Backup-Tags liegen APK und
+  Lernen-Setup.exe. Achtung Android: Eine ältere APK lässt sich nicht über eine
+  neuere installieren (nur nach Deinstallieren – dabei gehen lokale Daten ohne
+  Sync verloren). Deshalb besser den Weg über *Backup wiederherstellen*.
+
 ### 5zn. Lerneinheiten zu den falschen Fragen nach dem Daily Quiz
 
 - Ist das Daily Quiz geschafft und war heute etwas falsch (auch wenn es in der
