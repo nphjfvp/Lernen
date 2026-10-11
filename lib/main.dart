@@ -23,10 +23,12 @@ import 'repositories/unsupported_task_repository.dart';
 import 'services/auto_sync_service.dart';
 import 'services/database_service.dart';
 import 'services/sync_backup_service.dart';
+import 'services/ai_service.dart';
 import 'services/reminder_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'ui/root_shell.dart';
+import 'ui/widgets/slow_ai_dialog.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -79,6 +81,8 @@ Future<void> main() async {
     }
   }));
 
+  // Antwortet die KI lange nicht: fragen statt abbrechen.
+  AiService.onSlowResponse = SlowAiPrompt.ask;
   runApp(LernenApp(settingsRepository: settingsRepository, moduleRepository: moduleRepository));
 }
 
@@ -132,6 +136,7 @@ class LernenApp extends StatelessWidget {
           final skin = themeSkinFromName(appSettings.themeSkin);
           return MaterialApp(
             title: 'Lernen',
+            navigatorKey: appNavigatorKey,
             debugShowCheckedModeBanner: false,
             theme: AppTheme.forSkin(skin, Brightness.light),
             darkTheme: AppTheme.forSkin(skin, Brightness.dark),

@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1511 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1515 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1563,6 +1563,13 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (Auto + Graph, Play/Slider) und `EquationTransformView`. `StepTaskView.onWrongAnswer` neu.
     KI: `generateVisualLessons`, `explainVisual`. Karte `module-visual-learn` im Fach. Tests:
     `visual_math_test`, `visual_learn_test`.
+72. Langsame KI: `AiService._awaitPatiently` statt hartem Timeout – nach
+    `AiService.requestTimeout` (3 min, Tests kürzer) fragt `AiService.onSlowResponse(waited, done)`;
+    true = dieselbe Anfrage weiter abwarten, false = `AiServiceException('Abgebrochen …')`, ohne
+    Hook wie bisher „Keine Antwort …“. In `main()` gesetzt auf `SlowAiPrompt.ask`
+    (ui/widgets/slow_ai_dialog.dart, `appNavigatorKey` in MaterialApp): ein geteilter Dialog
+    `ai-slow-dialog` mit `ai-slow-wait`/`ai-slow-cancel`, schließt sich bei Antwort selbst.
+    Test: `ai_slow_response_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

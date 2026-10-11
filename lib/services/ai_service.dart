@@ -97,8 +97,17 @@ class AiService {
   static const _endpoint = 'https://openrouter.ai/api/v1/chat/completions';
 
   /// Großzügig, da einzelne Generierungsaufrufe (große Chunks, Vision-
-  /// Modelle) legitimerweise mehrere Minuten dauern können.
-  static const _requestTimeout = Duration(minutes: 3);
+  /// Modelle) legitimerweise mehrere Minuten dauern können. Danach wird
+  /// gefragt ([onSlowResponse]) statt sofort abgebrochen. Nur Tests ändern
+  /// den Wert.
+  static Duration requestTimeout = const Duration(minutes: 3);
+
+  /// Fragt nach [requestTimeout] ohne Antwort, ob weiter gewartet werden soll
+  /// (true) – die Anfrage läuft dabei weiter, nichts wird neu gestartet.
+  /// [waited] ist die bisherige Wartezeit, [done] wird fertig, sobald die
+  /// Antwort doch noch kommt (ein offener Dialog schließt sich dann selbst).
+  /// Ohne Hook (Tests, kein Bildschirm) bricht die Anfrage wie bisher ab.
+  static Future<bool> Function(Duration waited, Future<void> done)? onSlowResponse;
 
   /// Zeichenobergrenze für Aufrufe, die bewusst NICHT gechunkt werden
   /// (Crosscheck-Quellmaterial dient nur als Kontext, keine vollständige
@@ -268,8 +277,7 @@ Hier ist der Dokumenttext:
 
     final http.Response response;
     try {
-      response = await _client
-          .post(
+      response = await _awaitPatiently(_client.post(
             Uri.parse(_endpoint),
             headers: {
               'Authorization': 'Bearer $apiKey',
@@ -285,13 +293,7 @@ Hier ist der Dokumenttext:
                 {'role': 'user', 'content': userContent},
               ],
             }),
-          )
-          // Ohne Obergrenze bliebe bei einer hängenden Verbindung (z.B.
-          // Netzwechsel unterwegs) der Lade-Spinner für immer stehen.
-          .timeout(_requestTimeout);
-    } on TimeoutException {
-      throw AiServiceException(
-          'Keine Antwort von OpenRouter nach ${_requestTimeout.inMinutes} Minuten – bitte erneut versuchen.');
+          ));
     } on http.ClientException catch (e) {
       throw AiServiceException('Keine Verbindung zu OpenRouter: ${e.message}');
     }
@@ -314,6 +316,38 @@ Hier ist der Dokumenttext:
     }
     return content;
   }
+
+  /// Wartet auf [request] – ohne Obergrenze bliebe bei einer hängenden
+  /// Verbindung (z.B. Netzwechsel unterwegs) der Lade-Spinner für immer
+  /// stehen. Große Aufgaben brauchen aber auch mal länger: Nach jeweils
+  /// [requestTimeout] entscheidet der Nutzer über [onSlowResponse], ob er
+  /// weiter wartet; die Anfrage läuft solange weiter.
+  static Future<T> _awaitPatiently<T>(Future<T> request) async {
+    var waited = Duration.zero;
+    while (true) {
+      try {
+        return await request.timeout(requestTimeout);
+      } on TimeoutException {
+        waited += requestTimeout;
+        final ask = onSlowResponse;
+        final minutes = _minutesText(waited);
+        if (ask == null) {
+          throw AiServiceException('Keine Antwort von OpenRouter nach $minutes – bitte erneut versuchen.');
+        }
+        final done = request.then<void>((_) {}, onError: (Object _) {});
+        if (!await ask(waited, done)) {
+          throw AiServiceException(
+            'Abgebrochen – OpenRouter hat nach $minutes nicht geantwortet. Bei großen Aufgaben hilft '
+            'oft, weniger Seiten auf einmal zu schicken oder ein schnelleres Modell zu wählen.',
+          );
+        }
+      }
+    }
+  }
+
+  static String _minutesText(Duration d) => d.inSeconds < 60
+      ? '${d.inSeconds} Sekunden'
+      : (d.inMinutes == 1 ? '1 Minute' : '${d.inMinutes} Minuten');
 
   static String _cap(String text, int maxChars) {
     if (text.length <= maxChars) return text;

@@ -1412,6 +1412,18 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zp. KI braucht länger: „Weiter warten“ statt Abbruch
+
+- Antwortet OpenRouter 3 Minuten lang nicht, bricht die App nicht mehr einfach
+  ab, sondern fragt: **„Weiter warten“** oder **„Abbrechen“**. Die Anfrage
+  läuft dabei weiter – nichts wird neu gestartet oder doppelt bezahlt.
+- Kommt die Antwort, während der Dialog offen ist, schließt er sich von selbst.
+- Nach weiteren 3 Minuten fragt die App erneut. Laufen mehrere Anfragen
+  gleichzeitig, gibt es nur einen Dialog.
+- Typische Gründe für lange Wartezeiten: viele Seiten oder Bilder auf einmal,
+  sehr lange Antworten (viele Karten), „denkende“ Modelle oder ein
+  ausgelastetes Modell bei OpenRouter.
+
 ### 5zo. Visuell lernen
 
 Im Fach unter **„Visuell lernen“** erklärt die App Mathe, Physik & Co. mit
