@@ -11,11 +11,13 @@ import 'package:uuid/uuid.dart';
 
 import '../condense/condense_screen.dart';
 import '../widgets/math_text.dart';
+import '../../models/card_flag.dart';
 import '../../models/concept.dart';
 import '../../models/flashcard.dart';
 import '../../models/lecture_unit.dart';
 import '../../models/material_item.dart';
 import '../../models/module.dart';
+import '../../repositories/card_flag_repository.dart';
 import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
@@ -53,6 +55,7 @@ import '../widgets/mastery_dot.dart';
 import '../widgets/ocr_notice.dart';
 import 'material_opener.dart';
 import 'module_form_screen.dart';
+import '../flags/flagged_questions_screen.dart';
 import '../visual/visual_learn_screen.dart';
 
 class ModuleDetailScreen extends StatefulWidget {
@@ -250,6 +253,29 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    Builder(
+                      builder: (context) {
+                        final flags = context.watch<CardFlagRepository?>();
+                        if (flags == null) return const SizedBox.shrink();
+                        if (!flags.isLoaded) WidgetsBinding.instance.addPostFrameCallback((_) => flags.load());
+                        final list = flags.list(moduleId: module.id);
+                        final errors = list.where((f) => f.kind == CardFlagKind.error).length;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _SoftRow(
+                            key: const ValueKey('module-flagged'),
+                            icon: Icons.bookmarks_outlined,
+                            title: 'Markierte Fragen${list.isEmpty ? '' : ' (${list.length})'}',
+                            subtitle: list.isEmpty
+                                ? 'Im Daily Quiz per Lesezeichen markieren – Fehler melden oder Fragen merken'
+                                : '$errors mit Fehler gemeldet, ${list.length - errors} gemerkt',
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => FlaggedQuestionsScreen(moduleId: module.id)),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                     _SoftRow(
                       icon: Icons.manage_search,
                       title: 'Fragen aus PDF importieren',
@@ -1267,7 +1293,7 @@ class _ModeCard extends StatelessWidget {
 }
 
 class _SoftRow extends StatelessWidget {
-  const _SoftRow({required this.icon, required this.title, required this.subtitle, this.onTap});
+  const _SoftRow({super.key, required this.icon, required this.title, required this.subtitle, this.onTap});
   final IconData icon;
   final String title;
   final String subtitle;

@@ -29,7 +29,7 @@ class CollectionMerge {
 /// Versionen zeigen unbekannte Aufgaben nur als Karteikarte und speichern sie
 /// beim Lernen auch so). 2 = Stückliste und Diagramm-Skizze, 3 = Zustandsdiagramm,
 /// 4 = Freihand-Skizze und Bilder als Antwortoptionen, 5 = Lektionen aus „Visuell lernen“.
-const syncDataVersion = 5;
+const syncDataVersion = 6;
 
 /// Datenformat eines Sync-Stands (0 = von einer Version vor [syncDataVersion]).
 int dataVersionOf(Map<String, dynamic> payload) => (payload['dataVersion'] as num?)?.toInt() ?? 0;
@@ -79,6 +79,7 @@ final Map<String, _KeyOf> _keyed = {
   'lectureUnits': _idKey,
   'labExperiments': _idKey,
   'visualLessons': _idKey,
+  'cardFlags': _idKey,
   'chatMessages': _idKey,
   'unsupportedTasks': _idKey,
   'masterySnapshots': (r) {
@@ -103,6 +104,7 @@ const _perModule = [
   'lectureUnits',
   'labExperiments',
   'visualLessons',
+  'cardFlags',
   'chatMessages',
   'unsupportedTasks',
   'mockExamResults',
@@ -354,6 +356,8 @@ String describeMerge(SyncMergeResult result) {
     'flashcards': 'Karten',
     'lectureUnits': 'Einheiten',
     'labExperiments': 'Laborversuche',
+    'visualLessons': 'Visuell-Lektionen',
+    'cardFlags': 'markierte Fragen',
     'chatMessages': 'Chat-Nachrichten',
     'unsupportedTasks': 'Aufgaben auf der Liste „Noch nicht interaktiv“',
     'mockExamResults': 'Probeklausuren',

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
 import 'repositories/auth_repository.dart';
+import 'repositories/card_flag_repository.dart';
 import 'repositories/chat_repository.dart';
 import 'repositories/concept_repository.dart';
 import 'repositories/flashcard_repository.dart';
@@ -108,6 +109,7 @@ class LernenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LabExperimentRepository()..loadAll()),
         ChangeNotifierProvider(create: (_) => LabPhotoRepository()),
         ChangeNotifierProvider(create: (_) => VisualLessonRepository()),
+        ChangeNotifierProvider(create: (_) => CardFlagRepository()),
         ChangeNotifierProvider.value(value: settingsRepository),
         ChangeNotifierProvider(create: (_) => ModelCatalogRepository()..loadCached()),
         ChangeNotifierProvider(
@@ -120,8 +122,10 @@ class LernenApp extends StatelessWidget {
             // Öffnen bzw. beim Tab-Wechsel neu).
             onDataChanged: () async {
               final labs = ctx.read<LabExperimentRepository>();
+              final flags = ctx.read<CardFlagRepository>();
               await moduleRepository.load();
               await labs.loadAll();
+              if (flags.isLoaded) await flags.load(reload: true);
             },
           )..start(),
         ),

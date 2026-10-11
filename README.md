@@ -1412,6 +1412,25 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zt. Fragen markieren und aus Fragen visuell lernen
+
+- **Markieren im Daily Quiz**: Oben neben dem Fach sitzt ein Lesezeichen. Damit
+  markierst du die aktuelle Frage als **„Fehler in der Frage“** (z.B. falsche
+  Musterlösung, unklare Option) oder **„Merken“** – jeweils mit optionaler
+  Notiz. Das Symbol zeigt den Stand (rot = Fehler, gefüllt = gemerkt);
+  nochmal tippen ändert oder entfernt die Markierung.
+- **„Markierte Fragen“** im Fach: alle Markierungen, filterbar nach Fehler
+  oder Gemerkt, mit **Bearbeiten** (Frage korrigieren, danach Markierung
+  entfernen), **Visuell erklären**, **Ändern** und **Entfernen**. Die
+  Markierungen werden mit synchronisiert.
+- **„Visuell erklären“ aus einer Frage** (nach dem Beantworten bei den
+  Lernhilfen und in „Markierte Fragen“): Die KI baut aus Frage, Lösung,
+  Erklärung und der Stelle im Skript eine Lektion wie in „Visuell lernen“ –
+  wahlweise erklärt oder sokratisch, mit Animation und Übung. Sie wird im Fach
+  gespeichert und gehört zur Frage: beim nächsten Mal **„Öffnen“** ohne neue
+  KI-Anfrage (oder neu erstellen).
+- Sync-Datenformat jetzt Version 6 – alle Geräte aktualisieren.
+
 ### 5zs. Visuell lernen: Themenliste bei mehreren PDF-Seiten
 
 Wie bei den interaktiven Aufgaben schaut die KI bei einem **Seitenbereich oder

@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1524 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1529 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1597,6 +1597,19 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `_readPages(Seiten des Themas)` + `generateVisualLessons(topic: Thema/Idee/Wunsch)`, Fehler
     gesammelt (`visual-error`), mehrere → `visual-info`, eine → öffnen. Knopf heißt dann
     „Themen finden“.
+76. Fragen markieren: `CardFlag` (models/card_flag.dart, id = Karten-ID, kind error/saved,
+    note, front-Schnappschuss) im Store `card_flags`, `CardFlagRepository` (ChangeNotifier mit
+    Zwischenspeicher, `load(reload:)` nach Abgleich in main.dart). Sync wie visualLessons
+    (Payload `cardFlags`, `_keyed`/`_perModule`, Löschkaskade, AutoSync), `syncDataVersion = 6`.
+    UI ui/flags/: `CardFlagButton` (`card-flag`, im Daily-Quiz-Kopf neben dem Fach) →
+    `showCardFlagSheet` (`card-flag-kind`/`-note`/`-save`/`-remove`); `FlaggedQuestionsScreen`
+    (`flags-filter-*`, `flag-i`, `flag-edit-/-visual-/-change-/-remove-i`), Eingang
+    `module-flagged` im Fach. „Visuell erklären“: `openVisualForCard` /
+    `VisualFromCardDialog` (ui/visual/visual_from_card.dart, `card-visual-*`, Hook `aiFactory`):
+    Frage (`promptText`), `answerTextOf`, back und `findCardSource`-Seite →
+    `generateVisualLessons`; `VisualLesson.cardId`, `VisualLessonRepository.forCard`. Knopf
+    `aid-visual` in `StudyAidsBar` (nur mit Key und VisualLessonRepository). Tests:
+    `card_flag_sync_test`, `card_flags_ui_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

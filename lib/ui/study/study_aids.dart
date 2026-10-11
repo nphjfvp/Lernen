@@ -10,10 +10,12 @@ import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../repositories/visual_lesson_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/source_locator.dart';
 import '../../theme/app_colors.dart';
 import '../modules/material_opener.dart';
+import '../visual/visual_from_card.dart';
 import '../widgets/math_text.dart';
 import 'socratic_screen.dart';
 
@@ -175,6 +177,7 @@ class StudyAidsBar extends StatelessWidget {
     final c = context.colors;
     final hasMaterials = context.read<MaterialRepository?>() != null;
     final socratic = aiAvailable && (suggestSocratic || showSocratic);
+    final visual = aiAvailable && context.read<VisualLessonRepository?>() != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -226,6 +229,13 @@ class StudyAidsBar extends StatelessWidget {
                 onPressed: () => openSocratic(context, card, wrongAnswer: wrongAnswer),
                 icon: const Icon(Icons.forum_outlined, size: 18),
                 label: const Text('Sokratisch erarbeiten'),
+              ),
+            if (visual)
+              TextButton.icon(
+                key: const ValueKey('aid-visual'),
+                onPressed: () => openVisualForCard(context, card),
+                icon: const Icon(Icons.animation, size: 18),
+                label: const Text('Visuell erklären'),
               ),
           ],
         ),

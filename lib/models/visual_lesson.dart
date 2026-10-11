@@ -256,6 +256,7 @@ class VisualLesson {
     this.source = '',
     this.detail = 'normal',
     this.style = VisualStyle.explain,
+    this.cardId,
     required this.createdAt,
   });
 
@@ -293,6 +294,10 @@ class VisualLesson {
 
   /// Gewählter Lernweg (in der Lektion umschaltbar).
   final VisualStyle style;
+
+  /// Aus dieser Frage erstellt („Visuell erklären“) – dann öffnet die Frage
+  /// beim nächsten Mal direkt diese Lektion.
+  final String? cardId;
   final DateTime createdAt;
 
   VisualFunction? function(String key) {
@@ -323,6 +328,7 @@ class VisualLesson {
     source: source,
     detail: detail,
     style: style ?? this.style,
+    cardId: cardId,
     createdAt: createdAt,
   );
 
@@ -362,6 +368,7 @@ class VisualLesson {
     if (source.isNotEmpty) 'source': source,
     'detail': detail,
     if (style != VisualStyle.explain) 'style': style.name,
+    'cardId': ?cardId,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -375,6 +382,7 @@ class VisualLesson {
     String? source,
     String? detail,
     VisualStyle? style,
+    String? cardId,
   }) {
     if (raw is! Map) return null;
     final functions = <VisualFunction>[];
@@ -442,6 +450,7 @@ class VisualLesson {
       source: source ?? _str(raw['source']),
       detail: detail ?? (_str(raw['detail']).isEmpty ? 'normal' : _str(raw['detail'])),
       style: style ?? (_str(raw['style']) == VisualStyle.socratic.name ? VisualStyle.socratic : VisualStyle.explain),
+      cardId: cardId ?? (_str(raw['cardId']).isEmpty ? null : _str(raw['cardId'])),
       createdAt: created,
     );
   }

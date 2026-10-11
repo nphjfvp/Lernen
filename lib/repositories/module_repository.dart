@@ -67,6 +67,7 @@ class ModuleRepository extends ChangeNotifier {
     await DatabaseService.unsupportedTasks.delete(client, finder: byModule);
     await DatabaseService.labExperiments.delete(client, finder: byModule);
     await DatabaseService.visualLessons.delete(client, finder: byModule);
+    await DatabaseService.cardFlags.delete(client, finder: byModule);
     await DatabaseService.labPhotos.delete(client, finder: byModule);
     await MockExamRepository.removeModuleIn(client, moduleId);
     return pdfPaths;

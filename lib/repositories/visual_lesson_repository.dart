@@ -26,6 +26,18 @@ class VisualLessonRepository extends ChangeNotifier {
     return lessons;
   }
 
+  /// Die neueste Lektion, die aus der Frage [cardId] erstellt wurde.
+  Future<VisualLesson?> forCard(String cardId) async {
+    final db = await _open();
+    final records = await DatabaseService.visualLessons.find(
+      db,
+      finder: Finder(filter: Filter.equals('cardId', cardId)),
+    );
+    final lessons = [for (final r in records) ?VisualLesson.fromMap(r.value)];
+    lessons.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return lessons.firstOrNull;
+  }
+
   Future<void> save(VisualLesson lesson) async {
     final db = await _open();
     await DatabaseService.visualLessons.record(lesson.id).put(db, lesson.toMap());

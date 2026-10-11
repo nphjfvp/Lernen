@@ -16,6 +16,7 @@ import '../../services/fsrs_service.dart';
 import '../../services/home_widget_service.dart';
 import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
+import '../flags/card_flag_sheet.dart';
 import '../widgets/calc_tasks_toggle.dart';
 import '../widgets/floating_nav_bar.dart';
 import 'card_review_mixin.dart';
@@ -723,15 +724,22 @@ class _SessionView extends StatelessWidget {
                                 : '$position / $total',
                     style: TextStyle(fontSize: 12.5, color: c.inkMuted),
                   ),
-                  if (moduleName.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
-                      decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(20)),
-                      child: Text(
-                        moduleName,
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.accentOnSoft),
-                      ),
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Frage markieren (Fehler bemerkt oder zum Merken).
+                      CardFlagButton(card: card),
+                      if (moduleName.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
+                          decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(20)),
+                          child: Text(
+                            moduleName,
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.accentOnSoft),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ],
