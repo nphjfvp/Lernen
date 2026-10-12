@@ -30,6 +30,7 @@ import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/json_repair.dart';
 import '../../services/answer_checker.dart';
 import '../../services/content_analyzer.dart';
 import '../../services/highlight_context.dart';
@@ -39,7 +40,6 @@ import '../../services/import_verify_service.dart';
 import '../../services/interactive_task_scan_service.dart';
 import '../../services/material_file_store.dart';
 import '../../services/material_text_extractor.dart';
-import '../../services/math_markup.dart';
 import '../../services/pdf_ocr_service.dart';
 import '../../services/pdf_question_import_service.dart';
 import '../../services/pdf_service.dart';
@@ -419,7 +419,26 @@ class _ReviewScreenState extends State<ReviewScreen> with SafeSetState<ReviewScr
           // lokal geparst – exakt derselbe Rettungs-/Validierungspfad
           // (QuestionParsing.normalizeGeneratedFlashcard) wie bei den beiden
           // anderen Modi greift unten identisch.
-          final decoded = jsonDecode(MathMarkup.escapeLatexInJson(_pastedJson));
+          // Erst lokal reparieren (Codefences, LaTeX, Kommas, abgeschnitten);
+          // klappt das nicht und ist ein Key hinterlegt, korrigiert die KI
+          // das JSON – statt es neu einfügen zu müssen.
+          Object? decoded;
+          try {
+            decoded = JsonRepair.decode(_pastedJson);
+          } on FormatException catch (e) {
+            if (!settings.hasApiKey) {
+              throw AiServiceException(
+                'Das eingefügte JSON ist ungültig (${e.message}). Mit hinterlegtem OpenRouter-Key repariert die '
+                'App es automatisch.',
+                rawResponse: _pastedJson,
+              );
+            }
+            setState(() => _progressText = 'JSON ist fehlerhaft – die KI repariert es …');
+            decoded = await AiService(
+              apiKey: settings.openRouterApiKey!,
+              model: settings.effectiveHelpModelId,
+            ).repairJson(_pastedJson, error: e.message);
+          }
           result = {
             'concepts': decoded is Map ? decoded['concepts'] : null,
             'flashcards': decoded is Map ? decoded['flashcards'] : decoded,

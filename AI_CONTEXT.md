@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1544 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1555 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1646,6 +1646,14 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Kurzfassung), `visual-short`, `visual-recap`, `visual-finish`, `visual-short-finish`.
     `VisualLearnScreen`: Abschnitt Lernpfade (`visual-course-new`, `visual-course-i`), Lektionen mit
     courseId ausgeblendet. Tests: `visual_course_test`, `visual_course_ui_test`.
+80. JSON-Reparatur: `JsonRepair` (services/json_repair.dart: `decode` = `extractBlock` (Fences,
+    Text, auch abgeschnitten) → `escapeLatexInJson` → `repairText` (Steuerzeichen und innere
+    Anführungszeichen in Texten, überzählige Kommas außerhalb von Texten) → `closeTruncated`
+    (offene Texte/Klammern schließen, bis zu 60 Schnitte am letzten Komma)). In AiService liest
+    `_json(raw)` alle Antworten (vorher `_parseJsonObject`): lokal, sonst einmal
+    `repairJson(raw, error:)` (Prompt `_jsonRepairSystemPrompt`, temperature 0); Liste oben →
+    `items`/`flashcards`/`tasks`. Eingefügtes JSON: ReviewScreen (pasteJson) und
+    TaskImportScreen `_importJson` reparieren per KI, wenn ein Key da ist. Test: `json_repair_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

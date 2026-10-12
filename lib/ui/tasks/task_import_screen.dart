@@ -260,6 +260,9 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   };
 
   bool _busy = false;
+
+  /// Die KI repariert gerade eingefügtes JSON.
+  bool _repairingJson = false;
   bool _saving = false;
   String? _error;
   String? _raw;
@@ -505,15 +508,44 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
   /// Liest die Antwort einer externen KI (siehe AiService.externalTaskPrompt)
   /// und hängt die Aufgaben an – geprüft wird wie bei der App-KI.
   Future<void> _importJson(String raw) async {
-    final ({List<InteractiveTaskDraft> drafts, int dropped}) result;
+    ({List<InteractiveTaskDraft> drafts, int dropped}) result;
     try {
       result = AiService.parseImportedTasks(raw);
     } on AiServiceException catch (e) {
+      // Kaputtes JSON: von der KI korrigieren lassen statt neu einfügen.
+      final ai = _ai(vision: false);
+      if (ai == null) {
+        setState(() {
+          _error = '${e.message}\nMit hinterlegtem OpenRouter-Key repariert die App das JSON automatisch.';
+          _raw = e.rawResponse;
+        });
+        return;
+      }
       setState(() {
-        _error = e.message;
-        _raw = e.rawResponse;
+        _error = null;
+        _busy = true;
+        _repairingJson = true;
       });
-      return;
+      try {
+        final fixed = await ai.repairJson(raw, error: e.message);
+        result = AiService.parseImportedTasks(jsonEncode(fixed));
+      } on AiServiceException catch (r) {
+        if (mounted) {
+          setState(() {
+            _error = r.message;
+            _raw = r.rawResponse ?? raw;
+          });
+        }
+        return;
+      } finally {
+        if (mounted) {
+          setState(() {
+            _busy = false;
+            _repairingJson = false;
+          });
+        }
+      }
+      if (!mounted) return;
     }
     if (result.drafts.isEmpty) {
       setState(() {
@@ -1139,7 +1171,9 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                 : Icon(_drafts.isNotEmpty ? Icons.refresh : Icons.auto_awesome_outlined, size: 18),
             label: Text(
-              _busy ? 'KI liest die Aufgabe …' : (_drafts.isNotEmpty ? 'Neu erstellen' : 'Aufgabe erstellen'),
+              _busy
+                  ? (_repairingJson ? 'Die KI repariert das JSON …' : 'KI liest die Aufgabe …')
+                  : (_drafts.isNotEmpty ? 'Neu erstellen' : 'Aufgabe erstellen'),
             ),
           ),
           if (!hasKey)

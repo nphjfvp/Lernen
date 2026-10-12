@@ -25,7 +25,7 @@ import 'calc_plan.dart';
 import 'condense_service.dart';
 import 'lab_photo_reading.dart';
 import 'lab_report_draft.dart';
-import 'math_markup.dart';
+import 'json_repair.dart';
 import 'question_parsing.dart';
 import 'text_chunker.dart';
 
@@ -438,7 +438,7 @@ Antworte in der Sprache der Vorlage.
       final raw = await _complete(
           _summarySystemPrompt, 'Vorlesungsfolien:\n\n${chunks.first}');
       onProgress?.call(1, 1);
-      final parsed = _parseJsonObject(raw);
+      final parsed = await _json(raw);
       final points = parsed['key_points'];
       // Felder als Text/Textliste, egal was das Modell liefert – die
       // Oberfläche liest sie so (vorher: Absturz bei z.B. einer Zahl).
@@ -467,7 +467,7 @@ Antworte in der Sprache der Vorlage.
           'Dies ist Abschnitt ${i + 1} von ${chunks.length} eines längeren '
           'Foliensatzes.$contextNote\n\nAbschnitt-Text:\n\n${chunks[i]}';
       final raw = await _complete(_summarySystemPrompt, userPrompt);
-      final parsed = _parseJsonObject(raw);
+      final parsed = await _json(raw);
 
       final chunkTitle = parsed['title']?.toString().trim() ?? '';
       if (chunkTitle.isNotEmpty) title ??= chunkTitle;
@@ -567,7 +567,7 @@ Antworte in der Sprache der Vorlage.
               '$contextNote\n\nAbschnitt-Text:\n\n';
       final raw = await _complete(_formulaSheetSystemPrompt, '$header${chunks[i]}', temperature: 0.2);
       rawResponses.add(raw);
-      final parsed = _parseJsonObject(raw);
+      final parsed = await _json(raw);
       final chunkTitle = parsed['title']?.toString().trim() ?? '';
       if (chunkTitle.isNotEmpty) title ??= chunkTitle;
       sheet = sheet.merged(FormulaSheet.fromMap({...parsed, 'detail': detail.name}));
@@ -690,7 +690,7 @@ Antworte in der Sprache der Vorlesung.
       }
       final raw = await _complete(_condenseAnalysisSystemPrompt, b.toString(), temperature: 0.1);
       raws.add(raw);
-      final parsed = _parseJsonObject(raw);
+      final parsed = await _json(raw);
       List<String> strings(Object? v) => [
             if (v is List)
               for (final e in v)
@@ -787,12 +787,12 @@ Antworte in der Sprache der Vorlesung.
       try {
         final raw = await _complete(_condenseSelectSystemPrompt, b.toString(), temperature: 0.1);
         raws.add(raw);
-        parsed = _parseJsonObject(raw);
+        parsed = await _json(raw);
       } on AiServiceException {
         // Ein Abschnitt, der nicht lesbar war, wird einmal wiederholt.
         final raw = await _complete(_condenseSelectSystemPrompt, b.toString(), temperature: 0.1);
         raws.add(raw);
-        parsed = _parseJsonObject(raw);
+        parsed = await _json(raw);
       }
       final rawSections = parsed['sections'] ?? parsed['abschnitte'];
       for (final entry in (rawSections is List ? rawSections : const [])) {
@@ -1013,7 +1013,7 @@ Antworte in der Sprache der Vorlage.
     if (chunks.length == 1) {
       final raw = await _complete(_conceptsSystemPrompt, chunks.first);
       onProgress?.call(1, 1);
-      return _parseJsonObject(raw);
+      return await _json(raw);
     }
 
     final concepts = <Map<String, dynamic>>[];
@@ -1030,7 +1030,7 @@ Antworte in der Sprache der Vorlage.
           'Dies ist Abschnitt ${i + 1} von ${chunks.length} eines längeren '
           'Materials.$contextNote\n\nAbschnitt-Text:\n\n${chunks[i]}';
       final raw = await _complete(_conceptsSystemPrompt, userPrompt);
-      final parsed = _parseJsonObject(raw);
+      final parsed = await _json(raw);
 
       for (final c in _mapsIn(parsed['concepts'])) {
         final title = (c['title'] ?? '').toString().trim();
@@ -1102,7 +1102,7 @@ Antworte in der Sprache der Vorlage.
         ..writeln(_cap(examContext, _examContextCap));
     }
     final raw = await _complete(_checkpointQuizSystemPrompt, buffer.toString());
-    final parsed = _parseJsonObject(raw);
+    final parsed = await _json(raw);
     return (parsed['flashcards'] as List? ?? const [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
@@ -1218,7 +1218,7 @@ wenn es viele sind. Antworte in der Sprache der Vorlage.
           : 'Dies ist Abschnitt ${i + 1} von ${chunks.length} eines längeren '
               'Übungsdokuments.\n\nAbschnitt-Text:\n\n${chunks[i]}';
       final raw = await _complete(_importQuestionsSystemPrompt, userPrompt);
-      final parsed = _parseJsonObject(raw);
+      final parsed = await _json(raw);
       flashcards.addAll(_mapsIn(parsed['flashcards']));
       onProgress?.call(i + 1, chunks.length);
     }
@@ -1546,7 +1546,7 @@ zusammen mit den neuen Seiten liest. Alle weiteren Seiten sind NEU.
     }
     final raw = await _complete(systemPrompt, content, temperature: 0.1);
     return parseScanWindow(
-      _parseJsonObject(raw),
+      await _json(raw),
       shownPages: pageNumbers,
       overlapPage: rolling ? overlapPage : null,
     );
@@ -1694,7 +1694,7 @@ Antworte in der Sprache der Vorlage.
       buffer.writeln('${q.n}. (Seite ${q.page}) ${_cap(q.front, 400)} — Lösung: ${_cap(q.answer, 160)}');
     }
     final raw = await _complete(system, buffer.toString(), temperature: 0.1);
-    return parseImportVerification(_parseJsonObject(raw), pageNumbers);
+    return parseImportVerification(await _json(raw), pageNumbers);
   }
 
   /// Liest die Antwort von [verifyImportedQuestions]. Eine fehlende oder
@@ -1798,7 +1798,7 @@ Jede Nummer aus der Liste kommt genau einmal vor. Antworte in der Sprache der Vo
       buffer.writeln('${c.n}. [${c.type}] ${_cap(c.front, 500)} — Lösung: ${_cap(c.answer, 300)}');
     }
     final raw = await _complete(system, buffer.toString());
-    return parseStageExpansions(_parseJsonObject(raw), wanted);
+    return parseStageExpansions(await _json(raw), wanted);
   }
 
   /// Liest die Antwort von [expandQuestionStages]: Nummer → Stufe/Ordner des
@@ -1895,7 +1895,7 @@ Antworte in der Sprache der Vorlage.
         ..writeln('Anweisung des Nutzers zur Überarbeitung: $instruction');
     }
     final raw = await _complete(_pageConceptSystemPrompt, buffer.toString());
-    return _parseJsonObject(raw);
+    return await _json(raw);
   }
 
   static const _pageQuestionGenerationSystemPrompt = '''
@@ -2109,7 +2109,7 @@ Sprache der Vorlage.
       ],
     ];
     final raw = await _complete(systemPrompt, content);
-    return parsePageQuestionGroups(_parseJsonObject(raw));
+    return parsePageQuestionGroups(await _json(raw));
   }
 
   /// Liest die Antwort von [generateQuestionsFromPage]: je Frage die Karten
@@ -2193,7 +2193,7 @@ Antworte in der Sprache der Vorlage.
           ..writeln(jsonEncode(withoutImageData(generated))))
         .toString();
     final raw = await _complete(_crosscheckSystemPrompt, userPrompt);
-    return _parseJsonObject(raw);
+    return await _json(raw);
   }
 
   /// Karten ohne angehängte Bilddaten (Base64) – die gehören nicht in eine
@@ -2336,7 +2336,7 @@ Antworte in der Sprache der Vorlage.
 ''';
     final userPrompt = 'Ursprüngliche Frage: $questionText\nBekannte Lösung: $currentAnswer';
     final raw = await _complete(systemPrompt, userPrompt);
-    return _parseJsonObject(raw);
+    return await _json(raw);
   }
 
   static const _checkFreeTextSystemPrompt = '''
@@ -2377,7 +2377,7 @@ Markdown-Codefences, ohne zusätzlichen Text:
     final userPrompt =
         'Frage: $question\nMusterlösung: $correctAnswer\nAntwort des Lernenden: $userAnswer';
     final raw = await _complete(_checkFreeTextSystemPrompt, userPrompt, temperature: 0);
-    final parsed = _parseJsonObject(raw);
+    final parsed = await _json(raw);
     return parsed['correct'] == true;
   }
 
@@ -2436,7 +2436,7 @@ Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
       buffer.writeln('Lücke ${i + 1}: Musterlösung "${solutions[i].trim()}" – Eingabe "$answer"');
     }
     final raw = await _complete(_checkFillBlankSystemPrompt, buffer.toString(), temperature: 0);
-    return parseBlankVerdicts(_parseJsonObject(raw), solutions.length);
+    return parseBlankVerdicts(await _json(raw), solutions.length);
   }
 
   static const _checkDiagramLabelSystemPrompt = '''
@@ -2483,7 +2483,7 @@ Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
       buffer.writeln('Stelle ${item.zone}$group: erwartet $expected – Eingabe "${item.answer.trim()}"');
     }
     final raw = await _complete(_checkDiagramLabelSystemPrompt, buffer.toString(), temperature: 0);
-    return parseBlankVerdicts(_parseJsonObject(raw), items.length);
+    return parseBlankVerdicts(await _json(raw), items.length);
   }
 
   /// Liest `{"results": [{"correct": true, "note": "…"}, …]}` – oder das
@@ -2860,7 +2860,7 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
         ..writeln();
     }
     final raw = await _complete(_suggestUnitsSystemPrompt, buffer.toString());
-    final parsed = _parseJsonObject(raw);
+    final parsed = await _json(raw);
     final known = {for (final m in materials) m.id};
     final used = <String>{};
     final result = <({String title, List<String> materialIds})>[];
@@ -3111,7 +3111,7 @@ Markdown-Codefences, ohne zusätzlichen Text:
     }
     buffer.writeln('Frage: $question');
     final raw = await _complete(_selectRelevantSystemPrompt, buffer.toString());
-    final parsed = _parseJsonObject(raw);
+    final parsed = await _json(raw);
     final ids = (parsed['relevant_ids'] as List?)?.map((e) => e.toString()).toList();
     return ids ?? const [];
   }
@@ -3149,7 +3149,7 @@ Antworte in der Sprache der Vorlage.
   Future<List<Map<String, dynamic>>> suggestHighlights(String extractedText) async {
     final raw = await _complete(
         _highlightSuggestionSystemPrompt, _cap(extractedText, _highlightInputCap));
-    final parsed = _parseJsonObject(raw);
+    final parsed = await _json(raw);
     return (parsed['highlights'] as List? ?? const [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
@@ -3216,7 +3216,7 @@ Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
       buffer.writeln('${c.n}. [${c.type}] ${_cap(c.front, 400)} — Lösung: ${_cap(c.answer, 200)}');
     }
     final raw = await _complete(_assignStagesSystemPrompt, buffer.toString());
-    return parseStageAssignments(_parseJsonObject(raw));
+    return parseStageAssignments(await _json(raw));
   }
 
   static const _matchScriptSystemPrompt = '''
@@ -3266,7 +3266,7 @@ Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
       buffer.writeln();
     }
     final raw = await _complete(_matchScriptSystemPrompt, buffer.toString());
-    final parsed = _parseJsonObject(raw);
+    final parsed = await _json(raw);
     final valid = {for (final item in items) item.n: {for (final c in item.candidates) c.id}};
     return {
       for (final entry in _mapsIn(parsed['matches']))
@@ -3287,36 +3287,55 @@ Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
             if (e is Map) Map<String, dynamic>.from(e),
       ];
 
-  Map<String, dynamic> _parseJsonObject(String raw) {
-    // Einfache Backslashes in LaTeX-Formeln ("$\frac…$") wären in JSON
-    // Steuerzeichen oder ungültig – vor dem Dekodieren reparieren.
-    final candidate = MathMarkup.escapeLatexInJson(_extractJsonBlock(raw));
+  /// Liest die Antwort als JSON-Objekt – erst mit lokaler Reparatur
+  /// ([JsonRepair]: Codefences, LaTeX, Zeilenumbrüche, Kommas, abgeschnitten),
+  /// sonst schickt sie die Antwort samt Fehler einmal an die KI zurück, die
+  /// sie als gültiges JSON neu ausgibt ([repairJson]). Der Nutzer muss nichts
+  /// neu eingeben.
+  Future<Map<String, dynamic>> _json(String raw) async {
+    Object? decoded;
     try {
-      final decoded = jsonDecode(candidate);
-      if (decoded is Map<String, dynamic>) return decoded;
-      throw const FormatException('Antwort ist kein JSON-Objekt');
-    } catch (e) {
-      throw AiServiceException(
-          'Antwort der KI konnte nicht als JSON gelesen werden: $e',
-          rawResponse: raw);
+      decoded = JsonRepair.decode(raw);
+    } on FormatException catch (e) {
+      try {
+        decoded = await repairJson(raw, error: e.message);
+      } on AiServiceException catch (r) {
+        throw AiServiceException(
+          'Antwort der KI konnte nicht als JSON gelesen werden (auch nicht nach Reparatur): ${r.message}',
+          rawResponse: raw,
+        );
+      }
+    }
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    // Nur eine Liste statt des Objekts (z.B. gleich die Karten): unter den
+    // üblichen Schlüsseln weitergeben.
+    if (decoded is List) return {'items': decoded, 'flashcards': decoded, 'tasks': decoded};
+    throw AiServiceException('Antwort der KI ist kein JSON-Objekt.', rawResponse: raw);
+  }
+
+  /// Lässt kaputtes JSON von der KI reparieren: sie bekommt den Text und die
+  /// Fehlermeldung und gibt denselben Inhalt als gültiges JSON zurück. Auch
+  /// für eingefügtes JSON einer externen KI. Wirft [AiServiceException].
+  Future<Object?> repairJson(String raw, {String error = ''}) async {
+    final reply = await _complete(
+      _jsonRepairSystemPrompt,
+      'Fehler beim Einlesen: ${error.isEmpty ? 'kein gültiges JSON' : error}\n\n'
+      'Text:\n${_cap(raw, 120000)}',
+      temperature: 0,
+    );
+    try {
+      return JsonRepair.decode(reply);
+    } on FormatException catch (e) {
+      throw AiServiceException('Auch die reparierte Antwort ist kein gültiges JSON: ${e.message}', rawResponse: reply);
     }
   }
 
-  static String _extractJsonBlock(String text) {
-    var t = text.trim();
-    final fenceMatch =
-        RegExp(r'```(?:json)?\s*([\s\S]*?)```').firstMatch(t);
-    if (fenceMatch != null) {
-      t = fenceMatch.group(1)!.trim();
-    }
-    final start = t.indexOf(RegExp(r'[\{\[]'));
-    if (start == -1) return t;
-    final firstChar = t[start];
-    final lastChar = firstChar == '{' ? '}' : ']';
-    final end = t.lastIndexOf(lastChar);
-    if (end == -1 || end < start) return t;
-    return t.substring(start, end + 1);
-  }
+  static const _jsonRepairSystemPrompt = r'''
+Du reparierst JSON. Du bekommst einen Text, der gültiges JSON sein sollte, und die Fehlermeldung beim Einlesen.
+Gib GENAU denselben Inhalt als gültiges JSON zurück: nichts weglassen, nichts umformulieren, nichts hinzufügen – nur die Fehler beheben (z.B. fehlende oder überzählige Kommas/Klammern, nicht maskierte Anführungszeichen oder Zeilenumbrüche in Texten, einfache Backslashes in LaTeX → doppelt, abgeschnittenes Ende sauber schließen, wobei ein unvollständiger letzter Eintrag wegfällt).
+Antworte NUR mit dem JSON – ohne Codefences, ohne Text davor oder danach.''';
+
 
   // -- Laborversuch ---------------------------------------------------------
 
@@ -3396,7 +3415,7 @@ Antworte in der Sprache der Unterlagen.
       throw AiServiceException('Aus den gewählten Unterlagen konnte kein Text gelesen werden.');
     }
     final raw = await _complete(_labStructureSystemPrompt, buffer.toString(), temperature: 0.1);
-    return _parseJsonObject(raw);
+    return await _json(raw);
   }
 
   static const _labAnswerReviewSystemPrompt = '''
@@ -3461,7 +3480,7 @@ Sprache der Aufgabe.
       ..writeln('Antwort des Studierenden:')
       ..writeln(_cap(answer.trim(), _labAnswerCap));
     final raw = await _complete(_labAnswerReviewSystemPrompt, buffer.toString(), temperature: 0);
-    return parseLabFeedback(_parseJsonObject(raw), forText: answer, at: at);
+    return parseLabFeedback(await _json(raw), forText: answer, at: at);
   }
 
   static const _labReportReviewSystemPrompt = '''
@@ -3536,7 +3555,7 @@ Sprache des Berichts.
       ..writeln('Text des Abschnitts:')
       ..writeln(_cap(text.trim(), _labReportCap));
     final raw = await _complete(_labReportReviewSystemPrompt, buffer.toString(), temperature: 0);
-    return parseLabFeedback(_parseJsonObject(raw), forText: text, at: at);
+    return parseLabFeedback(await _json(raw), forText: text, at: at);
   }
 
   static const _labContextCap = 9000;
@@ -3714,7 +3733,7 @@ Antworte in der Sprache der Aufgabe (Standard: Deutsch).
             ],
           ];
     final raw = await _complete(system, content, temperature: 0);
-    final plan = CalcPlan.fromJson(_parseJsonObject(raw));
+    final plan = CalcPlan.fromJson(await _json(raw));
     if (plan.isEmpty && plan.missing.isEmpty) {
       throw AiServiceException(
         'Die KI hat keinen brauchbaren Rechenplan geliefert – bitte die Aufgabe genauer beschreiben oder erneut versuchen.',
@@ -3820,7 +3839,7 @@ Antworte in der Sprache der Tabellen (Standard: Deutsch).
       },
     ];
     final raw = await _complete(_labPhotoSystemPrompt, content, temperature: 0);
-    final reading = LabPhotoReading.fromJson(_parseJsonObject(raw), experiments);
+    final reading = LabPhotoReading.fromJson(await _json(raw), experiments);
     if (reading.isEmpty) {
       throw AiServiceException('Die KI konnte auf dem Foto nichts lesen – anderes Foto oder bessere Beleuchtung versuchen.',
           rawResponse: raw);
@@ -3981,7 +4000,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
           ];
     final raw = await _complete(_labDraftSystemPrompt, content, temperature: 0.4);
     final draft = LabReportDraft.fromJson(
-      _parseJsonObject(raw),
+      await _json(raw),
       knownSectionIds: {for (final s in sections) s.id},
       sectionTitles: {for (final s in sections) s.id: s.title},
     );
@@ -4093,7 +4112,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
       _textWithImages(buffer.toString(), images, 'Bild'),
       temperature: 0,
     );
-    final drafts = parseInteractiveTasks(_parseJsonObject(raw));
+    final drafts = parseInteractiveTasks(await _json(raw));
     if (allowEmpty) return drafts;
     if (drafts.isEmpty || drafts.every((d) => d.kind == null && d.reason.trim().isEmpty && !d.incomplete && !d.asQuestion)) {
       throw AiServiceException('Die KI hat keine interaktive Aufgabe geliefert – bitte erneut versuchen.', rawResponse: raw);
@@ -4232,7 +4251,7 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
           ? 'Erkläre die Meldungen und prüfe die Aufgabe.'
           : 'Neue Frage des Nutzers: ${question.trim()}');
     final raw = await _complete(_stepReviewSystemPrompt, buffer.toString(), temperature: 0);
-    final review = StepTaskReview.fromJson(_parseJsonObject(raw));
+    final review = StepTaskReview.fromJson(await _json(raw));
     if (review.answer.isEmpty) {
       throw AiServiceException('Die KI hat keine Erklärung geliefert – bitte erneut versuchen.', rawResponse: raw);
     }
@@ -4286,7 +4305,7 @@ Antworte NUR mit JSON:
     }
     buffer.writeln('Dem Text folgen ${images.length} Foto${images.length == 1 ? '' : 's'} des handschriftlichen Rechenwegs.');
     final raw = await _complete(_paperReviewSystemPrompt, _textWithImages(buffer.toString(), images, 'Foto'), temperature: 0);
-    final review = PaperReview.fromJson(_parseJsonObject(raw));
+    final review = PaperReview.fromJson(await _json(raw));
     if (review.lines.isEmpty) {
       throw AiServiceException(
         'Auf dem Foto war kein Rechenweg zu erkennen – bitte näher, gerade und bei gutem Licht fotografieren.',
@@ -4356,7 +4375,7 @@ Antworte NUR mit JSON:
       _textWithImages(buffer.toString(), images, 'Seite'),
       temperature: 0.2,
     );
-    final json = _parseJsonObject(raw);
+    final json = await _json(raw);
     final list = json['lessons'] ?? json['lektionen'];
     final lessons = <Map<String, dynamic>>[
       if (list is List)
@@ -4405,7 +4424,7 @@ Antworte NUR mit JSON:
       _textWithImages(buffer.toString(), images, 'Bild'),
       temperature: 0.1,
     );
-    final json = _parseJsonObject(raw);
+    final json = await _json(raw);
     final list = json['topics'] ?? json['themen'];
     final topics = <VisualTopicIdea>[
       if (list is List)
@@ -4468,7 +4487,7 @@ Antworte NUR mit JSON:
       ..writeln('Themen (in der Reihenfolge der Unterlagen):')
       ..writeln(_cap(jsonEncode(topics), 60000));
     final raw = await _complete(_visualCoursePlanSystemPrompt, buffer.toString(), temperature: 0.1);
-    final json = _parseJsonObject(raw);
+    final json = await _json(raw);
     if (json['units'] is! List || (json['units'] as List).isEmpty) {
       throw AiServiceException('Die KI hat keinen Lernpfad geliefert – bitte erneut versuchen.', rawResponse: raw);
     }
@@ -4534,7 +4553,7 @@ Antworte NUR mit JSON:
         _ => 'BEIDES – Text und Visualisierung',
       }}');
     final raw = await _complete(_visualExplainSystemPrompt, buffer.toString(), temperature: 0.2);
-    final json = _parseJsonObject(raw);
+    final json = await _json(raw);
     final text = '${json['text'] ?? ''}'.trim();
     if (text.isEmpty && json['transform'] is! List && json['show'] is! Map) {
       throw AiServiceException('Die KI hat keine Erklärung geliefert – bitte erneut versuchen.', rawResponse: raw);
@@ -4587,7 +4606,7 @@ Antworte NUR mit JSON:
       buffer.writeln('Antwort des Lernenden: ${_cap(answer.trim(), 3000)}');
     }
     final raw = await _complete(_visualSocraticSystemPrompt, buffer.toString(), temperature: 0.3);
-    final json = _parseJsonObject(raw);
+    final json = await _json(raw);
     if ('${json['reply'] ?? json['text'] ?? ''}'.trim().isEmpty) {
       throw AiServiceException('Die KI hat nicht geantwortet – bitte erneut versuchen.', rawResponse: raw);
     }
@@ -4777,7 +4796,7 @@ Antworte NUR mit JSON:
       ],
     ];
     final raw = await _complete(_drawingReviewSystemPrompt, content, temperature: 0);
-    final review = DrawingReview.fromJson(_parseJsonObject(raw), drawing.criteria.length);
+    final review = DrawingReview.fromJson(await _json(raw), drawing.criteria.length);
     if (review.marks.every((m) => m == DrawingMark.unclear) && review.feedback.isEmpty) {
       throw AiServiceException('Die KI hat die Zeichnung nicht bewertet – bitte erneut versuchen.', rawResponse: raw);
     }
@@ -4935,7 +4954,7 @@ ZUSÄTZLICH FÜR DEN IMPORT:
   static ({List<InteractiveTaskDraft> drafts, int dropped}) parseImportedTasks(String raw) {
     final Object? decoded;
     try {
-      decoded = jsonDecode(MathMarkup.escapeLatexInJson(_extractJsonBlock(raw)));
+      decoded = JsonRepair.decode(raw);
     } catch (e) {
       throw AiServiceException('Das ist kein gültiges JSON: $e', rawResponse: raw);
     }
@@ -5042,7 +5061,7 @@ ZUSÄTZLICH FÜR DEN IMPORT:
     }
     if (appFindings.isEmpty) buffer.writeln('- (nichts)');
     final raw = await _complete(_verifyTaskSystemPrompt, buffer.toString(), temperature: 0);
-    final verification = TaskVerification.fromJson(_parseJsonObject(raw));
+    final verification = TaskVerification.fromJson(await _json(raw));
     if (verification.verdict == TaskVerdict.unclear && verification.comment.isEmpty) {
       throw AiServiceException('Die KI hat kein Urteil geliefert – bitte erneut versuchen.', rawResponse: raw);
     }

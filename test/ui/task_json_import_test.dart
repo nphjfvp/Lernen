@@ -327,6 +327,27 @@ void main() {
 
     var content = 'Das ist leider kein JSON.';
     TaskImportScreen.pickJsonHook = () async => content;
+    // Kaputtes JSON geht mit Key einmal zur Reparatur an die KI – die hier
+    // auch nichts Brauchbares liefert.
+    final repairs = <String>[];
+    TaskImportScreen.aiFactory = (key, model) => AiService(
+      apiKey: key,
+      model: model,
+      client: MockClient((r) async {
+        repairs.add('${((jsonDecode(r.body) as Map)['messages'] as List).last['content']}');
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {'content': 'Immer noch kein JSON.'},
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
     await tester.pumpWidget(MultiProvider(
       providers: [
         ChangeNotifierProvider<SettingsRepository>.value(value: _SettingsWithKey()),
@@ -345,6 +366,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('task-import-error')), findsOneWidget);
     expect(find.textContaining('kein gültiges JSON'), findsOneWidget);
+    expect(repairs.single, contains('Das ist leider kein JSON.'), reason: 'erst Reparatur versucht');
 
     content = jsonEncode({
       'flashcards': [

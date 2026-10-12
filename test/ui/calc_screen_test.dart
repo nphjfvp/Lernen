@@ -222,7 +222,8 @@ void main() {
           client: MockClient((r) async {
             final body = jsonDecode(r.body) as Map<String, dynamic>;
             model = body['model'] as String;
-            content = (body['messages'] as List).last['content'];
+            // Die erste Anfrage (danach folgt die JSON-Reparatur).
+            content ??= (body['messages'] as List).last['content'];
             return _chat('kein json');
           }),
         );

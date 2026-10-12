@@ -1412,6 +1412,22 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zx. Kaputtes JSON der KI wird automatisch repariert
+
+„Antwort der KI konnte nicht als JSON gelesen werden“ kommt jetzt kaum noch:
+
+- **Erst repariert die App selbst** (ohne neue Anfrage): Text oder Codefences
+  um das JSON, einfache Backslashes in LaTeX, echte Zeilenumbrüche/Tabs und
+  Anführungszeichen in Texten, überzählige Kommas und **abgeschnittene
+  Antworten** (offener Text/Klammern werden geschlossen, ein halber letzter
+  Eintrag fällt weg).
+- **Klappt das nicht, geht die Antwort samt Fehlermeldung einmal automatisch an
+  die KI zurück** („gib genau das als gültiges JSON zurück“) – du musst nichts
+  neu eingeben. Erst wenn auch das scheitert, kommt eine Fehlermeldung.
+- Gilt für alle KI-Funktionen und auch für **eingefügtes JSON einer externen
+  KI** (Fragen „JSON einfügen“, interaktive Aufgaben per JSON) – dort mit
+  hinterlegtem Key.
+
 ### 5zw. Lernpfad: ein ganzes Semester visuell lernen
 
 Unter **„Visuell lernen“ → „Lernpfad erstellen“**:
