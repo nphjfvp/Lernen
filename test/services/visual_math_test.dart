@@ -141,4 +141,85 @@ void main() {
     expect(VisualCurve.tryParse('2*t +', 't'), isNull);
     expect(VisualCurve.tryParse('sin(t)', 't')!.slopeAt(0), closeTo(1, 1e-6));
   });
+
+  test('Darstellung ändern: Schritt ersetzen (mit neuer Funktion), Ergebnis, Kurzfassung, ganze Lektion', () {
+    final lesson = VisualLesson.fromMap(carLessonJson(), id: 'l1', moduleId: 'm1', createdAt: DateTime(2026))!;
+    final step = lesson.revisedWith({
+      'step': {
+        'title': 'Die Rakete fliegt',
+        'text': 'Statt des Autos.',
+        'show': {
+          'car': 's',
+          'vehicle': 'rocket',
+          'plot': ['s', 'h'],
+        },
+      },
+      'functions': [
+        {'key': 'h', 'label': 'Höhe', 'expr': 't^2'},
+        {'key': 's', 'label': 'Weg s(t)', 'expr': '0.5*t^2 + 2*t', 'unit': 'km'},
+      ],
+    }, stepIndex: 0)!;
+    expect(step.steps.first.title, 'Die Rakete fliegt');
+    expect(step.steps.first.show.vehicle, 'rocket');
+    expect(step.steps.first.show.plot, ['s', 'h']);
+    expect(step.function('s')!.unit, 'km', reason: 'gleichnamige Funktion ersetzt');
+    expect(step.steps[1].title, lesson.steps[1].title, reason: 'Rest bleibt');
+    expect(step.exercise!.toMap(), lesson.exercise!.toMap());
+    expect(step.id, 'l1');
+    expect(step.vehicle, 'rocket');
+
+    expect(
+      lesson
+          .revisedWith({
+            'step': {'title': 'Neues Ergebnis'},
+          }, stepIndex: -1)!
+          .result!
+          .title,
+      'Neues Ergebnis',
+    );
+    expect(
+      lesson
+          .revisedWith({
+            'step': {'title': 'Kurz', 'text': '• a'},
+          }, stepIndex: -2)!
+          .shortVersion!
+          .text,
+      '• a',
+    );
+    expect(lesson.revisedWith({'nix': 1}, stepIndex: 0), isNull);
+
+    final whole = lesson.revisedWith({
+      'lesson': {
+        'title': 'Raketenstart',
+        'steps': [
+          {'title': 'Zündung'},
+        ],
+      },
+    })!;
+    expect(whole.title, 'Raketenstart');
+    expect(whole.steps.single.title, 'Zündung');
+    expect(whole.exercise, isNotNull, reason: 'ohne neue Übung bleibt die alte');
+    expect(whole.simulation, lesson.simulation);
+    final newExercise = lesson.revisedWith({
+      'lesson': {
+        'title': 'X',
+        'steps': [
+          {'title': 'a'},
+        ],
+        'exercise': {
+          'front': 'Neue Aufgabe',
+          'steps': [
+            {
+              'title': 'a',
+              'fields': [
+                {'label': 'x =', 'answer': '3', 'kind': 'number'},
+              ],
+            },
+          ],
+        },
+      },
+    })!;
+    expect(newExercise.exerciseFront, 'Neue Aufgabe');
+    expect(newExercise.simulation, ExerciseSimulation.graph, reason: 'alte Simulation gehört zur alten Übung');
+  });
 }

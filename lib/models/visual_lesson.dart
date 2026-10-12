@@ -97,6 +97,7 @@ class VisualShow {
   const VisualShow({
     this.car,
     this.carSource = CarSource.position,
+    this.vehicle = '',
     this.plot = const [],
     this.tangent,
     this.area,
@@ -108,6 +109,10 @@ class VisualShow {
   /// Funktion, die das Auto fährt (null = kein Auto).
   final String? car;
   final CarSource carSource;
+
+  /// Was statt des Autos fährt: rocket, bike, train, runner, ball, plane,
+  /// boat – oder ein beliebiges Emoji. Leer = Auto.
+  final String vehicle;
 
   /// Funktionen im Graphen.
   final List<String> plot;
@@ -144,6 +149,7 @@ class VisualShow {
   VisualShow restrictedTo(Set<String> known) => VisualShow(
     car: car != null && known.contains(car) ? car : null,
     carSource: carSource,
+    vehicle: vehicle,
     plot: [
       for (final p in plot)
         if (known.contains(p)) p,
@@ -158,6 +164,7 @@ class VisualShow {
   Map<String, dynamic> toMap() => {
     if (car != null) 'car': car,
     if (car != null && carSource == CarSource.velocity) 'carFrom': 'velocity',
+    if (vehicle.isNotEmpty) 'vehicle': vehicle,
     if (plot.isNotEmpty) 'plot': plot,
     if (tangent != null) 'tangent': tangent,
     if (area != null) 'area': area,
@@ -175,6 +182,7 @@ class VisualShow {
     return VisualShow(
       car: key(raw['car'] ?? raw['auto']),
       carSource: from.startsWith('v') || from.startsWith('geschw') ? CarSource.velocity : CarSource.position,
+      vehicle: _str(raw['vehicle'] ?? raw['fahrzeug']),
       plot: switch (plot) {
         List() => [
           for (final p in plot)
@@ -336,6 +344,10 @@ class VisualLesson {
 
   bool get hasCar => [...steps, ?result].any((s) => s.show.car != null);
 
+  /// Das Fahrzeug der Lektion (erstes gesetztes; leer = Auto).
+  String get vehicle =>
+      [...steps, ?result].map((s) => s.show.vehicle).firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
   bool get isUsable => title.trim().isNotEmpty && steps.isNotEmpty && domainMax > domainMin;
 
   VisualLesson copyWith({String? title, String? moduleId, String? id, VisualStyle? style}) => VisualLesson(
@@ -380,6 +392,75 @@ class VisualLesson {
           createdAt: createdAt,
         ) ??
         this;
+  }
+
+  /// Die Lektion mit der Überarbeitung der KI („Darstellung ändern“, siehe
+  /// AiService.reviseVisualLesson). [stepIndex] null = ganze Lektion (was die
+  /// KI weglässt, bleibt), sonst nur dieser Schritt (-1 Ergebnis, -2
+  /// Kurzfassung) plus neue/geänderte Funktionen. null, wenn unbrauchbar.
+  VisualLesson? revisedWith(Map<String, dynamic> json, {int? stepIndex}) {
+    final map = toMap();
+    if (stepIndex == null) {
+      final raw = json['lesson'] is Map ? Map<String, dynamic>.from(json['lesson'] as Map) : json;
+      const keys = [
+        'title',
+        'intro',
+        'variable',
+        'domain',
+        'functions',
+        'steps',
+        'result',
+        'short',
+        'recap',
+        'exercise',
+        'exerciseFront',
+        'simulate',
+      ];
+      for (final k in keys) {
+        if (raw[k] != null) map[k] = raw[k];
+      }
+      // Neue Übung im Erstell-Format: Aufgabe und Simulation stehen darin.
+      if (raw['exercise'] is Map) {
+        if (raw['exerciseFront'] == null) map.remove('exerciseFront');
+        if (raw['simulate'] == null) map.remove('simulate');
+      }
+    } else {
+      final step = json['step'];
+      if (step is! Map) return null;
+      if (stepIndex >= 0) {
+        final steps = [...(map['steps'] as List)];
+        if (stepIndex >= steps.length) return null;
+        steps[stepIndex] = step;
+        map['steps'] = steps;
+      } else {
+        map[stepIndex == -1 ? 'result' : 'short'] = step;
+      }
+      final extra = json['functions'];
+      if (extra is List) {
+        final functions = [...(map['functions'] as List)];
+        for (final f in extra) {
+          if (f is! Map) continue;
+          final i = functions.indexWhere((g) => g is Map && g['key'] == f['key']);
+          if (i >= 0) {
+            functions[i] = f;
+          } else {
+            functions.add(f);
+          }
+        }
+        map['functions'] = functions;
+      }
+    }
+    return VisualLesson.fromMap(
+      map,
+      id: id,
+      moduleId: moduleId,
+      createdAt: createdAt,
+      source: source,
+      detail: detail,
+      style: style,
+      cardId: cardId,
+      courseId: courseId,
+    );
   }
 
   Map<String, dynamic> toMap() => {

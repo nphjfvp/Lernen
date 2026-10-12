@@ -108,11 +108,21 @@ class _VisualDiagramViewState extends State<VisualDiagramView> with SingleTicker
             builder: (context, constraints) {
               final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 600.0;
               final height = math.min(width * d.height / d.width, 380.0);
+              final formulas = DiagramPainter.formulasOf(d, p, c, Size(width, height));
               return SizedBox(
                 width: width,
                 height: height,
-                child: CustomPaint(
-                  painter: DiagramPainter(diagram: d, progress: p, colors: c),
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: DiagramPainter(diagram: d, progress: p, colors: c),
+                      ),
+                    ),
+                    // Texte mit Formeln: echt gesetzt statt als Klartext.
+                    for (final (i, f) in formulas.indexed) sceneFormula(f, key: ValueKey('diagram-formula-$i')),
+                  ],
                 ),
               );
             },
@@ -181,13 +191,49 @@ class _VisualDiagramViewState extends State<VisualDiagramView> with SingleTicker
   }
 }
 
+/// Ein Text mit Formel in einer Szene: wird nicht gezeichnet, sondern als
+/// echter Formelsatz darübergelegt (Mitte bei [at], Bildschirmpixel).
+typedef SceneFormula = ({Offset at, double fontSize, Color color, String text});
+
+/// Texte mit LaTeX ($…$, \(…\)) setzt der Formelsatz statt des Zeichners.
+bool hasSceneFormula(String text) => text.contains(r'$') || text.contains(r'\(');
+
+/// Legt [f] mittig an seine Stelle (in einem Stack über der Zeichnung).
+Widget sceneFormula(SceneFormula f, {Key? key}) => Positioned(
+  key: key,
+  left: f.at.dx,
+  top: f.at.dy,
+  child: IgnorePointer(
+    child: FractionalTranslation(
+      translation: const Offset(-0.5, -0.5),
+      child: MathText(
+        f.text,
+        style: TextStyle(fontSize: f.fontSize, color: f.color, fontWeight: FontWeight.w600),
+      ),
+    ),
+  ),
+);
+
 /// Zeichnet die Szene zum Zeitpunkt [progress] (0…1).
 class DiagramPainter extends CustomPainter {
-  DiagramPainter({required this.diagram, required this.progress, required this.colors});
+  DiagramPainter({required this.diagram, required this.progress, required this.colors, this.formulasOut});
 
   final VisualDiagram diagram;
   final double progress;
   final AppColors colors;
+
+  /// Sammelt die Texte mit Formeln (statt sie zu zeichnen).
+  final List<SceneFormula>? formulasOut;
+
+  /// Wo die Texte mit Formeln bei [size] stehen – per Probezeichnen, damit
+  /// Verschieben, Raster und Skalierung genau wie beim Zeichnen gelten.
+  static List<SceneFormula> formulasOf(VisualDiagram d, double progress, AppColors colors, Size size) {
+    final out = <SceneFormula>[];
+    final recorder = ui.PictureRecorder();
+    DiagramPainter(diagram: d, progress: progress, colors: colors, formulasOut: out).paint(Canvas(recorder), size);
+    recorder.endRecording().dispose();
+    return out;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -404,6 +450,18 @@ class DiagramPainter extends CustomPainter {
   /// Text mittig an [at]; [size] in Szenen-Einheiten.
   void _text(Canvas canvas, String text, Offset at, double size, Color color, double scale) {
     if (text.isEmpty || size <= 0) return;
+    if (hasSceneFormula(text)) {
+      // Position in Bildschirmpixeln aus der aktuellen Zeichen-Transformation.
+      final m = canvas.getTransform();
+      final factor = math.sqrt(m[0] * m[0] + m[1] * m[1]);
+      formulasOut?.add((
+        at: Offset(m[0] * at.dx + m[4] * at.dy + m[12], m[1] * at.dx + m[5] * at.dy + m[13]),
+        fontSize: size * factor,
+        color: color,
+        text: text,
+      ));
+      return;
+    }
     // In Bildschirmpixeln setzen (scharf), dann zurückskalieren.
     final painter = TextPainter(
       text: TextSpan(

@@ -163,9 +163,16 @@ class _VisualSceneViewState extends State<VisualSceneView> with SingleTickerProv
     final posUnit = show.carSource == CarSource.position ? (fn?.unit ?? '') : _integratedUnit(fn?.unit ?? '');
     final speedUnit = show.carSource == CarSource.velocity ? (fn?.unit ?? '') : _derivedUnit(fn?.unit ?? '');
     final t = _t;
+    final look = vehicleLook(show.vehicle);
     final lanes = [
       if (main != null)
-        (label: 'Auto', pos: posMain(t), speed: _m.carSpeedOf(main, show.carSource, t), color: c.accent, ghost: false),
+        (
+          label: look.label,
+          pos: posMain(t),
+          speed: _m.carSpeedOf(main, show.carSource, t),
+          color: c.accent,
+          ghost: false,
+        ),
       if (ghost != null)
         (
           label: ghost.label,
@@ -190,6 +197,7 @@ class _VisualSceneViewState extends State<VisualSceneView> with SingleTickerProv
             height: 56.0 * lanes.length + 18,
             child: CustomPaint(
               painter: _RoadPainter(
+                look: look,
                 lanes: [for (final l in lanes) (pos: l.pos, speed: l.speed, color: l.color, ghost: l.ghost)],
                 min: range.min,
                 max: range.max,
@@ -316,8 +324,32 @@ class _VisualSceneViewState extends State<VisualSceneView> with SingleTickerProv
   }
 }
 
+/// Wie das Fahrzeug aussieht: Emoji (null = gezeichnetes Auto), Name und
+/// Ausrichtung (Emojis schauen je nach Schrift in verschiedene Richtungen).
+typedef VehicleLook = ({String? emoji, String label, double rotate, bool flip});
+
+VehicleLook vehicleLook(String vehicle) {
+  final v = vehicle.trim().toLowerCase();
+  return switch (v) {
+    '' || 'car' || 'auto' => (emoji: null, label: 'Auto', rotate: 0, flip: false),
+    'rocket' || 'rakete' => (emoji: '🚀', label: 'Rakete', rotate: math.pi / 4, flip: false),
+    'bike' || 'bicycle' || 'fahrrad' => (emoji: '🚲', label: 'Fahrrad', rotate: 0, flip: false),
+    'train' || 'zug' => (emoji: '🚆', label: 'Zug', rotate: 0, flip: false),
+    'runner' || 'person' || 'läufer' || 'laeufer' || 'mensch' => (emoji: '🏃', label: 'Läufer', rotate: 0, flip: true),
+    'ball' => (emoji: '⚽', label: 'Ball', rotate: 0, flip: false),
+    'plane' || 'airplane' || 'flugzeug' => (emoji: '✈️', label: 'Flugzeug', rotate: 0, flip: false),
+    'boat' || 'ship' || 'boot' || 'schiff' => (emoji: '⛵', label: 'Boot', rotate: 0, flip: false),
+    'truck' || 'lkw' => (emoji: '🚚', label: 'Lkw', rotate: 0, flip: true),
+    'bus' => (emoji: '🚌', label: 'Bus', rotate: 0, flip: true),
+    'snail' || 'schnecke' => (emoji: '🐌', label: 'Schnecke', rotate: 0, flip: true),
+    _ when v.runes.any((r) => r > 0x2000) => (emoji: vehicle.trim(), label: 'Objekt', rotate: 0, flip: false),
+    _ => (emoji: null, label: 'Auto', rotate: 0, flip: false),
+  };
+}
+
 class _RoadPainter extends CustomPainter {
   _RoadPainter({
+    required this.look,
     required this.lanes,
     required this.min,
     required this.max,
@@ -326,6 +358,7 @@ class _RoadPainter extends CustomPainter {
     required this.unit,
   });
 
+  final VehicleLook look;
   final List<({double pos, double speed, Color color, bool ghost})> lanes;
   final double min, max;
   final Color ink, road;
@@ -348,14 +381,33 @@ class _RoadPainter extends CustomPainter {
       }
       if (!lane.pos.isFinite) continue;
       final cx = xOf(lane.pos);
-      final body = Rect.fromCenter(center: Offset(cx, roadRect.center.dy - 3), width: carW, height: carH);
-      final paint = Paint()..color = lane.ghost ? lane.color.withValues(alpha: 0.65) : lane.color;
-      canvas.drawRRect(RRect.fromRectAndRadius(body, const Radius.circular(7)), paint);
-      final roof = Rect.fromLTWH(body.left + 10, body.top - 8, carW - 22, 10);
-      canvas.drawRRect(RRect.fromRectAndRadius(roof, const Radius.circular(4)), paint);
-      final wheel = Paint()..color = const Color(0xFF222222);
-      canvas.drawCircle(Offset(body.left + 10, body.bottom), 5, wheel);
-      canvas.drawCircle(Offset(body.right - 10, body.bottom), 5, wheel);
+      final emoji = look.emoji;
+      if (emoji != null) {
+        // Statt des Autos ein anderes Fahrzeug (Emoji), ausgerichtet nach rechts.
+        final tp = TextPainter(
+          text: TextSpan(text: emoji, style: const TextStyle(fontSize: 30)),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        canvas.save();
+        canvas.translate(cx, roadRect.center.dy - 6);
+        if (look.rotate != 0) canvas.rotate(look.rotate);
+        if (look.flip) canvas.scale(-1, 1);
+        if (lane.ghost) {
+          canvas.saveLayer(null, Paint()..color = Colors.white.withValues(alpha: 0.55));
+        }
+        tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
+        if (lane.ghost) canvas.restore();
+        canvas.restore();
+      } else {
+        final body = Rect.fromCenter(center: Offset(cx, roadRect.center.dy - 3), width: carW, height: carH);
+        final paint = Paint()..color = lane.ghost ? lane.color.withValues(alpha: 0.65) : lane.color;
+        canvas.drawRRect(RRect.fromRectAndRadius(body, const Radius.circular(7)), paint);
+        final roof = Rect.fromLTWH(body.left + 10, body.top - 8, carW - 22, 10);
+        canvas.drawRRect(RRect.fromRectAndRadius(roof, const Radius.circular(4)), paint);
+        final wheel = Paint()..color = const Color(0xFF222222);
+        canvas.drawCircle(Offset(body.left + 10, body.bottom), 5, wheel);
+        canvas.drawCircle(Offset(body.right - 10, body.bottom), 5, wheel);
+      }
       // Geschwindigkeitspfeil über dem Auto (Länge ~ Geschwindigkeit).
       if (lane.speed.isFinite && lane.speed.abs() > 1e-9) {
         final len = (lane.speed.abs() / ((max - min).abs() + 1e-9) * size.width * 0.6).clamp(6.0, 90.0);

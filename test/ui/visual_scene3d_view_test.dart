@@ -98,4 +98,31 @@ void main() {
     expect(find.byKey(const ValueKey('visual-diagram')), findsNothing);
     await tester.pump(const Duration(seconds: 7));
   });
+
+  testWidgets('3D: Texte mit Formeln echt gesetzt, normale Texte gezeichnet', (tester) async {
+    final s = VisualScene3D.fromMap({
+      'objects': [
+        {
+          'type': 'sphere',
+          'at': [0.5, 0.5, 0.5],
+          'r': 0.2,
+          'text': 'Fe',
+        },
+        {
+          'type': 'text',
+          'at': [0.5, 0.5, 1.2],
+          'text': r'$r = \frac{a\sqrt{2}}{4}$',
+        },
+      ],
+    })!;
+    await pump(
+      tester,
+      Scaffold(
+        body: SingleChildScrollView(child: VisualScene3DView(scene: s, autoplay: false)),
+      ),
+    );
+    expect(find.byKey(const ValueKey('scene3d-formula-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('scene3d-formula-1')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

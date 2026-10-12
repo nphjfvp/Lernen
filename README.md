@@ -1412,6 +1412,21 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zy. Visuell lernen: Darstellung in der App ändern, Formeln in Szenen
+
+- **„Darstellung ändern“** unter jedem Schritt (und beim Ergebnis bzw. in der
+  Kurzfassung „Ändern“): Wunsch eintippen oder einen Vorschlag antippen
+  („Formeln richtig setzen“, „Übersichtlicher“, „Anderes Beispiel“, „Rakete
+  statt Auto“, „Mehr Zwischenschritte“, „Als 3D-Modell“) und wählen: **nur
+  dieser Schritt** oder **ganze Lektion**. Die KI baut um – auch groß (anderes
+  Beispiel inkl. Übung) – alles andere bleibt. Gespeichert, mit
+  **„Rückgängig“**.
+- **Formeln in Szenen**: Texte mit `$…$` in 2D- und 3D-Szenen werden jetzt
+  als echte Formeln gesetzt (vorher erschienen sie als Klartext mit `$`).
+- **Fahrzeug wählbar**: Statt des Autos kann eine Rakete, ein Fahrrad, Zug,
+  Läufer, Ball, Flugzeug, Boot, Lkw, Bus, eine Schnecke oder ein beliebiges
+  Emoji fahren – die Bewegung rechnet die App weiter exakt aus der Funktion.
+
 ### 5zx. Kaputtes JSON der KI wird automatisch repariert
 
 „Antwort der KI konnte nicht als JSON gelesen werden“ kommt jetzt kaum noch:

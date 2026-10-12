@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1555 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1559 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1654,6 +1654,20 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `repairJson(raw, error:)` (Prompt `_jsonRepairSystemPrompt`, temperature 0); Liste oben →
     `items`/`flashcards`/`tasks`. Eingefügtes JSON: ReviewScreen (pasteJson) und
     TaskImportScreen `_importJson` reparieren per KI, wenn ein Key da ist. Test: `json_repair_test`.
+81. Darstellung ändern: `AiService.reviseVisualLesson(lesson, request, stepIndex)` (null = ganze
+    Lektion → `{"lesson"}`, Index/-1 Ergebnis/-2 Kurzfassung → `{"step", "functions"}`, Prompt
+    `_visualReviseSystemPrompt` mit `_visualToolsSpec`); `VisualLesson.revisedWith(json,
+    stepIndex:)` (ganze Lektion: Felder übernehmen, fehlende bleiben, neue Übung entfernt alte
+    exerciseFront/simulate; Schritt: ersetzen + Funktionen nach key mischen). UI:
+    `VisualReviseSheet` (`visual-revise-quick-i`, `-request`, `-scope`, `-send`, `-error`),
+    Knöpfe `visual-revise` (Schritt/Ergebnis) und `visual-short-revise`; `VisualLessonScreen`
+    hält `_lesson` veränderbar, speichert, SnackBar „Rückgängig“. Formeln in Szenen:
+    `hasSceneFormula`/`SceneFormula`/`sceneFormula` (visual_diagram_view.dart); Painter sammeln
+    Texte mit `$`/`\(` per Probezeichnen (`DiagramPainter.formulasOf` mit
+    `canvas.getTransform()`, `Scene3DPainter.formulasOf`) und legen MathText darüber (Keys
+    `diagram-formula-i`, `scene3d-formula-i`). Fahrzeug: `VisualShow.vehicle` +
+    `VisualLesson.vehicle`, `vehicleLook` (visual_scene.dart: Emoji, Name, Drehung/Spiegelung),
+    Ablesung „<Name>: Weg …“.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

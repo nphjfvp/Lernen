@@ -7,7 +7,7 @@ import '../../models/visual_scene3d.dart';
 import '../../theme/app_colors.dart';
 import '../tasks/crystal_cube.dart' show CubeProjection;
 import '../widgets/math_text.dart';
-import 'visual_diagram_view.dart' show diagramColor;
+import 'visual_diagram_view.dart' show SceneFormula, diagramColor, hasSceneFormula, sceneFormula;
 
 /// Spielt eine räumliche Szene ([VisualScene3D]) ab – gleiche Projektion und
 /// Bedienung wie der Würfel der Kristallgitter-Aufgaben: Ziehen dreht, ◀ ▶ in
@@ -102,6 +102,22 @@ class _VisualScene3DViewState extends State<VisualScene3DView> with SingleTicker
                     child: CustomPaint(
                       painter: Scene3DPainter(scene: s, progress: p, theta: theta, phi: _phi, colors: c),
                     ),
+                  ),
+                ),
+                // Texte mit Formeln: echt gesetzt statt als Klartext.
+                LayoutBuilder(
+                  builder: (context, constraints) => Stack(
+                    children: [
+                      for (final (i, f) in Scene3DPainter.formulasOf(
+                        s,
+                        p,
+                        theta,
+                        _phi,
+                        c,
+                        Size(constraints.maxWidth, widget.height),
+                      ).indexed)
+                        sceneFormula(f, key: ValueKey('scene3d-formula-$i')),
+                    ],
                   ),
                 ),
                 Positioned(
@@ -234,7 +250,34 @@ class Scene3DPainter extends CustomPainter {
     required this.theta,
     required this.phi,
     required this.colors,
+    this.formulasOut,
   });
+
+  /// Sammelt die Texte mit Formeln (statt sie zu zeichnen).
+  final List<SceneFormula>? formulasOut;
+
+  /// Wo die Texte mit Formeln stehen (Probezeichnen, siehe DiagramPainter).
+  static List<SceneFormula> formulasOf(
+    VisualScene3D scene,
+    double progress,
+    double theta,
+    double phi,
+    AppColors colors,
+    Size size,
+  ) {
+    final out = <SceneFormula>[];
+    final recorder = ui.PictureRecorder();
+    Scene3DPainter(
+      scene: scene,
+      progress: progress,
+      theta: theta,
+      phi: phi,
+      colors: colors,
+      formulasOut: out,
+    ).paint(Canvas(recorder), size);
+    recorder.endRecording().dispose();
+    return out;
+  }
 
   final VisualScene3D scene;
   final double progress;
@@ -485,8 +528,12 @@ class Scene3DPainter extends CustomPainter {
 
   Color _onColor(Color background) => background.computeLuminance() > 0.45 ? const Color(0xFF1B1B1F) : Colors.white;
 
-  static void _text(Canvas canvas, String text, Offset at, double size, Color color, {bool italic = false}) {
+  void _text(Canvas canvas, String text, Offset at, double size, Color color, {bool italic = false}) {
     if (text.isEmpty) return;
+    if (hasSceneFormula(text)) {
+      formulasOut?.add((at: at, fontSize: size, color: color, text: text));
+      return;
+    }
     final painter = TextPainter(
       text: TextSpan(
         text: text,

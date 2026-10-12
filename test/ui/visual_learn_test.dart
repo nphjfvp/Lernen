@@ -243,6 +243,86 @@ void main() {
     expect(find.textContaining('viel zu langsam'), findsOneWidget);
   });
 
+  testWidgets('Darstellung ändern: Rakete statt Auto für einen Schritt, gespeichert, Rückgängig', (tester) async {
+    VisualLessonScreen.aiFactory = replying((text) {
+      if (text.contains('die GANZE Lektion')) {
+        return {
+          'lesson': {
+            'title': 'Raketenstart',
+            'steps': [
+              {'title': 'Zündung', 'text': 'Los geht es.'},
+            ],
+          },
+        };
+      }
+      return {
+        'step': {
+          'title': 'Die Rakete fliegt',
+          'text': 'Statt des Autos.',
+          'show': {
+            'car': 's',
+            'vehicle': 'rocket',
+            'plot': ['s'],
+          },
+        },
+      };
+    });
+    final own = VisualLesson.fromMap(carLessonJson(), id: 'l-rev', moduleId: 'm-rev', createdAt: DateTime(2026))!;
+    await pumpApp(tester, VisualLessonScreen(lesson: own));
+    expect(textOf(tester, 'visual-car'), contains('Auto: Weg'));
+
+    // In echter Zeit: das Speichern nach dem Ändern braucht sie.
+    await tester.ensureVisible(find.byKey(const ValueKey('visual-revise')));
+    await tester.pump();
+    await tester.runAsync(() async => tester.tap(find.byKey(const ValueKey('visual-revise'))));
+    await run(tester, 1);
+    expect(find.text('Nur Schritt 1'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('visual-revise-quick-3')));
+    await tester.pump();
+    expect(find.text('Rakete statt Auto'), findsWidgets);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('visual-revise-send')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await run(tester, 1);
+    final sent = jsonEncode(requests.single);
+    expect(sent, contains('NUR Schritt 1'));
+    expect(sent, contains('Wunsch des Nutzers: Rakete statt Auto'));
+    expect(find.text('Die Rakete fliegt'), findsOneWidget);
+    expect(textOf(tester, 'visual-car'), contains('Rakete: Weg'));
+    expect(find.text('Darstellung geändert.'), findsOneWidget);
+    final saved = await tester.runAsync(() => VisualLessonRepository().forModule('m-rev'));
+    expect(saved!.single.steps.first.show.vehicle, 'rocket');
+
+    // Rückgängig.
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Rückgängig'));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await run(tester, 1);
+    expect(find.text('Die Rakete fliegt'), findsNothing);
+    expect(textOf(tester, 'visual-car'), contains('Auto: Weg'));
+
+    // Ganze Lektion.
+    // In echter Zeit: das Speichern nach dem Ändern braucht sie.
+    await tester.ensureVisible(find.byKey(const ValueKey('visual-revise')));
+    await tester.pump();
+    await tester.runAsync(() async => tester.tap(find.byKey(const ValueKey('visual-revise'))));
+    await run(tester, 1);
+    await tester.enterText(find.byKey(const ValueKey('visual-revise-request')), 'Mach eine Rakete draus');
+    await tester.tap(find.text('Ganze Lektion'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('visual-revise-send')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await run(tester, 1);
+    expect(jsonEncode(requests.last), contains('die GANZE Lektion'));
+    expect(find.text('Raketenstart'), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-page-1')), findsOneWidget, reason: 'Zündung + Übung');
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+  });
+
   testWidgets('Sokratisch: Leitfrage, eigene Antwort, Tipp mit Simulation, selbst gefunden oder auflösen', (
     tester,
   ) async {

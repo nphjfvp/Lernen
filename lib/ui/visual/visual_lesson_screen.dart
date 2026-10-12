@@ -75,7 +75,9 @@ class _Socratic {
 }
 
 class _VisualLessonScreenState extends State<VisualLessonScreen> {
-  late final VisualMath _math = VisualMath(widget.lesson);
+  /// Die Lektion – „Darstellung ändern“ ersetzt sie.
+  late VisualLesson _lesson = widget.lesson;
+  late VisualMath _math = VisualMath(_lesson);
   int _page = 0;
   late VisualStyle _style = widget.lesson.style;
   late bool _short = widget.startShort && widget.lesson.shortVersion != null;
@@ -85,7 +87,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
   ({StepField field, String input})? _wrong;
   bool _exerciseDone = false;
 
-  VisualLesson get _l => widget.lesson;
+  VisualLesson get _l => _lesson;
 
   @override
   void dispose() {
@@ -106,7 +108,8 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     setState(() => _style = style);
     // Wahl merken, damit die Lektion beim nächsten Mal so startet.
     final repo = context.read<VisualLessonRepository?>();
-    if (repo != null && _l.id.isNotEmpty) repo.save(_l.copyWith(style: style));
+    _lesson = _l.copyWith(style: style);
+    if (repo != null && _l.id.isNotEmpty) repo.save(_lesson);
   }
 
   List<({_PageKind kind, VisualStep? step, String label})> get _pages => [
@@ -286,16 +289,65 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       VisualSceneView(key: ValueKey('visual-scene-$_page'), math: _math, show: step.show),
     ],
     const SizedBox(height: 12),
-    Align(
-      alignment: Alignment.centerLeft,
-      child: OutlinedButton.icon(
-        key: const ValueKey('visual-ask'),
-        onPressed: () => _ask(step: step),
-        icon: const Icon(Icons.help_outline, size: 18),
-        label: Text(isResult ? 'Frage zum Ergebnis' : 'Frage zu diesem Schritt'),
-      ),
+    Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        OutlinedButton.icon(
+          key: const ValueKey('visual-ask'),
+          onPressed: () => _ask(step: step),
+          icon: const Icon(Icons.help_outline, size: 18),
+          label: Text(isResult ? 'Frage zum Ergebnis' : 'Frage zu diesem Schritt'),
+        ),
+        TextButton.icon(
+          key: const ValueKey('visual-revise'),
+          onPressed: () => _revise(isResult ? -1 : _page),
+          icon: const Icon(Icons.auto_fix_high, size: 18),
+          label: const Text('Darstellung ändern'),
+        ),
+      ],
     ),
   ];
+
+  /// „Darstellung ändern“: Wunsch eingeben, die KI baut den Schritt (oder die
+  /// ganze Lektion) um; gespeichert, mit Rückgängig.
+  Future<void> _revise(int stepIndex) async {
+    final repo = context.read<VisualLessonRepository?>();
+    final messenger = ScaffoldMessenger.of(context);
+    final before = _l;
+    final revised = await showModalBottomSheet<VisualLesson>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => VisualReviseSheet(lesson: before, stepIndex: stepIndex, ai: _reviseAi(context)),
+    );
+    if (revised == null || !mounted) return;
+    void apply(VisualLesson l) {
+      setState(() {
+        _lesson = l;
+        _math = VisualMath(l);
+        _socratic.clear();
+        _wrong = null;
+        _page = _page.clamp(0, _pages.length - 1);
+        if (_short && l.shortVersion == null) _short = false;
+      });
+      if (repo != null && l.id.isNotEmpty) repo.save(l);
+    }
+
+    apply(revised);
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Darstellung geändert.'),
+        action: SnackBarAction(
+          key: const ValueKey('visual-revise-undo'),
+          label: 'Rückgängig',
+          onPressed: () {
+            if (mounted) apply(before);
+          },
+        ),
+      ),
+    );
+  }
 
   Widget _nav(AppColors c, int count) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
@@ -360,6 +412,13 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
         const SizedBox(height: 16),
         Row(
           children: [
+            TextButton.icon(
+              key: const ValueKey('visual-short-revise'),
+              onPressed: () => _revise(-2),
+              icon: const Icon(Icons.auto_fix_high, size: 18),
+              label: const Text('Ändern'),
+            ),
+            const SizedBox(width: 6),
             OutlinedButton.icon(
               key: const ValueKey('visual-short-full'),
               onPressed: () => setState(() => _short = false),
@@ -395,6 +454,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       return VisualShow(
         car: step.show.car,
         carSource: step.show.carSource,
+        vehicle: step.show.vehicle,
         scene: step.show.scene,
         scene3d: step.show.scene3d,
       );
@@ -403,6 +463,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     return VisualShow(
       car: prev.car,
       carSource: prev.carSource,
+      vehicle: prev.vehicle,
       plot: prev.plot,
       tangent: prev.tangent,
       area: prev.area,
@@ -706,6 +767,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
         final show = VisualShow(
           car: withCar ? '__richtig' : null,
           carSource: source,
+          vehicle: _l.vehicle,
           plot: const ['__richtig', '__deine'],
         );
         final end = _l.domainMax;
@@ -911,6 +973,168 @@ class _VisualAskSheetState extends State<VisualAskSheet> {
             VisualSceneView(key: const ValueKey('visual-answer-scene'), math: math, show: _show),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// KI für „Darstellung ändern“ (Fragen-Modell wie beim Erstellen) – null ohne Key.
+AiService? _reviseAi(BuildContext context) {
+  final settings = context.read<SettingsRepository?>()?.settings;
+  if (settings == null || !settings.hasApiKey) return null;
+  return VisualLessonScreen.aiFactory?.call(settings.openRouterApiKey!, settings.questionModelId) ??
+      AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+}
+
+/// Wunsch zur Darstellung eingeben – für diesen Schritt oder die ganze
+/// Lektion. Gibt die überarbeitete Lektion zurück.
+class VisualReviseSheet extends StatefulWidget {
+  const VisualReviseSheet({super.key, required this.lesson, required this.stepIndex, this.ai});
+
+  final VisualLesson lesson;
+
+  /// Index in steps; -1 Ergebnis, -2 Kurzfassung.
+  final int stepIndex;
+  final AiService? ai;
+
+  @override
+  State<VisualReviseSheet> createState() => _VisualReviseSheetState();
+}
+
+class _VisualReviseSheetState extends State<VisualReviseSheet> {
+  final _request = TextEditingController();
+  bool _all = false;
+  bool _busy = false;
+  String? _error;
+
+  static const _quick = [
+    'Formeln in der Darstellung richtig setzen',
+    'Übersichtlicher und größer – nichts überlappt',
+    'Anderes, anschaulicheres Beispiel',
+    'Rakete statt Auto',
+    'Mehr Zwischenschritte zeigen',
+    'Als 3D-Modell zeigen',
+  ];
+
+  String get _where => switch (widget.stepIndex) {
+    -1 => 'das Ergebnis',
+    -2 => 'die Kurzfassung',
+    final i => 'Schritt ${i + 1}',
+  };
+
+  @override
+  void dispose() {
+    _request.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final ai = widget.ai;
+    if (ai == null) {
+      setState(() => _error = 'Dafür braucht die App deinen OpenRouter-Key (Einstellungen).');
+      return;
+    }
+    if (_request.text.trim().isEmpty) {
+      setState(() => _error = 'Schreib, was anders sein soll – oder tippe einen Vorschlag an.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final index = _all ? null : widget.stepIndex;
+      final json = await ai.reviseVisualLesson(
+        lesson: widget.lesson.toMap(),
+        request: _request.text.trim(),
+        stepIndex: index,
+      );
+      final revised = widget.lesson.revisedWith(json, stepIndex: index);
+      if (revised == null || !revised.isUsable) {
+        throw AiServiceException('Die Überarbeitung ließ sich nicht übernehmen – bitte erneut versuchen.');
+      }
+      if (mounted) Navigator.of(context).pop(VisualMath.sanitize(revised));
+    } on AiServiceException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Das hat nicht geklappt: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Darstellung ändern', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Sag, was anders sein soll – von „Formeln richtig setzen“ bis „mach eine Rakete draus“.',
+              style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final (i, q) in _quick.indexed)
+                  ActionChip(
+                    key: ValueKey('visual-revise-quick-$i'),
+                    label: Text(q),
+                    onPressed: _busy ? null : () => setState(() => _request.text = q),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              key: const ValueKey('visual-revise-request'),
+              controller: _request,
+              enabled: !_busy,
+              minLines: 2,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: 'Dein Wunsch',
+                hintText: 'z.B. „Zeig die Kräfte als Pfeile“ oder „nimm eine Rakete statt des Autos“',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SegmentedButton<bool>(
+              key: const ValueKey('visual-revise-scope'),
+              segments: [
+                ButtonSegment(value: false, label: Text('Nur $_where')),
+                const ButtonSegment(value: true, label: Text('Ganze Lektion')),
+              ],
+              selected: {_all},
+              showSelectedIcon: false,
+              onSelectionChanged: _busy ? null : (v) => setState(() => _all = v.first),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const ValueKey('visual-revise-send'),
+              onPressed: _busy ? null : _send,
+              icon: _busy
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.auto_fix_high, size: 18),
+              label: Text(_busy ? 'Die KI baut um …' : 'Ändern'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                key: const ValueKey('visual-revise-error'),
+                style: TextStyle(color: c.danger),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

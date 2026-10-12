@@ -123,4 +123,28 @@ void main() {
     expect(find.byKey(const ValueKey('visual-plot')), findsNothing);
     await tester.pump(const Duration(seconds: 9));
   });
+
+  testWidgets('Formeln in Szenen werden echt gesetzt, normaler Text bleibt gezeichnet', (tester) async {
+    final d = VisualDiagram.fromMap({
+      'width': 100,
+      'height': 60,
+      'elements': [
+        {'type': 'rect', 'x': 5, 'y': 5, 'w': 40, 'h': 30, 'text': 'Gewohnte Gleichung'},
+        {'type': 'text', 'x': 25, 'y': 45, 'text': r'$3x + 5 = 14$', 'size': 5},
+        {'type': 'text', 'x': 75, 'y': 45, 'text': r"$y'' + y' = 2x$", 'fill': 'red'},
+      ],
+    })!;
+    await pump(tester, Scaffold(body: VisualDiagramView(diagram: d, autoplay: false)));
+    expect(find.byKey(const ValueKey('diagram-formula-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('diagram-formula-1')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('diagram-formula-2')),
+      findsNothing,
+      reason: 'Text ohne Formel zeichnet die Szene',
+    );
+    final first = tester.getCenter(find.byKey(const ValueKey('diagram-formula-0')));
+    final second = tester.getCenter(find.byKey(const ValueKey('diagram-formula-1')));
+    expect(first.dx, lessThan(second.dx), reason: 'an ihrer Stelle in der Szene');
+    expect(tester.takeException(), isNull);
+  });
 }

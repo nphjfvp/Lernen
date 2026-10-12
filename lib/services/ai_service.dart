@@ -4508,6 +4508,58 @@ Antworte NUR mit JSON:
 - Jedes inhaltliche Thema kommt genau einmal vor (als "n" oder in "merge").
 - Deutsch, Begriffe aus den Unterlagen.''';
 
+  /// „Darstellung ändern“: baut eine Lektion nach dem Wunsch des Nutzers um
+  /// (z.B. „Formeln richtig darstellen“, „Rakete statt Auto“, „anderes
+  /// Beispiel“). [stepIndex]: nur dieser Schritt (Index in "steps"; -1 =
+  /// Ergebnis, -2 = Kurzfassung) – Antwort `{"step": {…}, "functions": […]}`;
+  /// null = ganze Lektion – Antwort `{"lesson": {…}}` im Lektionsformat.
+  Future<Map<String, dynamic>> reviseVisualLesson({
+    required Map<String, dynamic> lesson,
+    required String request,
+    int? stepIndex,
+  }) async {
+    if (request.trim().isEmpty) throw AiServiceException('Schreib, was an der Darstellung anders sein soll.');
+    final which = switch (stepIndex) {
+      null => 'die GANZE Lektion',
+      -1 => 'NUR das Ergebnis ("result")',
+      -2 => 'NUR die Kurzfassung ("short")',
+      final i => 'NUR Schritt ${i + 1} (steps[$i])',
+    };
+    final buffer = StringBuffer()
+      ..writeln('Lektion (JSON):')
+      ..writeln(_cap(jsonEncode(lesson), 60000))
+      ..writeln()
+      ..writeln('Zu ändern: $which')
+      ..writeln('Wunsch des Nutzers: ${_cap(request.trim(), 3000)}')
+      ..writeln()
+      ..writeln(stepIndex == null
+          ? 'Antworte mit {"lesson": {… die komplette überarbeitete Lektion im selben Format …}}.'
+          : 'Antworte mit {"step": {… der überarbeitete Schritt: title, text, formula, show, guide …}, '
+              '"functions": [… nur neue oder geänderte Funktionen, sonst weglassen …]}.');
+    final raw = await _complete(_visualReviseSystemPrompt, buffer.toString(), temperature: 0.2);
+    final json = await _json(raw);
+    if (stepIndex == null ? json['lesson'] is! Map && json['steps'] is! List : json['step'] is! Map) {
+      throw AiServiceException('Die KI hat keine überarbeitete Darstellung geliefert – bitte erneut versuchen.',
+          rawResponse: raw);
+    }
+    return json;
+  }
+
+  static const _visualReviseSystemPrompt =
+      r'''
+Du überarbeitest in einer Lern-App eine Lektion aus "Visuell lernen" nach dem Wunsch des Nutzers. Das Format ist dasselbe wie beim Erstellen (title, intro, variable, domain, functions, steps mit title/text/formula/show/guide, result, short, recap, exercise).
+''' +
+      _visualToolsSpec +
+      r'''
+
+Regeln:
+- Ändere, was der Nutzer will – das darf auch groß sein (anderes Beispiel, andere Darstellung, Rakete statt Auto, mehr Schritte). Alles andere bleibt WÖRTLICH erhalten.
+- Wird ein anderes Beispiel gewünscht, passe Texte, Formeln, Funktionen, Szenen und – bei der ganzen Lektion – auch die Übung konsistent an. Rechne alles neu nach.
+- Formeln in Texten und Szenen-Texten in $…$ – die App setzt sie als echte Formeln. Backslashes in JSON verdoppeln.
+- Bei Szenen: sauber zeichnen, nichts überlappt ungewollt, Texte passen in ihre Kästen (lieber kürzer oder kleiner).
+- Bezüge ("car", "plot", "tangent", "area") nur auf Funktionen, die es gibt oder die du in "functions" mitlieferst.
+- Antworte NUR mit JSON.''';
+
   /// Rückfrage zu einem Schritt einer Lektion bzw. Erklärung eines Fehlers in
   /// der Übung. [mode]: "visual", "text" oder "both". Antwort:
   /// `{"text", "transform": [...], "functions": [...], "show": {...}}`.
@@ -4679,7 +4731,7 @@ WERKZEUGE DER APP (je Schritt in "show", alles optional, frei kombinierbar – w
    - "repeat": {"n": [nx, ny, nz], "d": [dx, dy, dz]} für Gitter (je Richtung höchstens 8). Höchstens 400 Objekte.
    - Rechne Radien und Abstände korrekt (kfz: Atome berühren sich auf der Flächendiagonale, r = a·√2/4 ≈ 0,354·a; krz: auf der Raumdiagonale, r = a·√3/4 ≈ 0,433·a).
 2. "plot" (+ "tangent", "area") – Funktionsgraphen von "functions" über der Variablen der Lektion mit laufender Markierung; "tangent": key (Tangente = Steigung/Ableitung an der laufenden Stelle), "area": key (Fläche bis zur laufenden Stelle = Integral). Für jeden Zusammenhang y = f(x): Spannung–Dehnung, Kosten–Menge, Temperatur–Zeit …
-3. "car" (+ "carFrom": "position" | "velocity") – ein Auto auf einer Straße, gesteuert von einer Funktion (Weg oder Geschwindigkeit über der Zeit). NUR für Bewegungen (Kinematik, Ableitung/Integral von Weg und Geschwindigkeit) – nicht für andere Themen.
+3. "car" (+ "carFrom": "position" | "velocity") – ein Fahrzeug auf einer Straße, gesteuert von einer Funktion (Weg oder Geschwindigkeit über der Zeit), die App rechnet die Bewegung exakt. NUR für Bewegungen (Kinematik, Ableitung/Integral von Weg und Geschwindigkeit) – nicht für andere Themen. Optional "vehicle": "rocket" | "bike" | "train" | "runner" | "ball" | "plane" | "boat" | "truck" | "bus" | "snail" oder ein beliebiges Emoji (Standard: Auto).
 4. "transform": [{"latex": "Gleichung ohne $", "note": "was passiert und warum"}] – eine Gleichung/Rechnung langsam Schritt für Schritt umformen (jeder Zwischenstand einzeln).
 ''';
 
