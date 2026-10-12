@@ -271,6 +271,9 @@ class VisualLesson {
     this.detail = 'normal',
     this.style = VisualStyle.explain,
     this.cardId,
+    this.courseId,
+    this.recap = '',
+    this.shortVersion,
     required this.createdAt,
   });
 
@@ -312,6 +315,16 @@ class VisualLesson {
   /// Aus dieser Frage erstellt („Visuell erklären“) – dann öffnet die Frage
   /// beim nächsten Mal direkt diese Lektion.
   final String? cardId;
+
+  /// Teil eines Lernpfads (dann dort statt in der Lektionsliste).
+  final String? courseId;
+
+  /// Rückblick zu Beginn: was aus früheren Themen gebraucht wird und warum.
+  final String recap;
+
+  /// Kurzfassung zum schnellen Wiedereinsteigen (Kernpunkte, Formel, eine
+  /// Darstellung).
+  final VisualStep? shortVersion;
   final DateTime createdAt;
 
   VisualFunction? function(String key) {
@@ -343,6 +356,9 @@ class VisualLesson {
     detail: detail,
     style: style ?? this.style,
     cardId: cardId,
+    courseId: courseId,
+    recap: recap,
+    shortVersion: shortVersion,
     createdAt: createdAt,
   );
 
@@ -383,6 +399,9 @@ class VisualLesson {
     'detail': detail,
     if (style != VisualStyle.explain) 'style': style.name,
     'cardId': ?cardId,
+    'courseId': ?courseId,
+    if (recap.isNotEmpty) 'recap': recap,
+    if (shortVersion != null) 'short': shortVersion!.toMap(),
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -397,6 +416,7 @@ class VisualLesson {
     String? detail,
     VisualStyle? style,
     String? cardId,
+    String? courseId,
   }) {
     if (raw is! Map) return null;
     final functions = <VisualFunction>[];
@@ -465,6 +485,9 @@ class VisualLesson {
       detail: detail ?? (_str(raw['detail']).isEmpty ? 'normal' : _str(raw['detail'])),
       style: style ?? (_str(raw['style']) == VisualStyle.socratic.name ? VisualStyle.socratic : VisualStyle.explain),
       cardId: cardId ?? (_str(raw['cardId']).isEmpty ? null : _str(raw['cardId'])),
+      courseId: courseId ?? (_str(raw['courseId']).isEmpty ? null : _str(raw['courseId'])),
+      recap: _str(raw['recap'] ?? raw['rueckblick'] ?? raw['rückblick']),
+      shortVersion: clean(VisualStep.fromMap(raw['short'] ?? raw['kurzfassung'])),
       createdAt: created,
     );
   }

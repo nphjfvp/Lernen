@@ -114,6 +114,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     DatabaseService.labExperiments,
     DatabaseService.visualLessons,
     DatabaseService.cardFlags,
+    DatabaseService.visualCourses,
     DatabaseService.chatMessages,
     DatabaseService.unsupportedTasks,
   ];

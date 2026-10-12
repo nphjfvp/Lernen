@@ -6,9 +6,11 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/material_item.dart';
+import '../../models/visual_course.dart';
 import '../../models/visual_lesson.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../repositories/visual_course_repository.dart';
 import '../../repositories/visual_lesson_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/image_crop.dart';
@@ -18,6 +20,7 @@ import '../../services/pdf_service.dart';
 import '../../services/visual_math.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/safe_set_state.dart';
+import 'visual_course_screen.dart';
 import 'visual_lesson_screen.dart';
 
 /// Welcher Teil einer PDF erklärt wird.
@@ -76,6 +79,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
   final _from = TextEditingController(text: '1');
   final _to = TextEditingController();
   List<VisualLesson> _lessons = const [];
+  List<VisualCourse> _courses = const [];
   bool _loading = true;
 
   /// Gewählte PDF: aus dem Fach (Material-ID) oder hochgeladen.
@@ -114,9 +118,17 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
   Future<void> _load() async {
     await context.read<MaterialRepository?>()?.loadForModule(widget.moduleId);
     if (!mounted) return;
+    final courseRepo = context.read<VisualCourseRepository?>();
     final lessons = await context.read<VisualLessonRepository>().forModule(widget.moduleId);
+    final courses = await courseRepo?.forModule(widget.moduleId) ?? const <VisualCourse>[];
+    if (!mounted) return;
     setState(() {
-      _lessons = lessons;
+      // Lektionen eines Lernpfads stehen im Lernpfad.
+      _lessons = [
+        for (final l in lessons)
+          if (l.courseId == null) l,
+      ];
+      _courses = courses;
       _loading = false;
     });
   }
@@ -477,6 +489,21 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
     if (created.length == 1) _open(created.single);
   }
 
+  Future<void> _newCourse() async {
+    final course = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<VisualCourse>(builder: (_) => VisualCourseCreateScreen(moduleId: widget.moduleId)));
+    if (!mounted) return;
+    // Neuer Pfad: gleich öffnen (danach wird neu geladen).
+    if (course != null) return _openCourse(course);
+    await _load();
+  }
+
+  Future<void> _openCourse(VisualCourse course) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => VisualCourseScreen(course: course)));
+    if (mounted) await _load();
+  }
+
   void _open(VisualLesson lesson) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => VisualLessonScreen(lesson: lesson)));
 
@@ -596,6 +623,31 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                   style: TextStyle(color: c.inkMuted, height: 1.4),
                 ),
                 const SizedBox(height: 16),
+                if (context.read<VisualCourseRepository?>() != null) ...[
+                  Text('Lernpfade', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 6),
+                  for (final (i, course) in _courses.indexed)
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        key: ValueKey('visual-course-$i'),
+                        leading: Icon(Icons.route, color: c.accent),
+                        title: Text(course.title),
+                        subtitle: Text(
+                          '${course.doneCount} von ${course.units.length} Themen erledigt'
+                          '${course.nextIndex == null ? '' : ' · weiter mit „${course.units[course.nextIndex!].title}“'}',
+                        ),
+                        onTap: () => _openCourse(course),
+                      ),
+                    ),
+                  OutlinedButton.icon(
+                    key: const ValueKey('visual-course-new'),
+                    onPressed: _busy ? null : _newCourse,
+                    icon: const Icon(Icons.add_road),
+                    label: const Text('Lernpfad erstellen (mehrere Vorlesungen / ganzes Semester)'),
+                  ),
+                  const SizedBox(height: 22),
+                ],
                 Text('Neue Lektion', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 TextField(

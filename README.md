@@ -1412,6 +1412,29 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zw. Lernpfad: ein ganzes Semester visuell lernen
+
+Unter **„Visuell lernen“ → „Lernpfad erstellen“**:
+
+- **Mehrere Vorlesungen** (PDFs des Fachs ankreuzen und/oder hochladen) oder
+  eine lange – optional mit Schwerpunkt, Detailgrad und Erklären/Sokratisch.
+- Die KI liest alles in Abschnitten, sammelt die Themen und **ordnet sie zu
+  einem Lernpfad**: Grundlagen zuerst, was baut worauf auf, je Thema ein
+  **Übergang** („warum jetzt, was brauchen wir von vorher“). Reine
+  Organisation fällt weg, zu kleine Themen werden zusammengelegt. In der
+  Vorschau kannst du Themen weglassen, dann speichern.
+- **Lektionen entstehen nacheinander** – beim Öffnen eines Themas (oder „Alle
+  vorbereiten“). Jede beginnt mit einem **Rückblick**: was aus den früheren
+  Themen gebraucht wird (die KI bekommt deren Kurzfassungen) und warum es jetzt
+  darauf aufbaut.
+- **Ausführlich oder Kurzfassung**: Jede Lektion hat eine Kurzfassung
+  (Kernpunkte, wichtigste Formel, eine Darstellung) zum schnellen
+  Wiedereinsteigen – oben umschaltbar oder im Pfad direkt mit „Kurz“.
+- **Fortschritt**: „Abschließen – weiter mit …“ am Ende jeder Lektion hakt das
+  Thema ab; „Weiter mit …“ führt zum nächsten. Erledigt-Haken lassen sich auch
+  von Hand setzen. Lernpfade werden synchronisiert (Sync-Version 7); Fortschritt
+  von zwei Geräten wird zusammengeführt.
+
 ### 5zv. KI läuft im Hintergrund weiter (Android) und mehr Themen je PDF
 
 - **App kurz verlassen bricht nichts mehr ab (Android)**: Android friert Apps

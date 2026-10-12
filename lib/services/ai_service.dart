@@ -4312,6 +4312,7 @@ Antworte NUR mit JSON:
     String detail = 'normal',
     int maxLessons = 1,
     bool socratic = false,
+    String courseContext = '',
   }) async {
     if (topic.trim().isEmpty && material.trim().isEmpty && images.isEmpty) {
       throw AiServiceException('Gib ein Thema oder Beispiel ein oder wähle eine PDF.');
@@ -4329,6 +4330,12 @@ Antworte NUR mit JSON:
               'besonders wichtig: so gestellt, dass man mit Nachdenken und Blick auf die Simulation selbst darauf kommt.'
           : 'Lernweg: erklären (die "guide"-Fragen trotzdem mitliefern).')
       ..writeln();
+    if (courseContext.trim().isNotEmpty) {
+      buffer
+        ..writeln('LERNPFAD (diese Lektion ist ein Thema davon – "recap" liefern):')
+        ..writeln(_cap(courseContext.trim(), 6000))
+        ..writeln();
+    }
     if (topic.trim().isNotEmpty) {
       buffer
         ..writeln('Wunsch des Nutzers (Thema, eigenes Beispiel oder Aufgabe – genau daran halten):')
@@ -4443,6 +4450,44 @@ Antworte NUR mit JSON:
 - Fasse zusammengehörige Seiten zu EINEM Thema zusammen; Titelseiten/Gliederungen nicht als Thema.
 - Gibt der Nutzer einen Schwerpunkt vor, nimm nur Themen dazu.
 - Deutsch, Formeln in $…$ (Backslashes verdoppeln).''';
+
+  /// Lernpfad planen: aus den Themen (mehrerer Vorlesungen) eine sinnvolle
+  /// Reihenfolge mit Übergängen und Voraussetzungen. [topics]: je Thema
+  /// `{n, title, summary, how, source, visual}`. Liefert
+  /// `{"title", "intro", "units": [{"n", "title", "bridge", "needs": [n…]}]}` –
+  /// die Reihenfolge der Liste ist die Lernreihenfolge; reine Organisation
+  /// darf wegfallen, zu kleine Themen dürfen zusammengelegt werden ("merge").
+  Future<Map<String, dynamic>> planVisualCourse({
+    required List<Map<String, dynamic>> topics,
+    String wish = '',
+  }) async {
+    if (topics.isEmpty) throw AiServiceException('Keine Themen zum Planen.');
+    final buffer = StringBuffer();
+    if (wish.trim().isNotEmpty) buffer.writeln('Wunsch des Nutzers: ${_cap(wish.trim(), 2000)}\n');
+    buffer
+      ..writeln('Themen (in der Reihenfolge der Unterlagen):')
+      ..writeln(_cap(jsonEncode(topics), 60000));
+    final raw = await _complete(_visualCoursePlanSystemPrompt, buffer.toString(), temperature: 0.1);
+    final json = _parseJsonObject(raw);
+    if (json['units'] is! List || (json['units'] as List).isEmpty) {
+      throw AiServiceException('Die KI hat keinen Lernpfad geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return json;
+  }
+
+  static const _visualCoursePlanSystemPrompt = r'''
+Du planst in einer Lern-App einen LERNPFAD für ein ganzes Semester: Aus den Themen mehrerer Vorlesungen (oder einer langen) wird eine Folge von Lektionen, die aufeinander aufbauen – wie ein gutes Lehrbuch.
+
+Antworte NUR mit JSON:
+{"title": "kurzer Titel des Lernpfads",
+ "intro": "2–4 Sätze Überblick: worum es geht und wie die Themen zusammenhängen",
+ "units": [{"n": Nummer des Themas, "merge": [weitere Nummern, die in dieses Thema mit eingehen], "title": "Titel (darf das Thema schärfen)", "bridge": "1–2 Sätze Übergang: warum dieses Thema jetzt kommt und was es aus früheren braucht", "needs": [Nummern der früheren Themen, auf denen es direkt aufbaut]}]}
+
+- Reihenfolge = Lernreihenfolge: Grundlagen zuerst, dann was darauf aufbaut. Meist entspricht das der Reihenfolge der Unterlagen – weiche nur ab, wenn ein Thema eindeutig ein späteres voraussetzt.
+- "needs" nur auf FRÜHERE Themen der Liste, nur echte Abhängigkeiten (höchstens 3).
+- Reine Organisation, Literatur, Wiederholungsfolien und Titelseiten weglassen. Sehr kleine, eng verwandte Themen mit "merge" zusammenlegen; große nicht zerlegen.
+- Jedes inhaltliche Thema kommt genau einmal vor (als "n" oder in "merge").
+- Deutsch, Begriffe aus den Unterlagen.''';
 
   /// Rückfrage zu einem Schritt einer Lektion bzw. Erklärung eines Fehlers in
   /// der Übung. [mode]: "visual", "text" oder "both". Antwort:
@@ -4642,6 +4687,8 @@ Antworte NUR mit JSON:
   "functions": [{"key": "s", "label": "Weg s(t)", "expr": "0.5*t^2 + 2*t", "unit": "m"}],   ← nur, wenn Graphen/Auto vorkommen, sonst []
   "steps": [{"title": "…", "text": "Warum wir das machen, was es bedeutet, was man in der Animation sieht", "formula": "LaTeX ohne $ (optional)", "show": {…}, "guide": "Leitfrage, mit der man den Schritt selbst findet"}],
   "result": {"title": "Ergebnis", "text": "…", "formula": "…", "show": {…}},
+  "short": {"title": "Kurzfassung", "text": "3–6 Kernpunkte, je Zeile mit • beginnend (LaTeX in $…$)", "formula": "die wichtigste Formel (optional)", "show": {… EINE Darstellung, die das Wichtigste auf einen Blick zeigt}},
+  "recap": "nur im Lernpfad – siehe unten",
   "exercise": {"front": "Neue, ähnliche Aufgabe WORTGETREU mit allen Zahlen (LaTeX in $…$)", "simulate": "position" | "velocity" | "graph", "steps": [ … wie unten … ]}
 }]}
 
@@ -4650,6 +4697,10 @@ Regeln für "functions":
 - "domain": Bereich, auf dem alle Funktionen definiert sind und gut aussehen. Rechne sorgfältig (auch Ableitungen/Stammfunktionen als eigene Funktion).
 
 Regeln für "show": Zeige in JEDEM Schritt etwas, das genau diesen Schritt sichtbar macht (meist eine "scene", wo es passt Graph/Auto/Umformung). Eine Szene darf die vorige weiterführen (gleicher Aufbau, neue Bewegung). Bezüge nur auf vorhandene "functions"-keys.
+
+Regeln für "short" (IMMER): Die Kurzfassung zum schnellen Wiedereinsteigen, wenn man das Thema schon einmal gelernt hat – das Wesentliche in wenigen Zeilen plus eine aussagekräftige Darstellung, keine neuen Inhalte.
+
+Regeln für "recap" (NUR wenn ein Lernpfad angegeben ist, sonst weglassen): 2–4 Sätze Rückblick und Übergang – was aus den genannten früheren Themen gebraucht wird, kurz wiederholt, und warum dieses Thema jetzt darauf aufbaut ("Bei … haben wir gesehen, dass … – genau das brauchen wir jetzt, um …"). Knüpfe auch in den Schritten an die früheren Themen an, wo es passt.
 
 Regeln für "guide" (sokratisches Lernen – JEDER Schritt bekommt eine):
 - Eine offene Leitfrage, mit der der Lernende den Schritt SELBST herausfinden kann, OHNE dass sie die Lösung verrät. Knüpft an Vorwissen oder an das an, was die Animation gerade zeigt.

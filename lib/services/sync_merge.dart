@@ -29,7 +29,7 @@ class CollectionMerge {
 /// Versionen zeigen unbekannte Aufgaben nur als Karteikarte und speichern sie
 /// beim Lernen auch so). 2 = Stückliste und Diagramm-Skizze, 3 = Zustandsdiagramm,
 /// 4 = Freihand-Skizze und Bilder als Antwortoptionen, 5 = Lektionen aus „Visuell lernen“.
-const syncDataVersion = 6;
+const syncDataVersion = 7;
 
 /// Datenformat eines Sync-Stands (0 = von einer Version vor [syncDataVersion]).
 int dataVersionOf(Map<String, dynamic> payload) => (payload['dataVersion'] as num?)?.toInt() ?? 0;
@@ -80,6 +80,7 @@ final Map<String, _KeyOf> _keyed = {
   'labExperiments': _idKey,
   'visualLessons': _idKey,
   'cardFlags': _idKey,
+  'visualCourses': _idKey,
   'chatMessages': _idKey,
   'unsupportedTasks': _idKey,
   'masterySnapshots': (r) {
@@ -105,6 +106,7 @@ const _perModule = [
   'labExperiments',
   'visualLessons',
   'cardFlags',
+  'visualCourses',
   'chatMessages',
   'unsupportedTasks',
   'mockExamResults',
@@ -281,6 +283,28 @@ Map<String, dynamic> _resolve(String collection, Map<String, dynamic> local, Map
       return rReps > lReps ? remote : local;
     case 'labExperiments':
       return _labWork(remote) > _labWork(local) ? remote : local;
+    case 'visualCourses':
+      // Fortschritt beider Seiten behalten: erledigt auf einem Gerät,
+      // Lektion auf dem anderen erstellt.
+      final remoteUnits = {
+        for (final u in (remote['units'] as List? ?? const []))
+          if (u is Map) '${u['id']}': u,
+      };
+      return {
+        ...local,
+        'units': [
+          for (final u in (local['units'] as List? ?? const []))
+            if (u is Map)
+              {
+                ...u,
+                if (remoteUnits['${u['id']}']?['done'] == true) 'done': true,
+                if (u['lessonId'] == null && remoteUnits['${u['id']}']?['lessonId'] != null)
+                  'lessonId': remoteUnits['${u['id']}']!['lessonId'],
+              }
+            else
+              u,
+        ],
+      };
     case 'materials':
       // Markierungen und Notizen beider Seiten behalten (auf einem Gerät
       // markiert, auf dem anderen eine Seitennotiz gespeichert).
@@ -358,6 +382,7 @@ String describeMerge(SyncMergeResult result) {
     'labExperiments': 'Laborversuche',
     'visualLessons': 'Visuell-Lektionen',
     'cardFlags': 'markierte Fragen',
+    'visualCourses': 'Lernpfade',
     'chatMessages': 'Chat-Nachrichten',
     'unsupportedTasks': 'Aufgaben auf der Liste „Noch nicht interaktiv“',
     'mockExamResults': 'Probeklausuren',

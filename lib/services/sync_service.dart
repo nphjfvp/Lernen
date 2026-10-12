@@ -215,6 +215,7 @@ Future<Map<String, dynamic>> buildSyncPayload(DatabaseClient db) async {
     'labExperiments': (await DatabaseService.labExperiments.find(db)).map((r) => r.value).toList(),
     'visualLessons': (await DatabaseService.visualLessons.find(db)).map((r) => r.value).toList(),
     'cardFlags': (await DatabaseService.cardFlags.find(db)).map((r) => r.value).toList(),
+    'visualCourses': (await DatabaseService.visualCourses.find(db)).map((r) => r.value).toList(),
     // Verlauf und Statistik – ohne sie finge jedes weitere Gerät bei null
     // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
     'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
@@ -253,6 +254,7 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
   if (data.containsKey('visualLessons')) await DatabaseService.visualLessons.delete(txn);
   // Ebenso markierte Fragen.
   if (data.containsKey('cardFlags')) await DatabaseService.cardFlags.delete(txn);
+  if (data.containsKey('visualCourses')) await DatabaseService.visualCourses.delete(txn);
 
   for (final m in (data['modules'] as List? ?? [])) {
     final module = Module.fromMap(Map<String, dynamic>.from(m as Map));
@@ -298,6 +300,11 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     final id = map['id']?.toString() ?? '';
     if (id.isNotEmpty) await DatabaseService.cardFlags.record(id).put(txn, map);
   }
+  for (final c in (data['visualCourses'] as List? ?? [])) {
+    final map = Map<String, dynamic>.from(c as Map);
+    final id = map['id']?.toString() ?? '';
+    if (id.isNotEmpty) await DatabaseService.visualCourses.record(id).put(txn, map);
+  }
 
   await applySyncedHistory(txn, data);
 
@@ -320,6 +327,10 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );
   await DatabaseService.cardFlags.delete(
+    txn,
+    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+  );
+  await DatabaseService.visualCourses.delete(
     txn,
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );

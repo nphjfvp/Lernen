@@ -31,9 +31,22 @@ AiService? visualAi(BuildContext context) {
 /// bleibt verdeckt, bis man ihn mit Leitfragen der KI selbst gefunden (oder
 /// aufgelöst) hat.
 class VisualLessonScreen extends StatefulWidget {
-  const VisualLessonScreen({super.key, required this.lesson});
+  const VisualLessonScreen({
+    super.key,
+    required this.lesson,
+    this.startShort = false,
+    this.onFinished,
+    this.finishLabel = 'Thema abschließen',
+  });
 
   final VisualLesson lesson;
+
+  /// Gleich die Kurzfassung zeigen (zum Wiedereinsteigen).
+  final bool startShort;
+
+  /// Im Lernpfad: am Ende „Thema abschließen“ (schließt die Lektion).
+  final VoidCallback? onFinished;
+  final String finishLabel;
 
   /// Test-Hook statt OpenRouter.
   static AiService? Function(String apiKey, String model)? aiFactory;
@@ -65,6 +78,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
   late final VisualMath _math = VisualMath(widget.lesson);
   int _page = 0;
   late VisualStyle _style = widget.lesson.style;
+  late bool _short = widget.startShort && widget.lesson.shortVersion != null;
   final _socratic = <int, _Socratic>{};
 
   /// Letzte falsche Antwort in der Übung.
@@ -116,76 +130,120 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
             constraints: const BoxConstraints(maxWidth: 900),
             child: Column(
               children: [
-                SizedBox(
-                  height: 48,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    children: [
-                      for (final (i, p) in pages.indexed)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ChoiceChip(
-                            key: ValueKey('visual-page-$i'),
-                            label: Text(p.label),
-                            selected: i == _page,
-                            showCheckmark: false,
-                            onSelected: (_) => setState(() => _page = i),
+                if (_l.shortVersion != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: SegmentedButton<bool>(
+                      key: const ValueKey('visual-length'),
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('Ausführlich'), icon: Icon(Icons.subject)),
+                        ButtonSegment(value: true, label: Text('Kurzfassung'), icon: Icon(Icons.short_text)),
+                      ],
+                      selected: {_short},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (v) => setState(() => _short = v.first),
+                    ),
+                  ),
+                if (_short)
+                  Expanded(child: _shortBody(c))
+                else ...[
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      children: [
+                        for (final (i, p) in pages.indexed)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              key: ValueKey('visual-page-$i'),
+                              label: Text(p.label),
+                              selected: i == _page,
+                              showCheckmark: false,
+                              onSelected: (_) => setState(() => _page = i),
+                            ),
                           ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                    child: SegmentedButton<VisualStyle>(
+                      key: const ValueKey('visual-style'),
+                      segments: const [
+                        ButtonSegment(
+                          value: VisualStyle.explain,
+                          label: Text('Erklären'),
+                          icon: Icon(Icons.menu_book_outlined),
                         ),
-                    ],
+                        ButtonSegment(
+                          value: VisualStyle.socratic,
+                          label: Text('Sokratisch'),
+                          icon: Icon(Icons.psychology_alt_outlined),
+                        ),
+                      ],
+                      selected: {_style},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (s) => _setStyle(s.first),
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                  child: SegmentedButton<VisualStyle>(
-                    key: const ValueKey('visual-style'),
-                    segments: const [
-                      ButtonSegment(
-                        value: VisualStyle.explain,
-                        label: Text('Erklären'),
-                        icon: Icon(Icons.menu_book_outlined),
-                      ),
-                      ButtonSegment(
-                        value: VisualStyle.socratic,
-                        label: Text('Sokratisch'),
-                        icon: Icon(Icons.psychology_alt_outlined),
-                      ),
-                    ],
-                    selected: {_style},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (s) => _setStyle(s.first),
-                  ),
-                ),
-                Expanded(
-                  child: page.kind == _PageKind.exercise
-                      ? _exercise(c)
-                      : ListView(
-                          key: ValueKey('visual-page-body-$_page'),
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                          children: [
-                            if (_page == 0 && _l.intro.isNotEmpty) ...[
-                              Container(
-                                key: const ValueKey('visual-intro'),
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(14)),
-                                child: MathText(_l.intro, style: const TextStyle(fontSize: 14.5, height: 1.45)),
-                              ),
-                              const SizedBox(height: 14),
-                            ],
-                            if (_style == VisualStyle.socratic && page.kind == _PageKind.step) ...[
-                              if (_socraticFor(_page).unlocked) ...[
-                                _unlockedBanner(c, _socratic[_page]!),
+                  Expanded(
+                    child: page.kind == _PageKind.exercise
+                        ? _exercise(c)
+                        : ListView(
+                            key: ValueKey('visual-page-body-$_page'),
+                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                            children: [
+                              if (_page == 0 && _l.recap.isNotEmpty) ...[
+                                Container(
+                                  key: const ValueKey('visual-recap'),
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: c.surfaceAlt,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border(left: BorderSide(color: c.accent, width: 4)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Rückblick',
+                                        style: TextStyle(fontWeight: FontWeight.w700, color: c.accent),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      MathText(_l.recap, style: const TextStyle(fontSize: 14.5, height: 1.45)),
+                                    ],
+                                  ),
+                                ),
                                 const SizedBox(height: 12),
-                                ..._stepBody(c, page.step!, isResult: false),
+                              ],
+                              if (_page == 0 && _l.intro.isNotEmpty) ...[
+                                Container(
+                                  key: const ValueKey('visual-intro'),
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: c.accentSoft,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: MathText(_l.intro, style: const TextStyle(fontSize: 14.5, height: 1.45)),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              if (_style == VisualStyle.socratic && page.kind == _PageKind.step) ...[
+                                if (_socraticFor(_page).unlocked) ...[
+                                  _unlockedBanner(c, _socratic[_page]!),
+                                  const SizedBox(height: 12),
+                                  ..._stepBody(c, page.step!, isResult: false),
+                                ] else
+                                  ..._socraticBody(c, _page, page.step!),
                               ] else
-                                ..._socraticBody(c, _page, page.step!),
-                            ] else
-                              ..._stepBody(c, page.step!, isResult: page.kind == _PageKind.result),
-                          ],
-                        ),
-                ),
-                _nav(c, pages.length),
+                                ..._stepBody(c, page.step!, isResult: page.kind == _PageKind.result),
+                            ],
+                          ),
+                  ),
+                  _nav(c, pages.length),
+                ],
               ],
             ),
           ),
@@ -256,10 +314,74 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
             onPressed: () => setState(() => _page++),
             icon: const Icon(Icons.chevron_right),
             label: Text(_pages[_page + 1].kind == _PageKind.exercise ? 'Jetzt du' : 'Weiter'),
+          )
+        else if (widget.onFinished != null)
+          FilledButton.icon(
+            key: const ValueKey('visual-finish'),
+            onPressed: () {
+              widget.onFinished!();
+              Navigator.of(context).maybePop();
+            },
+            icon: const Icon(Icons.check),
+            label: Text(widget.finishLabel),
           ),
       ],
     ),
   );
+
+  /// Kurzfassung: Kernpunkte, Formel und die eine Darstellung.
+  Widget _shortBody(AppColors c) {
+    final s = _l.shortVersion!;
+    return ListView(
+      key: const ValueKey('visual-short'),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      children: [
+        Text(s.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        if (s.text.isNotEmpty) MathText(s.text, style: const TextStyle(fontSize: 15, height: 1.55)),
+        if (s.formula.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(12)),
+            child: MathText('\$\$${s.formula}\$\$', style: const TextStyle(fontSize: 17)),
+          ),
+        ],
+        if (s.show.transform.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          EquationTransformView(states: s.show.transform),
+        ],
+        if (s.show.scene != null) ...[const SizedBox(height: 12), VisualDiagramView(diagram: s.show.scene!)],
+        if (s.show.scene3d != null) ...[const SizedBox(height: 12), VisualScene3DView(scene: s.show.scene3d!)],
+        if (VisualSceneView.hasScene(s.show)) ...[
+          const SizedBox(height: 12),
+          VisualSceneView(math: _math, show: s.show),
+        ],
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('visual-short-full'),
+              onPressed: () => setState(() => _short = false),
+              icon: const Icon(Icons.subject),
+              label: const Text('Ausführlich ansehen'),
+            ),
+            const Spacer(),
+            if (widget.onFinished != null)
+              FilledButton.icon(
+                key: const ValueKey('visual-short-finish'),
+                onPressed: () {
+                  widget.onFinished!();
+                  Navigator.of(context).maybePop();
+                },
+                icon: const Icon(Icons.check),
+                label: const Text('Erledigt'),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
 
   // -------------------------------------------------------------------------
   // Sokratisch

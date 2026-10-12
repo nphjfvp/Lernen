@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1539 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1544 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1628,6 +1628,24 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `VisualLearnScreen.topicWindows` (30.000 Zeichen/40 Seiten), `maxTopicsFor` (Seiten/2, 4–15),
     gleiche Titel zusammengelegt, Fehler je Abschnitt gesammelt. Test:
     `ai_background_transport_test`.
+79. Lernpfad: `VisualCourse`/`CourseUnit` (models/visual_course.dart: units mit summary, how,
+    bridge, needs (Unit-IDs, nur frühere), source, material (Seitentext ≤ 8000), lessonId, done;
+    `nextIndex`, `basisOf` = needs + direkter Vorgänger). Store `visual_courses`
+    (`VisualCourseRepository`, delete löscht Lektionen mit `courseId`), Sync `visualCourses`
+    (`_resolve`: done/lessonId beider Seiten), `syncDataVersion = 7`. `VisualLesson` neu:
+    `courseId`, `recap`, `shortVersion` (JSON "short", Prompt liefert sie IMMER; "recap" nur mit
+    `generateVisualLessons(courseContext:)`). `VisualCourseService` (services/
+    visual_course_service.dart): `collectTopics` (je PDF in Abschnitten `windowsOf`,
+    `findVisualTopics`), `plan` → `AiService.planVisualCourse` → `courseFromPlan` (n/merge/needs),
+    `contextFor` (Stellung, Übergang, Basis-Themen mit Kurzfassung), `lessonFor`. UI
+    ui/visual/visual_course_screen.dart: `VisualCourseCreateScreen` (`course-pdf-i`, `course-upload`,
+    `course-wish`/`-detail`/`-style`/`-plan`, Vorschau `course-preview-i`, `course-unit-remove-i`,
+    `course-save` → pop(course)) und `VisualCourseScreen` (`course-progress`, `course-continue`,
+    `course-prepare-all`/`-stop`, `course-unit-i`/`-open-i`/`-done-i`/`-short-i`, `course-delete`).
+    `VisualLessonScreen(startShort, onFinished, finishLabel)`: `visual-length` (Ausführlich/
+    Kurzfassung), `visual-short`, `visual-recap`, `visual-finish`, `visual-short-finish`.
+    `VisualLearnScreen`: Abschnitt Lernpfade (`visual-course-new`, `visual-course-i`), Lektionen mit
+    courseId ausgeblendet. Tests: `visual_course_test`, `visual_course_ui_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
