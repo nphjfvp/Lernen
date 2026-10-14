@@ -4508,6 +4508,60 @@ Antworte NUR mit JSON:
 - Jedes inhaltliche Thema kommt genau einmal vor (als "n" oder in "merge").
 - Deutsch, Begriffe aus den Unterlagen.''';
 
+  /// Visueller Chat: beantwortet [question] im Gespräch ([history]: frühere
+  /// Nachrichten, user = Nutzer) – [mode] "visual", "text" oder "both".
+  /// Antwort: `{"title", "text", "variable", "domain", "functions", "show",
+  /// "transform"}` (Darstellung im Lektionsformat, alles optional).
+  Future<Map<String, dynamic>> visualChat({
+    required String question,
+    List<({bool user, String text})> history = const [],
+    String mode = 'both',
+    String subject = '',
+  }) async {
+    if (question.trim().isEmpty) throw AiServiceException('Stell eine Frage.');
+    final buffer = StringBuffer();
+    if (subject.trim().isNotEmpty) buffer.writeln('Fach: ${subject.trim()}');
+    if (history.isNotEmpty) {
+      buffer.writeln('Bisheriges Gespräch:');
+      for (final m in history.length > 12 ? history.sublist(history.length - 12) : history) {
+        buffer.writeln('${m.user ? 'Nutzer' : 'Du'}: ${_cap(m.text, 1500)}');
+      }
+      buffer.writeln();
+    }
+    buffer
+      ..writeln('Frage: ${_cap(question.trim(), 4000)}')
+      ..writeln('Gewünschte Antwort: ${switch (mode) {
+        'visual' => 'VISUELL – vor allem eine Darstellung ("show"/"transform"), Text nur 1–3 Sätze dazu',
+        'text' => 'SCHRIFTLICH – ausführlicher Text, keine Darstellung',
+        _ => 'BEIDES – klarer Text und eine passende Darstellung',
+      }}');
+    final raw = await _complete(_visualChatSystemPrompt, buffer.toString(), temperature: 0.3);
+    final json = await _json(raw);
+    if ('${json['text'] ?? ''}'.trim().isEmpty && json['show'] is! Map && json['transform'] is! List) {
+      throw AiServiceException('Die KI hat nicht geantwortet – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return json;
+  }
+
+  static const _visualChatSystemPrompt =
+      r'''
+Du bist ein Tutor in einer Lern-App und erklärst im Chat – für jedes Fach (Mathe, Physik, Werkstoffkunde, Technik, Chemie, BWL …). Die App kann deine Antwort ANIMIERT zeigen. Wähle die Darstellung frei nach der Frage (2D-Szene meist am klarsten, 3D nur bei räumlichem Aufbau, Graph bei Zusammenhängen y = f(x), Fahrzeug nur bei Bewegung, Umformung bei Rechnungen).
+''' +
+      _visualToolsSpec +
+      r'''
+
+Antworte NUR mit JSON:
+{"title": "kurzer Titel des Themas (nur bei der ersten Antwort eines Gesprächs)",
+ "text": "Antwort, du-Form, Formeln in $…$ (Backslashes verdoppeln)",
+ "variable": "t", "domain": [0, 10],
+ "functions": [{"key": "s", "label": "…", "expr": "Eingabe-Schreibweise, nur die Variable", "unit": "…"}],
+ "show": {"scene": {…}, "scene3d": {…}, "car": key, "carFrom": "position"|"velocity", "vehicle": "…", "plot": [keys], "tangent": key, "area": key},
+ "transform": [{"latex": "Gleichung ohne $", "note": "was passiert und warum"}]}
+
+- Beantworte genau die Frage, knüpfe an das bisherige Gespräch an (Rückfragen beziehen sich darauf).
+- Halte dich an die gewünschte Art (visuell/schriftlich/beides). Felder, die du nicht brauchst, weglassen.
+- Rechne sorgfältig; die App rechnet Funktionen selbst nach.''';
+
   /// „Darstellung ändern“: baut eine Lektion nach dem Wunsch des Nutzers um
   /// (z.B. „Formeln richtig darstellen“, „Rakete statt Auto“, „anderes
   /// Beispiel“). [stepIndex]: nur dieser Schritt (Index in "steps"; -1 =

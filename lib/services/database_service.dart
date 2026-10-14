@@ -41,6 +41,7 @@ class DatabaseService {
   static final visualLessons = stringMapStoreFactory.store('visual_lessons');
   static final cardFlags = stringMapStoreFactory.store('card_flags');
   static final visualCourses = stringMapStoreFactory.store('visual_courses');
+  static final visualChats = stringMapStoreFactory.store('visual_chats');
 
   /// Aufgaben, die die App noch nicht interaktiv prüfen kann (Sammelliste).
   static final unsupportedTasks = stringMapStoreFactory.store('unsupported_tasks');

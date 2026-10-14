@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1559 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1562 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1668,6 +1668,17 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `diagram-formula-i`, `scene3d-formula-i`). Fahrzeug: `VisualShow.vehicle` +
     `VisualLesson.vehicle`, `vehicleLook` (visual_scene.dart: Emoji, Name, Drehung/Spiegelung),
     Ablesung „<Name>: Weg …“.
+82. Visueller Chat: `VisualChat`/`VisualChatMessage` (models/visual_chat.dart: user, text, mode
+    visual/text/both, `visual` = Lektionsformat variable/domain/functions/show/transform,
+    `visualLesson` als Ein-Schritt-Lektion, `maxMessages` 80, Titel von der KI). Store
+    `visual_chats` (`VisualChatRepository`), Sync `visualChats` (`_resolve`: längeres Gespräch),
+    `syncDataVersion = 8`. `AiService.visualChat(question, history, mode, subject)` (Prompt
+    `_visualChatSystemPrompt` mit `_visualToolsSpec`). UI ui/visual/visual_chat_screen.dart
+    (`visual-chat-mode`, `-input`, `-send`, `-suggest-i`, `-msg-i`, `-visual-i`, `-lesson`
+    (Gespräch → generateVisualLessons), `-new`, `-delete`, `-error`; Hook `aiFactory`) und
+    `VisualShowView` (ui/visual/visual_show_view.dart: Umformung, 2D, 3D, Fahrzeug/Graph).
+    `VisualLearnScreen`: `visual-chat-open`, letzte Gespräche `visual-chat-i`. Test:
+    `visual_chat_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

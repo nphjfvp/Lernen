@@ -1412,6 +1412,23 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 5zz. Visueller Chat – frei fragen, ohne PDF
+
+Ganz oben in **„Visuell lernen“: „Frag einfach – die KI erklärt mit Bildern“**:
+
+- Eine Frage eintippen (oder einen Vorschlag antippen) – ohne PDF, ohne
+  Thema vorher festzulegen. Je Nachricht wählst du **Visuell**,
+  **Schriftlich** oder **Beides**.
+- Die Antworten kommen im Chat und können alles zeigen, was die Lektionen
+  können: 2D-Szenen, 3D-Modelle, Graphen mit Tangente/Fläche, Fahrzeug (Auto,
+  Rakete …), Umformungen in Zeitlupe – Formeln echt gesetzt.
+- **Rückfragen** beziehen sich auf das Gespräch („und wenn die Masse doppelt so
+  groß ist?“).
+- **„Als Lektion speichern“** (Hut oben): Aus dem Gespräch wird eine richtige
+  Lektion mit Schritten und Übung.
+- Gespräche werden gespeichert und synchronisiert (Sync-Version 8); die
+  letzten stehen zum Fortsetzen unter dem Knopf.
+
 ### 5zy. Visuell lernen: Darstellung in der App ändern, Formeln in Szenen
 
 - **„Darstellung ändern“** unter jedem Schritt (und beim Ergebnis bzw. in der

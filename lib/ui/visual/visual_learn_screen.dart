@@ -6,10 +6,12 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/material_item.dart';
+import '../../models/visual_chat.dart';
 import '../../models/visual_course.dart';
 import '../../models/visual_lesson.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../repositories/visual_chat_repository.dart';
 import '../../repositories/visual_course_repository.dart';
 import '../../repositories/visual_lesson_repository.dart';
 import '../../services/ai_service.dart';
@@ -20,6 +22,7 @@ import '../../services/pdf_service.dart';
 import '../../services/visual_math.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/safe_set_state.dart';
+import 'visual_chat_screen.dart';
 import 'visual_course_screen.dart';
 import 'visual_lesson_screen.dart';
 
@@ -80,6 +83,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
   final _to = TextEditingController();
   List<VisualLesson> _lessons = const [];
   List<VisualCourse> _courses = const [];
+  List<VisualChat> _chats = const [];
   bool _loading = true;
 
   /// Gewählte PDF: aus dem Fach (Material-ID) oder hochgeladen.
@@ -119,8 +123,10 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
     await context.read<MaterialRepository?>()?.loadForModule(widget.moduleId);
     if (!mounted) return;
     final courseRepo = context.read<VisualCourseRepository?>();
+    final chatRepo = context.read<VisualChatRepository?>();
     final lessons = await context.read<VisualLessonRepository>().forModule(widget.moduleId);
     final courses = await courseRepo?.forModule(widget.moduleId) ?? const <VisualCourse>[];
+    final chats = await chatRepo?.forModule(widget.moduleId) ?? const <VisualChat>[];
     if (!mounted) return;
     setState(() {
       // Lektionen eines Lernpfads stehen im Lernpfad.
@@ -129,6 +135,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
           if (l.courseId == null) l,
       ];
       _courses = courses;
+      _chats = chats;
       _loading = false;
     });
   }
@@ -490,13 +497,21 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
   }
 
   Future<void> _newCourse() async {
-    final course = await Navigator.of(
-      context,
-    ).push(MaterialPageRoute<VisualCourse>(builder: (_) => VisualCourseCreateScreen(moduleId: widget.moduleId)));
+    final course = await Navigator.of(context)
+        .push(MaterialPageRoute<VisualCourse>(builder: (_) => VisualCourseCreateScreen(moduleId: widget.moduleId)));
     if (!mounted) return;
     // Neuer Pfad: gleich öffnen (danach wird neu geladen).
     if (course != null) return _openCourse(course);
     await _load();
+  }
+
+  Future<void> _openChat(VisualChat? chat) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => VisualChatScreen(moduleId: widget.moduleId, moduleName: widget.moduleName, chat: chat),
+      ),
+    );
+    if (mounted) await _load();
   }
 
   Future<void> _openCourse(VisualCourse course) async {
@@ -623,6 +638,27 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                   style: TextStyle(color: c.inkMuted, height: 1.4),
                 ),
                 const SizedBox(height: 16),
+                if (context.read<VisualChatRepository?>() != null) ...[
+                  Text('Visueller Chat', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 6),
+                  FilledButton.tonalIcon(
+                    key: const ValueKey('visual-chat-open'),
+                    onPressed: _busy ? null : () => _openChat(null),
+                    icon: const Icon(Icons.forum_outlined),
+                    label: const Text('Frag einfach – die KI erklärt mit Bildern (ohne PDF)'),
+                  ),
+                  for (final (i, chat) in _chats.take(3).indexed)
+                    ListTile(
+                      key: ValueKey('visual-chat-$i'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      leading: Icon(Icons.chat_bubble_outline, color: c.accent, size: 20),
+                      title: Text(chat.displayTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${chat.messages.length} Nachrichten'),
+                      onTap: () => _openChat(chat),
+                    ),
+                  const SizedBox(height: 22),
+                ],
                 if (context.read<VisualCourseRepository?>() != null) ...[
                   Text('Lernpfade', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 6),
