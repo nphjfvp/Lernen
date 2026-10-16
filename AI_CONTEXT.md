@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1562 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1564 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1679,6 +1679,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `VisualShowView` (ui/visual/visual_show_view.dart: Umformung, 2D, 3D, Fahrzeug/Graph).
     `VisualLearnScreen`: `visual-chat-open`, letzte Gespräche `visual-chat-i`. Test:
     `visual_chat_test`.
+83. Android-Absturz behoben: background_downloader legt den ganzen Task (inkl. Body) in
+    WorkManager-`Data` (max. 10 KB, `Data.build()` ungefangen → App weg). Jetzt
+    services/background_transport.dart (Export: `_base` + `_io`/`_stub` je nach dart:io):
+    `BackgroundTransport.send(url, headers, body, label)` – bis `inlineLimit` (3000 B) `DataTask`,
+    sonst `UploadTask` (post binary, mimeType application/json, `Content-Disposition: ''`, Datei
+    in BaseDirectory.temporary, danach gelöscht). `AiService.backgroundTransport` bekommt
+    `label` (erste Zeile des System-Prompts). `AiCrashGuard` (mark/clear/takePending, Dateien in
+    support/ai_pending) – auch um das PDF-Lesen im Lernpfad. main.dart: gefundene Notizen →
+    `AppErrorReporter.showAiCrash` (Code `aiCrashCode` KI-HG-01) und diese Sitzung ohne
+    Hintergrund-Transport; `FlutterError.onError`/`PlatformDispatcher.onError` →
+    `AppErrorReporter.report` (SnackBar „Fehler APP-XXXX“, Details-Dialog `app-error-dialog`,
+    `app-error-copy`). Test: `app_error_reporter_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

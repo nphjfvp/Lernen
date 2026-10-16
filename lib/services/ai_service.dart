@@ -114,7 +114,9 @@ class AiService {
   /// Übertragung, die weiterläuft, wenn die App im Hintergrund ist (unter
   /// Android über WorkManager, gesetzt in main.dart). Scheitert sie selbst
   /// (keine HTTP-Antwort), geht die Anfrage auf dem normalen Weg raus.
-  static Future<http.Response> Function(Uri url, Map<String, String> headers, String body)? backgroundTransport;
+  /// [label]: worum es geht (für die Absturz-Notiz).
+  static Future<http.Response> Function(Uri url, Map<String, String> headers, String body, String label)?
+  backgroundTransport;
 
   static const _endpoint = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -316,7 +318,7 @@ Hier ist der Dokumenttext:
       final background = _useBackground ? backgroundTransport : null;
       if (background != null) {
         try {
-          return await background(url, headers, body);
+          return await background(url, headers, body, _labelOf(systemPrompt));
         } on AiServiceException {
           rethrow;
         } catch (_) {
@@ -378,6 +380,12 @@ Hier ist der Dokumenttext:
         }
       }
     }
+  }
+
+  /// Kurzbeschreibung einer Anfrage: die erste Zeile ihres System-Prompts.
+  static String _labelOf(String systemPrompt) {
+    final line = systemPrompt.trim().split('\n').first.trim();
+    return line.length > 90 ? '${line.substring(0, 90)}…' : line;
   }
 
   static String _minutesText(Duration d) => d.inSeconds < 60

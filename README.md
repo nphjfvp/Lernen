@@ -1412,6 +1412,21 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 6a. Absturz beim Lernpfad (Android) behoben, Fehler mit Code
+
+- **Ursache**: Die Hintergrund-Übertragung der KI-Anfragen (WorkManager) darf
+  einem Job höchstens 10 KB mitgeben – der Lernpfad (und andere große
+  Anfragen) schickt viel mehr. Die Bibliothek hat das nicht abgefangen, die
+  App wurde beendet.
+- **Jetzt**: Kleine Anfragen gehen wie bisher direkt mit, große als Datei
+  (im Job steht nur der Pfad) – sie laufen weiter im Hintergrund, ohne Grenze.
+- **Wird die App doch mitten in einer KI-Anfrage oder beim Einlesen der PDFs
+  beendet**, meldet der nächste Start das mit **Fehlercode KI-HG-01**,
+  Aufgabe, Größe und Zeitpunkt (Details kopierbar) – und KI-Anfragen laufen in
+  dieser Sitzung ohne Hintergrund-Dienst.
+- **Sonstige Fehler der App** erscheinen als Hinweis „Fehler APP-XXXX: …“ mit
+  „Details“ (kopierbar) statt still zu verschwinden.
+
 ### 5zz. Visueller Chat – frei fragen, ohne PDF
 
 Ganz oben in **„Visuell lernen“: „Frag einfach – die KI erklärt mit Bildern“**:

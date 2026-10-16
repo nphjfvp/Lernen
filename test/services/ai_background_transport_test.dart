@@ -27,7 +27,8 @@ void main() {
   test('Hintergrund-Übertragung (Android): Anfrage geht dorthin, mit Key, Modell und Inhalt', () async {
     final sent = <Map<String, dynamic>>[];
     var direct = 0;
-    AiService.backgroundTransport = (url, headers, body) async {
+    AiService.backgroundTransport = (url, headers, body, label) async {
+      expect(label, isNotEmpty);
       expect(url.toString(), contains('openrouter.ai'));
       expect(headers['Authorization'], 'Bearer sk-test');
       sent.add(jsonDecode(body) as Map<String, dynamic>);
@@ -50,7 +51,7 @@ void main() {
   });
 
   test('Scheitert die Hintergrund-Übertragung selbst, geht die Anfrage auf dem normalen Weg raus', () async {
-    AiService.backgroundTransport = (_, _, _) async => throw BackgroundTransportException('kein WorkManager');
+    AiService.backgroundTransport = (_, _, _, _) async => throw BackgroundTransportException('kein WorkManager');
     final ai = AiService(
       apiKey: 'sk-test',
       model: 'm',
@@ -62,7 +63,7 @@ void main() {
 
   test('Echte Fehlerantwort (z.B. 401) kommt durch – kein zweiter Versuch', () async {
     var direct = 0;
-    AiService.backgroundTransport = (_, _, _) async => http.Response('{"error":"Key ungültig"}', 401);
+    AiService.backgroundTransport = (_, _, _, _) async => http.Response('{"error":"Key ungültig"}', 401);
     final ai = AiService(
       apiKey: 'sk-test',
       model: 'm',
@@ -81,7 +82,7 @@ void main() {
 
   test('Mit eigenem Client (Tests) bleibt die Hintergrund-Übertragung aus', () async {
     var background = 0;
-    AiService.backgroundTransport = (_, _, _) async {
+    AiService.backgroundTransport = (_, _, _, _) async {
       background++;
       return _reply('hintergrund');
     };

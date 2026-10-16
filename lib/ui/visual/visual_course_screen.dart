@@ -12,6 +12,7 @@ import '../../repositories/settings_repository.dart';
 import '../../repositories/visual_course_repository.dart';
 import '../../repositories/visual_lesson_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/background_transport.dart';
 import '../../services/material_file_store.dart';
 import '../../services/visual_course_service.dart';
 import '../../theme/app_colors.dart';
@@ -112,6 +113,13 @@ class _VisualCourseCreateScreenState extends State<VisualCourseCreateScreen> {
       _plan = null;
       _progress = 'Vorlesungen werden gelesen …';
     });
+    // Absturz-Notiz: Liest Android große PDFs nicht (Speicher), meldet der
+    // nächste Start, wobei es passiert ist.
+    final reading = await AiCrashGuard.mark(
+      label: 'Lernpfad planen – ${chosen.length + _uploads.length} PDFs lesen',
+      bytes: 0,
+      via: 'App',
+    );
     try {
       final pdfs = <({String name, Uint8List bytes})>[];
       for (final m in chosen) {
@@ -130,6 +138,7 @@ class _VisualCourseCreateScreenState extends State<VisualCourseCreateScreen> {
           }
         },
       );
+      await AiCrashGuard.clear(reading);
       if (topics.isEmpty) throw AiServiceException('In den PDFs wurde kein lesbarer Text gefunden.');
       if (!mounted) return;
       setState(() => _progress = 'Die KI ordnet ${topics.length} Themen zu einem Lernpfad …');
@@ -146,6 +155,7 @@ class _VisualCourseCreateScreenState extends State<VisualCourseCreateScreen> {
     } catch (e) {
       if (mounted) setState(() => _error = 'Das hat nicht geklappt: $e');
     } finally {
+      await AiCrashGuard.clear(reading);
       if (mounted) {
         setState(() {
           _busy = false;

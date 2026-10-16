@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart' show PlatformDispatcher, TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -32,6 +32,7 @@ import 'services/reminder_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'ui/root_shell.dart';
+import 'ui/widgets/app_error_reporter.dart';
 import 'ui/widgets/slow_ai_dialog.dart';
 
 Future<void> main() async {
@@ -87,10 +88,27 @@ Future<void> main() async {
 
   // Antwortet die KI lange nicht: fragen statt abbrechen.
   AiService.onSlowResponse = SlowAiPrompt.ask;
+  // Fehler mit klarem Code anzeigen statt still (siehe AppErrorReporter).
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    AppErrorReporter.report(details.exception, details.stack);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Ungefangener Fehler: $error');
+    AppErrorReporter.report(error, stack);
+    return true;
+  };
   // Android friert Apps im Hintergrund ein – KI-Anfragen laufen deshalb als
-  // WorkManager-Job weiter, auch wenn man die App kurz verlässt.
+  // WorkManager-Job weiter, auch wenn man die App kurz verlässt. Wurde die App
+  // beim letzten Mal mitten in einer solchen Anfrage beendet: melden und
+  // diesmal ohne Hintergrund-Dienst.
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-    AiService.backgroundTransport = BackgroundTransport.send;
+    final crashed = await AiCrashGuard.takePending();
+    if (crashed.isEmpty) {
+      AiService.backgroundTransport = BackgroundTransport.send;
+    } else {
+      AppErrorReporter.showAiCrash(crashed);
+    }
   }
   runApp(LernenApp(settingsRepository: settingsRepository, moduleRepository: moduleRepository));
 }
