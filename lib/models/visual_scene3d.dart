@@ -6,7 +6,11 @@
 /// Für fast alles andere bleibt die 2D-Szene ([VisualDiagram]) die erste Wahl.
 library;
 
-double? _num(Object? raw) => raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
+double? _num(Object? raw) {
+  final v = raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
+  // „NaN“/„Infinity“ der KI zählen als fehlend – sie zerschießen sonst die Zeichnung.
+  return v != null && v.isFinite ? v : null;
+}
 
 String _str(Object? raw) => '${raw ?? ''}'.trim();
 

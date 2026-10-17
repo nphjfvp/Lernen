@@ -11,7 +11,10 @@ import 'step_task.dart';
 import 'visual_diagram.dart';
 import 'visual_scene3d.dart';
 
-double? _num(Object? raw) => raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
+double? _num(Object? raw) {
+  final v = raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
+  return v != null && v.isFinite ? v : null;
+}
 
 String _str(Object? raw) => '${raw ?? ''}'.trim();
 
@@ -104,6 +107,7 @@ class VisualShow {
     this.transform = const [],
     this.scene,
     this.scene3d,
+    this.broken = '',
   });
 
   /// Funktion, die das Auto fährt (null = kein Auto).
@@ -133,6 +137,10 @@ class VisualShow {
   /// Räumliche Szene – nur, wo der räumliche Aufbau wesentlich ist.
   final VisualScene3D? scene3d;
 
+  /// Was sich nicht laden ließ (leer = alles gut) – die Oberfläche zeigt es
+  /// samt „Neu erzeugen“, statt die Darstellung still wegzulassen.
+  final String broken;
+
   bool get isEmpty =>
       car == null &&
       plot.isEmpty &&
@@ -145,8 +153,21 @@ class VisualShow {
   /// Alle Funktionen, auf die sich die Anzeige bezieht.
   Set<String> get keys => {?car, ...plot, ?tangent, ?area};
 
-  /// Nur Bezüge auf vorhandene Funktionen behalten.
-  VisualShow restrictedTo(Set<String> known) => VisualShow(
+  /// Nur Bezüge auf vorhandene Funktionen behalten (fehlende werden in
+  /// [broken] vermerkt).
+  VisualShow restrictedTo(Set<String> known) {
+    final missing = {
+      for (final k in [?car, ...plot, ?tangent, ?area])
+        if (!known.contains(k)) k,
+    };
+    final reasons = [
+      if (broken.isNotEmpty) broken,
+      if (missing.isNotEmpty) 'Funktion ${missing.map((k) => '„$k“').join(', ')} fehlt oder ließ sich nicht lesen',
+    ];
+    return _restricted(known, reasons.join(' · '));
+  }
+
+  VisualShow _restricted(Set<String> known, String broken) => VisualShow(
     car: car != null && known.contains(car) ? car : null,
     carSource: carSource,
     vehicle: vehicle,
@@ -159,6 +180,7 @@ class VisualShow {
     transform: transform,
     scene: scene,
     scene3d: scene3d,
+    broken: broken,
   );
 
   Map<String, dynamic> toMap() => {
@@ -171,6 +193,7 @@ class VisualShow {
     if (transform.isNotEmpty) 'transform': [for (final t in transform) t.toMap()],
     if (scene != null) 'scene': scene!.toMap(),
     if (scene3d != null) 'scene3d': scene3d!.toMap(),
+    if (broken.isNotEmpty) 'broken': broken,
   };
 
   static VisualShow fromMap(Object? raw) {
@@ -179,6 +202,20 @@ class VisualShow {
     final plot = raw['plot'] ?? raw['graph'];
     final transform = raw['transform'] ?? raw['umformung'];
     final from = _str(raw['carFrom'] ?? raw['carSource']).toLowerCase();
+    final rawScene = raw['scene'] ?? raw['diagram'] ?? raw['szene'] ?? raw['animation'];
+    final rawScene3d = raw['scene3d'] ?? raw['scene3D'] ?? raw['3d'];
+    final scene = VisualDiagram.fromMap(rawScene);
+    final scene3d = VisualScene3D.fromMap(rawScene3d);
+    final transforms = [
+      if (transform is List)
+        for (final t in transform) ?TransformState.fromRaw(t),
+    ];
+    final broken = [
+      if (_str(raw['broken']).isNotEmpty) _str(raw['broken']),
+      if (rawScene != null && scene == null) '2D-Szene ließ sich nicht lesen',
+      if (rawScene3d != null && scene3d == null) '3D-Szene ließ sich nicht lesen',
+      if (transform is List && transform.isNotEmpty && transforms.isEmpty) 'Umformung ließ sich nicht lesen',
+    ];
     return VisualShow(
       car: key(raw['car'] ?? raw['auto']),
       carSource: from.startsWith('v') || from.startsWith('geschw') ? CarSource.velocity : CarSource.position,
@@ -193,12 +230,10 @@ class VisualShow {
       },
       tangent: key(raw['tangent'] ?? raw['tangente']),
       area: key(raw['area'] ?? raw['flaeche'] ?? raw['fläche']),
-      transform: [
-        if (transform is List)
-          for (final t in transform) ?TransformState.fromRaw(t),
-      ],
-      scene: VisualDiagram.fromMap(raw['scene'] ?? raw['diagram'] ?? raw['szene']),
-      scene3d: VisualScene3D.fromMap(raw['scene3d'] ?? raw['scene3D'] ?? raw['3d']),
+      transform: transforms,
+      scene: scene,
+      scene3d: scene3d,
+      broken: broken.join(' · '),
     );
   }
 }
@@ -246,7 +281,13 @@ class VisualStep {
       title: title.isEmpty ? 'Schritt' : title,
       text: text,
       formula: TransformState._stripDollar(_str(raw['formula'] ?? raw['formel'])),
-      show: VisualShow.fromMap(raw['show'] ?? raw['visual'] ?? raw['anzeige']),
+      show: VisualShow.fromMap(
+        raw['show'] ??
+            raw['visual'] ??
+            raw['anzeige'] ??
+            // Manche Modelle setzen die Darstellung direkt an den Schritt.
+            (const ['scene', 'scene3d', 'car', 'plot', 'transform'].any(raw.containsKey) ? raw : null),
+      ),
       guide: _str(raw['guide'] ?? raw['leitfrage'] ?? raw['question']),
     );
   }

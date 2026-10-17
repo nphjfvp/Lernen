@@ -147,4 +147,33 @@ void main() {
     expect(first.dx, lessThan(second.dx), reason: 'an ihrer Stelle in der Szene');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Darstellung nicht ladbar: Hinweis mit Grund, „Neu erzeugen“ füllt den Wunsch vor', (tester) async {
+    final lesson = VisualLesson.fromMap({
+      'title': 'Kaputt',
+      'steps': [
+        {
+          'title': 'Schritt',
+          'text': 'Text.',
+          'show': {
+            'scene': {
+              'elements': [
+                {'type': 'blob'},
+              ],
+            },
+          },
+        },
+      ],
+    }, createdAt: DateTime(2026))!;
+    await pump(tester, VisualLessonScreen(lesson: lesson));
+    expect(find.byKey(const ValueKey('visual-broken')), findsOneWidget);
+    expect(
+      find.textContaining('Die Darstellung ließ sich nicht laden: 2D-Szene ließ sich nicht lesen'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('visual-broken-retry')));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byKey(const ValueKey('visual-revise-request')));
+    expect(field.controller!.text, contains('ließ sich nicht laden (2D-Szene ließ sich nicht lesen)'));
+  });
 }

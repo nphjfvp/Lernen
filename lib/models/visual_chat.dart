@@ -49,7 +49,9 @@ class VisualChatMessage {
         {'title': 'Antwort', 'show': show},
       ],
     }, createdAt: createdAt);
-    return lesson == null || lesson.steps.single.show.isEmpty ? null : lesson;
+    // Auch eine ganz unlesbare Darstellung zurückgeben (mit Grund in broken).
+    final s = lesson?.steps.single.show;
+    return s == null || (s.isEmpty && s.broken.isEmpty) ? null : lesson;
   }
 
   Map<String, dynamic> toMap() => {

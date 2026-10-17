@@ -149,4 +149,103 @@ void main() {
       lesson.steps.single.show.scene!.toMap(),
     );
   });
+
+  test('Abweichungen der KI: pos/size/from-to, square/triangle, Gruppen, objects, NaN', () {
+    final d = VisualDiagram.fromMap({
+      'objects': [
+        {
+          'type': 'square',
+          'pos': [10, 10],
+          'size': [20, 20],
+          'width': 1,
+        },
+        {'type': 'rect', 'x': 0, 'y': 0, 'width': 30, 'height': '12'},
+        {
+          'type': 'circle',
+          'center': {'x': 5, 'y': 6},
+          'radius': 2,
+        },
+        {
+          'type': 'line',
+          'from': [0, 0],
+          'to': [10, 5],
+          'width': 2,
+        },
+        {
+          'type': 'triangle',
+          'points': [
+            [0, 0],
+            [5, 5],
+            [10, 0],
+          ],
+        },
+        {
+          'type': 'group',
+          'x': 50,
+          'y': 20,
+          'children': [
+            {'type': 'circle', 'x': 1, 'y': 2},
+            {'type': 'text', 'x': 0, 'y': 0, 'text': 'A'},
+          ],
+        },
+        {'type': 'circle', 'x': 'NaN', 'y': 3},
+      ],
+    })!;
+    expect(d.elements.map((e) => e.shape), [
+      DiagramShape.rect,
+      DiagramShape.rect,
+      DiagramShape.circle,
+      DiagramShape.line,
+      DiagramShape.polygon,
+      DiagramShape.circle,
+      DiagramShape.text,
+    ], reason: 'Kreis mit NaN fällt weg');
+    final square = d.elements[0];
+    expect([square.number('x', 0), square.number('w', 0), square.number('width', 0)], [10, 20, 1]);
+    final rect = d.elements[1];
+    expect([rect.number('w', 0), rect.number('h', 0), rect.number('width', 0)], [30, 12, null]);
+    expect(d.elements[2].number('r', 0), 2);
+    expect(d.elements[3].number('x2', 0), 10);
+    expect(d.elements[3].number('width', 0), 2, reason: 'bei Linien bleibt width die Strichstärke');
+    expect([d.elements[5].number('x', 0), d.elements[5].number('y', 0)], [51, 22], reason: 'Gruppe verschoben');
+    expect(d.elements[6].number('x', 0), 50);
+    final key = DiagramKey.fromMap({
+      'at': 1,
+      'pos': [30, 40],
+    })!;
+    expect([key.numbers['x'], key.numbers['y']], [30, 40]);
+  });
+
+  test('Was sich nicht laden ließ, steht in broken – samt Darstellung direkt am Schritt', () {
+    final bad = VisualShow.fromMap({
+      'scene': {
+        'elements': [
+          {'type': 'blob'},
+        ],
+      },
+      'transform': [42],
+    });
+    expect(bad.isEmpty, isTrue);
+    expect(bad.broken, '2D-Szene ließ sich nicht lesen · Umformung ließ sich nicht lesen');
+    final lesson = VisualLesson.fromMap({
+      'title': 'T',
+      'functions': [
+        {'key': 's', 'expr': 't'},
+      ],
+      'steps': [
+        {
+          'title': 'a',
+          'show': {
+            'plot': ['s', 'v'],
+          },
+        },
+        {'title': 'b', 'scene': latticeScene()},
+      ],
+    })!;
+    expect(lesson.steps[0].show.plot, ['s']);
+    expect(lesson.steps[0].show.broken, contains('Funktion „v“ fehlt'));
+    expect(lesson.steps[1].show.scene, isNotNull, reason: 'Szene direkt am Schritt');
+    expect(lesson.steps[1].show.broken, isEmpty);
+    expect(VisualLesson.fromMap(lesson.toMap())!.steps[0].show.broken, lesson.steps[0].show.broken);
+  });
 }

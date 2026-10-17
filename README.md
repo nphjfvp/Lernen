@@ -1412,6 +1412,19 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 6b. Animationen laden zuverlässiger
+
+- **Toleranter beim Einlesen**: Schreibt die KI Szenen leicht anders als
+  verlangt (z.B. `pos`/`size`/`from`–`to`, „square“, „triangle“, Gruppen,
+  `objects` statt `elements`, Darstellung direkt am Schritt statt unter
+  `show`), wird das jetzt verstanden. Ungültige Zahlen (NaN) werden ignoriert.
+- **Ein kaputtes Teil reißt nicht die ganze Szene mit**: Jedes Element (2D und
+  3D) wird einzeln gezeichnet – scheitert eines, fehlt nur dieses.
+- **Kein stilles Verschwinden mehr**: Lässt sich eine Darstellung nicht laden,
+  steht am Schritt „Die Darstellung ließ sich nicht laden: …“ (mit Grund) und
+  **Neu erzeugen** schickt die KI mit vorausgefülltem Wunsch noch einmal los.
+  Im Chat gibt es dafür **Nochmal zeigen**.
+
 ### 6a. Absturz beim Lernpfad (Android) behoben, Fehler mit Code
 
 - **Ursache**: Die Hintergrund-Übertragung der KI-Anfragen (WorkManager) darf

@@ -7,7 +7,11 @@
 /// her (linear) und zeichnet.
 library;
 
-double? _num(Object? raw) => raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
+double? _num(Object? raw) {
+  final v = raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
+  // „NaN“/„Infinity“ der KI zählen als fehlend – sie zerschießen sonst die Zeichnung.
+  return v != null && v.isFinite ? v : null;
+}
 
 String _str(Object? raw) => '${raw ?? ''}'.trim();
 
@@ -70,6 +74,7 @@ class DiagramKey {
 
   static DiagramKey? fromMap(Object? raw) {
     if (raw is! Map) return null;
+    raw = DiagramElement.normalize(raw);
     final at = _num(raw['at'] ?? raw['t'] ?? raw['time']);
     if (at == null) return null;
     final fill = _str(raw['fill'] ?? raw['color']);
@@ -89,9 +94,10 @@ class DiagramKey {
 enum DiagramShape { circle, rect, line, arrow, polygon, path, text }
 
 DiagramShape? _shape(String raw) => switch (raw.toLowerCase()) {
-  'circle' || 'kreis' || 'dot' || 'atom' || 'ellipse' => DiagramShape.circle,
-  'rect' || 'rectangle' || 'box' || 'rechteck' => DiagramShape.rect,
-  'line' || 'linie' => DiagramShape.line,
+  'circle' || 'kreis' || 'dot' || 'atom' || 'ellipse' || 'point' || 'punkt' => DiagramShape.circle,
+  'rect' || 'rectangle' || 'box' || 'rechteck' || 'square' || 'quadrat' => DiagramShape.rect,
+  'line' || 'linie' || 'segment' => DiagramShape.line,
+  'triangle' || 'dreieck' => DiagramShape.polygon,
   'arrow' || 'pfeil' || 'vector' => DiagramShape.arrow,
   'polygon' || 'area' || 'flaeche' || 'fläche' => DiagramShape.polygon,
   'path' || 'polyline' || 'curve' || 'kurve' => DiagramShape.path,
@@ -221,8 +227,55 @@ class DiagramElement {
     if (keys.isNotEmpty) 'keys': [for (final k in keys) k.toMap()],
   };
 
+  /// Übliche Abweichungen der KI vereinheitlichen: Position als [x, y]
+  /// ("pos", "position", "center", "at"), Größe als [b, h] ("size") oder
+  /// "width"/"height", Radius als "radius", Linien mit "from"/"to",
+  /// Zahlen als Text.
+  static Map<String, dynamic> normalize(Map raw) {
+    final m = Map<String, dynamic>.from(raw);
+    List<double>? pair(Object? v) {
+      if (v is List && v.length >= 2) {
+        final a = _num(v[0]), b = _num(v[1]);
+        if (a != null && b != null) return [a, b];
+      }
+      if (v is Map) {
+        final a = _num(v['x']), b = _num(v['y']);
+        if (a != null && b != null) return [a, b];
+      }
+      return null;
+    }
+
+    final at = pair(m['pos'] ?? m['position'] ?? m['center'] ?? m['at']);
+    if (at != null) {
+      m['x'] ??= at[0];
+      m['y'] ??= at[1];
+    }
+    final isRect = _shape(_str(m['type'] ?? m['shape'] ?? m['form'])) == DiagramShape.rect;
+    final size = pair(m['size']);
+    if (size != null && isRect) {
+      m['w'] ??= size[0];
+      m['h'] ??= size[1];
+      m.remove('size');
+    }
+    // Bei Rechtecken meinen "width"/"height" die Größe, sonst ist "width" die
+    // Strichstärke.
+    if (isRect && m['w'] == null && _num(m['width']) != null) m['w'] = m.remove('width');
+    if (isRect && m['h'] == null && _num(m['height']) != null) m['h'] = m.remove('height');
+    m['r'] ??= m['radius'];
+    final from = pair(m['from'] ?? m['start']), to = pair(m['to'] ?? m['end']);
+    if (from != null && to != null) {
+      m['x1'] ??= from[0];
+      m['y1'] ??= from[1];
+      m['x2'] ??= to[0];
+      m['y2'] ??= to[1];
+    }
+    m.removeWhere((_, v) => v == null);
+    return m;
+  }
+
   static DiagramElement? fromMap(Object? raw) {
     if (raw is! Map) return null;
+    raw = normalize(raw);
     final shape = _shape(_str(raw['type'] ?? raw['shape'] ?? raw['form']));
     if (shape == null) return null;
     final numbers = _numbers(raw);
@@ -325,11 +378,32 @@ class VisualDiagram {
 
   static VisualDiagram? fromMap(Object? raw) {
     if (raw is! Map) return null;
-    final rawElements = raw['elements'] ?? raw['shapes'] ?? raw['elemente'];
+    final rawElements = raw['elements'] ?? raw['shapes'] ?? raw['elemente'] ?? raw['objects'];
     final elements = <DiagramElement>[];
     var shapes = 0;
+    // Gruppen ({"type": "group", "x", "y", "children": [...]}) aufgelöst –
+    // die Kinder um die Gruppenposition verschoben.
+    List<Object?> flatten(List list, double ox, double oy) => [
+      for (final e in list)
+        if (e is Map && '${e['type']}'.toLowerCase() == 'group' && (e['children'] ?? e['elements']) is List)
+          ...flatten((e['children'] ?? e['elements']) as List, ox + (_num(e['x']) ?? 0), oy + (_num(e['y']) ?? 0))
+        else if (e is Map && (ox != 0 || oy != 0))
+          {
+            ...e,
+            for (final k in const ['x', 'x1', 'x2'])
+              if (_num(e[k]) != null) k: _num(e[k])! + ox,
+            for (final k in const ['y', 'y1', 'y2'])
+              if (_num(e[k]) != null) k: _num(e[k])! + oy,
+            if (_points(e['points']) case final pts?)
+              'points': [
+                for (final p in pts) [p[0] + ox, p[1] + oy],
+              ],
+          }
+        else
+          e,
+    ];
     if (rawElements is List) {
-      for (final e in rawElements) {
+      for (final e in flatten(rawElements, 0, 0)) {
         final el = DiagramElement.fromMap(e);
         if (el == null || shapes + el.copies > maxShapes) continue;
         shapes += el.copies;

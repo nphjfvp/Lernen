@@ -249,10 +249,18 @@ class DiagramPainter extends CustomPainter {
     for (final e in d.elements) {
       for (var j = 0; j < e.ny; j++) {
         for (var i = 0; i < e.nx; i++) {
+          final depth = canvas.getSaveCount();
           canvas.save();
           canvas.translate(i * e.dx, j * e.dy);
-          _element(canvas, e, unit, scale);
-          canvas.restore();
+          try {
+            _element(canvas, e, unit, scale);
+          } catch (err) {
+            // Ein kaputtes Element überspringen statt die ganze Szene zu verlieren.
+            debugPrint('Szene: Element übersprungen ($err)');
+          }
+          while (canvas.getSaveCount() > depth) {
+            canvas.restore();
+          }
         }
       }
     }

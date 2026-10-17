@@ -104,6 +104,14 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
         for (final k in const ['variable', 'domain', 'functions', 'show', 'transform'])
           if (json[k] != null) k: json[k],
       };
+      // Manche Modelle setzen Szene/Graph direkt neben den Text statt unter "show".
+      if (visual['show'] == null) {
+        final loose = {
+          for (final k in const ['scene', 'scene3d', 'car', 'carFrom', 'vehicle', 'plot', 'tangent', 'area'])
+            if (json[k] != null) k: json[k],
+        };
+        if (loose.isNotEmpty) visual['show'] = loose;
+      }
       final answer = VisualChatMessage(
         user: false,
         text: '${json['text'] ?? ''}'.trim(),
@@ -315,6 +323,32 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
             if (m.text.isNotEmpty) const SizedBox(height: 12),
             VisualShowView(key: ValueKey('visual-chat-visual-$i'), math: VisualMath(lesson), show: show),
           ],
+          // Darstellung angefordert, aber (teils) nicht ladbar: sagen statt verschweigen.
+          if (m.visual != null && (show == null || show.broken.isNotEmpty || !VisualShowView.hasContent(show)))
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.broken_image_outlined, size: 18, color: c.warn),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Darstellung ließ sich ${show != null && VisualShowView.hasContent(show) ? 'nicht ganz' : 'nicht'} '
+                      'laden${show != null && show.broken.isNotEmpty ? ' (${show.broken})' : ''}.',
+                      key: ValueKey('visual-chat-broken-$i'),
+                      style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+                    ),
+                  ),
+                  TextButton(
+                    key: ValueKey('visual-chat-retry-$i'),
+                    onPressed: _busy
+                        ? null
+                        : () => _send('Zeig die Darstellung zur letzten Antwort bitte noch einmal neu.'),
+                    child: const Text('Nochmal zeigen'),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

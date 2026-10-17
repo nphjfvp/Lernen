@@ -13,6 +13,7 @@ import '../tasks/step_task_view.dart';
 import '../widgets/math_text.dart';
 import 'visual_diagram_view.dart';
 import 'visual_scene3d_view.dart';
+import 'visual_show_view.dart';
 import 'visual_scene.dart';
 
 /// KI für Rückfragen in „Visuell lernen“ (Hilfe-Modell) – null ohne Key.
@@ -255,6 +256,40 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     );
   }
 
+  /// Hinweis, wenn sich die Darstellung (ganz oder teilweise) nicht laden ließ –
+  /// mit „Neu erzeugen“ statt still wegzulassen.
+  Widget _brokenNote(AppColors c, VisualShow show, int stepIndex) {
+    final nothing = !VisualShowView.hasContent(show);
+    return Container(
+      key: const ValueKey('visual-broken'),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          Icon(Icons.broken_image_outlined, color: c.warn, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${nothing ? 'Die Darstellung ließ sich nicht laden' : 'Ein Teil der Darstellung fehlt'}: ${show.broken}.',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('visual-broken-retry'),
+            onPressed: () => _revise(
+              stepIndex,
+              request:
+                  'Die Darstellung dieses Schritts ließ sich nicht laden (${show.broken}). Erzeuge sie neu – genau im '
+                  'beschriebenen Format, nur mit vorhandenen Funktionen.',
+            ),
+            child: const Text('Neu erzeugen'),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _stepBody(AppColors c, VisualStep step, {required bool isResult}) => [
     Text(
       step.title,
@@ -288,6 +323,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       const SizedBox(height: 12),
       VisualSceneView(key: ValueKey('visual-scene-$_page'), math: _math, show: step.show),
     ],
+    if (step.show.broken.isNotEmpty) _brokenNote(c, step.show, isResult ? -1 : _page),
     const SizedBox(height: 12),
     Wrap(
       spacing: 8,
@@ -311,7 +347,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
 
   /// „Darstellung ändern“: Wunsch eingeben, die KI baut den Schritt (oder die
   /// ganze Lektion) um; gespeichert, mit Rückgängig.
-  Future<void> _revise(int stepIndex) async {
+  Future<void> _revise(int stepIndex, {String request = ''}) async {
     final repo = context.read<VisualLessonRepository?>();
     final messenger = ScaffoldMessenger.of(context);
     final before = _l;
@@ -319,7 +355,8 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (ctx) => VisualReviseSheet(lesson: before, stepIndex: stepIndex, ai: _reviseAi(context)),
+      builder: (ctx) =>
+          VisualReviseSheet(lesson: before, stepIndex: stepIndex, ai: _reviseAi(context), initialRequest: request),
     );
     if (revised == null || !mounted) return;
     void apply(VisualLesson l) {
@@ -989,7 +1026,16 @@ AiService? _reviseAi(BuildContext context) {
 /// Wunsch zur Darstellung eingeben – für diesen Schritt oder die ganze
 /// Lektion. Gibt die überarbeitete Lektion zurück.
 class VisualReviseSheet extends StatefulWidget {
-  const VisualReviseSheet({super.key, required this.lesson, required this.stepIndex, this.ai});
+  const VisualReviseSheet({
+    super.key,
+    required this.lesson,
+    required this.stepIndex,
+    this.ai,
+    this.initialRequest = '',
+  });
+
+  /// Vorausgefüllter Wunsch (z.B. „Darstellung neu erzeugen“).
+  final String initialRequest;
 
   final VisualLesson lesson;
 
@@ -1002,7 +1048,7 @@ class VisualReviseSheet extends StatefulWidget {
 }
 
 class _VisualReviseSheetState extends State<VisualReviseSheet> {
-  final _request = TextEditingController();
+  late final _request = TextEditingController(text: widget.initialRequest);
   bool _all = false;
   bool _busy = false;
   String? _error;

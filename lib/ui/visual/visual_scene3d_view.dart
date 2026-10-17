@@ -348,14 +348,26 @@ class Scene3DPainter extends CustomPainter {
           for (var k = 0; k < o.n[2]; k++) {
             final shift = [i * o.d[0], j * o.d[1], k * o.d[2]];
             List<double> mv(List<double> v) => [for (var q = 0; q < 3; q++) v[q] + shift[q]];
-            _object(canvas, o, p, mv, at, depth, scale, proj, parts);
+            try {
+              _object(canvas, o, p, mv, at, depth, scale, proj, parts);
+            } catch (err) {
+              debugPrint('3D-Szene: Objekt übersprungen ($err)');
+            }
           }
         }
       }
     }
     parts.sort((a, b) => a.$1.compareTo(b.$1));
     for (final part in parts) {
-      part.$2();
+      final saved = canvas.getSaveCount();
+      try {
+        part.$2();
+      } catch (err) {
+        debugPrint('3D-Szene: Teil übersprungen ($err)');
+      }
+      while (canvas.getSaveCount() > saved) {
+        canvas.restore();
+      }
     }
   }
 

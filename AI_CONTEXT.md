@@ -470,7 +470,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1564 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1567 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1691,6 +1691,15 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Hintergrund-Transport; `FlutterError.onError`/`PlatformDispatcher.onError` →
     `AppErrorReporter.report` (SnackBar „Fehler APP-XXXX“, Details-Dialog `app-error-dialog`,
     `app-error-copy`). Test: `app_error_reporter_test`.
+84. Animationen robuster: `DiagramElement.normalize` (pos/position/center/at, size bzw.
+    width/height nur bei rect, radius, from/start–to/end), Typ-Aliase (point, square, segment,
+    triangle → polygon), `VisualDiagram.fromMap` nimmt `objects` und flacht `group` (mit
+    Versatz) ab; `_num` überall nur endliche Werte. `VisualStep.fromMap` nimmt Darstellungs-Keys
+    auch direkt am Schritt. `VisualShow.broken` (Gründe mit ' · ', auch fehlende Funktionen aus
+    `restrictedTo`) → `visual-broken` mit `visual-broken-retry` (öffnet `VisualReviseSheet` mit
+    `initialRequest`); Chat: lose Keys werden zur show, `visual-chat-broken-i`/`visual-chat-retry-i`.
+    Painter (2D/3D) zeichnen jedes Element in try/catch mit Save-Count-Restore. Tests:
+    `visual_diagram_test`, `visual_diagram_view_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
