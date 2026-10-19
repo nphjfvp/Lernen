@@ -16,6 +16,7 @@ import '../models/interactive_task.dart';
 import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import '../models/paper_review.dart';
 import '../models/drawing_task.dart';
+import '../models/error_hunt.dart';
 import '../models/phase_task.dart';
 import '../models/step_task.dart';
 import '../models/step_task_review.dart';
@@ -1921,6 +1922,28 @@ Antworte in der Sprache der Vorlage.
     }
     final raw = await _complete(_weaknessSystemPrompt, buffer.toString());
     return raw.trim();
+  }
+
+  /// Fehlerjagd: [count] Wahr/Falsch-Aussagen zu [cards], etwa die Hälfte
+  /// mit einem typischen Denkfehler (siehe ErrorHuntScreen).
+  Future<List<ErrorHuntStatement>> generateErrorHunt(
+    List<({String id, String question, String answer})> cards, {
+    int count = 12,
+  }) async {
+    final buffer = StringBuffer('Anzahl Aussagen: $count\n\n');
+    for (final c in cards) {
+      buffer
+        ..writeln('ID: ${c.id}')
+        ..writeln('Frage: ${_cap(c.question, 600)}')
+        ..writeln('Lösung: ${_cap(c.answer, 600)}')
+        ..writeln();
+    }
+    final raw = await _complete(_errorHuntSystemPrompt, buffer.toString(), temperature: 0.5);
+    final statements = ErrorHuntStatement.listFrom(await _json(raw), knownIds: {for (final c in cards) c.id});
+    if (statements.isEmpty) {
+      throw AiServiceException('Die KI hat keine brauchbaren Aussagen geliefert.', rawResponse: raw);
+    }
+    return statements.take(count).toList();
   }
 
   /// Schlägt Vorlesungseinheiten für bisher nicht zugeordnete Materialien

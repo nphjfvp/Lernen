@@ -32,7 +32,7 @@ erst nach grünem `flutter analyze` und `flutter test`.
 - **Lernen**: Daily Quiz mit Spaced Repetition (FSRS), Wissensstand-Ampel,
   Stufen Leicht → Mittel → Schwer, Probeklausur mit Note, Fehlertagebuch,
   Kalender, Fortschritt, Lernerinnerung (Android) und Widget.
-- **Spiele** (zur Pause, zählen fürs Lernen): Boss-Kampf und Sprint.
+- **Spiele** (zur Pause, aus deinen Karten): Boss-Kampf, Fehlerjagd und Sprint.
 - **Material**: PDFs ansehen und markieren, Texterkennung für Scans, Fragen zu
   einer Seite, Vorlesung kürzen, Formelsammlung, Frage-Chat zum Stoff.
 - **Fragetypen**: Auswahl, Lückentext, Zuordnen, Tabellen, Bilder beschriften

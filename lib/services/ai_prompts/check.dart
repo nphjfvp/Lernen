@@ -233,3 +233,23 @@ konkret:
 Erfinde keine Themen, die in den Fragen nicht vorkommen. Normaler Text mit
 Aufzählungszeichen, kein JSON, keine Codefences, in der Sprache der Fragen.
 ''';
+
+const _errorHuntSystemPrompt = '''
+Du baust ein schnelles Wahr-oder-Falsch-Spiel („Fehlerjagd“) aus den Lernkarten
+eines Studierenden. Du bekommst Karten mit ID, Frage und richtiger Lösung und
+die gewünschte Anzahl an Aussagen. Erzeuge genau so viele kurze Aussagen (je
+ein Satz, höchstens 25 Wörter), jede zu genau einer Karte, möglichst
+verschiedene Karten:
+- etwa die Hälfte richtig, die andere Hälfte falsch, gemischt;
+- eine falsche Aussage enthält einen TYPISCHEN Denkfehler: verwechselte
+  Begriffe, vertauschte Ursache und Wirkung, falsches Vorzeichen, falscher
+  Zahlenwert oder falsche Einheit, falsche Zuordnung. Plausibel, nicht absurd,
+  keine Wortklauberei – wer den Stoff kann, erkennt den Fehler sicher;
+- eine richtige Aussage gibt die Lösung mit anderen Worten wieder, nicht
+  wörtlich abgeschrieben;
+- nur Inhalte aus den Karten, nichts dazuerfinden;
+- "explanation": ein Satz – warum es stimmt bzw. was richtig wäre.
+Formeln in LaTeX: \$…\$. Verdopple in JSON jeden Backslash.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Codefences:
+{"statements": [{"card": "<ID>", "text": "…", "true": true, "explanation": "…"}]}
+''';

@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../sprint/sprint_screen.dart';
 import 'boss_battle_screen.dart';
+import 'error_hunt_screen.dart';
 
 /// Spiele zur Auflockerung (Fortschritts-Tab). Alle bestehen aus deinen
-/// echten Karten und zählen fürs Lernen wie das Daily Quiz – keine Münzen,
-/// kein Shop, nur der eigene Stand.
+/// echten Karten; Boss-Kampf und Sprint zählen fürs Lernen wie das Daily
+/// Quiz, die Fehlerjagd führt zum Nachüben. Keine Münzen, kein Shop.
 class GamesScreen extends StatelessWidget {
   const GamesScreen({super.key});
 
@@ -20,7 +21,8 @@ class GamesScreen extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            'Jede Antwort zählt wie im Daily Quiz für Ampel und Wiederholungsplan – nur verpackt als Spiel.',
+            'Alles aus deinen eigenen Karten. Boss-Kampf und Sprint zählen wie das Daily Quiz für Ampel und '
+            'Wiederholungsplan; die Fehlerjagd zeigt, wo es hakt, und führt direkt zum Nachüben.',
             style: TextStyle(color: c.inkMuted, height: 1.4),
           ),
           const SizedBox(height: 16),
@@ -31,6 +33,15 @@ class GamesScreen extends StatelessWidget {
             title: 'Boss-Kampf',
             subtitle: 'Die schwächsten Karten eines Fachs als Endgegner – falsche kommen wieder, bis alles sitzt.',
             builder: (_) => const BossBattleScreen(),
+          ),
+          const SizedBox(height: 10),
+          _GameTile(
+            key: const ValueKey('game-hunt'),
+            icon: Icons.travel_explore_rounded,
+            color: c.accent,
+            title: 'Fehlerjagd',
+            subtitle: 'Stimmt’s oder nicht? Die KI versteckt typische Denkfehler in Aussagen zu deinem Stoff.',
+            builder: (_) => const ErrorHuntScreen(),
           ),
           const SizedBox(height: 10),
           _GameTile(

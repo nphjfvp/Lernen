@@ -429,6 +429,11 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Treffer, falsch = ein Herz weniger und die Karte kommt drei Karten später
   wieder, bis jede einmal saß. Zählt wie das Daily Quiz, ohne Münzen; nur die
   Zahl besiegter Bosse (`AppSettings.bossesDefeated`).
+- **Fehlerjagd** (`lib/ui/games/error_hunt_screen.dart`, unter Fortschritt →
+  Spiele) – die KI formuliert zu den schwächsten Karten Aussagen, etwa die
+  Hälfte mit einem typischen Denkfehler; man entscheidet „Stimmt“ / „Stimmt
+  nicht“ und sieht die Begründung. Zählt nicht für FSRS/Ampel, führt am Ende
+  mit den gehakten Karten ins normale Üben.
 - **Sprint (Pausenmodus)** – ein optionales, klar vom Kernlernkreislauf
   abgegrenztes Mini-Spiel im Fortschritts-Tab: 60 Sekunden Zeitdruck gegen
   die fachübergreifend schwächsten (Ampel-rot, notfalls +gelb) Karten,

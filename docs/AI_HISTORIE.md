@@ -1308,3 +1308,13 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `boss-hp`, `boss-hp-text`, `boss-result`, `boss-restart`; Antworten über `CardReviewMixin`,
     Lernaufgaben/Rechen-Schalter wie Sprint). `AppSettings.bossesDefeated` (Sync: max).
     Tests: `boss_battle_test`, `boss_battle_screen_test`.
+98. Fehlerjagd: models/error_hunt.dart (`ErrorHuntStatement.listFrom` tolerant: statements/
+    aussagen/items, true/isTrue/wahr/correct auch als Text, card/cardId/id nur aus knownIds).
+    `AiService.generateErrorHunt(cards, count:)` mit `_errorHuntSystemPrompt` (ai_prompts/check.dart,
+    temperature 0.5, leer → AiServiceException). ui/games/error_hunt_screen.dart (`ErrorHuntScreen`,
+    `aiFactory`, `pickCards` = Fehlertagebuch zuerst, dann `BossBattle.pickCards`, max. 12, min. 3;
+    Anzahl Aussagen `(Karten×2).clamp(6, 12)`; Keys `hunt-module`, `hunt-start`, `hunt-statement`,
+    `hunt-true`, `hunt-false`, `hunt-feedback`, `hunt-next`, `hunt-result`, `hunt-practice`,
+    `hunt-restart`, `hunt-error`). Zählt NICHT für FSRS; „Diese Karten üben“ →
+    `PracticeScreen.cards`. Kachel `game-hunt` in GamesScreen. Tests: `error_hunt_test`,
+    `error_hunt_screen_test`.

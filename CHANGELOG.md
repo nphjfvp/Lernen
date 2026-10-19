@@ -1,8 +1,22 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6j) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6k) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6k. Spiele: Fehlerjagd
+
+- **Fehlerjagd** (Fortschritt → Spiele): die KI macht aus deinen schwächsten
+  Karten (zuerst das Fehlertagebuch) 6–12 kurze Aussagen, in etwa der Hälfte
+  steckt ein typischer Denkfehler – verwechselte Begriffe, falsches
+  Vorzeichen, vertauschte Ursache und Wirkung. **Stimmt** oder **Stimmt
+  nicht**? Nach jeder Antwort steht, warum.
+- Am Ende: wie viele du richtig erkannt hast, die längste Serie und die
+  Karten, bei denen es gehakt hat – mit **„Diese Karten üben“** direkt ins
+  normale Üben.
+- Zählt bewusst **nicht** für die Ampel (eine umformulierte Aussage zu
+  beurteilen ist kein echter Abruf der Karte); das Nachüben zählt dann. Braucht
+  den OpenRouter-Key (Modell für Erklärungen).
 
 ### 6j. Spiele: Boss-Kampf
 

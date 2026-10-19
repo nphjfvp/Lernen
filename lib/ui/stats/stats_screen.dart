@@ -354,7 +354,7 @@ class _SprintEntryCard extends StatelessWidget {
                   children: [
                     Text('Spiele (Pause)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink)),
                     const SizedBox(height: 2),
-                    Text('Boss-Kampf und Sprint mit deinen Karten – zur Auflockerung',
+                    Text('Boss-Kampf, Fehlerjagd und Sprint mit deinen Karten – zur Auflockerung',
                         style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
                   ],
                 ),
