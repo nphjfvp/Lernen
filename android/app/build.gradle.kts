@@ -46,13 +46,26 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // Eigener Schlüssel, sobald er in den GitHub-Secrets liegt (siehe
+        // android-apk.yml, README „Eigener Signierschlüssel“): der Debug-
+        // Keystore ist öffentlich, damit könnte jeder eine APK bauen, die
+        // Android als Update dieser App annimmt.
+        val releaseStore = System.getenv("ANDROID_KEYSTORE_PATH")
+        if (!releaseStore.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Ohne eigenen Schlüssel weiter der Debug-Keystore, damit
+            // `flutter run --release` und Builds ohne Secrets funktionieren.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 }

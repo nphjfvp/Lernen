@@ -7,12 +7,31 @@ import 'package:package_info_plus/package_info_plus.dart';
 /// Ergebnis eines gefundenen Updates: die neue Build-Nummer + wo man sie
 /// herunterladen kann (direkter Download-Link zur APK bzw. zum Windows-Setup).
 class UpdateInfo {
-  const UpdateInfo({required this.buildNumber, required this.sha, required this.downloadUrl});
+  const UpdateInfo({
+    required this.buildNumber,
+    required this.sha,
+    required this.downloadUrl,
+    this.signer = 'debug',
+    this.needsReinstall = false,
+  });
 
   final int buildNumber;
   final String sha;
   final String downloadUrl;
+
+  /// Mit welchem Schlüssel die neue APK signiert ist (`debug` = der
+  /// eingecheckte Debug-Keystore, `release` = eigener Schlüssel aus den
+  /// GitHub-Secrets).
+  final String signer;
+
+  /// Anderer Schlüssel als die laufende App: Android installiert das nicht
+  /// als Update – einmal deinstallieren und neu installieren nötig.
+  final bool needsReinstall;
 }
+
+/// Mit welchem Schlüssel diese App signiert ist (beim Build per
+/// `--dart-define=LERNEN_SIGNER=…` gesetzt, siehe android-apk.yml).
+const appSigner = String.fromEnvironment('LERNEN_SIGNER', defaultValue: 'debug');
 
 /// Prüft, ob unter der festen "*-latest"-GitHub-Release-URL (siehe
 /// .github/workflows/android-apk.yml / windows-app.yml, die dort bei jedem
@@ -47,13 +66,18 @@ class UpdateCheckerService {
     required Map<String, dynamic> remoteJson,
     required int localBuildNumber,
     required String downloadUrl,
+    String localSigner = appSigner,
   }) {
     final remoteBuild = remoteJson['buildNumber'];
     if (remoteBuild is! int || remoteBuild <= localBuildNumber) return null;
+    final signer = (remoteJson['signer'] as String?)?.trim();
+    final remoteSigner = signer == null || signer.isEmpty ? 'debug' : signer;
     return UpdateInfo(
       buildNumber: remoteBuild,
       sha: (remoteJson['sha'] ?? '').toString(),
       downloadUrl: downloadUrl,
+      signer: remoteSigner,
+      needsReinstall: remoteSigner != localSigner,
     );
   }
 

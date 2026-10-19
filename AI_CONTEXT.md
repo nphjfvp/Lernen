@@ -471,7 +471,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1574 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1581 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1739,6 +1739,13 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `AiService.retryDelays` (3 s, 8 s; auch bei ClientException), Fehler →
     `AiServiceException(message, rawResponse: body)`. test/flutter_test_config.dart setzt
     `retryDelays = []` für alle Tests. Test: `ai_retry_test`.
+92. Eigener Android-Schlüssel (vorbereitet): build.gradle.kts legt `release`-signingConfig an,
+    wenn `ANDROID_KEYSTORE_PATH` gesetzt ist (sonst debug). android-apk.yml: Secret
+    `ANDROID_KEYSTORE_BASE64` → Datei, `LERNEN_SIGNER` release/debug → `--dart-define` und
+    `signer` in version.json. `appSigner` (String.fromEnvironment), `UpdateInfo.signer`/
+    `needsReinstall` (`compare(localSigner:)`, fehlend = debug); `applyUpdate` zeigt bei
+    Wechsel auf Android `showReinstallDialog` (`update-reinstall`, `update-reinstall-download`).
+    Tests: `update_checker_service_test`, `update_reinstall_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

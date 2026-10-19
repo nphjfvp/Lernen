@@ -15,6 +15,23 @@ void main() {
       expect(result.downloadUrl, 'https://example.com/app.apk');
     });
 
+    test('Signierschlüssel: gleicher Schlüssel = Update, anderer = einmal neu installieren', () {
+      UpdateInfo? check(Map<String, dynamic> json, String local) => UpdateCheckerService.compare(
+            remoteJson: json,
+            localBuildNumber: 1,
+            downloadUrl: 'u',
+            localSigner: local,
+          );
+      expect(check(const {'buildNumber': 2}, 'debug')!.needsReinstall, isFalse, reason: 'ältere version.json ohne signer');
+      expect(check(const {'buildNumber': 2, 'signer': 'debug'}, 'debug')!.needsReinstall, isFalse);
+      final switched = check(const {'buildNumber': 2, 'signer': 'release'}, 'debug')!;
+      expect(switched.needsReinstall, isTrue);
+      expect(switched.signer, 'release');
+      expect(check(const {'buildNumber': 2, 'signer': 'release'}, 'release')!.needsReinstall, isFalse);
+      expect(check(const {'buildNumber': 2, 'signer': ''}, 'debug')!.needsReinstall, isFalse);
+      expect(appSigner, 'debug', reason: 'ohne --dart-define');
+    });
+
     test('gibt null zurück, wenn die Remote-buildNumber gleich ist', () {
       final result = UpdateCheckerService.compare(
         remoteJson: const {'buildNumber': 10},

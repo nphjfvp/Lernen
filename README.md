@@ -1413,6 +1413,30 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 6f. Eigener Signierschlüssel (vorbereitet)
+
+Die Android-App ist bisher mit dem öffentlichen Debug-Schlüssel aus dem Repo
+signiert – damit könnte jeder eine APK bauen, die Android als Update von
+Lernen annimmt. Ein eigener Schlüssel ist vorbereitet und wird aktiv, sobald
+er in den GitHub-Secrets liegt:
+
+1. Schlüssel erzeugen (einmal, auf dem PC; `keytool` gehört zu jedem Java/
+   Android Studio):
+   `keytool -genkeypair -v -keystore lernen-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias lernen`
+   – Datei und Passwort gut aufheben (ohne sie keine Updates mehr).
+2. Base64 davon: PowerShell
+   `[Convert]::ToBase64String([IO.File]::ReadAllBytes("lernen-release.jks")) | Set-Clipboard`
+3. GitHub → Settings → Secrets and variables → Actions → vier Secrets:
+   `ANDROID_KEYSTORE_BASE64` (Base64 von oben), `ANDROID_KEYSTORE_PASSWORD`,
+   `ANDROID_KEY_ALIAS` (`lernen`), `ANDROID_KEY_PASSWORD`.
+4. Beim nächsten Update erkennt die App den neuen Schlüssel (`signer` in
+   `version.json`) und zeigt statt „Jetzt installieren“ die Anleitung zur
+   **einmaligen Neuinstallation**: erst mit dem Konto synchronisieren, APK
+   laden, Lernen deinstallieren, neu installieren, anmelden. Nicht im Sync:
+   Laborfotos und – ohne PDF-Speicher – die PDF-Dateien selbst.
+
+Ohne Secrets bleibt alles wie bisher (Debug-Schlüssel).
+
 ### 6e. KI-Anfragen: automatisch erneut versuchen, klare Fehler
 
 - **Überlastet oder kurz weg** (429 „zu viele Anfragen“ – bei kostenlosen

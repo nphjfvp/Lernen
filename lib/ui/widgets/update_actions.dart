@@ -21,6 +21,10 @@ Future<void> applyUpdate(BuildContext context, UpdateInfo update) async {
     await openInBrowser();
     return;
   }
+  if (_isAndroid && update.needsReinstall) {
+    await showReinstallDialog(context, onDownload: openInBrowser);
+    return;
+  }
   final progress = ValueNotifier<double?>(null);
   final navigator = Navigator.of(context, rootNavigator: true);
   final messenger = ScaffoldMessenger.maybeOf(context);
@@ -78,4 +82,39 @@ Future<void> applyUpdate(BuildContext context, UpdateInfo update) async {
       ));
       await openInBrowser();
   }
+}
+
+/// Die neue APK ist mit einem anderen Schlüssel signiert (Umstieg vom
+/// Debug- auf den eigenen Schlüssel): Android lehnt sie als Update ab, also
+/// einmal neu installieren – vorher synchronisieren, sonst sind die Daten weg.
+Future<void> showReinstallDialog(BuildContext context, {required Future<void> Function() onDownload}) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      key: const ValueKey('update-reinstall'),
+      title: const Text('Einmal neu installieren'),
+      content: const Text(
+        'Die neue Version ist mit einem neuen, eigenen Schlüssel signiert (sicherer als bisher). Android '
+        'installiert sie deshalb nicht als Update über diese App – einmalig ist eine Neuinstallation nötig:\n\n'
+        '1. Mit deinem Konto synchronisieren (Einstellungen → Sync), damit dein Lernstand in der Cloud liegt.\n'
+        '2. Die neue APK herunterladen.\n'
+        '3. Lernen deinstallieren und die neue APK installieren.\n'
+        '4. Anmelden und synchronisieren – dein Lernstand ist wieder da.\n\n'
+        'Nicht im Sync sind Laborfotos und – ohne eingerichteten PDF-Speicher – die PDF-Dateien selbst '
+        '(Texte, Karten und Lernstand schon).\n\n'
+        'Danach kommen Updates wieder direkt aus der App.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Später')),
+        FilledButton(
+          key: const ValueKey('update-reinstall-download'),
+          onPressed: () {
+            Navigator.of(ctx).pop();
+            onDownload();
+          },
+          child: const Text('APK herunterladen'),
+        ),
+      ],
+    ),
+  );
 }

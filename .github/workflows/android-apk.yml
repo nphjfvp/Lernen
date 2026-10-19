@@ -69,13 +69,36 @@ jobs:
       # pubspec.yaml-Versionsnummer, die man leicht vergisst hochzuzählen) -
       # Grundlage für den In-App-Update-Check (siehe UpdateCheckerService),
       # der genau diese Zahl mit der laufenden App vergleicht.
+      # Eigener Signierschlüssel aus den Secrets (README „Eigener
+      # Signierschlüssel“); ohne Secrets weiter der Debug-Keystore. Welcher es
+      # ist, steht in version.json ("signer") und in der App – wechselt er,
+      # erklärt die App die einmalige Neuinstallation statt eines Updates,
+      # das Android ablehnen würde.
+      - name: Signierschlüssel bereitstellen
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            echo "LERNEN_SIGNER=release" >> "$GITHUB_ENV"
+          else
+            echo "LERNEN_SIGNER=debug" >> "$GITHUB_ENV"
+          fi
+
       - name: Build release APK
-        run: flutter build apk --release --build-number=${{ github.run_number }}
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build apk --release --build-number=${{ github.run_number }} \
+            --dart-define=LERNEN_SIGNER=$LERNEN_SIGNER
 
       - name: version.json für den In-App-Update-Check schreiben
         run: |
           cat > version.json <<EOF
-          {"buildNumber": ${{ github.run_number }}, "sha": "${{ github.sha }}", "tag": "android-latest"}
+          {"buildNumber": ${{ github.run_number }}, "sha": "${{ github.sha }}", "tag": "android-latest", "signer": "$LERNEN_SIGNER"}
           EOF
 
       - uses: actions/upload-artifact@v4
