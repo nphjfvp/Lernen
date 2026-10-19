@@ -1413,6 +1413,16 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 6d. Updates nur vom App-Branch
+
+- **Android- und Windows-Builds** laufen weiter auf jedem Branch (mit Tests,
+  Download am Actions-Lauf), aber **als Update veröffentlicht** (Releases
+  `android-latest`/`windows-latest`, aus denen die App ihre Updates holt) wird
+  nur noch vom App-Branch `claude/neue-lern-app-fokus-ej3k48`. Vorher landete
+  jeder Experimentier-Branch als Update auf den Geräten.
+- Läufe desselben Branches warten aufeinander – ein älterer Build kann den
+  Release eines neueren nicht mehr überschreiben.
+
 ### 6c. Web-App fürs iPad (und jeden Browser)
 
 Adresse: **<https://nphjfvp.github.io/Lernen/>** – bei jedem Push automatisch

@@ -9,12 +9,27 @@ name: Windows App
 #       für das Update aus der App heraus.
 #     - lernen-windows.zip: dieselbe App zum Entpacken (portable).
 #  2. Zusätzlich als Workflow-Artifact am Actions-Run (30 Tage).
+#
+# Gebaut und getestet wird auf jedem Branch (Artifact am Run), VERÖFFENTLICHT –
+# also an alle Geräte per In-App-Update verteilt – nur vom App-Branch. Sonst
+# landete jeder Experimentier-Branch (z.B. eine KI-Sitzung) als Update auf den
+# Geräten.
 on:
   push:
   workflow_dispatch:
 
 permissions:
   contents: write
+
+env:
+  APP_BRANCH: claude/neue-lern-app-fokus-ej3k48
+
+# Läufe desselben Branches nacheinander: sonst könnte ein älterer, später
+# fertiger Build den Release eines neueren überschreiben. Ein wartender Lauf
+# wird durch einen neueren ersetzt, ein laufender zu Ende gebracht.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-windows:
@@ -94,6 +109,7 @@ jobs:
           retention-days: 30
 
       - name: Aktuellen Stand als Release veröffentlichen
+        if: github.ref == format('refs/heads/{0}', env.APP_BRANCH)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: windows-latest

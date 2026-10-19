@@ -1729,6 +1729,10 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     genau diesem iframe (`e.source`) mit passendem Token (`htmlQuestionBridgeMessage`).
     `QuestionAnswerView`: `_useHtmlFrame`, `_handleHtmlAnswer(String)`. Test:
     `html_question_bridge_test`; im Browser von Hand per Playwright geprüft.
+90. Release-Pipeline: android-apk.yml/windows-app.yml bauen auf jedem Push, der Schritt
+    „Aktuellen Stand als Release veröffentlichen“ läuft nur bei `github.ref ==
+    refs/heads/$APP_BRANCH` (env `APP_BRANCH`); `concurrency` je Workflow+Ref, ohne Abbruch
+    laufender Läufe.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
