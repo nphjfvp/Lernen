@@ -20,19 +20,56 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Lernen – Lern-App mit Daily Quiz, Karteikarten und KI.">
 
-  <!-- iOS meta tags & icons -->
+  <!-- iPad/iPhone: "Teilen → Zum Home-Bildschirm" startet die App im
+       Vollbild (ohne Safari-Leisten) – dort bleibt auch der Speicher
+       dauerhaft, Safari löscht Daten normaler Websites nach 7 Tagen. -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Lernen">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#FAFAF7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1E212B" media="(prefers-color-scheme: dark)">
+  <meta name="format-detection" content="telephone=no">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <title>Lernen</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body { margin: 0; height: 100%; background: #FAFAF7; }
+    @media (prefers-color-scheme: dark) { html, body { background: #1E212B; } }
+    /* Ladeanzeige bis zum ersten Bild der App (der erste Start lädt einige MB). */
+    #lernen-loading {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #6B7280; transition: opacity .25s;
+    }
+    #lernen-loading .spinner {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 3px solid #E7E8F5; border-top-color: #23449A;
+      animation: lernen-spin 0.9s linear infinite;
+    }
+    @keyframes lernen-spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
+  <div id="lernen-loading"><div class="spinner"></div>Lernen wird geladen …</div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var el = document.getElementById('lernen-loading');
+      if (!el) return;
+      el.style.opacity = '0';
+      setTimeout(function () { el.remove(); }, 300);
+    });
+    // Lerndaten liegen im Browser (IndexedDB): um dauerhaften Speicher bitten,
+    // damit der Browser sie bei Platzmangel nicht von sich aus löscht.
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(function () {});
+    }
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

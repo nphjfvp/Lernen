@@ -1426,6 +1426,10 @@ mit denselben Tests wie Android/Windows davor).
 - **Einmalig einrichten**: GitHub → Settings → Pages → Source „GitHub Actions“.
   Für die Google-Anmeldung in Firebase → Authentication → Settings →
   Autorisierte Domains `nphjfvp.github.io` eintragen.
+- **Fürs iPad angepasst**: eigenes App-Icon, Ladeanzeige beim ersten Start,
+  Farben passend zur App (hell/dunkel), Bitte um dauerhaften Speicher. Auf
+  breiten Bildschirmen (iPad quer, großes Fenster – auch unter Windows) stehen
+  die Hauptbereiche mittig statt über die ganze Breite gezogen.
 - **Geht im Browser nicht**: Lernerinnerungen und das Startbildschirm-Widget
   (nur Android). KI-Anfragen laufen nicht weiter, wenn man die App verlässt.
 

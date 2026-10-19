@@ -1704,6 +1704,11 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
 85. Web-App veröffentlicht: `.github/workflows/web-app.yml` (Push auf den App-Zweig → analyze,
     test, `flutter build web --base-href /Lernen/ --no-web-resources-cdn`, upload-pages-artifact,
     deploy-pages) → https://nphjfvp.github.io/Lernen/. CanvasKit liegt mit auf der Seite.
+86. iPad-Feinschliff: web/index.html (apple-mobile-web-app-capable, Status-Leiste default,
+    apple-touch-icon 180 px `icons/apple-touch-icon.png`, theme-color hell/dunkel, Ladeanzeige
+    `#lernen-loading` bis `flutter-first-frame`, `navigator.storage.persist()`), Manifest-Farben
+    #FAFAF7. `RootShell`: Inhalt samt Leiste/Plus-Knopf mittig, höchstens `rootMaxContentWidth`
+    (1100). Test: `widget_test` (breiter Bildschirm).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

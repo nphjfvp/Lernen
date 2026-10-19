@@ -3,9 +3,9 @@
     "short_name": "Lernen",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "Lern-App mit Daily Quiz, Karteikarten und KI.",
+    "background_color": "#FAFAF7",
+    "theme_color": "#FAFAF7",
+    "description": "Lern-App mit Daily Quiz, Karteikarten, visuellem Lernen und KI.",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
@@ -31,5 +31,6 @@
             "type": "image/png",
             "purpose": "maskable"
         }
-    ]
+    ],
+    "lang": "de"
 }

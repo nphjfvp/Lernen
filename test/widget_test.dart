@@ -9,6 +9,7 @@ import 'package:lernen/main.dart';
 import 'package:lernen/repositories/module_repository.dart';
 import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/theme/app_colors.dart';
+import 'package:lernen/ui/root_shell.dart';
 import 'package:lernen/ui/widgets/floating_nav_bar.dart';
 
 /// path_provider hat in Widget-Tests keinen echten Platform-Channel – ohne
@@ -42,6 +43,22 @@ void main() {
 
     expect(find.text('Meine Fächer'), findsOneWidget);
     expect(find.text('Erstes Fach anlegen'), findsOneWidget);
+  });
+
+  testWidgets('Breiter Bildschirm (iPad quer): Inhalt und Leiste mittig, nicht über die ganze Breite', (tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(LernenApp(
+      settingsRepository: SettingsRepository(),
+      moduleRepository: ModuleRepository(),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final bar = tester.getRect(find.byType(FloatingNavBar));
+    expect(bar.width, lessThanOrEqualTo(rootMaxContentWidth));
+    expect(bar.center.dx, closeTo(800, 1));
   });
 
   testWidgets('Daily Quiz: unten bleibt Platz für die schwebende Navigationsleiste ("Weiter" nicht verdeckt)',

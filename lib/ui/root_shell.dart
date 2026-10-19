@@ -11,6 +11,9 @@ import 'stats/stats_screen.dart';
 import 'widgets/floating_nav_bar.dart';
 import 'widgets/update_actions.dart';
 
+/// Höchstbreite der Hauptbereiche (siehe [RootShell]).
+const double rootMaxContentWidth = 1100;
+
 /// Schwebende Pillen-Navigation über die drei Hauptbereiche der App (siehe
 /// Design-Grundlage "Ruhig & Fokussiert") statt einer randlosen Standard-
 /// NavigationBar.
@@ -43,10 +46,7 @@ class _RootShellState extends State<RootShell> {
       SnackBar(
         duration: const Duration(seconds: 12),
         content: Text('Update verfügbar (Build ${update.buildNumber}).'),
-        action: SnackBarAction(
-          label: updateActionLabel,
-          onPressed: () => applyUpdate(context, update),
-        ),
+        action: SnackBarAction(label: updateActionLabel, onPressed: () => applyUpdate(context, update)),
       ),
     );
   }
@@ -55,12 +55,12 @@ class _RootShellState extends State<RootShell> {
   /// Daily Quiz/Fortschritt, wann sie sichtbar werden, damit sie dann
   /// seither neu angelegte Karten/Bewertungen nachladen.
   List<Widget> get _screens => [
-        HomeScreen(isActive: _index == 0),
-        DailyQuizScreen(isActive: _index == 1),
-        const CalendarScreen(),
-        StatsScreen(isActive: _index == 3),
-        const SettingsScreen(),
-      ];
+    HomeScreen(isActive: _index == 0),
+    DailyQuizScreen(isActive: _index == 1),
+    const CalendarScreen(),
+    StatsScreen(isActive: _index == 3),
+    const SettingsScreen(),
+  ];
 
   static const _navItems = [
     NavItem(icon: Icons.folder_rounded, label: 'Fächer'),
@@ -72,36 +72,41 @@ class _RootShellState extends State<RootShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Auf breiten Bildschirmen (iPad quer, großes Fenster) mittig statt über
+    // die ganze Breite gezogen – Leiste und Plus-Knopf wandern mit.
     return Scaffold(
-      body: Stack(
-        children: [
-          IndexedStack(index: _index, children: _screens),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: rootMaxContentWidth),
+          child: SizedBox.expand(child: _content(context)),
+        ),
+      ),
+    );
+  }
+
+  Widget _content(BuildContext context) {
+    return Stack(
+      children: [
+        IndexedStack(index: _index, children: _screens),
+        Positioned(
+          left: 20,
+          right: 20,
+          bottom: floatingNavBottomMargin,
+          child: FloatingNavBar(items: _navItems, selectedIndex: _index, onSelect: (i) => setState(() => _index = i)),
+        ),
+        if (_index == 0)
           Positioned(
-            left: 20,
-            right: 20,
-            bottom: floatingNavBottomMargin,
-            child: FloatingNavBar(
-              items: _navItems,
-              selectedIndex: _index,
-              onSelect: (i) => setState(() => _index = i),
+            right: 24,
+            bottom: 104,
+            child: FloatingActionButton(
+              backgroundColor: context.colors.accentSolid,
+              foregroundColor: context.colors.accentInk,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ModuleFormScreen())),
+              child: const Icon(Icons.add),
             ),
           ),
-          if (_index == 0)
-            Positioned(
-              right: 24,
-              bottom: 104,
-              child: FloatingActionButton(
-                backgroundColor: context.colors.accentSolid,
-                foregroundColor: context.colors.accentInk,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ModuleFormScreen()),
-                ),
-                child: const Icon(Icons.add),
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }
