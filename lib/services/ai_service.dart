@@ -26,6 +26,7 @@ import 'condense_service.dart';
 import 'lab_photo_reading.dart';
 import 'lab_report_draft.dart';
 import 'json_repair.dart';
+import 'openrouter_errors.dart';
 import 'question_parsing.dart';
 import 'screen_awake.dart';
 import 'text_chunker.dart';
@@ -126,6 +127,11 @@ class AiService {
   /// gefragt ([onSlowResponse]) statt sofort abgebrochen. Nur Tests ändern
   /// den Wert.
   static Duration requestTimeout = const Duration(minutes: 3);
+
+  /// Pausen vor dem 2., 3. … Versuch bei vorübergehenden Fehlern (siehe
+  /// [OpenRouterErrors.transientCodes]); ein `Retry-After` des Servers geht
+  /// vor. Nur Tests ändern den Wert.
+  static List<Duration> retryDelays = const [Duration(seconds: 3), Duration(seconds: 8)];
 
   /// Fragt nach [requestTimeout] ohne Antwort, ob weiter gewartet werden soll
   /// (true) – die Anfrage läuft dabei weiter, nichts wird neu gestartet.
@@ -315,7 +321,7 @@ Hier ist der Dokumenttext:
         {'role': 'user', 'content': userContent},
       ],
     });
-    Future<http.Response> send() async {
+    Future<http.Response> sendOnce() async {
       final background = _useBackground ? backgroundTransport : null;
       if (background != null) {
         try {
@@ -329,6 +335,25 @@ Hier ist der Dokumenttext:
       return _client.post(url, headers: headers, body: body);
     }
 
+    // Vorübergehende Fehler (Überlastung, Anbieter kurz weg, Verbindung
+    // abgerissen) nach kurzer Pause erneut versuchen – bei kostenlosen
+    // Modellen kommt 429 ständig vor.
+    var attempts = 0;
+    Future<http.Response> send() async {
+      while (true) {
+        attempts++;
+        final more = attempts <= retryDelays.length;
+        try {
+          final response = await sendOnce();
+          if (!more || !OpenRouterErrors.isTransient(response.statusCode, response.body)) return response;
+          await Future<void>.delayed(OpenRouterErrors.retryAfter(response.headers) ?? retryDelays[attempts - 1]);
+        } on http.ClientException {
+          if (!more) rethrow;
+          await Future<void>.delayed(retryDelays[attempts - 1]);
+        }
+      }
+    }
+
     final http.Response response;
     final release = ScreenAwake.hold();
     try {
@@ -339,9 +364,12 @@ Hier ist der Dokumenttext:
       release();
     }
 
-    if (response.statusCode != 200) {
+    final errorCode = OpenRouterErrors.codeOf(response.statusCode, response.body);
+    if (errorCode != null) {
       throw AiServiceException(
-          'OpenRouter-Anfrage fehlgeschlagen (${response.statusCode}): ${response.body}');
+        OpenRouterErrors.message(errorCode, response.body, attempts: attempts),
+        rawResponse: response.body,
+      );
     }
 
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));

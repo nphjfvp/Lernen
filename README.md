@@ -1413,6 +1413,19 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 6e. KI-Anfragen: automatisch erneut versuchen, klare Fehler
+
+- **Überlastet oder kurz weg** (429 „zu viele Anfragen“ – bei kostenlosen
+  Modellen häufig –, 502/503 Anbieter nicht erreichbar, 408/504
+  Zeitüberschreitung, abgerissene Verbindung): die App versucht es nach 3 und
+  nach 8 Sekunden noch einmal selbst (nennt der Server eine Wartezeit, gilt
+  die, höchstens 30 s). Auch Fehler, die OpenRouter mitten in einer sonst
+  normalen Antwort meldet, zählen dazu.
+- **Klare Meldung statt Roh-Text**: z.B. „OpenRouter lehnt den API-Key ab
+  (401) – bitte in den Einstellungen prüfen“, „Kein Guthaben mehr (402)“ oder
+  „Zu viele Anfragen (429) – auch nach 3 Versuchen …“. Die vollständige
+  Antwort bleibt dort, wo die App Details zeigt (z.B. beim Fragen-Import).
+
 ### 6d. Updates nur vom App-Branch
 
 - **Android- und Windows-Builds** laufen weiter auf jedem Branch (mit Tests,

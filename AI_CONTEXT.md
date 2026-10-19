@@ -1733,6 +1733,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     „Aktuellen Stand als Release veröffentlichen“ läuft nur bei `github.ref ==
     refs/heads/$APP_BRANCH` (env `APP_BRANCH`); `concurrency` je Workflow+Ref, ohne Abbruch
     laufender Läufe.
+91. KI-Client: services/openrouter_errors.dart (`transientCodes` 408/429/502/503/504 – 500 bewusst
+    nicht; `codeOf` auch für `error` in 200-Antworten; `retryAfter` max. 30 s; `message` je Code
+    deutsch, `detailOf` = error.message gekürzt). `AiService._complete`: `sendOnce` + Schleife mit
+    `AiService.retryDelays` (3 s, 8 s; auch bei ClientException), Fehler →
+    `AiServiceException(message, rawResponse: body)`. test/flutter_test_config.dart setzt
+    `retryDelays = []` für alle Tests. Test: `ai_retry_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
