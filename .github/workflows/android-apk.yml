@@ -69,7 +69,7 @@ jobs:
       # pubspec.yaml-Versionsnummer, die man leicht vergisst hochzuzählen) -
       # Grundlage für den In-App-Update-Check (siehe UpdateCheckerService),
       # der genau diese Zahl mit der laufenden App vergleicht.
-      # Eigener Signierschlüssel aus den Secrets (README „Eigener
+      # Eigener Signierschlüssel aus den Secrets (docs/EINRICHTUNG.md „Eigener
       # Signierschlüssel“); ohne Secrets weiter der Debug-Keystore. Welcher es
       # ist, steht in version.json ("signer") und in der App – wechselt er,
       # erklärt die App die einmalige Neuinstallation statt eines Updates,

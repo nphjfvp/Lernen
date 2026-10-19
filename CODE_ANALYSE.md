@@ -1,4 +1,35 @@
-# Code-Analyse – Lernen (September 2026)
+# Code-Analyse – Lernen
+
+## Aktueller Stand (19.10.2026)
+
+Die beiden Prüfungen unten (September und Oktober 2026) beschreiben den Stand
+von damals; ihre Zahlen (z.B. „~24.000 Zeilen“) sind überholt. Heute:
+
+| | |
+|---|---|
+| Dart-Code in `lib/` | 86.922 Zeilen |
+| Tests | 1581, alle grün (auch mit `TZ=Europe/Berlin`), `flutter analyze` sauber |
+| Größte Dateien | `ai_service.dart` 5.227 Zeilen (51 Prompts inline), `question_answer_view.dart` ~2.400, `review_screen.dart` ~2.200, `task_import_screen.dart` ~2.100, `settings_screen.dart` ~1.950 |
+
+Dritte Prüfung (Oktober 2026, zwölf Punkte einer externen Analyse) – Stand:
+
+| Punkt | Stand |
+|---|---|
+| Releases von jedem Branch | **behoben** – nur noch vom App-Branch, Läufe nacheinander |
+| Öffentlicher Debug-Schlüssel | **vorbereitet** – eigener Schlüssel über GitHub-Secrets, App erklärt die Neuinstallation (docs/EINRICHTUNG.md) |
+| KI: kein Retry, roher Fehlertext | **behoben** – Wiederholung bei 408/429/502/503/504, klare Meldungen |
+| Lint nur Standard | **behoben** – `unawaited_futures` an |
+| `catch (_)` ohne Log | **teilweise** – Sync/Auto-Sync/PDF-Speicher loggen; die übrigen sind bewusste Ausweichwege |
+| Doku aufgebläht | **behoben** – README kurz, Details in docs/, CHANGELOG.md, docs/AI_HISTORIE.md |
+| Große Dateien, Prompts inline | offen – Prompts auslagern als Nächstes |
+| AiService direkt in 33 UI-Dateien, statische Schalter, IndexedStack liest einmal | offen |
+| Sync-Codes (H10), Push ohne Transaktion (H9) | zurückgestellt (Nutzerentscheidung, siehe AUDIT.md) |
+| API-Key im Klartext | offen |
+| Serialisierung von Hand, Mehrsprachigkeit, Barrierefreiheit, Geräte-Tests | bewusst nicht (Aufwand ≫ Nutzen für eine persönliche App) |
+
+---
+
+# Erste Prüfung (September 2026)
 
 Gründliche Durchsicht der gesamten App (~24.000 Zeilen Dart) nach dem
 gemeldeten Zuordnen-Fehler („ein Begriff belegt direkt beide Felder, ich kann

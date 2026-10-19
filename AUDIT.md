@@ -38,7 +38,7 @@ Display-Formeln, CI ohne Test-Gate, Sync-Code-Key-Injektion im Pull-Pfad.
 Design-Frage 2 (PDF-Sync) ist entschieden und umgesetzt: eigener Speicher des
 Nutzers (S3-kompatibel oder WebDAV) statt Firebase Storage – Firebase Storage verlangt
 für neue Projekte inzwischen den Blaze-Tarif (Kreditkarte), das widerspricht „kostenlos
-ohne eigenes Backend". Details in `DESIGN_IDEEN.md` und README (Setup 3b).
+ohne eigenes Backend". Details in `DESIGN_IDEEN.md` und docs/EINRICHTUNG.md (3b).
 
 ---
 
@@ -174,7 +174,7 @@ truncated/pre-FSRS-Records.
 ## Offene Design-Fragen
 
 ### 1. Features – was sinnvoll ist und was nicht
-(zu brainstormen) Die App ist bewusst minimal (siehe README „Bewusst NICHT enthalten":
+(zu brainstormen) Die App ist bewusst minimal (siehe docs/FUNKTIONEN.md „Bewusst NICHT enthalten":
 keine Mini-Games, Economy, Shop, Leaderboards, Mathe-Formel-Editor, diagramm-/bildbasierte
 Fragetypen). Erst Nutzer-Painpoints klären, dann gezielt vorschlagen – statt
 Feature-Bloat. Anti-Ziel: die Vorgänger-App-Fülle zurückholen.

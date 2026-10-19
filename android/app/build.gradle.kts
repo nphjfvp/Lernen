@@ -47,7 +47,7 @@ android {
             keyPassword = "android"
         }
         // Eigener Schlüssel, sobald er in den GitHub-Secrets liegt (siehe
-        // android-apk.yml, README „Eigener Signierschlüssel“): der Debug-
+        // android-apk.yml, docs/EINRICHTUNG.md „Eigener Signierschlüssel“): der Debug-
         // Keystore ist öffentlich, damit könnte jeder eine APK bauen, die
         // Android als Update dieser App annimmt.
         val releaseStore = System.getenv("ANDROID_KEYSTORE_PATH")

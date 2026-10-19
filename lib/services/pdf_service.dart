@@ -6,7 +6,7 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 ///
 /// Nutzt syncfusion_flutter_pdf (reines Dart, funktioniert auf Windows/iOS/
 /// Android ohne native Plattform-Kanäle). Für kommerzielle Nutzung jenseits
-/// der kostenlosen Community-License-Grenze siehe README.
+/// der kostenlosen Community-License-Grenze siehe docs/EINRICHTUNG.md.
 class PdfService {
   /// Extrahiert den kompletten Text eines PDFs. Wirft [PdfExtractionException]
   /// bei kaputten/verschlüsselten Dateien, statt die App abstürzen zu lassen.

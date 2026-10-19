@@ -986,7 +986,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (!_syncService.isAvailable) ...[
                     Text(
                       'Nicht konfiguriert: dieser Build hat kein Firebase-Projekt '
-                      'verbunden. Die App funktioniert komplett offline. Siehe README '
+                      'verbunden. Die App funktioniert komplett offline. Siehe docs/EINRICHTUNG.md '
                       '("flutterfire configure"), um Sync zwischen Windows/iPad/Android '
                       'zu aktivieren. (Ist es bei dir eingerichtet und trotzdem so: App neu starten – '
                       'die Verbindung zu Firebase kam beim Start nicht zustande.)',

@@ -9,7 +9,7 @@ name: Backup wiederherstellen
 #
 # Starten: GitHub → Actions → "Backup wiederherstellen" → "Run workflow".
 #
-# Backups (siehe README, "Backup und Wiederherstellen"):
+# Backups (siehe docs/EINRICHTUNG.md, "Backup und Wiederherstellen"):
 #   8043a211bb436cd880851f7a52a517d0a46ad5ab – vor dem Modus "Visuell lernen"
 on:
   workflow_dispatch:
