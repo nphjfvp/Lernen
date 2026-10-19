@@ -1,8 +1,15 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6g) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6h) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6h. KI-Prompts in eigenen Dateien
+
+- Die 50 festen Anweisungen an die KI (System-Prompts) stehen jetzt nach Thema
+  in `lib/services/ai_prompts/` (Material, Import, Prüfen und Lernhilfen,
+  Aufgaben und Labor, Visuell lernen) statt mitten im KI-Code. Am Verhalten
+  ändert sich nichts – die Texte sind Zeichen für Zeichen gleich.
 
 ### 6g. Doku aufgeräumt
 

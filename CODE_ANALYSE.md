@@ -9,7 +9,7 @@ von damals; ihre Zahlen (z.B. „~24.000 Zeilen“) sind überholt. Heute:
 |---|---|
 | Dart-Code in `lib/` | 86.922 Zeilen |
 | Tests | 1581, alle grün (auch mit `TZ=Europe/Berlin`), `flutter analyze` sauber |
-| Größte Dateien | `ai_service.dart` 5.227 Zeilen (51 Prompts inline), `question_answer_view.dart` ~2.400, `review_screen.dart` ~2.200, `task_import_screen.dart` ~2.100, `settings_screen.dart` ~1.950 |
+| Größte Dateien | `ai_service.dart` 3.626 Zeilen (feste Prompts jetzt in `ai_prompts/`), `question_answer_view.dart` ~2.400, `review_screen.dart` ~2.200, `task_import_screen.dart` ~2.100, `settings_screen.dart` ~1.950 |
 
 Dritte Prüfung (Oktober 2026, zwölf Punkte einer externen Analyse) – Stand:
 
@@ -21,7 +21,7 @@ Dritte Prüfung (Oktober 2026, zwölf Punkte einer externen Analyse) – Stand:
 | Lint nur Standard | **behoben** – `unawaited_futures` an |
 | `catch (_)` ohne Log | **teilweise** – Sync/Auto-Sync/PDF-Speicher loggen; die übrigen sind bewusste Ausweichwege |
 | Doku aufgebläht | **behoben** – README kurz, Details in docs/, CHANGELOG.md, docs/AI_HISTORIE.md |
-| Große Dateien, Prompts inline | offen – Prompts auslagern als Nächstes |
+| Große Dateien, Prompts inline | **teilweise** – Prompts ausgelagert (ai_service 5.227 → 3.626 Zeilen); große Screens offen |
 | AiService direkt in 33 UI-Dateien, statische Schalter, IndexedStack liest einmal | offen |
 | Sync-Codes (H10), Push ohne Transaktion (H9) | zurückgestellt (Nutzerentscheidung, siehe AUDIT.md) |
 | API-Key im Klartext | offen |

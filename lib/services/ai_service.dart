@@ -31,6 +31,12 @@ import 'question_parsing.dart';
 import 'screen_awake.dart';
 import 'text_chunker.dart';
 
+part 'ai_prompts/material.dart';
+part 'ai_prompts/import.dart';
+part 'ai_prompts/check.dart';
+part 'ai_prompts/tasks.dart';
+part 'ai_prompts/visual.dart';
+
 /// Wird geworfen, wenn die KI-Antwort kein (reparierbares) JSON enthält.
 /// Trägt die Rohantwort mit, damit die UI sie bei Bedarf anzeigen kann
 /// (hilfreich zum Debuggen eines schlecht formatierenden Modells).
@@ -149,47 +155,6 @@ class AiService {
   /// Rolling-Context in den nächsten Chunk-Prompt übernommen werden – hält
   /// den Prompt bei sehr vielen Chunks trotzdem beschränkt.
   static const int _rollingContextLimit = 40;
-
-  /// Eigenständiger Prompt zum Kopieren in ein EXTERNES KI-Chat-Fenster
-  /// (ChatGPT, Gemini, Claude.ai, ...), wenn ein stärkeres Modell gebraucht
-  /// wird als die in dieser App per BYOK hinterlegten – z.B. bei besonders
-  /// unüblichen Vorlagen (Zuordnungs-Matrizen, Diskussionsfragen ohne
-  /// exakte Musterlösung), an denen ein schwächeres Modell scheitert. Anders
-  /// als [_importQuestionsSystemPrompt]/[_conceptsSystemPrompt] wird dieser
-  /// Text NIE direkt an OpenRouter geschickt (kein API-Call, keine Kosten) –
-  /// er wird nur in der UI angezeigt/in die Zwischenablage kopiert (siehe
-  /// ReviewScreen-Modus "JSON einfügen"). Das externe Modell liefert damit
-  /// GENAU das JSON-Format, das `QuestionParsing.normalizeGeneratedFlashcard`
-  /// auch von den beiden anderen Erzeugungswegen erwartet, daher hier bewusst
-  /// dieselbe Feld-/Typ-Beschreibung dupliziert statt geteilt: der Text muss
-  /// für sich allein stehen, ohne Bezug auf Dart-Code, das ihn ein Mensch
-  /// woanders einfügt.
-  /// Gegen geschenkte Fragen – Teil aller Prompts, die selbst Fragen
-  /// erstellen (Nutzer-Befund: Zuordnen mit nur einem Paar).
-  static const _noGiveawayRule = '''
-KEINE GESCHENKTEN FRAGEN – jede selbst erstellte Frage muss man auch falsch
-beantworten können:
-   - "drag_drop" nur mit mindestens 3 Paaren (verschiedene Ziele),
-     "drag_category" nur mit mindestens 2 Kategorien und 4 Begriffen. Gibt
-     der Stoff das nicht her (z.B. nur EINE Zuordnung), nimm einen anderen
-     Typ (single_choice mit plausiblen falschen Optionen, fill_blank oder
-     free_text).
-   - "single_choice" mit mindestens 3, "multiple_choice" mit mindestens 4
-     Optionen; die falschen Optionen sind plausibel und aus demselben
-     Themengebiet (nicht offensichtlich absurd), bei "multiple_choice" ist
-     mindestens eine Option falsch.
-   - Die Lösung steht nicht schon im Fragetext und lässt sich nicht aus der
-     Formulierung ablesen (z.B. kein Lückenwort, das im selben Satz steht).
-''';
-
-  /// Markierung von Rechenaufgaben (Schalter "Rechenaufgaben" beim Lernen, siehe
-  /// CalcTaskDetector) – in allen Prompts, die Fragen erzeugen oder übernehmen.
-  static const _calcFlagRule = '''
-RECHENAUFGABEN MARKIEREN: Setze bei jeder Frage "calc": true, wenn man zum
-Lösen echt rechnen muss (Taschenrechner, mehrere Rechenschritte, Formeln mit
-Messwerten, Einheiten umrechnen) – sonst "calc": false. Kopfrechnen wie 2·3,
-das Nennen einer Formel oder reines Wissen ist KEINE Rechenaufgabe.
-''';
 
   static const externalJsonPromptTemplate = '''
 Du hilfst mir, Lernmaterial für die App "Lernen" aufzubereiten. Ich füge dir
@@ -439,26 +404,6 @@ Hier ist der Dokumenttext:
     return chunks.isEmpty ? [text] : chunks;
   }
 
-  static const _summarySystemPrompt = '''
-Du bist ein Lernassistent für Studierende. Du bekommst den Text von
-Vorlesungsfolien (möglicherweise nur einen Abschnitt eines längeren
-Foliensatzes) und erstellst daraus eine strukturierte Zusammenfassung für
-einen schnellen Überblick.
-Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
-\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
-(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON in genau
-diesem Format, ohne Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{
-  "title": "Kurzer Titel der Sitzung/des Themas",
-  "overview": "Strukturierte Zusammenfassung, 3-6 Absätze, klar gegliedert",
-  "key_points": ["Kernkonzept 1", "Kernkonzept 2", "..."]
-}
-Wenn bereits erfasste Kernkonzepte aus vorherigen Abschnitten genannt werden,
-wiederhole diese NICHT, sondern konzentriere dich auf neuen Inhalt.
-Antworte in der Sprache der Vorlage.
-''';
-
   /// Vorbereiten-Modus: strukturierte Zusammenfassung + Kernkonzepte aus
   /// Vorlesungsfolien für den schnellen Überblick vor der Sitzung.
   ///
@@ -528,52 +473,6 @@ Antworte in der Sprache der Vorlage.
     };
   }
 
-  static const _formulaSheetSystemPrompt = r'''
-Du bist ein Lernassistent für Studierende und erstellst eine FORMELSAMMLUNG zu
-Vorlesungsfolien (möglicherweise nur ein Abschnitt eines längeren Foliensatzes)
-– so, wie man sie beim Rechnen von Aufgaben und in der Klausur neben sich legt.
-Sammle die Formeln, Sätze, Regeln und Verfahrensschritte, die man für dieses
-Thema braucht, und ordne JEDEN Eintrag einer Stufe zu ("level"):
-- "kern": was in diesen Folien neu eingeführt oder zentral behandelt wird
-  (Definitionen, Sätze, Stammfunktionen, Integrationsregeln, Verfahren …). Führt
-  die Folie eine Regel neu ein, ist sie "kern" – auch wenn sie in einem anderen
-  Zusammenhang eine Hilfsregel wäre.
-- "hilfsregel": Regeln aus früheren Themen, die man für die Aufgaben dieses
-  Themas anwenden können muss, die die Folien aber NICHT neu einführen. Beispiel:
-  Ableitungsregeln (Produkt-, Ketten-, Quotientenregel), weil man sie für
-  partielle Integration und Substitution braucht.
-- "rechenregel": elementare Rechenregeln, auf denen alles aufbaut: Bruchrechnung,
-  Potenz- und Wurzelgesetze, Logarithmusgesetze, binomische Formeln,
-  trigonometrische Grundidentitäten.
-Denke an die Aufgaben, die zu diesem Thema gestellt werden könnten: Welche
-Regeln braucht man, um sie zu lösen? Was dafür nötig ist, aber in den Folien
-fehlt, ergänzt du mit "source": "ergaenzt" – aber NUR allgemein bekannte,
-sicher gültige Standardregeln. Was auf den Folien steht: "source": "folien".
-ERFINDE NICHTS: keine Spezialformeln, keine Zahlenwerte, die du nicht sicher
-weißt; bist du bei einer Formel nicht sicher, lass sie weg. Gib jede Formel nur
-einmal an.
-Gruppiere die Einträge in Abschnitte nach Themen ("sections", z.B.
-"Grundintegrale", "Integrationsregeln", "Ableitungsregeln", "Potenzgesetze").
-"formula" ist reines LaTeX OHNE umgebende Dollarzeichen; verdopple in JSON jeden
-Backslash (z.B. "\\frac{a}{b}"). "note" nennt in einem kurzen Satz Bedingungen
-oder wann man die Regel anwendet (darf leer sein).
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
-davor oder danach:
-{
-  "title": "Kurzer Titel, z.B. Formelsammlung Integralrechnung",
-  "sections": [
-    {"title": "Integrationsregeln",
-     "entries": [
-       {"name": "Partielle Integration", "formula": "\\int u\\,v'\\,dx = u\\,v - \\int u'\\,v\\,dx",
-        "note": "u, v stetig differenzierbar", "level": "kern", "source": "folien"}
-     ]}
-  ]
-}
-Wenn bereits erfasste Formeln aus vorherigen Abschnitten genannt werden,
-wiederhole diese NICHT, sondern nimm nur Neues auf.
-Antworte in der Sprache der Vorlage.
-''';
-
   /// Formelsammlung aus Vorlesungsfolien (Vorbereiten-Modus). Die KI ordnet jeden
   /// Eintrag einer Stufe zu (Kernstoff, Hilfsregel, Rechenregel, siehe
   /// [FormulaLevel]); welche davon sichtbar sind, bestimmt erst die gewählte
@@ -625,66 +524,6 @@ Antworte in der Sprache der Vorlage.
   }
 
   // -- Kürzen -----------------------------------------------------------------
-
-  static const _condenseAnalysisSystemPrompt = r'''
-Du hilfst Studierenden, eine Vorlesung auf das Nötige zu kürzen. Du bekommst
-Übungsaufgaben (möglicherweise nur einen Teil davon) und/oder einen Auftrag des
-Studierenden. Stelle fest, WAS man wissen und können muss, um diese Aufgaben zu
-lösen bzw. den Auftrag zu erfüllen: Verfahren, Definitionen, Sätze, Formeln,
-Begriffe, Rechenregeln und Grundlagen aus früheren Themen, die die Aufgaben
-stillschweigend voraussetzen (z.B. Ableitungsregeln für die partielle
-Integration).
-- Eine Anforderung ist ein kurzer Satz, z.B. "Partielle Integration: Formel und
-  wann man sie anwendet".
-- Eine Anforderung pro Sache, keine Dopplungen; nicht zu fein (keine
-  Einzelschritte einer Rechnung) und nicht zu grob ("Mathematik").
-- Erfinde keine Aufgaben. Gibt es keine Aufgaben, leite die Anforderungen aus
-  dem Auftrag ab.
-"tasks" nennt jede Aufgabe in einer Zeile (z.B. "Aufgabe 2: ∫ x·eˣ dx
-berechnen"); bei sehr vielen Aufgaben fasse sie zusammen.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
-davor oder danach:
-{"tasks": ["Aufgabe 1: …"], "needs": ["Partielle Integration: Formel und wann man sie anwendet"]}
-Wenn bereits erfasste Anforderungen genannt werden, wiederhole sie NICHT.
-Antworte in der Sprache der Aufgaben.
-''';
-
-  static const _condenseSelectSystemPrompt = r'''
-Du hilfst Studierenden, eine Vorlesung zu KÜRZEN: Das gekürzte Skript soll nur
-noch enthalten, was man braucht, um bestimmte Übungsaufgaben zu lösen – alle
-Erklärungen dazu vollständig, den Rest nicht. Du bekommst einen Abschnitt der
-Vorlesung in Blöcken ("[12.3] Text" ist Block 3 der Seite 12) sowie, was die
-Aufgaben verlangen.
-Du schreibst NICHTS um und erfindest nichts: Du wählst nur Blöcke aus, die
-behalten werden.
-Behalte ("kind": "erklaerung"), was zum Verstehen und Lösen nötig ist, und zwar
-so vollständig, dass die Erklärung für sich lesbar bleibt: Definitionen und
-Schreibweisen, Begründungen und Herleitungen, Sätze und Formeln samt
-Voraussetzungen, Verfahren Schritt für Schritt, Hinweise auf typische Fehler.
-Reiße keine Formel aus ihrem Zusammenhang – nimm den Block mit, der ihre
-Bezeichnungen erklärt. Ein Beispiel, das man braucht, um das Verfahren zu
-verstehen, ist "erklaerung".
-Beispielaufgaben und Musterlösungen der Vorlesung, die in die Richtung der
-Aufgaben gehen, die man zum Verstehen aber nicht braucht, bekommen
-"kind": "beispiel" (der Studierende entscheidet später, ob sie mitkommen).
-Lasse weg: Organisatorisches, Inhaltsverzeichnisse, Motivation, Geschichte und
-Ausblicke, reine Wiederholungen und Zusammenfassungen, Stoff ohne Bezug zu den
-Aufgaben, Literaturhinweise.
-Fasse zusammenhängende Blöcke zu Abschnitten mit kurzer Überschrift ("title")
-zusammen. "why" sagt in einem kurzen Satz, wofür der Abschnitt gebraucht wird
-(z.B. "Aufgabe 2 braucht die Substitution"). "covers" nennt die Kennungen der
-Anforderungen ("n1", "n2" …), die der Abschnitt erklärt. "blocks" ist eine Liste
-von Kennungen oder Bereichen ("12.1-12.4", auch über Seiten hinweg:
-"12.3-13.2") – NUR Kennungen aus DIESEM Abschnitt der Vorlesung. "skipped" nennt
-in Stichworten, was du in diesem Abschnitt bewusst weggelassen hast.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
-davor oder danach:
-{"sections": [{"title": "Partielle Integration", "kind": "erklaerung",
-  "why": "Aufgabe 2 und 4", "blocks": ["12.1-12.4", "13.2"], "covers": ["n1"]}],
- "skipped": ["Organisatorisches", "Geschichte der Integralrechnung"]}
-Ist in diesem Abschnitt nichts Relevantes, antworte mit {"sections": [], "skipped": [...]}.
-Antworte in der Sprache der Vorlesung.
-''';
 
   static String _strictnessText(CondenseStrictness strictness) => switch (strictness) {
         CondenseStrictness.knapp =>
@@ -868,158 +707,6 @@ Antworte in der Sprache der Vorlesung.
     return CondenseSelection(sections: sections, skipped: skipped.take(30).toList(), plan: analysis);
   }
 
-  static const _conceptsSystemPrompt = '''
-Du bist ein Lernassistent für Studierende und bereitest Stoff für die
-Nachbereitung vor. Du bekommst Vorlesungsfolien, meist zusammen mit
-Übungsaufgaben zum gleichen Thema (möglicherweise nur einen Abschnitt eines
-längeren Materials, in dem Folien- und Übungsinhalte gemischt vorkommen
-können) – wurden keine Übungsaufgaben hochgeladen, arbeite allein anhand
-der Folien. Analysiere den Abschnitt und erstelle:
-1. Lernkonzepte: liegen Übungsaufgaben vor, erkläre WARUM sie so gelöst
-   werden wie sie gelöst werden (Fokus auf tiefem Verständnis der Übungen,
-   nicht auf reiner Theorie-Wiedergabe); ohne Übungsaufgaben die zentralen
-   Konzepte der Folien selbst.
-2. Karteikarten/Fragen zur Wiederholung dieser Konzepte.
-
-WICHTIG zur inhaltlichen Korrektheit: stütze JEDE Erklärung, Frage und
-Antwort AUSSCHLIESSLICH auf das gegebene Material. Erfinde keine Fakten,
-Zahlen, Formeln oder Definitionen, die dort nicht vorkommen oder sich nicht
-direkt daraus ableiten lassen – auch nicht aus vermeintlichem
-Allgemeinwissen zum Thema, das vom konkreten Material abweichen könnte.
-Bist du dir bei einem Detail nicht sicher, ob es im Material so steht, lass
-die Frage lieber weg statt zu raten.
-
-WICHTIG zur Typwahl: verwende NICHT für alle Karten denselben Typ. "flashcard"
-(freies front/back) ist die LETZTE Wahl, nur wenn WIRKLICH keiner der
-anderen Typen passt – erzeuge höchstens für etwa ein Fünftel der Karten
-diesen Typ, den Rest möglichst mit den spezifischeren Typen unten. Auch
-"free_text" ist kein Standardtyp: "flashcard" und "free_text" ZUSAMMEN
-höchstens etwa ein Drittel der Karten; der Rest verteilt sich auf
-Auswahl-, Lücken-, Zuordnungs- und (wo sinnvoll) interaktive Fragen.
-Übungsaufgaben mit fester Aufgabenform (Ankreuzen, Lücken, Zuordnen,
-Tabelle) behalten diese Form. Wähle pro Frage den zum Inhalt passenden Typ:
-   - "table": eine Tabelle zum Ausfüllen (auch gut für "schwer": Merkmale
-     mehrerer Begriffe gegenüberstellen). "table" = Liste der Zeilen, jede
-     eine Liste der Zellen; vorgegebene Zellen als Text, auszufüllende als
-     {"answer": "Lösung; Variante"}.
-   - "single_choice": klares Faktenwissen mit genau einer richtigen Antwort.
-   - "multiple_choice": wenn mehrere Aussagen gleichzeitig zutreffen können.
-   - "fill_blank": Lückentext – markiere jede Lücke im "front"-Text mit genau
-     drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
-     Reihenfolge (passen mehrere Begriffe in eine Lücke, alle durch ";"
-     getrennt in denselben Eintrag).
-   - "free_text": offene, aber eindeutig prüfbare Kurzantwort; "correctText"
-     enthält die Lösung (bei mehreren akzeptierten Formulierungen durch ";"
-     getrennt).
-   - "drag_drop": Begriffe einander zuordnen (Paare); "dragPairs" enthält
-     {"source","target"}-Paare, jedes "target" genau EINMAL (1:1-Zuordnung) –
-     gehören mehrere Begriffe zum selben Ziel, nimm "drag_category".
-   - "drag_category": Begriffe in Kategorien einsortieren; "dragPairs" wie
-     bei drag_drop, "target" ist hier der Kategoriename (mehrere "source"
-     können denselben "target"-Wert haben).
-   - "learn": NUR für Aufgaben, die sich in einer Quiz-App gar nicht prüfen
-     lassen und in keinen der Typen oben passen: zeichnen, konstruieren,
-     entwerfen (z.B. Diagramme, Netzpläne), programmieren, beweisen, lange
-     Rechen-/Herleitungswege mit vielen Zwischenschritten. "front" = die
-     Aufgabe WORTGETREU wie im Dokument (alle Teilaufgaben und Zahlenwerte,
-     NICHT in einzelne Fragen aufteilen), "back" = deine ausführliche
-     Erklärung bzw. der Lösungsweg Schritt für Schritt (steht eine
-     Musterlösung im Dokument, erkläre sie verständlich). Der Lernende liest
-     das und bewertet selbst, wie gut er es verstanden hat. Kein Typ für
-     Aufgaben, die sich als Auswahl, Lücke, Tabelle oder Kurzantwort prüfen
-     lassen. {"type": "learn", "front": "Aufgabe 1:1", "back": "Erklärung / Lösungsweg"}
-   - "flashcard": nur als letzte Wahl (siehe oben) – "front"/"back" wie
-     bisher. Das Feld "back" ist dabei PFLICHT und darf NIE leer sein – eine
-     Karteikarte ohne Antwort ist nutzlos.
-   - "html": AUSNAHME, noch seltener als "flashcard" – nur wenn WIRKLICH
-     keiner der obigen Typen die Struktur der Vorlage abbilden kann.
-     Typische Beispiele: eine Zuordnungs-Matrix/Tabelle mit mehreren
-     Kriterien-Zeilen, bei der man pro Zeile eine von mehreren Spalten
-     wählt; oder eine offene Erläuterungs-/Diskussionsfrage, bei der ein
-     reiner Text-Exakt-Vergleich zu streng wäre (dann prüft dein eigenes
-     JavaScript großzügiger, z.B. ob mehrere der erwarteten Kernpunkte
-     sinngemäß vorkommen, statt eine einzige exakte Formulierung zu
-     verlangen). "htmlContent" enthält NUR den `<body>`-Inhalt (kein
-     `<html>`/`<head>`/`<style>`-Rahmen, die App bettet das selbst sicher
-     ein) als eigenständige, interaktive Seite: reines Inline-HTML/CSS/JS,
-     kein externes Skript/Bild/keine Netzwerk-Anfrage (wird ohnehin
-     blockiert). Die Seite MUSS ihre eigene Prüf-Logik enthalten (du kennst
-     die Lösung bereits jetzt) und beim Auswerten GENAU diesen Aufruf
-     machen: `window.FlutterAnswer.postMessage(JSON.stringify({correct:
-     true}))` (bzw. `correct: false` bei falscher Antwort) – ohne diesen
-     Aufruf bekommt die App nie ein Ergebnis und die Karte ist unbrauchbar.
-     Gib zusätzlich "front" (kurze Frage-Überschrift) und "back" (kurze
-     Text-Zusammenfassung der Lösung) an – dient als Fallback-Anzeige auf
-     Geräten ohne WebView-Unterstützung (z.B. Windows-Desktop).
-
-$_noGiveawayRule
-$_calcFlagRule
-JEDER Eintrag in "flashcards" MUSS ALLE für seinen "type" nötigen Felder
-enthalten (siehe Beispiele unten) – ein Eintrag mit nur "front" und sonst
-nichts ist ungültig und wird verworfen.
-
-SCHWIERIGKEITSSTUFEN: Frage jeden wichtigen Sachverhalt in bis zu drei
-Stufen ab – die App fragt erst "leicht" ab, erst wenn das sitzt "mittel",
-dann "schwer" (vorher kommen die schwereren nicht dran):
-   - "leicht": Wiedererkennen (meist single_choice/multiple_choice),
-   - "mittel": Ergänzen oder Zuordnen (meist fill_blank/drag_drop/
-     drag_category),
-   - "schwer": selbst formulieren bzw. anwenden, so wie in der Klausur
-     (meist free_text, bei Übungsaufgaben mit fester Form auch deren Form).
-Gib JEDER Karte "level": "leicht" | "mittel" | "schwer" und "group": einen
-kurzen Schlüssel für den Sachverhalt (z.B. "Stücklisten-Arten"), der für
-alle Stufen DESSELBEN Sachverhalts Zeichen für Zeichen gleich ist und sich
-von anderen Sachverhalten unterscheidet. Dieselbe "group" nur für Fragen,
-die dasselbe Wissen prüfen – sobald die schwerere Stufe dran ist, wird die
-leichtere nicht mehr abgefragt; verschiedene Fakten desselben Kapitels
-bekommen verschiedene Gruppen. Lass eine Stufe weg, wenn sie für
-den Sachverhalt keinen Sinn ergibt (z.B. keine sinnvolle Auswahlfrage) –
-dann rückt die nächste Stufe nach. Übungsaufgaben, die 1:1 übernommen
-werden, sind "schwer".
-
-Trägt eine Karteikarte inhaltlich zu einem der oben erstellten Konzepte bei,
-ergänze zusätzlich "conceptTitle" mit EXAKT demselben Titel wie im
-"concepts"-Array (Zeichen für Zeichen identisch, damit die Zuordnung
-technisch funktioniert). Nicht jede Karte muss einem Konzept zugeordnet
-werden – reines Einzelfaktenwissen ohne Konzeptbezug lässt das Feld einfach
-weg.
-
-Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
-\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
-(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{
-  "concepts": [
-    {"title": "Konzeptname", "explanation": "Ausführliche Erklärung mit Bezug zu den Übungsaufgaben"}
-  ],
-  "flashcards": [
-    {"type": "single_choice", "front": "Frage", "level": "leicht", "group": "Sachverhalt A",
-     "conceptTitle": "Konzeptname",
-     "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
-    {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"],
-     "level": "mittel", "group": "Sachverhalt A", "conceptTitle": "Konzeptname"},
-    {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative",
-     "level": "schwer", "group": "Sachverhalt A", "conceptTitle": "Konzeptname"},
-    {"type": "multiple_choice", "front": "Frage", "level": "leicht", "group": "Sachverhalt B",
-     "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
-    {"type": "table", "front": "Vervollständige die Tabelle", "level": "schwer", "group": "Sachverhalt B",
-     "table": [["Begriff", "Merkmal"], ["...", {"answer": "Lösung; Variante"}]]},
-    {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]},
-    {"type": "drag_category", "front": "Sortiere ein", "dragPairs": [{"source": "A", "target": "Kategorie 1"}]},
-    {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"},
-    {"type": "html", "front": "Kurzfassung der Frage", "back": "Kurzfassung der Lösung",
-     "htmlContent": "<div>...Inline-HTML/CSS/JS mit eigener Prüf-Logik, siehe oben...</div>"}
-  ]
-}
-Erstelle so viele Konzepte/Karteikarten wie der Abschnitt hergibt (auch
-wenige, wenn der Abschnitt kurz ist), mit einer sinnvollen Mischung aus
-mindestens 3 verschiedenen Typen, wenn der Abschnitt lang genug für mehrere
-Karten ist. Wenn bereits erstellte Konzepte aus vorherigen Abschnitten
-genannt werden, erstelle diese NICHT erneut.
-Antworte in der Sprache der Vorlage.
-''';
-
   /// Nachbereiten-Modus: analysiert Folien UND Übungsaufgaben gemeinsam und
   /// erzeugt gezielte Lernkonzepte + Karteikarten. Fokus liegt laut Vorgabe
   /// auf der tiefen Durchdringung der Übungen, nicht nur auf Theorie.
@@ -1085,36 +772,6 @@ Antworte in der Sprache der Vorlage.
     return {'concepts': concepts, 'flashcards': flashcards};
   }
 
-  static const _checkpointQuizSystemPrompt = '''
-Du bist ein Lernassistent für Studierende im "Lernmodus": der Nutzer liest
-gerade einen Foliensatz Seite für Seite und bekommt nach ein paar Seiten
-einen SEHR KURZEN Zwischen-Check zum Abschnitt, den er/sie gerade gelesen
-hat – kein vollständiges Nachbereiten, nur ein schneller Verständnis-Check.
-
-Erstelle 2-3 kurze Fragen NUR zu dem gegebenen Abschnitt (nicht zu Stoff,
-der dort nicht vorkommt). Wähle pro Frage einen passenden Typ (nicht immer
-denselben): "single_choice" (options mit isCorrect), "fill_blank" (Lücken
-im "front" als "___" markiert, "blanks" mit den Lösungen), "free_text"
-("correctText" mit der Lösung) oder "flashcard" (offenes front/back, back
-ist Pflicht) – wie im Hauptformat des Nachbereiten-Modus.
-
-$_noGiveawayRule
-$_calcFlagRule
-
-Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
-\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
-(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{"flashcards": [
-  {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
-  {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]},
-  {"type": "free_text", "front": "Frage", "correctText": "Lösung"},
-  {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"}
-]}
-Antworte in der Sprache der Vorlage.
-''';
-
   static const int _checkpointQuizInputCap = 20000;
   static const int _examContextCap = 15000;
 
@@ -1148,98 +805,6 @@ Antworte in der Sprache der Vorlage.
         .toList();
   }
 
-  static const _importQuestionsSystemPrompt = '''
-Du bekommst den Text eines Übungsdokuments (z.B. eine alte Klausur, ein
-Übungsblatt mit Musterlösung o.ä.), das BEREITS FERTIGE Fragen samt Lösung
-enthält. Deine Aufgabe ist NICHT, neue Fragen zu erfinden, sondern die
-tatsächlich im Dokument vorhandenen Fragen/Aufgaben so originalgetreu wie
-möglich als Karteikarten zu übernehmen (Wortlaut der Frage beibehalten,
-nur so weit umformulieren wie für das Karteikarten-Format nötig, z.B. eine
-mehrteilige Aufgabe in mehrere einzelne Karten aufteilen).
-
-WICHTIG zur Typwahl: bestimme den Typ AUSSCHLIESSLICH aus der tatsächlichen
-Struktur der Original-Frage im Dokument – wie ist sie dort GESTELLT (nicht:
-welcher Typ am bequemsten zu erzeugen wäre). "free_text" ist NICHT der
-Standard-Auffangtyp für alles, was nicht auf Anhieb offensichtlich in einen
-anderen Typ passt – bevor du "free_text" wählst, prüfe der Reihe nach:
-  1. Sind im Original mehrere Antwortoptionen zum Ankreuzen vorgegeben?
-     -> "single_choice"/"multiple_choice".
-  2. Ist es ein Lückentext? -> "fill_blank".
-  2b. Ist eine Tabelle mit kurzen Einträgen auszufüllen? -> "table":
-     {"type": "table", "front": "...", "table": [["Kopf A", "Kopf B"],
-     ["vorgegeben", {"answer": "Lösung; Variante"}]]} – vorgegebene Zellen
-     als Text, auszufüllende als {"answer": ...}, Zeilen/Spalten wie im
-     Original.
-  3. Hat die Frage eine Matrixstruktur (mehrere Kriterien-Zeilen,
-     pro Zeile eine von mehreren Spalten/Kategorien zuordnen), eine
-     Zuordnungsaufgabe (Begriff <-> Begriff/Kategorie per Linie/Pfeil), oder
-     verlangt sie erkennbar mehrere separate Stichpunkte/Kernaussagen als
-     Antwort (bei denen ein einziger Textvergleich zu starr wäre)? -> "html"
-     (siehe unten) – NICHT in eine vereinfachte free_text-Frage umwandeln,
-     nur weil das weniger Aufwand bedeutet.
-  3b. Ist es eine Aufgabe, die sich in einer Quiz-App gar nicht prüfen lässt
-     (zeichnen, konstruieren, entwerfen, programmieren, beweisen, langer
-     Rechenweg mit vielen Zwischenschritten)? -> "learn": "front" = die
-     Aufgabe WORTGETREU mit allen Teilaufgaben und Zahlenwerten (NICHT
-     aufteilen), "back" = deine ausführliche Erklärung/der Lösungsweg
-     Schritt für Schritt. Dafür ist keine Musterlösung im Dokument nötig –
-     du erklärst die Aufgabe selbst.
-  4. Erst wenn NICHTS davon zutrifft und es sich um eine wirklich offene
-     Frage mit einer einzelnen, kurzen erwarteten Antwort handelt (Zahl,
-     Formel, ein Satz): "free_text".
-   - "single_choice": Original ist Multiple-Choice mit genau einer richtigen
-     Antwort. Antwortformat: {"type": "single_choice", "front": "...",
-     "options": [{"text": "...", "isCorrect": true}, ...]}
-   - "multiple_choice": mehrere Antworten gleichzeitig richtig, analog.
-   - "fill_blank": Lückentext im Original. Markiere jede Lücke im
-     "front"-Text mit genau drei Unterstrichen "___", "blanks" enthält die
-     Lösungen in derselben Reihenfolge (mehrere akzeptierte Begriffe einer
-     Lücke durch ";" getrennt in denselben Eintrag).
-   - "free_text": offene Rechen-/Kurzantwortaufgabe mit einer einzelnen,
-     kompakten Musterlösung. "correctText" enthält die Lösung.
-   - "flashcard": passt keiner der obigen Typen, offenes front/back. "back"
-     ist Pflicht und darf nie leer sein.
-   - "html": bei Zuordnungs-/Matrix-/Tabellenstruktur ODER einer offenen
-     Erläuterungs-/Diskussionsfrage mit MEHREREN im Dokument erkennbaren
-     Kernpunkten/Stichpunkten als Musterlösung, bei der ein reiner
-     Text-Exakt-Vergleich zu streng wäre (dann prüft dein eigenes JavaScript
-     großzügiger, z.B. ob mehrere der erwarteten Kernpunkte sinngemäß
-     vorkommen). "htmlContent" enthält NUR den `<body>`-Inhalt (kein
-     `<html>`/`<head>`/`<style>`-Rahmen) als eigenständige, interaktive
-     Seite: reines Inline-HTML/CSS/JS, kein externes Skript/Bild/keine
-     Netzwerk-Anfrage (wird ohnehin blockiert). Die Seite MUSS ihre eigene
-     Prüf-Logik enthalten (du kennst die Musterlösung bereits jetzt) und
-     beim Auswerten GENAU diesen Aufruf machen:
-     `window.FlutterAnswer.postMessage(JSON.stringify({correct: true}))`
-     (bzw. `correct: false`) – ohne diesen Aufruf bekommt die App nie ein
-     Ergebnis. Gib zusätzlich "front"/"back" als kurze Text-Zusammenfassung
-     an (Fallback-Anzeige ohne WebView-Unterstützung).
-
-Enthält das Dokument KEINE erkennbare Musterlösung zu einer Frage, überspringe
-diese Frage (keine Karte ohne bekannte Antwort erzeugen) – außer bei "learn":
-dort erklärst du die Aufgabe selbst.
-
-Prüfe VOR der Wahl, ob du den gewählten Typ wirklich vollständig ausfüllen
-kannst (single_choice/multiple_choice: mindestens 2 Optionen, genau die
-richtige(n) markiert; html: der exakte postMessage-Aufruf ist enthalten;
-free_text: "correctText" ist nicht leer) – bist du dir nicht sicher, wähle
-lieber den nächstpassenden Typ, den du sicher vollständig befüllen kannst,
-statt einen Typ zu behaupten, den du nur halb ausfüllst: eine unvollständige
-Angabe wird sonst automatisch auf eine einfache Karteikarte zurückgestuft.
-
-Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
-\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
-(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{"flashcards": [
-  {"type": "single_choice", "front": "Originalfrage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
-]}
-$_calcFlagRule
-Übernimm ALLE im Dokument vorhandenen Fragen mit erkennbarer Lösung, auch
-wenn es viele sind. Antworte in der Sprache der Vorlage.
-''';
-
   /// Statt neue Fragen zu ERFINDEN (siehe [generateConceptsAndFlashcards]):
   /// übernimmt die bereits im Dokument vorhandenen Fragen samt Musterlösung
   /// möglichst originalgetreu ("importieren" statt "generieren", siehe
@@ -1264,124 +829,6 @@ wenn es viele sind. Antworte in der Sprache der Vorlage.
     }
     return flashcards;
   }
-
-  static const _scanPdfQuestionsSystemPrompt = '''
-Du bekommst einige Seiten eines Dokuments (Folien, Übungsblatt, Altklausur,
-Skript …). Deine Aufgabe: Finde die Fragen und Aufgaben, die auf diesen
-Seiten TATSÄCHLICH stehen, und übernimm sie 1:1 als Quizfragen – in derselben
-Aufgabenform wie im Original. Erfinde KEINE neuen Fragen.
-
-WELCHE FRAGEN: {{SCOPE}}
-{{ROLLING}}
-Übernimm jede Frage möglichst im Originalwortlaut; kürze nur, was für eine
-Quizfrage nötig ist. Eine Aufgabe mit Teilaufgaben (a, b, c …) wird zu
-mehreren Fragen – jede so formuliert, dass sie ohne die anderen verständlich
-ist (nötigen Kontext aus dem Aufgabentext übernehmen). Dieselbe Frage nur
-einmal, auch wenn sie mehrfach vorkommt.
-
-ABBILDUNGEN: {{FIGURES}}
-
-LÖSUNG: Steht die Lösung im Dokument (Musterlösung, Lösungsteil,
-angekreuzte/markierte Antwort, Auflösung auf einer der Seiten), übernimm sie
-und setze "solutionFromDocument": true. {{MISSING}}
-
-TYP – übernimm die Aufgabenform des Originals. "free_text" ist NICHT der
-Auffangtyp für alles; prüfe der Reihe nach:
-1. Antwortoptionen zum Ankreuzen vorgegeben (auch "richtig/falsch" zu EINER
-   Aussage) -> "single_choice" (genau eine richtig) bzw. "multiple_choice":
-   "options": [{"text": "...", "isCorrect": true}, …]
-2. Lückentext -> "fill_blank": jede Lücke im "front" als "___", "blanks" = die
-   Lösungen in derselben Reihenfolge (mehrere richtige Varianten einer Lücke
-   mit ";" in einem Eintrag).
-3. Zuordnen (Begriff <-> Begriff, Linien/Pfeile verbinden) -> "drag_drop":
-   "dragPairs": [{"source": "...", "target": "..."}]. Einordnen in Kategorien
-   (mehrere Begriffe je Kategorie) -> "drag_category" mit denselben
-   "dragPairs" (target = Kategorie).
-4. {{LABEL_RULE}}
-5. Tabelle ausfüllen (Zellen mit kurzen Einträgen) -> "table": "table" =
-   Liste der Zeilen, jede Zeile eine Liste der Zellen; vorgegebene Zellen
-   (Kopfzeile, Zeilentitel, schon ausgefüllte Werte) als Text, auszufüllende
-   als {"answer": "Lösung; Variante"} – genau wie im Original, gleiche Zeilen
-   und Spalten. Beispiel: {"type": "table", "front": "Vervollständige die
-   Tabelle", "table": [["Begriff", "Merkmal"], ["Stückliste", {"answer":
-   "..."}]]}
-6. Wahr/Falsch-Matrix mit mehreren Aussagen, Reihenfolge ordnen, mehrere
-   Eingabefelder (z.B. Rechenweg mit Zwischenergebnissen) oder eine Aufgabe,
-   deren Lösung aus mehreren getrennten Kernpunkten besteht -> "html" (siehe
-   HTML) – NICHT zu free_text vereinfachen.
-7. Kurze Antwort (Begriff, Zahl, Formel, ein Satz) -> "free_text":
-   "correctText": "..." (mehrere akzeptierte Varianten mit ";").
-8. Aufgabe, die sich in einer Quiz-App gar nicht prüfen lässt (zeichnen,
-   konstruieren, entwerfen, z.B. Diagramm oder Netzplan erstellen,
-   programmieren, beweisen, langer Rechenweg mit vielen Zwischenschritten)
-   -> "learn": "front" = die Aufgabe WORTGETREU wie auf dem Blatt mit allen
-   Teilaufgaben und Zahlenwerten (NICHT in Teilaufgaben aufteilen, 1:1),
-   "back" = deine ausführliche Erklärung bzw. der Lösungsweg Schritt für
-   Schritt (steht eine Musterlösung im Dokument, erkläre sie verständlich
-   und setze "solutionFromDocument": true; sonst erklärst du selbst und
-   setzt false). Gib "imageBox" um die KOMPLETTE Aufgabe an, wie sie auf der
-   Seite steht (samt Abbildungen). {"type": "learn", "front": "...",
-   "back": "...", "imageBox": [0.05, 0.2, 0.95, 0.6]}
-9. Längere Erklär- oder Diskussionsaufgabe ohne kurze Antwort, die man
-   nicht als Aufgabe "durcharbeiten" muss -> "flashcard": "back":
-   Musterlösung, knapp und vollständig.
-Prüfe VOR der Wahl, ob du den Typ wirklich vollständig ausfüllen kannst
-(single_choice/multiple_choice: mindestens 2 Optionen, genau die richtige(n)
-markiert; html: der exakte postMessage-Aufruf ist enthalten; free_text:
-"correctText" ist nicht leer; table: mindestens eine Zelle mit "answer") – bist du dir nicht sicher, wähle lieber den
-nächstpassenden Typ, den du sicher vollständig befüllen kannst, statt einen
-Typ zu behaupten, den du nur halb ausfüllst: eine unvollständige Angabe wird
-sonst automatisch auf eine einfache Karteikarte zurückgestuft.
-
-HTML: "htmlContent" enthält NUR den <body>-Inhalt (kein
-<html>/<head>/<style>-Rahmen) als eigenständige, interaktive Seite: reines
-Inline-HTML/CSS/JS, kein externes Skript/Bild, keine Netzwerk-Anfrage. Die
-Seite enthält ihre eigene Prüf-Logik (die Lösung kennst du) und ruft beim
-Auswerten GENAU das auf:
-window.FlutterAnswer.postMessage(JSON.stringify({correct: true}))
-(bzw. correct: false) – ohne diesen Aufruf bekommt die App kein Ergebnis.
-Offene Teile großzügig prüfen (Kernbegriffe, Groß-/Kleinschreibung egal).
-Gib zusätzlich "front"/"back" als kurze Text-Fassung an.
-
-Jede Frage bekommt "page" = ihre Seitenzahl im GESAMTEN Dokument (die
-Zuordnung steht in der Nachricht).
-
-Mathematische Formeln schreibst du in LaTeX: \$…\$ im Satz, \$\$…\$\$ für
-abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash (z.B.
-"\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences und ohne
-Text davor oder danach:
-{"pages": [{"page": 3, "tasks": 2}], "questions": [{"page": 3, "type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}], "solutionFromDocument": true}{{EXAMPLE}}]{{REVISIONS_FORMAT}}}
-"pages" nennt JEDE gezeigte Seite mit der Zahl der Aufgaben, die du dort
-gefunden hast (auch 0) – so lässt sich prüfen, dass du alle Seiten gelesen
-hast. Stehen auf den Seiten keine passenden Fragen: "questions": [].
-$_calcFlagRule
-Antworte in der Sprache des Dokuments.
-''';
-
-  /// Zusatz für Abschnitte, die mit der letzten Seite des vorigen beginnen
-  /// (fortlaufender Import, siehe [scanPdfWindow]).
-  static const _scanRollingRules = '''
-
-FORTLAUFENDER IMPORT: Das Dokument wird in überlappenden Abschnitten gelesen.
-Die ERSTE gezeigte Seite (Dokument-Seite {{OVERLAP}}) ist die letzte des
-vorigen Abschnitts und dort schon bearbeitet – sie ist nur dabei, damit du sie
-zusammen mit den neuen Seiten liest. Alle weiteren Seiten sind NEU.
-- Fragen auf den NEUEN Seiten übernimmst du wie oben unter "questions".
-- Aus Seite {{OVERLAP}} wurden schon Fragen übernommen (Liste in der
-  Nachricht). Übernimm sie NICHT noch einmal.
-- Prüfe für jede dieser Fragen, ob auf den neuen Seiten etwas steht, das zu ihr
-  gehört und beim Übernehmen gefehlt hat: die Aufgabe geht weiter (weitere
-  Teilaufgaben, Fortsetzung von Aufgabentext oder Tabelle), die Lösung bzw.
-  Musterlösung steht erst dort, eine zugehörige Abbildung, fehlende Angaben.
-  Dann liefere sie VOLLSTÄNDIG überarbeitet unter "revisions":
-  {"n": <Nummer aus der Liste>, "question": {komplette Frage im selben Format
-  wie oben}}. Fehlte nichts, lass sie aus "revisions" heraus – die Frage bleibt
-  dann unverändert. Ändere nichts ohne Grund.
-- Beginnt auf Seite {{OVERLAP}} eine Aufgabe, die dort noch NICHT übernommen
-  wurde (weil sie erst auf den neuen Seiten vollständig wird), übernimm sie
-  jetzt als neue Frage mit "page": {{OVERLAP}}.
-''';
 
   static const _scanFiguresFromImages =
       'Du siehst jede Seite als Bild. Am Rand steht eine Skala von 0 bis 1 '
@@ -1665,41 +1112,6 @@ zusammen mit den neuen Seiten liest. Alle weiteren Seiten sind NEU.
     ];
   }
 
-  static const _verifyImportSystemPrompt = """
-Du bist ein unabhängiger Prüfer für einen Fragen-Import. Eine andere KI hat aus
-den unten gezeigten Seiten eines Dokuments (Übungsblatt, Altklausur, Folien …)
-Fragen und Aufgaben als Quizfragen übernommen. Du bekommst den Text der Seiten
-und die Liste der übernommenen Fragen (nummeriert, mit Seite). Prüfe UNABHÄNGIG,
-ob der Import vollständig und ehrlich ist – vertraue der Liste nicht.
-
-Vorgehen:
-1. Lies die Seiten und zähle selbst, wie viele Fragen und Aufgaben darauf
-   stehen ({{SCOPE}}). Teilaufgaben (a, b, c …) zählen einzeln, ein reiner
-   Aufgabenkopf ohne eigene Frage nicht. Eine Aufgabe zählt zu der Seite, auf
-   der sie beginnt.
-2. Gleiche mit der Liste ab:
-   - "missing": eine Aufgabe steht im Dokument, aber keine Frage der Liste
-     deckt sie ab.
-   - "surplus": ein Eintrag der Liste passt zu KEINER Aufgabe im Dokument.
-     "kind": "not_in_document" (erfunden oder aus anderem Zusammenhang),
-     "duplicate" (dieselbe Aufgabe steht zweimal in der Liste) oder
-     "altered" (die Aufgabe gibt es, aber die Frage ändert sie inhaltlich –
-     andere Zahlen, andere Aufgabenstellung).
-   Kürzungen und andere Formulierungen bei gleichem Inhalt sind in Ordnung
-   und KEINE Abweichung.
-3. Begründe JEDE Abweichung konkret: was steht im Dokument (kurz zitieren),
-   was fehlt oder ist zu viel. Bist du unsicher (z.B. Text unleserlich oder
-   unvollständig), melde es NICHT als Abweichung, sondern schreibe es in
-   "note". Erfinde keine Abweichungen: stimmt alles, sind beide Listen leer.
-
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
-{"documentCount": 7,
- "missing": [{"page": 3, "task": "Aufgabe 2b: Berechnen Sie …", "reason": "Steht auf Seite 3, keine Frage der Liste behandelt sie."}],
- "surplus": [{"n": 4, "kind": "not_in_document", "reason": "Im Dokument gibt es keine Aufgabe zu …"}],
- "note": ""}
-Antworte in der Sprache der Vorlage.
-""";
-
   static const _verifyScopeEvery = 'wirklich jede Frage und Aufgabe, auch Teilaufgaben und kleine Zwischenfragen';
   static const _verifyScopeContent =
       'nur inhaltliche Fragen, die fachliches Wissen prüfen – Organisatorisches, rhetorische Fragen und '
@@ -1776,40 +1188,6 @@ Antworte in der Sprache der Vorlage.
     );
   }
 
-  static const _expandStagesSystemPrompt = """
-Du erweiterst bereits übernommene Quizfragen um Schwierigkeitsstufen. Du
-bekommst nummerierte ORIGINAL-Fragen (Typ, Frage, Lösung), die 1:1 aus einem
-Dokument stammen und unverändert bleiben. Beim Lernen kommt zuerst die
-leichte Stufe, erst wenn sie sitzt die mittlere, dann die schwere.
-
-Je Original-Frage lieferst du:
-1. "level": die Stufe des Originals nach seinem tatsächlichen Anspruch –
-   "leicht" = wiedererkennen (Auswahl), "mittel" = ergänzen oder zuordnen
-   (Lücke, Zuordnen), "schwer" = selbst formulieren, herleiten oder anwenden
-   (Freitext, Rechen-/Übungsaufgabe, Tabelle).
-2. "group": kurzer Ordnername (2–6 Wörter) für das geprüfte Wissen.
-3. "variants": für JEDE gewünschte Stufe ({{LEVELS}}), die NICHT die Stufe des
-   Originals ist, EINE zusätzliche Frage zu DEMSELBEN Wissen in dieser Stufe –
-   wer die schwere sicher kann, kann auch die leichte. Nutze nur, was in
-   Frage und Lösung des Originals steht oder unmittelbar daraus folgt; erfinde
-   keine neuen Fakten. Lässt sich eine Stufe für diese Frage nicht sinnvoll
-   umsetzen, lass diese Variante weg (eine leere Liste ist erlaubt).
-
-Typ der Varianten:
-{{TYPE_RULES}}
-
-$_noGiveawayRule
-$_calcFlagRule
-Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
-\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
-(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
-{"cards": [{"n": 1, "level": "mittel", "group": "Ohmsches Gesetz",
-  "variants": [{"level": "leicht", "type": "single_choice", "front": "…", "options": [{"text": "…", "isCorrect": true}, {"text": "…", "isCorrect": false}, {"text": "…", "isCorrect": false}]},
-               {"level": "schwer", "type": "free_text", "front": "…", "correctText": "…"}]}]}
-Jede Nummer aus der Liste kommt genau einmal vor. Antworte in der Sprache der Vorlage.
-""";
-
   /// Stufen (Namen wie in [QuestionParsing.parseStageLevel]) in der
   /// Reihenfolge leicht → schwer.
   static const stageLevelNames = ['leicht', 'mittel', 'schwer'];
@@ -1864,34 +1242,6 @@ Jede Nummer aus der Liste kommt genau einmal vor. Antworte in der Sprache der Vo
     return result;
   }
 
-  static const _pageConceptSystemPrompt = '''
-Du bist ein Lernassistent für Studierende im Lernmodus: der Nutzer betrachtet
-gerade EINE konkrete Seite eines Foliensatzes und möchte daraus ein
-eigenständiges Lernkonzept erstellen (Titel + ausführliche Erklärung).
-
-Grundlage ist in erster Linie der Text dieser EINEN Seite. Text der
-vorherigen/nachfolgenden Seite wird dir NUR als zusätzlicher Kontext
-mitgegeben (falls verfügbar) – nutze ihn AUSSCHLIESSLICH, wenn das Konzept
-auf dieser Seite ohne ihn unvollständig oder unverständlich wäre (z.B. eine
-Definition beginnt auf der vorherigen Seite, eine Formel wird erst auf der
-nächsten hergeleitet). Ist der Seiteninhalt für sich verständlich, ignoriere
-den Nachbar-Kontext komplett – erweitere das Konzept NICHT unnötig auf
-Nachbarthemen.
-
-Bekommst du zusätzlich ein BEREITS erstelltes Konzept samt Überarbeitungs-
-Anweisung, überarbeite GENAU dieses Konzept gemäß der Anweisung (z.B.
-umformulieren, kürzen, mehr Fokus auf einen Aspekt) statt ein neues zu
-erfinden.
-
-Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
-\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
-(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{"title": "Kurzer, prägnanter Konzepttitel", "explanation": "Ausführliche, klar strukturierte Erklärung"}
-Antworte in der Sprache der Vorlage.
-''';
-
   static const int _pageConceptCap = 20000;
   static const int _pageConceptNeighborCap = 8000;
 
@@ -1937,70 +1287,6 @@ Antworte in der Sprache der Vorlage.
     final raw = await _complete(_pageConceptSystemPrompt, buffer.toString());
     return await _json(raw);
   }
-
-  static const _pageQuestionGenerationSystemPrompt = '''
-Du bist ein Lernassistent für Studierende im Lernmodus: der Nutzer betrachtet
-gerade EINE konkrete Seite eines Foliensatzes (als Bild beigefügt, Text der
-Seite als zusätzlicher Kontext) und möchte daraus gezielt Prüfungsfragen
-erstellen. Stütze dich in erster Linie auf das Bild (Diagramme, Formeln,
-Layout, was reiner Text nicht wiedergibt), der Text hilft bei der Einordnung.
-
-FOKUS: Hat der Nutzer einen Bereich der Seite markiert (als zweites Bild
-beigefügt) und/oder einen Fokus als Text vorgegeben, MUSS sich JEDE Frage
-darauf beziehen – erfinde keinen anderen Inhalt; der Rest der Seite dient
-nur als Kontext. Ohne Vorgabe wählst du selbst die wichtigsten, klar
-abfragbaren Fakten der Seite.
-
-ANZAHL: {{COUNT_RULE}} Mehrere Fragen prüfen
-UNTERSCHIEDLICHE Fakten bzw. Aspekte (innerhalb des Fokus, falls
-vorgegeben) – nie zweimal denselben Fakt.
-
-STUFEN: Jede Frage gibt es in den folgenden Schwierigkeitsstufen, in genau
-dieser Reihenfolge. Alle Stufen EINER Frage prüfen DENSELBEN Fakt – nur
-Format und Schwierigkeit unterscheiden sich:
-{{TIERS}}
-Ist für eine Stufe kein Typ vorgegeben, wählst du das Format, das zu Inhalt
-und Stufe am besten passt: leichte Stufen eher Wiedererkennen
-(single_choice, multiple_choice), mittlere eher gestütztes Erinnern
-(fill_blank), schwere eher freies Erinnern (free_text, flashcard).
-Zuordnen ("drag_drop"/"drag_category") nur, wenn der Fakt selbst aus
-mehreren zusammengehörigen Teilen besteht (z.B. mehrere Aufgaben und ihre
-Abteilungen) – ein einzelner Fakt ergibt keine sinnvolle Zuordnung. Jede
-Stufe ist mindestens so anspruchsvoll wie die vorherige; eine frei gewählte
-Stufe hat möglichst einen anderen Typ als die übrigen Stufen derselben
-Frage.
-
-$_noGiveawayRule
-$_calcFlagRule
-Formatvorgaben der Fragetypen:
-{{TYPE_RULES}}
-
-Bekommst du zusätzlich bereits erstellte Fragen samt Überarbeitungs-
-Anweisung, überarbeite GENAU diese Fragen gemäß der Anweisung (z.B. anderer
-Fokus, einfacher formuliert, mehr Kontext) statt neue zu erfinden – Anzahl,
-Stufen und vorgegebene Typen bleiben dabei gleich.
-
-Entscheide zusätzlich pro Karte, ob das Bild an die Karte angehängt werden
-soll ("needsImage": true/false) – angehängt wird der markierte Bereich,
-falls vorhanden, sonst die ganze Seite. Setze "needsImage" NUR auf true,
-wenn die Frage OHNE das Bild nicht sinnvoll verständlich oder beantwortbar
-ist – z.B. weil sie sich auf ein Diagramm, eine Formel, eine Skizze, ein
-Foto oder ein Layout bezieht, das sich nicht vollständig in Worten
-wiedergeben lässt. Bei rein textbasierten Fakten setze "needsImage": false –
-das ist der Regelfall. Dass die Seite ein Diagramm enthält, reicht allein
-nicht – entscheidend ist, ob DIESE Frage es braucht; im Zweifel lieber
-anhängen (der Nutzer kann ein unnötiges Bild wieder entfernen).
-
-Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
-\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
-(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{"questions": [{"flashcards": [{"type": "...", "front": "...", "needsImage": false, "...": "je nach Typ weitere Felder, siehe oben"}]}]}
-"questions" hat {{COUNT_ENTRIES}} Einträge; "flashcards" enthält je Frage genau
-eine Karte pro Stufe, in der Reihenfolge der Stufen. Antworte in der
-Sprache der Vorlage.
-''';
 
   static const int _pageQuestionGenerationTextCap = 20000;
 
@@ -2171,48 +1457,6 @@ Sprache der Vorlage.
     return flat.isEmpty ? const [] : [flat];
   }
 
-  static const _crosscheckSystemPrompt = '''
-Du bist ein fachlicher Prüfer für Lernmaterial. Du bekommst
-Vorlesungsfolien, Übungsaufgaben und bereits von einer anderen KI erstellte
-Lernkonzepte und Karteikarten (als JSON mit den Arrays "concepts" und
-"flashcards" – Indizes darin beginnen bei 0, in der gegebenen Reihenfolge).
-Prüfe die Konzepte und Karteikarten auf fachliche Fehler, Ungenauigkeiten
-oder Widersprüche zum Ausgangsmaterial.
-
-Findest du ein Problem, liefere nicht nur eine Beschreibung, sondern auch
-eine KONKRET KORRIGIERTE Fassung des betroffenen Eintrags in "fix" – exakt
-dieselbe Feldstruktur wie das Original (bei Konzepten "title"+"explanation";
-bei Karteikarten "type" plus alle für diesen Typ nötigen Felder, siehe die
-Typen im Original: front/back, front/options, front/correctText,
-front/blanks, front/dragPairs). Ändere dabei NUR, was fachlich falsch ist –
-lass alles andere unverändert.
-
-Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
-\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
-(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{
-  "ok": true,
-  "issues": [
-    {
-      "targetType": "concept",
-      "targetIndex": 0,
-      "problem": "Was ist falsch/ungenau",
-      "fix": {"title": "korrigierter Titel", "explanation": "korrigierte Erklärung"}
-    },
-    {
-      "targetType": "flashcard",
-      "targetIndex": 2,
-      "problem": "Was ist falsch/ungenau",
-      "fix": {"type": "single_choice", "front": "...", "options": [{"text": "...", "isCorrect": true}]}
-    }
-  ]
-}
-"ok" ist true, wenn keine Probleme gefunden wurden (dann "issues": []).
-Antworte in der Sprache der Vorlage.
-''';
-
   /// Crosscheck-Pass: ein bewusst ZWEITES Modell prüft bereits generierte
   /// Konzepte/Karteikarten auf fachliche Fehler, bevor sie gespeichert
   /// werden. Nutzt das Quellmaterial nur gekürzt als Kontext – hier geht es
@@ -2379,27 +1623,6 @@ Antworte in der Sprache der Vorlage.
     return await _json(raw);
   }
 
-  static const _checkFreeTextSystemPrompt = '''
-Du bewertest, ob die Antwort eines Lernenden auf eine Freitext-Frage
-INHALTLICH mit der hinterlegten Musterlösung übereinstimmt. Die Formulierung
-darf komplett anders sein als die Musterlösung – andere Wortwahl, andere
-Satzstruktur, mehr oder weniger ausführlich: das alles ist in Ordnung,
-solange der fachliche Kern stimmt. Ein Wort-für-Wort-Vergleich ist NICHT
-das Ziel (den gibt es bereits vorgeschaltet, du bist die Zweitmeinung für
-Fälle, in denen dieser Vergleich fehlgeschlagen ist, obwohl die Antwort
-inhaltlich richtig sein könnte).
-Enthält die Musterlösung mehrere durch ";" getrennte akzeptierte
-Formulierungen, reicht Übereinstimmung mit EINER davon.
-Rechtschreib- und Tippfehler spielen keine Rolle, solange erkennbar ist, was
-gemeint ist – geprüft wird Wissen, nicht Rechtschreibung.
-Sei fair, aber nicht beliebig großzügig: fehlt der für die Musterlösung
-zentrale fachliche Punkt komplett, ist die Antwort erkennbar nur geraten
-oder widerspricht sie der Musterlösung inhaltlich, ist sie falsch.
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text:
-{"correct": true}
-''';
-
   /// Zweitmeinung für Freitext-Antworten: der lokale Vergleich
   /// (AnswerChecker.checkFreeText) ist ein reiner Text-/Tippfehler-Abgleich
   /// und damit für echte, frei formulierte Antworten fast unmöglich zu
@@ -2421,43 +1644,6 @@ Markdown-Codefences, ohne zusätzlichen Text:
     return parsed['correct'] == true;
   }
 
-  static const _checkFillBlankSystemPrompt = '''
-Du bist ein fairer Tutor und bewertest die Eingaben eines Lernenden in einem
-Lückentext. Ein exakter Textvergleich (mit kleiner Tippfehler-Toleranz) hat
-mindestens eine Lücke abgelehnt – du entscheidest jetzt, ob der Lernende das
-Richtige WUSSTE. Geprüft wird Wissen, nicht Rechtschreibung und nicht der
-genaue Wortlaut der Musterlösung.
-Du bekommst den Text (Lücken als "___"), je Lücke die Musterlösung (mehrere
-akzeptierte Varianten durch ";" getrennt) und die Eingabe. Betrachte immer
-den ganzen Satz mit allen Lücken zusammen.
-
-Eine Lücke ist RICHTIG, wenn eines davon zutrifft:
-1. Rechtschreib- oder Tippfehler: das gemeinte Wort ist erkennbar, auch bei
-   mehreren vertauschten, fehlenden oder falschen Buchstaben (z.B. "debinrten"
-   für "definierten", "Prodktion" für "Produktion").
-2. Andere Reihenfolge: gleichrangige, austauschbare Lücken (Aufzählungen,
-   "___ und ___", "sowohl ___ als auch ___") wurden vertauscht ausgefüllt –
-   jede Lösung der Gruppe kommt aber vor (z.B. "Produktion" und "Entwicklung"
-   statt "Entwicklung" und "Produktion"): dann sind ALLE Lücken der Gruppe
-   richtig.
-3. Gleiche Bedeutung: Synonym, gleichwertiger Fachbegriff, andere Wortform,
-   Singular/Plural, Kurz- oder Langform oder ein Wort, das im Satz dasselbe
-   aussagt (z.B. "Werkstätten" für "Werkstattfertigung").
-4. Fachlich ebenso richtig: der Satz stimmt mit der Eingabe fachlich, auch
-   wenn die Musterlösung ein anderes Wort nennt (z.B. "viele unterschiedliche
-   Produkte" statt "viele unterschiedliche Varianten").
-
-Eine Lücke ist FALSCH, wenn die Eingabe etwas anderes meint, den Satz
-fachlich falsch macht, leer ist oder erkennbar geraten ist. Zahlen, Formeln
-und Einheiten müssen im Wert stimmen (3,5 = 3.5 = 7/2, aber 35 ist nicht 3,5).
-Im Zweifel, ob der Lernende das Richtige meint: zu seinen Gunsten.
-
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences und ohne
-Text davor oder danach – genau ein Eintrag je Lücke, in derselben
-Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
-{"results": [{"correct": true, "note": "Tippfehler"}, {"correct": false, "note": "anderer Begriff"}]}
-''';
-
   /// Zweitmeinung für Lückentexte, analog zu [checkFreeTextAnswer]: der
   /// lokale Vergleich (AnswerChecker.fillBlankHits) kennt nur die
   /// hinterlegten Varianten, kleine Tippfehler und die feste Reihenfolge –
@@ -2478,33 +1664,6 @@ Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
     final raw = await _complete(_checkFillBlankSystemPrompt, buffer.toString(), temperature: 0);
     return parseBlankVerdicts(await _json(raw), solutions.length);
   }
-
-  static const _checkDiagramLabelSystemPrompt = '''
-Du prüfst, wie ein Lernender die Stellen in einer Abbildung beschriftet hat
-(Lernfrage "Bild beschriften"). Je Stelle bekommst du, welche Beschriftung
-dort erwartet wird, und was der Lernende eingetippt hat. Geprüft wird Wissen,
-NICHT Rechtschreibung.
-
-Eine Stelle ist RICHTIG, wenn die Eingabe erkennbar die erwartete
-Beschriftung meint:
-1. Rechtschreib- oder Tippfehler, auch mehrere ("Mitokondrium",
-   "Zellmebran").
-2. Synonym, gleichwertiger Fachbegriff, Abkürzung oder Langform,
-   Singular/Plural, andere Wortform, deutsch/englisch ("ER" für
-   "endoplasmatisches Retikulum", "Nucleus" für "Zellkern").
-3. Austauschbare Stellen: stehen mehrere erlaubte Beschriftungen zur Auswahl
-   ("eine von …"), genügt jede davon – aber jede nur EINMAL innerhalb der
-   angegebenen Gruppe.
-
-FALSCH ist eine Stelle, wenn die Eingabe etwas anderes meint, leer ist oder
-erkennbar geraten ist. Im Zweifel, ob der Lernende das Richtige meint: zu
-seinen Gunsten.
-
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences und ohne
-Text davor oder danach – genau ein Eintrag je Stelle, in derselben
-Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
-{"results": [{"correct": true, "note": "Tippfehler"}, {"correct": false, "note": "andere Struktur"}]}
-''';
 
   /// Zweitmeinung für "Bild beschriften" mit eingetippten Beschriftungen –
   /// nur für die Stellen, die der lokale Vergleich (inkl. kleiner
@@ -2556,28 +1715,6 @@ Reihenfolge; "note" ist eine sehr kurze Begründung (höchstens 6 Wörter):
     ];
   }
 
-  static const _explainSystemPrompt = '''
-Du bist ein geduldiger Tutor für Studierende. Du bekommst eine Lernfrage,
-die richtige Lösung und (falls vorhanden) die Antwort des Lernenden.
-Erkläre in 3 bis 6 kurzen Sätzen, WARUM die Lösung richtig ist – das
-zugrunde liegende Prinzip, nicht nur die Lösung wiederholen. Wenn der
-Lernende falsch lag: benenne freundlich den konkreten Denkfehler bzw. was
-seine Antwort von der Lösung unterscheidet. Schließe mit einer kurzen
-Merkhilfe (Eselsbrücke, Beispiel oder Faustregel), wenn sich eine anbietet.
-Stütze dich auf die gegebene Lösung und widersprich ihr nicht.
-Antworte in normalem Fließtext (kein JSON, keine Codefences), in der
-Sprache der Frage. Formeln in LaTeX zwischen \$…\$.
-''';
-
-  static const _explainSimplerSystemPrompt = '''
-Du bist ein geduldiger Tutor. Der Lernende hat die vorherige Erklärung zu
-einer Lernfrage nicht verstanden. Erkläre dieselbe Sache noch einmal VIEL
-einfacher: Alltagssprache, keine Fachbegriffe ohne Erklärung, ein
-anschauliches Beispiel oder eine Analogie, höchstens 5 kurze Sätze.
-Antworte in normalem Fließtext (kein JSON, keine Codefences), in der
-Sprache der Frage. Formeln in LaTeX zwischen \$…\$.
-''';
-
   /// Erklärt nach dem Beantworten, warum die Lösung stimmt (und bei einer
   /// falschen Antwort, wo der Denkfehler lag). Mit [previousExplanation]
   /// entsteht stattdessen eine deutlich einfachere Neufassung ("Einfacher
@@ -2611,15 +1748,6 @@ Sprache der Frage. Formeln in LaTeX zwischen \$…\$.
     return raw.trim();
   }
 
-  static const _hintSystemPrompt = '''
-Du gibst einem Lernenden einen TIPP zu einer Lernfrage, ohne die Lösung zu
-verraten. Ein Satz, höchstens zwei: ein Denkanstoß (worauf achten, welches
-Prinzip, welche Eselsbrücke), aber NIE die Lösung selbst, kein Teil davon
-wörtlich und bei Auswahlfragen keine Option ausschließen oder nennen.
-Antworte in normalem Fließtext (kein JSON, keine Codefences), in der
-Sprache der Frage.
-''';
-
   /// Denkanstoß VOR dem Antworten, ohne die Lösung zu verraten. Mit
   /// [previousHints] (Fehler-Leiter: die Frage ging trotz Tipp wieder
   /// schief) wird der neue Tipp deutlicher und konkreter als die bisherigen,
@@ -2640,21 +1768,6 @@ Sprache der Frage.
     );
     return raw.trim();
   }
-
-  static const _miniLessonSystemPrompt = '''
-Du schreibst eine KURZE Lerneinheit (höchstens etwa 200 Wörter) genau zum
-Thema einer Lernfrage – für jemanden, der die Frage nicht sicher
-beantworten konnte. Vier kurze Absätze, jeder beginnt mit seinem Stichwort:
-Worum es geht: ein, zwei Sätze Einordnung.
-Kern: das Prinzip Schritt für Schritt, so dass man die Frage danach selbst
-beantworten kann.
-Beispiel: ein kurzes, konkretes Beispiel (nicht die Frage selbst).
-Merke: ein Satz zum Behalten.
-Stütze dich auf den mitgegebenen Auszug aus den Unterlagen bzw. die
-Konzept-Erklärung – Begriffe und Schreibweisen wie dort; widersprich ihnen
-nicht und erfinde nichts dazu. Kein JSON, keine Codefences, kein Markdown.
-Formeln in LaTeX zwischen \$…\$. Antworte in der Sprache der Frage.
-''';
 
   /// Kurze Lerneinheit zu einer Frage (siehe Flashcard.miniLesson): Worum
   /// es geht, Kern, Beispiel, Merksatz – auf Basis der Quellseite
@@ -2684,28 +1797,6 @@ Formeln in LaTeX zwischen \$…\$. Antworte in der Sprache der Frage.
     final raw = await _complete(_miniLessonSystemPrompt, _withOptionalImage(buffer.toString(), image));
     return raw.trim();
   }
-
-  static const _socraticSystemPrompt = '''
-Du bist ein sokratischer Tutor. Der Lernende tut sich mit einer Lernfrage
-schwer (er hat sie wiederholt falsch beantwortet). Führe ihn im Dialog mit
-Gegenfragen selbst zur Lösung, Schritt für Schritt.
-Regeln:
-1. Verrate die Lösung NIE direkt, auch nicht teilweise wörtlich. Bei
-   Auswahlfragen keine Option als richtig oder falsch bezeichnen, bevor der
-   Lernende sie selbst begründet hat.
-2. Pro Nachricht GENAU EINE kurze Frage (insgesamt höchstens drei Sätze),
-   die einen kleinen Schritt weiterführt. Knüpfe an seine letzte Antwort an;
-   bei einem Fehler frag nach seinem Gedankengang oder gib ein Gegenbeispiel.
-3. Steckt er fest ("weiß nicht"), gib einen kleinen Hinweis und stelle eine
-   leichtere Teilfrage.
-4. Beginne beim Denkfehler seiner falschen Antwort, falls sie bekannt ist.
-5. Hat er die Lösung selbst gefunden UND begründet, bestätige das in ein,
-   zwei Sätzen, fasse den Kerngedanken zusammen und schreibe als letzte
-   Zeile genau: [[GELÖST]]
-6. Stütze dich auf den Auszug aus den Unterlagen, falls mitgegeben.
-Kein JSON, keine Codefences, kein Markdown. Formeln in LaTeX zwischen \$…\$.
-Antworte in der Sprache der Frage und duze den Lernenden.
-''';
 
   static final _solvedMarker = RegExp(r'\[\[\s*(GELÖST|GELOEST|SOLVED)\s*\]\]', caseSensitive: false);
 
@@ -2768,29 +1859,6 @@ Antworte in der Sprache der Frage und duze den Lernenden.
           },
         ];
 
-  static const _followUpSystemPrompt = '''
-Du bist ein geduldiger Tutor im Gespräch mit einem Lernenden über EINE
-Lernfrage, die er gerade beantwortet hat. Du bekommst die Frage, die richtige
-Lösung, seine Antwort, ggf. eine schon gegebene Erklärung, ggf. einen Auszug
-aus den Unterlagen und den bisherigen Dialog. Antworte auf seine letzte
-Nachricht.
-Je nach Nachricht:
-1. Rückfrage oder "das habe ich nicht verstanden": beantworte sie direkt und
-   knapp am konkreten Punkt, mit einem kleinen Beispiel, wenn es hilft.
-2. Er erklärt etwas in EIGENEN WORTEN und will wissen, ob das stimmt: beginne
-   mit dem Urteil ("Ja, das stimmt", "Fast", "Nicht ganz"), sag dann, was
-   daran richtig ist, was fehlt oder falsch ist, und gib höchstens einen
-   Hinweis zum Weiterdenken. Sei ehrlich, aber freundlich; lobe nichts, was
-   nicht stimmt, und mach nichts schlechter, als es ist.
-3. Er will "genauer auf einen Punkt eingehen": geh genau auf diesen Punkt
-   tiefer ein (Herleitung, Hintergrund, Beispiel), nicht auf alles.
-Regeln: Widersprich der gegebenen richtigen Lösung nicht. Stützt sich etwas
-nicht auf die gegebenen Angaben und du bist unsicher, sag es. Höchstens 8 Sätze,
-außer er bittet ausdrücklich um mehr. Normaler Fließtext (kein JSON, keine
-Codefences, kein Markdown), Formeln in LaTeX zwischen \$…\$. Antworte in der
-Sprache der Frage und duze den Lernenden.
-''';
-
   /// Ein Schritt im Gespräch über eine Lernfrage nach dem Beantworten: Rückfragen,
   /// "stimmt das, was ich verstanden habe?" und "geh genauer auf … ein". [history]
   /// ist der bisherige Dialog (ohne [message]); [explanation] die schon
@@ -2840,21 +1908,6 @@ Sprache der Frage und duze den Lernenden.
     return raw.trim();
   }
 
-  static const _weaknessSystemPrompt = '''
-Du bist ein Lerncoach. Du bekommst die Lernfragen, mit denen sich ein
-Studierender gerade am schwersten tut (jeweils mit richtiger Lösung und wie
-oft sie falsch war). Finde die GEMEINSAMEN Muster: welche Themen, Begriffe
-oder Denkfehler stecken dahinter (z.B. zwei Begriffe werden verwechselt,
-eine Formel sitzt nicht, Details einer Definition fehlen)? Antworte kurz und
-konkret:
-1. Die 2–4 wichtigsten Muster als Stichpunkte, jeweils mit einem Satz,
-   was genau schiefläuft.
-2. Pro Muster eine konkrete Empfehlung, was man wiederholen oder wie man es
-   sich merken kann.
-Erfinde keine Themen, die in den Fragen nicht vorkommen. Normaler Text mit
-Aufzählungszeichen, kein JSON, keine Codefences, in der Sprache der Fragen.
-''';
-
   /// Fehlertagebuch: erkennt Muster in den aktuell schwächsten Karten
   /// (siehe WeaknessService) und schlägt vor, was gezielt zu wiederholen ist.
   Future<String> analyzeWeaknesses(List<({String question, String answer, String reasons})> items) async {
@@ -2869,21 +1922,6 @@ Aufzählungszeichen, kein JSON, keine Codefences, in der Sprache der Fragen.
     final raw = await _complete(_weaknessSystemPrompt, buffer.toString());
     return raw.trim();
   }
-
-  static const _suggestUnitsSystemPrompt = '''
-Du ordnest die hochgeladenen Materialien eines Studienfachs zu
-Vorlesungseinheiten (je eine Sitzung bzw. ein zusammenhängendes Thema). Du
-bekommst pro Material eine ID, den Dateinamen, die Art und einen kurzen
-Inhaltsauszug. Bilde Einheiten in der Reihenfolge des Semesters (Nummern in
-Dateinamen wie "VL03", "Kapitel 2", Datumsangaben und der inhaltliche
-Aufbau helfen dabei). Übungsblätter und Musterlösungen gehören zur Einheit
-mit dem passenden Stoff. Jede Material-ID höchstens einmal; lass Materialien
-weg, die keiner Einheit sinnvoll zuzuordnen sind. Kurze, sprechende Titel
-(z.B. "VL 3: Differentialgleichungen").
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{"units": [{"title": "...", "materialIds": ["..."]}]}
-''';
 
   /// Schlägt Vorlesungseinheiten für bisher nicht zugeordnete Materialien
   /// vor (Titel + Material-IDs, in Semester-Reihenfolge). Unbekannte IDs
@@ -2916,18 +1954,6 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
     }
     return result;
   }
-
-  static const _transcribeSystemPrompt = '''
-Du schreibst den Text von gescannten bzw. bildbasierten Dokumentseiten ab
-(Texterkennung). Gib den Inhalt jeder Seite vollständig und originalgetreu
-wieder – Überschriften, Aufzählungen, Tabellen als einfache Zeilen, Formeln
-in LaTeX zwischen \$…\$. Beschreibe Abbildungen nur in einem kurzen
-Satz in eckigen Klammern (z.B. [Abbildung: Zellaufbau mit Beschriftung]).
-Nichts zusammenfassen, nichts weglassen, nichts erfinden.
-Beginne JEDE Seite mit einer eigenen Zeile <<<SEITE n>>> (n = 1, 2, … in der
-Reihenfolge der Seiten in der Datei). Kein JSON, keine Codefences, keine
-Einleitung.
-''';
 
   /// Texterkennung: schickt eine (kleine) PDF an das Modell dieses Service
   /// – gedacht für das Vision-Modell – und liefert den Text je Seite.
@@ -2971,24 +1997,6 @@ Einleitung.
     return pages;
   }
 
-  static const _chatSystemPrompt = '''
-Du bist ein Lernassistent für Studierende. Wird dir Material bereitgestellt
-(hochgeladenes Vorlesungs-/Übungsmaterial eines Fachs, chronologisch
-geordnet und jeweils markiert, ob es im Unterricht bereits "Behandelt"
-wurde oder "Noch nicht behandelt" ist), stütze deine Antwort darauf und
-ordne sie bei Bezug auf früheren/späteren Stoff entsprechend chronologisch
-ein (auch noch nicht behandeltes Material, wenn danach gefragt wird – weise
-dann kurz darauf hin, dass es im Unterricht noch nicht dran war). Wird KEIN
-Material bereitgestellt oder passt keines zur Frage, beantworte sie anhand
-deines allgemeinen Wissens – sag in dem Fall kurz, dass sich die Antwort
-nicht auf die hochgeladenen Materialien stützt.
-Beantworte NUR die gestellte Frage – erkläre oder ergänze nichts, wonach
-nicht gefragt wurde. Antworte klar und prägnant in normalem Fließtext
-Mathematische Formeln schreibst du in LaTeX zwischen \$…\$ (im Satz) bzw.
-\$\$…\$\$ (abgesetzt).
-(kein JSON, keine Codefences), in der Sprache der Frage.
-''';
-
   /// Frage-Chat zu den hochgeladenen Materialien eines Fachs (oder, wenn
   /// [materialsContext] weggelassen wird, eine ganz normale Frage ohne
   /// Materialbezug – der Nutzer kann das explizit wählen). Reagiert
@@ -3018,23 +2026,6 @@ Mathematische Formeln schreibst du in LaTeX zwischen \$…\$ (im Satz) bzw.
     buffer.writeln('Meine Frage: $question');
     return _complete(_chatSystemPrompt, buffer.toString());
   }
-
-  static const _pageQuestionSystemPrompt = '''
-Du bist ein Lernassistent für Studierende. Du bekommst ein Bild EINER
-konkreten Seite eines PDF-Foliensatzes/einer Übungsaufgabe (die Seite, auf
-der sich der Nutzer gerade befindet) sowie den vollständigen Text des
-GESAMTEN Dokuments als zusätzlichen Kontext – z.B. um Begriffe, Formeln
-oder Abkürzungen einzuordnen, die auf einer früheren oder späteren Seite
-erklärt werden. Stütze deine Antwort in erster Linie auf das, was auf dem
-Bild zu sehen ist (Layout, Diagramme, Formeln, hervorgehobene Stellen –
-Dinge, die reiner Text nicht wiedergibt), beziehe den Text-Kontext ein,
-wo er die Seite erklärt oder ergänzt. Beantworte AUSSCHLIESSLICH die
-gestellte Frage zu dieser Seite – erkläre oder ergänze nichts, wonach
-nicht gefragt wurde. Antworte klar und prägnant in normalem Fließtext
-Mathematische Formeln schreibst du in LaTeX zwischen \$…\$ (im Satz) bzw.
-\$\$…\$\$ (abgesetzt).
-(kein JSON, keine Codefences), in der Sprache der Frage.
-''';
 
   /// Zeichenobergrenze für den Volltext-Kontext: hier geht es um Einordnung
   /// der aktuellen Seite, nicht um vollständige Neuverarbeitung des ganzen
@@ -3080,16 +2071,6 @@ Mathematische Formeln schreibst du in LaTeX zwischen \$…\$ (im Satz) bzw.
     return _complete(_pageQuestionSystemPrompt, content);
   }
 
-  static const _indexSystemPrompt = '''
-Du erstellst einen SEHR KURZEN Index-Eintrag für ein Stück Lernmaterial
-(Foliensatz oder Übungsaufgabe). Dieser Eintrag hilft später einer anderen
-KI-Anfrage zu entscheiden, ob genau dieses Material für eine gestellte
-Frage relevant ist, ohne den vollen Text lesen zu müssen. Antworte in 2-4
-Sätzen als Fließtext (kein JSON, keine Codefences, keine Einleitung wie
-"Hier ist..."): welche Themen/Stichworte werden behandelt, grobe
-inhaltliche Kurzfassung. Antworte in der Sprache der Vorlage.
-''';
-
   /// Zeichenobergrenze für den Index-Aufruf: hier geht es nur um den groben
   /// Gist eines Materials, nicht um Vollständigkeit – ein Anriss reicht.
   static const int _indexInputCap = 30000;
@@ -3101,31 +2082,6 @@ inhaltliche Kurzfassung. Antworte in der Sprache der Vorlage.
     final raw = await _complete(_indexSystemPrompt, _cap(extractedText, _indexInputCap));
     return raw.trim();
   }
-
-  static const _selectRelevantSystemPrompt = '''
-Du bekommst einen Index ALLER verfügbaren Lernmaterialien eines Fachs: pro
-Material eine ID, ob es im Unterricht bereits behandelt wurde, und eine
-kurze Themen-/Inhaltsangabe. Wähle anhand der gestellten Frage (und des
-Gesprächsverlaufs, falls vorhanden) aus, welche Materialien man sich im
-Detail ansehen müsste, um die Frage gut zu beantworten. Bezieht sich die
-Frage auf den Zusammenhang mit früherem oder späterem Stoff, wähle auch
-diese Materialien aus (auch noch nicht behandelte, wenn explizit danach
-gefragt wird).
-
-Sei dabei GROSSZÜGIG statt zurückhaltend: erkennst du auch nur einen
-plausiblen thematischen Bezug zwischen der Frage und einem Material im
-Index, wähle es lieber MIT aus – der Nutzer lernt für genau dieses Fach,
-ein zusätzliches, am Ende doch nicht gebrauchtes Material kostet nur ein
-wenig Kontext, ein fälschlich übergangenes Material liefert dagegen eine
-Antwort ohne echten Bezug zu seinem eigenen Material, was sich für ihn wie
-ein Fehler anfühlt. Nur wenn die Frage erkennbar NICHTS mit dem Fach zu tun
-hat (z.B. reiner Small Talk) oder keines der Materialien im Index
-irgendeinen erkennbaren Bezug zeigt, liefere eine leere Liste.
-
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text:
-{"relevant_ids": ["id1", "id2"]}
-''';
 
   /// Erster Schritt des zweistufigen Frage-Chats: statt bei jeder Frage
   /// alle Materialien im Volltext mitzuschicken, sieht die KI hier zuerst
@@ -3156,27 +2112,6 @@ Markdown-Codefences, ohne zusätzlichen Text:
     return ids ?? const [];
   }
 
-  static const _highlightSuggestionSystemPrompt = '''
-Du bekommst den Text einer Vorlesungsfolie. Finde die wichtigsten
-Textstellen und ordne jede EINER von drei Kategorien zu:
-- "red": eignet sich gut als Prüfungsfrage (klares, abfragbares Faktenwissen).
-- "green": die dazugehörige Antwort bzw. der Kernfakt, der so eine Frage
-  beantworten würde.
-- "yellow": sonst einfach wichtig/relevant, ohne klare Frage/Antwort-Rolle.
-
-Zitiere jede markierte Stelle EXAKT wie sie im Original vorkommt – keine
-Paraphrase, keine Kürzung mit "...", keine Korrektur von Tipp-/OCR-Fehlern –
-die Stelle muss im Original per Textsuche wiedergefunden werden können.
-Wähle höchstens 12 Stellen, konzentriere dich auf das fachlich Wichtigste.
-
-Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
-Markdown-Codefences, ohne zusätzlichen Text davor/danach:
-{"highlights": [
-  {"text": "exaktes Zitat aus dem Original", "color": "red", "reason": "kurze Begründung"}
-]}
-Antworte in der Sprache der Vorlage.
-''';
-
   static const int _highlightInputCap = 40000;
 
   /// Lässt die KI die wichtigsten Textstellen einer Folie vorschlagen und
@@ -3194,33 +2129,6 @@ Antworte in der Sprache der Vorlage.
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
   }
-
-  static const _assignStagesSystemPrompt = '''
-Du ordnest bereits vorhandene Lernfragen EINES Fachs in Ordner. Ein Ordner
-enthält dieselbe Frage in verschiedenen Schwierigkeitsstufen – beim Lernen
-kommt zuerst die leichte, erst wenn sie sitzt die mittlere, dann die
-schwere. Sobald die schwerere Stufe dran ist, wird die leichtere NICHT mehr
-abgefragt. Du bekommst eine nummerierte Liste (Nummer, Typ, Frage, Lösung).
-
-Regeln:
-- In einen Ordner gehören nur Fragen, die DASSELBE Wissen prüfen (dieselbe
-  Aussage, dieselbe Definition, dieselbe Rechnung) – nur verschieden
-  schwer. Wer die schwere Frage sicher kann, muss damit auch die leichte
-  können. Nur dasselbe Oberthema reicht NICHT: zwei Fragen zu verschiedenen
-  Fakten desselben Kapitels gehören in verschiedene Ordner.
-- Eine Frage ohne solchen Partner bekommt einen eigenen Ordner.
-- Stufe je Frage nach ihrem tatsächlichen Anspruch, nicht nur nach dem Typ:
-  "leicht" = wiedererkennen (z.B. Auswahlfrage), "mittel" = ergänzen oder
-  zuordnen (z.B. Lückentext, Zuordnen), "schwer" = selbst formulieren,
-  herleiten oder anwenden (z.B. Freitext, Rechen-/Übungsaufgabe, Tabelle).
-- Ordnername: kurz (2–6 Wörter), beschreibt das geprüfte Wissen, für alle
-  Fragen desselben Ordners Zeichen für Zeichen gleich.
-- Werden "Bereits vorhandene Ordner" genannt und prüft eine Frage genau
-  deren Wissen, übernimm diesen Namen exakt statt einen neuen zu erfinden.
-- Jede Nummer aus der Liste kommt genau einmal vor.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
-{"cards": [{"n": 1, "level": "leicht", "group": "Kurzer Ordnername"}]}
-''';
 
   /// Nummer (wie in der Anfrage) → Stufe (0–2) und Gruppe aus der Antwort
   /// von [assignStages]. Einträge ohne gültige Nummer fallen weg.
@@ -3258,24 +2166,6 @@ Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
     final raw = await _complete(_assignStagesSystemPrompt, buffer.toString());
     return parseStageAssignments(await _json(raw));
   }
-
-  static const _matchScriptSystemPrompt = '''
-Du ordnest Lernfragen ihrer Erklärung im Skript (Vorlesungsfolien) zu. Du
-bekommst nummerierte Fragen (Typ, Frage, Lösung) und je Frage einige
-Kandidaten-Seiten aus dem Skript – mit Kennung, Datei, Seitenzahl und Text.
-Die Fragen stammen meist aus Übungsblättern; die Erklärung oder Lösung steht
-im Skript.
-
-Wähle je Frage die Kandidaten-Seite, auf der die ERKLÄRUNG bzw. der Stoff
-hinter der Lösung steht (Definition, Formel, Herleitung, Beispiel, Regel).
-Regeln:
-- Nur eine Kennung aus den Kandidaten DIESER Frage, nie eine erfundene.
-- Eine Seite, die das Thema nur streift, nur Überschrift, Gliederung oder
-  Inhaltsverzeichnis ist, zählt nicht.
-- Im Zweifel null: lieber keine Fundstelle als eine falsche.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
-{"matches": [{"n": 1, "page": "c2"}, {"n": 2, "page": null}]}
-''';
 
   /// Ordnet Fragen der Skript-Seite zu, auf der ihre Erklärung steht. Jede
   /// Frage kommt mit ihren Kandidaten-Seiten (Kennung, Beschriftung, Text –
@@ -3371,69 +2261,11 @@ Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
     }
   }
 
-  static const _jsonRepairSystemPrompt = r'''
-Du reparierst JSON. Du bekommst einen Text, der gültiges JSON sein sollte, und die Fehlermeldung beim Einlesen.
-Gib GENAU denselben Inhalt als gültiges JSON zurück: nichts weglassen, nichts umformulieren, nichts hinzufügen – nur die Fehler beheben (z.B. fehlende oder überzählige Kommas/Klammern, nicht maskierte Anführungszeichen oder Zeilenumbrüche in Texten, einfache Backslashes in LaTeX → doppelt, abgeschnittenes Ende sauber schließen, wobei ein unvollständiger letzter Eintrag wegfällt).
-Antworte NUR mit dem JSON – ohne Codefences, ohne Text davor oder danach.''';
-
-
   // -- Laborversuch ---------------------------------------------------------
 
   /// Text je Quelle (Anleitung, Theorie-Skript), den die KI beim Einlesen eines
   /// Versuchs sieht – längere Skripte werden gekürzt.
   static const labSourceCap = 45000;
-
-  static const _labStructureSystemPrompt = '''
-Du bist Assistent für Laborpraktika an einer Hochschule. Du bekommst die
-Unterlagen zu EINEM Versuch (Versuchsanleitung/Durchführung und/oder ein
-Theorie-Skript zum Versuch) und liest daraus die Struktur heraus, damit sich
-die Studierenden vorbereiten, den Versuch durchführen und den Bericht
-schreiben können. Du beantwortest nichts und erfindest nichts: nur, was in den
-Unterlagen steht.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
-davor oder danach, in genau diesem Format:
-{
-  "title": "Name des Versuchs",
-  "prepQuestions": [{"number": "1a", "question": "Wortlaut der Vorbereitungsaufgabe"}],
-  "parts": [
-    {
-      "title": "Name des Versuchsteils bzw. der Aufgabe",
-      "goals": ["Ziel oder Fragestellung dieses Teils"],
-      "steps": ["Ein Arbeitsschritt, kurz und im Imperativ"],
-      "tables": [
-        {"title": "Name der Messwerttabelle",
-         "columns": ["Spaltenüberschrift 1", "Spaltenüberschrift 2"],
-         "rows": [["Vorgabe aus der Anleitung", ""], ["", ""]]}
-      ],
-      "evaluationQuestions": [{"number": "2.1", "question": "Frage oder Aufgabe zur Auswertung"}]
-    }
-  ],
-  "hints": ["Organisatorisches: was mitzubringen ist, Sicherheit, Abgabe"]
-}
-Regeln:
-1. "prepQuestions": ALLE Aufgaben/Fragen, die vor dem Versuch schriftlich zu
-   bearbeiten oder vorzubereiten sind (Vorbereitungsaufgaben, Fragen zur
-   Vorbereitung, "Machen Sie sich vertraut mit …", auch wenn sie im
-   Theorie-Skript stehen). Wortlaut und Nummerierung ("1a", "3", "2.4.1")
-   übernehmen; Unteraufgaben einzeln, wenn sie einzeln beantwortet werden.
-   Nichts ergänzen, was nicht gefragt wird.
-2. "parts": die Teile der Durchführung in der Reihenfolge der Anleitung.
-   "steps" sind konkrete Handlungen am Aufbau (Einstellen, Anschließen,
-   Messen, Speichern), je Eintrag EINE Handlung. Verweise, Erklärungen und
-   Theorie gehören nicht in die Schritte.
-3. "tables": jede Tabelle, in die Messwerte einzutragen sind. Kopfzeile in
-   "columns", danach je Zeile alle Zellen; was in der Anleitung schon
-   vorgegeben ist (z.B. Einstellwerte, Beschriftungen) steht als Text in der
-   Zelle, was gemessen bzw. eingetragen werden soll, ist "" (leerer String).
-   Jede Zeile hat genau so viele Zellen wie "columns".
-4. "evaluationQuestions": Fragen und Aufgaben, die während oder nach dem
-   Versuchsteil zu beantworten sind (Auswertung, Beobachtung, Vergleich,
-   Skizze). Nummerierung wie in der Anleitung, sonst weglassen.
-5. Fehlt etwas in den Unterlagen, lass die Liste leer statt zu raten. Gibt es
-   keinen erkennbaren Namen, lass "title" leer.
-6. Formeln in LaTeX (\$…\$) und in JSON jeden Backslash verdoppeln.
-Antworte in der Sprache der Unterlagen.
-''';
 
   /// Liest aus den Unterlagen eines Versuchs ([sources]: Bezeichnung und Text,
   /// z.B. „Versuchsanleitung“, „Theorie-Skript“) Vorbereitungsfragen, Versuchs-
@@ -3457,33 +2289,6 @@ Antworte in der Sprache der Unterlagen.
     final raw = await _complete(_labStructureSystemPrompt, buffer.toString(), temperature: 0.1);
     return await _json(raw);
   }
-
-  static const _labAnswerReviewSystemPrompt = '''
-Du bist Betreuer im Laborpraktikum und liest die SELBST geschriebene Antwort
-eines Studierenden auf eine Aufgabe zur Versuchsvorbereitung (oder Auswertung)
-gegen. Er soll den Stoff selbst verstehen und die Antwort selbst schreiben.
-Regeln:
-1. Schreibe KEINE Musterlösung und keine Sätze, die er übernehmen könnte. Sag,
-   was an seiner Antwort stimmt, was fehlt oder nicht stimmt (Fehler knapp
-   benennen und begründen) und wo er nachschauen kann – mehr nicht.
-2. Beurteile nur anhand der Aufgabe, der Antwort und der mitgegebenen
-   Auszüge aus den Unterlagen bzw. Messwerten. Reichen die Auszüge nicht
-   aus, sag das ehrlich, statt etwas zu erfinden.
-3. "verdict": "gut" (inhaltlich richtig und vollständig genug), "teilweise"
-   (richtiger Ansatz, aber Lücken oder Fehler) oder "unklar" (geht am Kern
-   vorbei oder ist nicht nachvollziehbar).
-4. "summary": ein bis zwei Sätze ehrliche Einschätzung, du-Form.
-5. "missing": höchstens vier kurze Punkte – was fehlt oder nicht stimmt, als
-   Aspekt benannt ("Du gehst nicht darauf ein, wie …"), ohne die Lösung
-   auszuformulieren. Bei "gut" leer.
-6. "hints": höchstens drei Hinweise, wo bzw. worüber er nachlesen oder
-   nachdenken soll (Kapitel, Seite, Begriff). Bei "gut" leer.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Codefences, ohne Text davor
-oder danach:
-{"verdict": "gut|teilweise|unklar", "summary": "…", "missing": ["…"], "hints": ["…"]}
-Formeln in LaTeX (\$…\$), in JSON jeden Backslash verdoppeln. Antworte in der
-Sprache der Aufgabe.
-''';
 
   /// Liest die Antwort [answer] auf die Aufgabe [question] gegen: Einschätzung,
   /// was fehlt, und Hinweise – bewusst ohne Musterlösung. [context] sind
@@ -3522,36 +2327,6 @@ Sprache der Aufgabe.
     final raw = await _complete(_labAnswerReviewSystemPrompt, buffer.toString(), temperature: 0);
     return parseLabFeedback(await _json(raw), forText: answer, at: at);
   }
-
-  static const _labReportReviewSystemPrompt = '''
-Du bist Gegenleser für Laborberichte. Ein Studierender hat einen Abschnitt
-seines Berichts SELBST geschrieben und möchte vor der Abgabe Rückmeldung.
-Regeln:
-1. Schreibe den Text NICHT um und liefere keine Formulierungen zum Übernehmen.
-   Du sagst, was gut ist, was fehlt oder nicht stimmt und woran es liegt.
-2. Prüfe: Stimmen genannte Werte mit den mitgegebenen Messwerten überein?
-   Fehlen Einheiten oder Messabweichungen? Sind die Schlüsse aus den Messwerten
-   nachvollziehbar? Sind die zum Abschnitt gehörenden Fragen beantwortet?
-   Ist der Aufbau bzw. die Durchführung so beschrieben, dass andere den
-   Versuch wiederholen könnten? Sachliche Fehler benennen.
-3. Sprache und Stil nur kurz ansprechen, wenn sie das Verständnis stören
-   (Umgangssprache, Ich-Form statt Passiv, wenn im Bericht üblich, sehr
-   lange Sätze).
-4. Beurteile nur, was im Text und in den mitgegebenen Daten steht. Erfinde
-   keine Messwerte und nimm keine an.
-5. "verdict": "gut" (kann so bleiben), "teilweise" (Lücken oder Fehler) oder
-   "unklar" (Kern fehlt oder ist nicht nachvollziehbar).
-6. "summary": ein bis zwei Sätze Gesamteindruck, du-Form.
-7. "missing": höchstens fünf Punkte – was fehlt, nicht stimmt oder unklar ist,
-   jeweils mit Bezug zur Stelle. Bei "gut" leer.
-8. "hints": höchstens drei Hinweise, wie er es selbst verbessern kann (worauf
-   er achten, wo er nachsehen soll).
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Codefences, ohne Text davor
-oder danach:
-{"verdict": "gut|teilweise|unklar", "summary": "…", "missing": ["…"], "hints": ["…"]}
-Formeln in LaTeX (\$…\$), in JSON jeden Backslash verdoppeln. Antworte in der
-Sprache des Berichts.
-''';
 
   /// Liest den Berichtsabschnitt [text] gegen. [measurements] sind die Messwerte
   /// des zugehörigen Versuchsteils, [answers] die dort schon beantworteten
@@ -3630,81 +2405,6 @@ Sprache des Berichts.
   }
 
   // -- Rechnen ---------------------------------------------------------------
-
-  static const _calcPlanSystemPrompt = r"""
-Du bist Rechenassistent für Labor- und Übungsaufgaben (Ingenieurwesen,
-Naturwissenschaften). Du bekommst eine Aufgabe, Werte (Text, Tabellen) und/oder
-Bilder (Foto der Aufgabe, einer Tabelle, eines Messprotokolls, Bild eines
-Messgeräts oder Oszilloskops, Schaltplan). Du stellst den RECHENPLAN auf – die
-App rechnet selbst mit einem Formelauswerter. Du gibst deshalb NIE Ergebnisse
-an, nur Gegebenes und Formeln.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
-davor oder danach, in genau diesem Format:
-{
-  "title": "Kurzer Titel der Rechnung",
-  "given": [
-    {"symbol": "R_1", "name": "Widerstand 1", "raw": "4,7 kΩ", "values": [4700],
-     "unit": "Ω", "kind": "given", "uncertain": false}
-  ],
-  "steps": [
-    {"symbol": "R", "name": "Gesamtwiderstand", "latex": "$R = R_1 + R_2$",
-     "expression": "R_1 + R_2", "unit": "Ω", "explanation": "Reihenschaltung: Widerstände addieren sich."}
-  ],
-  "result": ["R"],
-  "assumptions": [],
-  "notes": [],
-  "missing": []
-}
-Regeln:
-1. Werte lesen: Übernimm aus Text UND Bildern alle Werte, die die Aufgabe
-   braucht, Tabellen Zeile für Zeile. "raw" = so, wie es im Bild bzw. Text
-   steht (mit Einheit), damit der Nutzer vergleichen kann. "values" = Zahlen
-   in der GRUNDEINHEIT: Vorsätze umrechnen (4,7 kΩ → 4700 Ω, 250 mV → 0.25 V,
-   12 µs → 1.2e-5 s). Dezimalpunkt in JSON-Zahlen. "unit" = Grundeinheit ohne
-   Vorsatz ("Ω", "V", "s", "m/s"). Mehrere Messungen derselben Größe = EINE
-   Größe mit mehreren "values" in der Reihenfolge der Tabelle (Zeile 1 zuerst),
-   gleich viele Werte wie in den zugehörigen anderen Reihen. Winkel bleiben in
-   der Einheit des Bildes/Textes ("°" oder "rad"); in Formeln rad(x) für
-   Grad → Bogenmaß.
-   Kannst du einen Wert nicht sicher lesen (unscharf, mehrdeutig, geschätzt,
-   abgeschnitten), setze "uncertain": true und schreib in "raw", was du
-   gelesen hast – rate nicht stillschweigend.
-2. Konstanten (Elementarladung, Boltzmann, µ0, ε0, g …) nur, wenn die Aufgabe
-   sie braucht, als "given" mit "kind": "constant", Standardwert und "name".
-   Steht in den Unterlagen ein anderer Wert (z. B. g = 9,81 m/s²), nimm
-   diesen.
-3. Schritte in Rechenreihenfolge, jeder Schritt ist EINE Größe. "symbol": nur
-   Buchstaben, Ziffern und Unterstrich, beginnt mit einem Buchstaben ("R_1",
-   "U_aus", "f_g"), NICHT wie eine Funktion oder Konstante (nicht "pi", "e",
-   "sin", "min", "n", "sum" …). Spätere Schritte dürfen frühere Größen und
-   gegebene verwenden. "expression" ist der Ausdruck zum Rechnen, ausschließlich
-   aus Zahlen (Punkt als Dezimalzeichen), Größen (given und frühere Schritte),
-   + - * / ^, Klammern und diesen Funktionen: {{FUNCTIONS}}.
-   Schreib jedes Mal * für Multiplikation (nicht "2x", nicht "2(x)"); keine
-   Einheiten, keine Wörter, keine Zuweisung, keine Prozentzeichen (Prozent =
-   Faktor 100 *). "latex" = dieselbe Formel als LaTeX zwischen Dollarzeichen für
-   die Anzeige ("$R = \\frac{U}{I}$"). "unit" = Einheit des
-   Ergebnisses. "explanation" = ein Satz: welches Gesetz bzw. warum.
-   Prüfe, dass die Einheiten deiner Formeln zusammenpassen.
-4. Reihen: Ist eine Größe eine Reihe, rechnet die Formel automatisch für jede
-   Zeile. Kennzahlen der Reihe (Mittelwert, Standardabweichung, Steigung einer
-   Ausgleichsgeraden …) als eigene Schritte danach.
-5. Messunsicherheit nur, wenn Unsicherheiten/Toleranzen angegeben sind oder
-   danach gefragt wird: Gaußsche Fehlerfortpflanzung als eigene Schritte
-   (Größen wie "u_R").
-6. "result": die Symbole der Schritte, die die gesuchten Endergebnisse sind.
-   Rechne, was die Aufgabe verlangt; nützliche Zwischengrößen sind Schritte,
-   aber keine Ergebnisse.
-7. Fehlt ein Wert oder eine Angabe, erfinde nichts: nenne es in "missing" ("Die
-   Länge l des Drahts ist nicht angegeben") und plane, was möglich ist.
-   "assumptions": Annahmen, die du triffst (ideale Bauteile, Raumtemperatur …).
-   "notes": höchstens vier kurze Hinweise zur Plausibilität (Größenordnung,
-   auffällige Werte, Einheit prüfen).
-8. Überarbeitung: Bekommst du einen bisherigen Plan und einen Wunsch des
-   Nutzers, gib den KOMPLETTEN neuen Plan aus; übernimm Werte, die der Nutzer
-   korrigiert hat, exakt, und ändere nur, was der Wunsch verlangt.
-Antworte in der Sprache der Aufgabe (Standard: Deutsch).
-""";
 
   /// Grenzen für die Texte, die die KI beim Rechnen sieht.
   static const _calcTaskCap = 4000;
@@ -3791,41 +2491,7 @@ Antworte in der Sprache der Aufgabe (Standard: Deutsch).
     return 'image/png';
   }
 
-
   // -- Fotos zu Laborversuchen --------------------------------------------------
-
-  static const _labPhotoSystemPrompt = r"""
-Du hilfst bei einem Laborpraktikum. Du bekommst ein FOTO (Messprotokoll,
-handschriftliche Notizen, Anzeige eines Messgeräts, Oszilloskop, Tafel,
-Versuchsaufbau, Tabelle) und eine Übersicht der Versuche des Fachs mit ihren
-Versuchsteilen und Messwerttabellen. Deine Aufgaben:
-1. Erkenne, was das Foto zeigt, und ordne es dem passenden Versuch und
-   Versuchsteil zu: Titel, Nummern, Bezeichnungen, Größen und Einheiten, Spalten
-   der Tabellen. Bist du nicht sicher, setze "experimentId" auf null; ein Raten
-   ist schlimmer als keine Zuordnung. "confidence": "hoch", "mittel" oder "niedrig".
-2. Lies die Werte genau ab und trage sie in die LEEREN Zellen der passenden
-   Tabelle ein ("cells"). Nummeriert wird ab 1: "table" = Nummer der Tabelle im
-   Versuchsteil, "row" = Zeile OHNE Kopfzeile, "col" = Spalte. "value" so, wie
-   es in der Tabelle stehen soll (Zahl mit Einheit nur, wenn die Spalte die
-   Einheit nicht schon nennt; Komma wie auf dem Foto). Zellen, die schon einen
-   Wert haben, nur nennen, wenn das Foto etwas anderes zeigt.
-3. Alles, was in keine Zelle passt (weitere Messwerte, Geräteeinstellungen,
-   Skalen, Beobachtungen), kurz in "notes" mit Einheiten.
-4. ERFINDE NICHTS. Nicht lesbare oder unsichere Stellen kommen NICHT in "cells",
-   sondern als kurzer Eintrag in "unclear" ("Zeile 3, zweite Spalte: Ziffer
-   unleserlich").
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
-{
-  "description": "Ein Satz: was das Foto zeigt",
-  "experimentId": "Kennung des Versuchs oder null",
-  "partId": "Kennung des Versuchsteils oder null",
-  "confidence": "hoch|mittel|niedrig",
-  "cells": [{"table": 1, "row": 2, "col": 3, "value": "4,7"}],
-  "notes": "weitere Werte als kurzer Text oder leer",
-  "unclear": []
-}
-Antworte in der Sprache der Tabellen (Standard: Deutsch).
-""";
 
   /// Die Versuche mit Teilen und Tabellen als Text für [readLabPhoto] – Zeilen
   /// und Spalten ab 1, leere Zellen als "·" (zum Ausfüllen).
@@ -3888,60 +2554,6 @@ Antworte in der Sprache der Tabellen (Standard: Deutsch).
   }
 
   // -- Berichtsentwurf --------------------------------------------------------
-
-  static const _labDraftSystemPrompt = r"""
-Du hilfst einem Studierenden, einen Laborbericht zu beginnen. Du schreibst einen
-groben ENTWURF, der nur als Inspiration dient: Er soll trotzdem schon gut
-lesbar sein und alles enthalten, was aus den Daten hervorgeht – aber der
-Studierende schreibt seinen Bericht selbst und prüft jede Aussage.
-Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences, ohne Text
-davor oder danach, in genau diesem Format:
-{
-  "sections": [
-    {"sectionId": "id eines vorhandenen Abschnitts oder null", "title": "Überschrift", "text": "Entwurf des Abschnitts"}
-  ],
-  "missing": ["Was noch fehlt"]
-}
-Regeln:
-1. Grundlage sind NUR die mitgegebenen Daten: Versuchsbeschreibung, Messwerte,
-   Notizen (auch dort gespeicherte Rechenwege), Antworten des Studierenden,
-   Auszüge aus den Unterlagen. Erfinde keine Messwerte, Geräte, Einstellungen,
-   Ergebnisse, Quellen oder Zitate. Wo eine Angabe fehlt, schreib an die Stelle
-   "[ergänzen: was genau]" und nenne es zusätzlich in "missing".
-2. Vorlage und Vorgaben: Folge der Gliederung der Vorlage (Überschriften,
-   Reihenfolge) und ihren Formalia (Umfang, Zeitform, Passiv/Wir-Form,
-   Beschriftung von Abbildungen und Tabellen, Zitierweise). Ohne Vorlage nutze
-   die vorhandenen Abschnitte. Widerspricht die Vorlage der Abschnittsliste,
-   geht die Vorlage vor.
-3. Zuordnung: Gehört ein Entwurfsabschnitt zu einem vorhandenen Abschnitt, trag
-   dessen "id" als "sectionId" ein (mehrere Einträge dürfen zum selben gehören).
-   Kennt nur die Vorlage den Abschnitt (z.B. "Anhang", "Literatur"), setz
-   "sectionId": null. Steht in der Anfrage, dass die Gliederung der Vorlage NICHT
-   übernommen werden soll, ordne alles den vorhandenen Abschnitten zu.
-4. Stil: sachlich und fachsprachlich, ganze Sätze (im Modus "Gerüst":
-   Stichpunkte mit kurzen Erläuterungen), Durchführung in der Vergangenheit.
-   Formeln in LaTeX zwischen Dollarzeichen ($…$), in JSON jeden Backslash
-   verdoppeln. Zahlen exakt aus den Daten übernehmen, mit Einheit. Rechenwege aus
-   den Notizen einbauen (Formel, eingesetzte Werte, Ergebnis) statt neu zu
-   rechnen.
-5. Messwerte als kurze Textzeile bzw. Tabelle mit "Tabelle 1: …" (Spalten mit
-   | getrennt); wo eine Abbildung hingehört: "[Abbildung: was gezeigt werden
-   soll, Achsen, Beschriftung]".
-6. Diskussion und Fazit: vergleiche mit Erwartung/Theorie nur, wenn Daten oder
-   Unterlagen dazu vorliegen, sonst schreib "[ergänzen: Vergleich mit …]". Nenne
-   mögliche Fehlerquellen nur als Vorschläge ("Mögliche Ursachen: …"), die aus den
-   Daten ableitbar sind.
-7. Eigene Texte des Studierenden (falls mitgegeben): berücksichtige ihre Aussagen
-   und widersprich ihnen nicht ohne Grund, schreib aber trotzdem einen eigenen
-   Entwurf für den Abschnitt.
-8. Länge je Abschnitt so kurz wie möglich, so lang wie nötig (meist 60–250
-   Wörter). Kein Titelblatt und kein Inhaltsverzeichnis, außer die Vorlage
-   verlangt Text dafür.
-9. "missing": höchstens acht kurze Punkte – welche Angaben oder Anlagen
-   (Schaltplan, Diagramme, Geräteliste, Messunsicherheiten, Quellen …) noch
-   fehlen.
-Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
-""";
 
   static const _labDraftTemplateCap = 14000;
   static const _labDraftDataCap = 16000;
@@ -4298,24 +2910,6 @@ Antworte in der Sprache der Vorlage bzw. der Unterlagen (Standard: Deutsch).
     return review;
   }
 
-  static const _stepReviewSystemPrompt = r'''
-Du hilfst einem Studenten, der in einer Lern-App einen Rechenweg (Schritte mit erwarteten Antworten) aus einer Übungsaufgabe übernommen hat. Die App hat die hinterlegte Musterlösung selbst nachgerechnet und Unstimmigkeiten gemeldet. Erkläre sie verständlich und rechne selbst sorgfältig nach.
-
-Hintergrund, den du erklären kannst:
-- "answer" eines Felds ist die erwartete (richtige) Antwort, in Eingabe-Schreibweise.
-- "mistakes" sind TYPISCHE FEHLER: absichtlich FALSCHE Antworten, die Lernende oft geben, mit einer eigenen Rückmeldung. Sie gehören nicht zum Lösungsweg. Meldet die App, ein typischer Fehler sei "in Wahrheit richtig", rechnet sie diese Eingabe als richtige Antwort – dann ist entweder der hinterlegte typische Fehler unsinnig (nur die Rückmeldung ist falsch, die Aufgabe stimmt) ODER die erwartete Antwort ist falsch.
-- "tolerance" ist die erlaubte relative Abweichung bei gerundeten Zahlen.
-
-Vorgehen:
-1. Erkläre jede Meldung in 1–3 einfachen Sätzen: Was bedeutet sie? Ist die Aufgabe/Musterlösung falsch, nur eine Rückmeldung, oder harmlos? Was müsste man ändern?
-2. Rechne die betroffenen Schritte selbst nach (kurz, mit Zahlen; LaTeX in $…$).
-3. Beantworte eine Nachfrage des Nutzers direkt und konkret.
-4. Wenn etwas korrigiert werden sollte: "corrected" = das vollständige korrigierte taskData-Objekt (gleiches Schema wie das gelieferte, alle Schritte, nur das Nötige ändern – z.B. falsche typische Fehler entfernen oder ersetzen, falsche erwartete Antworten korrigieren). Sonst "corrected": null.
-
-Antworte NUR mit JSON:
-{"answer": "Erklärung auf Deutsch, du-Form, mit Absätzen (
-)", "verdict": "ok" | "rueckmeldung_falsch" | "loesung_falsch" | "unklar", "corrected": {...} | null}''';
-
   /// Prüft einen auf Papier gerechneten Rechenweg (Fotos) gegen die
   /// Musterlösung: die KI liest Zeile für Zeile, markiert Fehler und
   /// Folgefehler und nennt das Endergebnis – das prüft danach die App selbst
@@ -4533,20 +3127,6 @@ Antworte NUR mit JSON:
     }
     return json;
   }
-
-  static const _visualCoursePlanSystemPrompt = r'''
-Du planst in einer Lern-App einen LERNPFAD für ein ganzes Semester: Aus den Themen mehrerer Vorlesungen (oder einer langen) wird eine Folge von Lektionen, die aufeinander aufbauen – wie ein gutes Lehrbuch.
-
-Antworte NUR mit JSON:
-{"title": "kurzer Titel des Lernpfads",
- "intro": "2–4 Sätze Überblick: worum es geht und wie die Themen zusammenhängen",
- "units": [{"n": Nummer des Themas, "merge": [weitere Nummern, die in dieses Thema mit eingehen], "title": "Titel (darf das Thema schärfen)", "bridge": "1–2 Sätze Übergang: warum dieses Thema jetzt kommt und was es aus früheren braucht", "needs": [Nummern der früheren Themen, auf denen es direkt aufbaut]}]}
-
-- Reihenfolge = Lernreihenfolge: Grundlagen zuerst, dann was darauf aufbaut. Meist entspricht das der Reihenfolge der Unterlagen – weiche nur ab, wenn ein Thema eindeutig ein späteres voraussetzt.
-- "needs" nur auf FRÜHERE Themen der Liste, nur echte Abhängigkeiten (höchstens 3).
-- Reine Organisation, Literatur, Wiederholungsfolien und Titelseiten weglassen. Sehr kleine, eng verwandte Themen mit "merge" zusammenlegen; große nicht zerlegen.
-- Jedes inhaltliche Thema kommt genau einmal vor (als "n" oder in "merge").
-- Deutsch, Begriffe aus den Unterlagen.''';
 
   /// Visueller Chat: beantwortet [question] im Gespräch ([history]: frühere
   /// Nachrichten, user = Nutzer) – [mode] "visual", "text" oder "both".
@@ -4786,49 +3366,6 @@ Antworte NUR mit JSON:
  "show": {"scene": {…}, "scene3d": {…}, "car": key, "carFrom": "position"|"velocity", "plot": [keys], "tangent": key, "area": key}}
 Felder, die du nicht brauchst, weglassen.''';
 
-  /// Werkzeugkasten der Visualisierung – Teil aller Prompts von „Visuell
-  /// lernen“ (Lektion, Rückfrage, sokratisch).
-  static const _visualToolsSpec = r'''
-WERKZEUGE DER APP (je Schritt in "show", alles optional, frei kombinierbar – wähle, was das Thema am besten zeigt):
-1. "scene" – FREIE SZENE, das universelle Werkzeug für fast alles (Werkstoffkunde, Physik, Chemie, Technik, Biologie, Wirtschaft …): Du zeichnest mit Formen und bewegst sie über Schlüsselbilder.
-   {"width": 100, "height": 60,            ← Koordinaten: x nach rechts, y nach UNTEN (wie SVG)
-    "seconds": 6,                          ← Dauer eines Durchlaufs (2–30)
-    "param": {"name": "Temperatur", "unit": "°C", "from": 20, "to": 900},   ← optional: Größe, die mit der Zeit läuft (Anzeige neben dem Zeitregler)
-    "captions": [{"at": 0, "text": "…"}, {"at": 0.5, "text": "…"}],         ← Text unter der Szene ab Zeitpunkt at (0 = Anfang, 1 = Ende); LaTeX in $…$
-    "elements": [
-      {"type": "circle", "x": 10, "y": 10, "r": 3, "fill": "accent", "stroke": "ink", "text": "Fe"},
-      {"type": "rect", "x": 5, "y": 40, "w": 90, "h": 8, "fill": "gray", "text": "Balken"},
-      {"type": "line", "x1": 0, "y1": 50, "x2": 100, "y2": 50, "stroke": "ink", "width": 0.5, "dashed": true},
-      {"type": "arrow", "x1": 50, "y1": 10, "x2": 50, "y2": 35, "stroke": "red", "text": "F"},
-      {"type": "polygon", "points": [[0,60],[30,20],[60,60]], "fill": "orange", "opacity": 0.5},
-      {"type": "path", "points": [[0,50],[20,30],[40,25],[60,40]], "stroke": "accent", "text": "Abkühlkurve"},
-      {"type": "text", "x": 50, "y": 5, "text": "Gleitebene", "size": 4, "fill": "ink"}],
-   - Jede Form kann "keys" haben: [{"at": 0.5, "x": 30, "fill": "red"}, {"at": 1, "x": 60, "opacity": 0.2}] – die App rechnet linear zwischen den Schlüsselbildern (Grundwerte gelten bei at = 0). Animierbar: x, y, r, w, h, x1, y1, x2, y2, opacity, rotate (Grad), scale, size, width, draw (0–1: wie viel einer Linie/eines Pfads schon gezeichnet ist), points (gleiche Anzahl), fill/stroke (Farbe wird überblendet), text (wechselt).
-   - "repeat": {"nx": 6, "ny": 4, "dx": 12, "dy": 12} zeichnet die Form als Raster (z.B. Atome eines Gitters), "keys" gelten für alle Kopien.
-   - Farben: accent (blau), red, green, orange, purple, brown, gray, ink (schwarz), white, cyan, pink oder #RRGGBB. Text mittig an (x, y), Größe "size" in Szenen-Einheiten.
-   - Höchstens 600 Formen. Zeichne SAUBER: sinnvolle Koordinaten, nichts überlappt ungewollt, Beschriftungen gut lesbar, alles innerhalb von width × height.
-   - Erzähl mit der Animation: Was passiert nacheinander? Nutze "captions", damit der Text zur Bewegung passt.
-1b. "scene3d" – RÄUMLICHE SZENE, NUR wenn der räumliche Aufbau das Wesentliche ist und 2D ihn nicht zeigen kann: Elementarzellen (krz/kfz/hdp), Packungsdichte (Kugeln wachsen, bis sie sich berühren), Tetraeder-/Oktaederlücken, Gleitebenen und -richtungen im Würfel, Moleküle, Kräfte/Momente im Raum. Sonst IMMER 2D ("scene") – das ist fast immer klarer. Der Nutzer kann die Szene mit dem Finger drehen.
-   {"box": [1, 1, 1],                      ← Raum 0…box, z nach OBEN (z.B. eine Elementarzelle mit a = 1)
-    "frame": true, "axes": true,           ← Kanten des Raums und x/y/z-Achsen zeigen (Standard true)
-    "spin": false,                         ← beim Abspielen langsam mitdrehen
-    "seconds": 6, "param": {…}, "captions": [{"at": 0, "text": "…"}],   ← wie bei "scene"
-    "objects": [
-      {"type": "sphere", "at": [0, 0, 0], "r": 0.2, "fill": "accent", "text": "Fe", "repeat": {"n": [2, 2, 2], "d": [1, 1, 1]}},
-      {"type": "sphere", "at": [0.5, 0.5, 0.5], "r": 0.2, "fill": "orange"},
-      {"type": "line", "from": [0, 0, 0], "to": [1, 1, 1], "stroke": "red", "dashed": true},
-      {"type": "arrow", "from": [0, 0, 0], "to": [1, 1, 0], "stroke": "green", "text": "[110]"},
-      {"type": "polygon", "points": [[1,0,0],[0,1,0],[0,0,1]], "fill": "purple", "text": "(111)"},
-      {"type": "box", "at": [0, 0, 0], "dims": [0.5, 0.5, 0.5], "fill": "orange"},
-      {"type": "text", "at": [0.5, 0.5, 1.15], "text": "kfz"}]}
-   - "keys" wie bei "scene", die Zeit heißt hier "t": [{"t": 1, "r": 0.354}]. Animierbar: at, from, to, dims (je [x, y, z]), r, opacity, width, draw, size, points, fill/stroke, text.
-   - "repeat": {"n": [nx, ny, nz], "d": [dx, dy, dz]} für Gitter (je Richtung höchstens 8). Höchstens 400 Objekte.
-   - Rechne Radien und Abstände korrekt (kfz: Atome berühren sich auf der Flächendiagonale, r = a·√2/4 ≈ 0,354·a; krz: auf der Raumdiagonale, r = a·√3/4 ≈ 0,433·a).
-2. "plot" (+ "tangent", "area") – Funktionsgraphen von "functions" über der Variablen der Lektion mit laufender Markierung; "tangent": key (Tangente = Steigung/Ableitung an der laufenden Stelle), "area": key (Fläche bis zur laufenden Stelle = Integral). Für jeden Zusammenhang y = f(x): Spannung–Dehnung, Kosten–Menge, Temperatur–Zeit …
-3. "car" (+ "carFrom": "position" | "velocity") – ein Fahrzeug auf einer Straße, gesteuert von einer Funktion (Weg oder Geschwindigkeit über der Zeit), die App rechnet die Bewegung exakt. NUR für Bewegungen (Kinematik, Ableitung/Integral von Weg und Geschwindigkeit) – nicht für andere Themen. Optional "vehicle": "rocket" | "bike" | "train" | "runner" | "ball" | "plane" | "boat" | "truck" | "bus" | "snail" oder ein beliebiges Emoji (Standard: Auto).
-4. "transform": [{"latex": "Gleichung ohne $", "note": "was passiert und warum"}] – eine Gleichung/Rechnung langsam Schritt für Schritt umformen (jeder Zwischenstand einzeln).
-''';
-
   static const _visualLessonSystemPrompt =
       r'''
 Du erstellst Lektionen für den Modus "Visuell lernen" einer Lern-App – für JEDES Fach (Mathe, Physik, Werkstoffkunde, Chemie, Elektrotechnik, Mechanik, Biologie, BWL …). Die App ZEIGT und ANIMIERT selbst; du lieferst Struktur, Texte, Funktionsterme und Szenen.
@@ -4949,118 +3486,6 @@ Antworte NUR mit JSON:
     return review;
   }
 
-  static const _drawingReviewSystemPrompt = r'''
-Du bewertest für eine Lern-App eine Skizze eines Studierenden. Sie ist meist mit Finger oder Maus gezeichnet (grob, ohne Lineal) oder ein Foto einer Papier-Skizze. Beurteile NUR, ob die genannten Kriterien fachlich erkennbar sind – nicht Schönheit, Genauigkeit oder Strichqualität. Ein Merkmal gilt als erfüllt, wenn es klar angedeutet ist (z.B. gestreckte Körner als langgezogene Zellen). Beschriftungen sind nur nötig, wenn ein Kriterium sie verlangt. Bei mehreren Flächen gehört jedes Bild zu der genannten Fläche; prüfe Kriterien mit [Fläche] nur im Bild dieser Fläche.
-Sei fair, aber ehrlich: Fehlt ein Merkmal oder ist etwas fachlich falsch (z.B. Körner gestreckt, wo sie gleichachsig sein sollen), ist es "nein". "unklar" nur, wenn man es im Bild wirklich nicht beurteilen kann.
-
-Antworte NUR mit JSON:
-{"results": [{"n": Nummer des Kriteriums, "met": "ja" | "nein" | "unklar", "comment": "kurz, was du siehst (bei nein: was fehlt)"}], "feedback": "1–3 Sätze, du-Form: was gut ist und was noch fehlt"}''';
-
-  static const _interactiveTaskSystemPrompt = r"""
-Du wandelst Übungsaufgaben in interaktive Aufgaben für eine Lern-App um. Die App prüft die Antworten der Lernenden SELBST: Formeln setzt sie an mehreren Stellen ein, Terminierungen, Kristallgitter und Stücklisten rechnet und zeichnet sie selbst, Skizzen prüft sie anhand von Merkmalen. Du lieferst nur Struktur, erwartete Antworten und Rückmeldungen.
-
-Enthält das Material mehrere Aufgaben oder Teilaufgaben (a, b, c …), liefere JEDE als eigenen Eintrag in "tasks" (höchstens 8). Teilaufgaben derselben Art zum selben Bild (z.B. mehrere Richtungen im selben Würfel) dürfen EIN Eintrag sein.
-
-Art ("kind") je Eintrag:
-- "steps" (Rechenweg): Rechenaufgaben mit eindeutigem Ergebnis (Mathe, Physik, Technik, Werkstoffe, BWL-Rechnungen), zerlegbar in 3–7 Schritte.
-- "gantt" (Terminierung): Vorwärts-/Rückwärtsterminierung, Durchlaufterminierung, Gantt-Diagramme mit Arbeitsgängen und Dauern.
-- "crystal" (Kristallgitter): Richtungen [u v w] bzw. Ebenen (h k l) im kubischen Einheitswürfel einzeichnen oder ablesen, Richtungsfamilien ⟨u v w⟩, Atome in einer Ebene (kubisch primitiv, krz, kfz).
-- "bom" (Stückliste): aus einem Erzeugnisbaum / einer Erzeugnis- bzw. Produktstruktur eine Mengenübersichts-, Struktur- oder Baukastenstückliste (auch "Baustellen-" oder "Baustückliste") aufstellen.
-- "sketch" (Diagramm skizzieren): eine oder mehrere Kurven qualitativ in ein Diagramm zeichnen bzw. skizzieren (z.B. Längenänderung über der Temperatur, Spannungs-Dehnungs-Kurve, Potentialkurve, Abkühlkurven mehrerer Legierungen, Hall-Petch-Geraden für zwei Temperaturen, Härteverlauf für drei Auslagerungstemperaturen, Streckgrenze und Bruchdehnung über der Glühtemperatur) und ggf. Kennwerte darin markieren. Verlangt die Aufgabe zusätzlich eine Erklärung/Begründung ("Erläutern Sie …"), liefere die als EIGENEN Eintrag "question" mit "questionType": "free_text".
-- "phase" (Zustandsdiagramm): Aufgaben zu einem Zweistoffsystem mit Eutektikum (z.B. Pb-Sn) oder Eutektoid (Stahlecke des Eisen-Kohlenstoff-Diagramms): Phasen an einem Punkt, Hebelgesetz/Phasenanteile, Gefügeanteile, Abkühlkurven bestimmter Legierungen zeichnen, Zusammensetzung aus einer Abkühlkurve bestimmen, maximale Löslichkeit, Bereich der eutektischen Linie, Gebiete benennen, ein Gebiet zeigen (z.B. Bereich für das Lösungsglühen). ALLE Teilaufgaben zum selben Diagramm gehören in EINEN Eintrag ("parts") – AUCH die reinen Wissens-, Erklär- oder Begründungsfragen dazu (als Teil "question"), damit die Aufgabe 1:1 wie auf dem Blatt bleibt.
-- "drawing" (Freihand-Skizze): etwas frei zeichnen, das sich nicht als Kurve in einem Diagramm prüfen lässt – z.B. ein Gefüge skizzieren (Korngefüge vor und nach dem Walzen, nach primärer und sekundärer Rekristallisation, Perlit, Ledeburit), eine Versetzung, eine Elementarzelle, ein einfaches Schema. Eine Bild-KI prüft die Zeichnung später an Kriterien. Verlangt die Aufgabe zusätzlich eine Erklärung, liefere die als EIGENEN "question"-Eintrag.
-- "question": wenn es als NORMALE Quizfrage gut geht – die App hat dafür schon Fragetypen: Freitext/Erklären/Begründen/Kurzantwort ("free_text"), Auswahl ("single_choice"/"multiple_choice"), Zuordnen bzw. in Kategorien/Kriterien einordnen ("drag_category"), Tabelle ausfüllen mit festen Einträgen ("table"), Stellen in einer Abbildung markieren ("mark_image") oder beschriften ("diagram_label"), Lückentext ("fill_blank"). Dann "questionType" (einer dieser Werte) und "reason" mit einem kurzen Satz. "front" wortgetreu.
-- "none": NUR wenn weder interaktiv noch als normale Frage sinnvoll übbar (z.B. einen großen Netzplan oder Schaltplan selbst zeichnen) – dann "reason" mit einem Satz UND "needs": in 2–5 Wörtern, welche Bedienart die App bräuchte (z.B. "Kurve in Diagramm zeichnen", "Netzplan zeichnen", "Schaltplan zeichnen").
-- Fehlt für eine Rechnung nur ein Wert, den man üblicherweise nachschlägt (Werkstoffkennwert wie Streckgrenze, Naturkonstante), nimm einen üblichen Tabellenwert, schreib ihn als Annahme in "front" ("angenommen: R_{p0,2} = 355 MPa") und erstelle den Rechenweg trotzdem.
-
-Bei "steps":
-- "front": die Aufgabe WORTGETREU mit allen Angaben (Formeln in LaTeX mit $…$).
-- taskData.steps: 3–7 Schritte in der Reihenfolge des Lösungswegs. Jeder Schritt hat
-  - "title": kurz (z.B. "Substitution wählen"),
-  - "prompt": die Frage an den Lernenden, OHNE die Lösung zu verraten,
-  - ENTWEDER "options": 3–4 Antworten {"text", "correct": true/false, "feedback"} – jede falsche mit eigener Rückmeldung, warum sie hier nicht passt –
-  - ODER "fields": 1–2 Eingabefelder.
-  - "hints": genau 2 gestufte Tipps (erst ein Denkanstoß, dann deutlicher), ohne die Antwort zu nennen,
-  - "result": das Ergebnis des Schritts zum Anzeigen (LaTeX in $…$),
-  - "explanation": 1–2 Sätze, wie man darauf kommt.
-- Feld: "label" (was vor dem Feld steht, z.B. "u' =", "C =", "y(x) ="), "kind": "formula" oder "number",
-  "answer": erwartete Antwort in EINGABE-SCHREIBWEISE, KEIN LaTeX: + - * / ^, sqrt(), ln(), exp(), sin() …, pi, Dezimalpunkt – z.B. "-1/u", "x - sqrt(12 - 2*x)", "12", "pi*sqrt(3)/8",
-  "variables": die Größen, die in der Antwort vorkommen (z.B. ["u"]),
-  "constants": frei wählbare Konstanten wie die Integrationskonstante (z.B. ["C"]) – sonst weglassen,
-  "tolerance": relative Toleranz NUR bei gerundeten Zahlenergebnissen (0.01 = 1 %),
-  "mistakes": 1–3 typische Fehler {"answer": in Eingabe-Schreibweise, "feedback": kurze Rückmeldung, die zum Weiterdenken anregt, ohne die Lösung zu verraten},
-  "domain": nur wenn die Antwort nicht überall definiert ist: Bereich je Größe, z.B. {"x": [-10, 5.9]}.
-- Das letzte Feld des letzten Schritts ist das Endergebnis.
-- taskData.probe NUR bei Differentialgleichungen bzw. Stammfunktionen, damit die App das Ergebnis unabhängig prüft:
-  {"kind": "ode", "equation": rechte Seite f(x, y) von y' = f(x, y) in Eingabe-Schreibweise, "variable": "x", "function": "y", "order": 1, "conditions": [{"x": 4, "value": 2}]}
-  bzw. {"kind": "antiderivative", "equation": Integrand in Eingabe-Schreibweise}.
-- taskData.domainNote: wo die Lösung gilt (z.B. "für x < 6"), sonst leer.
-- "back": der vollständige Lösungsweg als Text (LaTeX in $…$).
-- RECHNE SORGFÄLTIG und prüfe jede erwartete Antwort selbst nach – die App setzt sie ein und meldet Widersprüche.
-
-Bei "gantt":
-- "front": die Aufgabe WORTGETREU.
-- taskData.items: je Bauteil/Baugruppe {"id": kurz, "name", "operations": [{"name", "duration": Tage als Zahl}], "needs": [ids der Teile, die vorher fertig sein müssen], "uncertain": true, wenn Werte schlecht lesbar oder abgeschnitten waren}. Die Baugruppe "needs" ihre Bauteile.
-- taskData.start: Starttermin (Zahl), taskData.due: Liefertermin (Zahl; weglassen, wenn keiner genannt ist),
-  taskData.direction: "forward" oder "backward", taskData.counting: "inclusive" (Ende = Start + Dauer − 1, üblich bei Tages-Rastern) oder "points" (Ende = Start + Dauer), wie es die Aufgabe nahelegt.
-- taskData.questions: was gefragt ist, je Teil {"item": id, "ask": "start" | "end" | "slack" | "buffer"} (slack = Liegezeit, buffer = Puffer).
-- taskData.drawChart: true, wenn ein Gantt-Diagramm gezeichnet werden soll (Standard).
-- Rechne die Termine NICHT selbst aus – das macht die App. "back" darf leer bleiben.
-
-Bei "crystal":
-- "front": die Aufgabe WORTGETREU.
-- taskData.lattice: "sc" (kubisch primitiv), "bcc" (krz) oder "fcc" (kfz) – wie in der Aufgabe, sonst "sc".
-- taskData.parts: je gefragter Richtung bzw. Ebene ein Teil {"kind", "indices": [3 ganze Zahlen], "uncertain": true, wenn ein Strich über einer Zahl schlecht lesbar war}.
-  "kind": "direction" (Richtung einzeichnen), "readDirection" (gezeichneten Pfeil ablesen), "family" (alle Richtungen der Familie ⟨u v w⟩ einzeichnen – nur ⟨1 0 0⟩, ⟨1 1 0⟩, ⟨1 1 1⟩ u.ä. mit höchstens 12 Richtungen), "plane" (Ebene einzeichnen), "readPlane" (gezeichnete Ebene ablesen), "planeAtoms" (Atome in der Ebene markieren).
-  Ein Strich über einer Zahl bedeutet minus: [1̄ 1̄ 1] → [-1, -1, 1].
-  "direction"/"family" nur, wenn die gekürzten Indizes höchstens den Betrag 2 haben (sonst "readDirection"); "plane" nur bei Ebenen, die durch drei Punkte des ½-Rasters gehen (sonst "readPlane").
-- "back": kurze Erklärung (Achsenabschnitte, Kehrwerte) – gezeichnet und geprüft wird in der App.
-
-Bei "bom":
-- "front": die Aufgabe WORTGETREU (ohne den Baum abzuschreiben).
-- taskData.root: NUR den Erzeugnisbaum ablesen – das Erzeugnis (Stufe 0) mit {"nr": Sach-Nr. als Text, "name": Bezeichnung, "children": [...]}; jedes Kind {"nr", "name", "qty": Zahl an der Verbindungslinie (Menge je 1 Stück der Baugruppe direkt darüber), "unit": nur bei Mengeneinheiten wie "g", "kg", "l", "m" (sonst weglassen), "children": [...], "uncertain": true, wenn die Zahl schlecht lesbar war}.
-  Kinder in der Reihenfolge von links nach rechts wie im Bild. Steht an einer Linie keine Menge, gilt laut Aufgabe meist 1. Kommt dieselbe Baugruppe mehrfach vor, reicht es, sie einmal mit ihren Kindern aufzuführen (sonst ohne "children").
-- taskData.parts: je gefragter Liste ein Eintrag in der Reihenfolge der Aufgabe: {"list": "overview" (Mengenübersichtsstückliste) | "structure" (Strukturstückliste) | "modular" (Baukasten-/Baustellenstückliste)}.
-  Bei "overview" zusätzlich "includeAssemblies": true, wenn Baugruppen mit aufgeführt werden ("mit Berücksichtigung der intern erstellten Baugruppen"), false bei nur Teilen/Rohstoffen.
-  Bei "structure" "totals": true NUR, wenn ausdrücklich die Gesamtmenge je Erzeugnis verlangt ist (Standard: Menge je übergeordnete Baugruppe).
-  Bei "modular" "lists": Sach-Nr. der vorgegebenen Formulare (z.B. ["10", "11", "23"]), wenn welche abgebildet sind – sonst weglassen.
-- Rechne die Listen NICHT selbst aus – das macht die App. "back" darf leer bleiben.
-
-Bei "sketch":
-- "front": die Aufgabe WORTGETREU, aber ohne den Erklärungsteil (der kommt als eigener "question"-Eintrag).
-- taskData.xAxis / taskData.yAxis: {"label": Größe mit Einheit (z.B. "T in °C"), "min", "max": sinnvoller Bereich laut Aufgabe, "showNumbers": false bei rein qualitativen Achsen ohne Zahlen}.
-- taskData.reference: die Musterkurve als Punktliste [[x, y], …] in Achsen-Einheiten, 6–15 Punkte, die den typischen Verlauf zeigen; bei einem Sprung zwei Linienzüge [[[x, y], …], [[x, y], …]]. Qualitative Kurven deutlich ausgeprägt zeichnen (z.B. den elastischen Bereich überzeichnet).
-- Gehören MEHRERE Kurven in dasselbe Diagramm (z.B. Abkühlkurven für 10 %, 20 %, 61,9 % und 100 % Sn; Geraden für T₁ und T₂; Härteverläufe für T₁, T₂, T₃; R_e und A über der Glühtemperatur): statt "reference" taskData.curves = [{"name": kurzer Name wie "T₁", "20 % Sn" oder "R_e", "reference": Punktliste wie oben}, …] und bei JEDEM Merkmal "curve": Name der Kurve. Liegen die Kurven nebeneinander in getrennten Diagrammen, ist das trotzdem EIN Diagramm mit mehreren Kurven (bei Abkühlkurven zeitlich versetzt nebeneinander).
-- taskData.features: 2–6 Merkmale je Kurve (insgesamt höchstens 16), auf die es fachlich ankommt – die App prüft die Skizze NUR daran, grob und nicht pixelgenau. Je Merkmal {"kind", …, "text": ein Satz, was es bedeutet und warum (wird als Rückmeldung gezeigt)}:
-  "rising"/"falling"/"linear" mit "x" und "x2" (Bereich), "jumpDown"/"jumpUp" mit "x" (Stelle des Sprungs, z.B. 911),
-  "plateau" (Haltepunkt, waagerechtes Stück) mit "y" (Höhe, z.B. 183 bei der eutektischen Temperatur; optional "x"/"x2" als ungefährer Bereich), "kink" (Knick, deutlicher Steigungswechsel) mit "y" (z.B. Liquidustemperatur der Legierung) oder "x",
-  Vergleiche zweier Kurven mit "curve" und "other" (Namen): "above"/"below" (liegt über/unter, optional Bereich "x"/"x2"), "parallel" (gleiche Steigung, verschoben), "steeper" (steiler als), "maxEarlier" (Maximum früher als), "maxHigher" (Maximum höher als), "max"/"min" mit "x" (ungefähre Stelle, sonst weglassen) und optional "y" (Minimum liegt unter y bzw. Maximum über y), "startsAt"/"endsAt" mit "x", "approaches" mit "y" (Wert, dem sich die Kurve am rechten Ende annähert), "steeperLeft" (links vom Minimum steiler als rechts, Asymmetrie), "mark" für Kennwerte, die markiert werden sollen: {"kind": "mark", "label": z.B. "R_m", "anchor": "max" | "min" | "end" | "start" | "beforeMax" | "curve" | "x" | "point", "x"/"y" falls nötig}.
-  "tol": Toleranz als Anteil der Achse (Standard 0.08), bei ungenauen Stellen größer.
-- Die Musterkurve muss alle Merkmale selbst erfüllen (die App prüft das nach): ein Haltepunkt braucht ein deutlich waagerechtes Stück (mind. 5 % der x-Achse), ein Knick einen deutlichen Steigungswechsel.
-- "back": kurze Beschreibung des richtigen Verlaufs.
-
-Bei "phase":
-- "front": die Aufgabe WORTGETREU mit allen Teilaufgaben zum Diagramm.
-- WICHTIG: Lies ALLE Werte GENAU aus dem abgebildeten Diagramm ab (Achsenteilung beachten) – NICHT aus dem Lehrbuch oder Tabellen, auch wenn das Blatt davon abweicht (z.B. endet die eutektische Linie auf manchem Blatt bei 29 % statt 18,3 %). Die Zahlen unten sind nur Beispiele für das Format.
-- taskData.system: die Eckdaten, aus dem Diagramm abgelesen: {"a": linke Komponente (z.B. "Pb", "Fe"), "b": rechte (z.B. "Sn", "C"), "unit": "Masse-%" (bzw. wie auf dem Blatt, z.B. "Gew.-%"), "cMax": rechtes Ende der Zusammensetzungsachse (meist 100, Stahlecke z.B. 2.1), "tMin"/"tMax": Temperaturbereich der Achse, "liquid": Name des oberen Gebiets ("Schmelze"; Stahlecke: "γ"), "alpha": linke Phase ("α" bzw. "α-MK"; Stahlecke: "α"), "beta": rechte Phase ("β"; Stahlecke: "Fe₃C"), "eutecticName": "Eutektikum" (Stahlecke: "Perlit"), "eutectoid": true nur bei einer Umwandlung im festen Zustand (Stahlecke), "meltA": Schmelz- bzw. Umwandlungstemperatur der reinen Komponente A (Pb: 327; Stahlecke Punkt G: 911), "eutecticC"/"eutecticT": eutektischer bzw. eutektoider Punkt (61.9/183; Stahlecke Punkt S: 0.8/723), "rightC"/"rightT": rechtes Ende der rechten Liquidus- bzw. Umwandlungslinie (reines B: cMax und Schmelzpunkt von B, z.B. 100/232; Stahlecke Punkt E: 2.06/1147), "alphaMax": größte Löslichkeit von B in α bei der eutektischen Temperatur (18.3; Stahlecke Punkt P: 0.02), "alphaLow": Löslichkeit von B in α bei tMin, "betaMax"/"betaLow": Zusammensetzung von β bei der eutektischen Temperatur bzw. bei tMin (97.8/99; Fe₃C: 6.67/6.67), "structureNames": true, wenn das Diagramm unterhalb der eutektischen Linie nach Gefüge beschriftet ist ("Eutektikum + α-MK" / "Eutektikum + β-MK" statt "α + β")}.
-  Sind Linien deutlich gekrümmt, zusätzlich "lines": {"liquidusLeft" | "liquidusRight" | "solidusLeft" | "solidusRight" | "solvusLeft" | "solvusRight": [[c, T], …] mit 3–6 abgelesenen Punkten entlang der Linie, Endpunkte wie die Eckdaten}.
-- taskData.parts: je Teilaufgabe in der Reihenfolge des Blatts {"kind": …, …, "prompt": optional der Wortlaut der Teilaufgabe}:
-  "phases" (welche Phasen liegen vor, mit "c" und "t"), "lever" (Hebelgesetz/Phasenanteile bei "c" und "t" – bei zwei Temperaturen zwei Einträge), "structure" (Gefügeanteile von "c" direkt unter der eutektischen Temperatur), "cooling" (Abkühlkurven zeichnen, "compositions": z.B. [0, 20, 61.9], "labels": die Namen wie auf dem Blatt in derselben Reihenfolge, z.B. ["100 % Pb, 0 % Sn", "80 % Pb, 20 % Sn", "Eutektische Legierung"]), "composition" (Legierungen, deren Erstarrung bei "t" beginnt; ist statt der Temperatur eine gemessene Abkühlkurve abgebildet, "curveGiven": true und "t" = Temperatur am Knick der Kurve, abgelesen), "solubility" (maximale Löslichkeit, "side": "b" = von B in α, "a" = von A in β), "eutecticLine" (Bereich der eutektischen Linie), "regions" (Gebiete benennen), "pickRegion" (Gebiet im Diagramm zeigen, "region": "liquid" | "liquidAlpha" | "alpha" | "liquidBeta" | "beta" | "alphaBeta"),
-  "question" (Wissens- oder Erklärfrage zum Diagramm, z.B. "Um welchen Typ von Zweistoffsystem handelt es sich?", "Welche Löslichkeit im flüssigen und festen Zustand?", "Schlagen Sie ein Verfahren vor …": "prompt" = Wortlaut, "answer" = fachlich richtige Musterantwort in 1–3 Sätzen; passt eine Auswahl, zusätzlich "options": 3–4 Antworten und "correct": Index der richtigen).
-  Reihenfolge und Wortlaut ("prompt") wie auf dem Blatt – a), b), c) … jeweils ein Teil.
-- taskData.uncertain: true, wenn Werte schlecht ablesbar waren.
-- Rechne NICHTS selbst aus – Phasen, Hebel, Anteile und Abkühlkurven rechnet die App aus den Eckdaten. "back" darf leer bleiben.
-
-Bei "drawing":
-- "front": die Aufgabe WORTGETREU (ohne einen Erklärungsteil, der als eigener "question"-Eintrag kommt).
-- taskData.panels: Namen der Zeichenflächen, wenn mehrere Zustände nebeneinander gezeichnet werden sollen (z.B. ["vor dem Walzen", "nach dem Walzen"], ["primäre Rekristallisation", "sekundäre Rekristallisation"]); sonst weglassen.
-- taskData.criteria: 2–8 Merkmale, die eine richtige Skizze ZEIGEN muss – konkret und im Bild erkennbar (z.B. "Körner in Walzrichtung gestreckt", "Viele kleine, gleichachsige Körner", "Einzelne sehr große Körner zwischen kleinen"), je {"text", "panel": Name der Fläche (bei mehreren Flächen), "required": false nur für Nebensächliches wie Beschriftungen oder Pfeile}.
-- taskData.solution: 1–3 Sätze, wie die Musterskizze aussieht.
-- taskData.uncertain: true, wenn die Aufgabe nicht eindeutig war.
-
-Antworte NUR mit einem JSON-Objekt:
-{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "phase" | "drawing" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
-
   // -- Aufgaben von einer externen KI (JSON) -------------------------------
 
   /// Prompt zum Kopieren in eine externe KI (ChatGPT, Gemini, Claude.ai …):
@@ -5074,22 +3499,6 @@ Antworte NUR mit einem JSON-Objekt:
     _interactiveTaskSystemPrompt.replaceFirst(' (höchstens 8)', ''),
     _externalTaskRules,
   ].join();
-
-  static const _externalTaskRules = r'''
-
-
-ZUSÄTZLICH FÜR DEN IMPORT:
-- Übernimm ALLE Aufgaben des Dokuments (keine Höchstzahl), in der Reihenfolge des Dokuments, und gib bei jeder "page" an (Seite, auf der sie beginnt).
-- Bei "question" liefere die fertige Quizfrage zusätzlich unter "card", damit die App sie direkt übernehmen kann – mit allen Feldern ihres Typs:
-  {"type": "single_choice" | "multiple_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
-  {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung; Variante"]}
-  {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative", "back": "Erklärung"}
-  {"type": "table", "front": "Vervollständige die Tabelle", "table": [["Kopf 1", "Kopf 2"], ["vorgegeben", {"answer": "Lösung"}]]}
-  {"type": "drag_drop" | "drag_category", "front": "Ordne zu", "dragPairs": [{"source": "Begriff", "target": "Ziel bzw. Kategorie"}]}
-  {"type": "learn", "front": "Aufgabe wortgetreu", "back": "ausführlicher Lösungsweg"} (nur, wenn sich nichts davon prüfen lässt)
-- Steht im Dokument eine Musterlösung, halte dich daran; sonst rechne bzw. löse SORGFÄLTIG selbst.
-- Formeln in LaTeX mit $…$. Verdopple in JSON jeden Backslash (z.B. "$\\frac{a}{b}$"), sonst ist das JSON ungültig.
-- Antworte AUSSCHLIESSLICH mit dem JSON-Objekt {"tasks": [...]} – ohne Text davor oder danach. Ich speichere es als Datei "aufgaben.json" und lade sie in der App hoch.''';
 
   /// Liest den JSON-Text einer externen KI (siehe [externalTaskPrompt]):
   /// {"tasks": [...]} mit interaktiven Aufgaben und Fragen, aber auch eine
@@ -5214,42 +3623,4 @@ ZUSÄTZLICH FÜR DEN IMPORT:
     return verification;
   }
 
-  static const _verifyTaskSystemPrompt = r'''
-Du prüfst für eine Lern-App eine Aufgabe, die eine andere KI aus einem Übungsblatt übernommen hat. Prüfe GENAU und rechne selbst nach – Lernende verlassen sich darauf.
-
-Je nach Art:
-- "steps" (Rechenweg): Stimmt jede erwartete Antwort ("answer") und das Endergebnis? Sind die "mistakes" (typische Fehler) wirklich falsch? Passen die Auswahl-Antworten ("correct")? Antworten stehen in Eingabe-Schreibweise (x^2, sqrt(), pi …).
-- "gantt" (Terminierung): Passen Teile, Arbeitsgänge, Dauern, Reihenfolge ("needs"), Start-/Liefertermin, Richtung und Zählweise zur Aufgabe? Termine rechnet die App selbst.
-- "crystal" (Kristallgitter): Passen Gitter und Indizes (Vorzeichen!) zur Aufgabe?
-- "bom" (Stückliste): Passt der Erzeugnisbaum (Sach-Nr., Mengen, Struktur) und welche Listen gefragt sind? Die Listen rechnet die App selbst.
-- "sketch" (Diagramm): Ist die Musterkurve fachlich richtig, stimmen die Merkmale?
-- "phase" (Zustandsdiagramm): Passen die Eckdaten (Schmelzpunkte, eutektischer Punkt, Löslichkeitsgrenzen) zum System und die Teilaufgaben (Punkte, Zusammensetzungen) zur Aufgabe? Phasen und Anteile rechnet die App selbst.
-- "drawing" (Freihand-Skizze): Sind die Kriterien fachlich richtig, vollständig und im Bild erkennbar formuliert?
-- Quizfrage (Typ wie "single_choice", "free_text", "fill_blank", "table" …): Ist die als richtig hinterlegte Antwort fachlich richtig und vollständig, sind falsche Optionen wirklich falsch, passt die Frage zur Aufgabe?
-
-Urteil:
-- "ok": alles stimmt.
-- "fehler": mindestens eine Angabe ist falsch. Dann "comment": kurz und konkret, was falsch ist und was richtig wäre (1–4 Sätze, LaTeX in $…$), und "corrected": das VOLLSTÄNDIGE korrigierte Datenobjekt im gleichen Schema wie geliefert (nur das Nötige ändern).
-- "unklar": lässt sich ohne das Blatt nicht entscheiden (z.B. Werte, die nur im Bild stehen) – "comment" sagt, was man prüfen sollte.
-
-Antworte NUR mit JSON:
-{"verdict": "ok" | "fehler" | "unklar", "comment": "...", "corrected": {...} | null}''';
-
-  static const _paperReviewSystemPrompt = r"""
-Du bist Korrektor für handschriftliche Rechenwege. Du bekommst eine Aufgabe, die Musterlösung in Schritten und Fotos eines Rechenwegs.
-
-1. Lies den Rechenweg Zeile für Zeile WORTGETREU ab – auch Fehler genau so, wie sie dastehen; nichts verbessern. Formeln in LaTeX mit $…$.
-2. Bewerte jede Zeile mit "status":
-   - "ok": richtig (ein anderer, aber richtiger Weg ist auch ok – vergleiche inhaltlich, nicht wörtlich),
-   - "fehler": hier passiert ein eigener Fehler,
-   - "folgefehler": aus einer früheren falschen Zeile richtig weitergerechnet,
-   - "unklar": nicht lesbar.
-3. Bei "fehler": in "comment" kurz und konkret, was falsch ist (ein bis zwei Sätze), in "fix" die richtige Zeile. Bei "folgefehler": in "comment", dass richtig weitergerechnet wurde, in "fix", was mit der richtigen Rechnung dastünde.
-4. "finalAnswer": das Endergebnis der Person als Formel in Eingabe-Schreibweise ohne linke Seite (z.B. "x - sqrt(2*x - 4)"); leer, wenn keins dasteht.
-5. "firstErrorStep": Nummer des Musterlösungs-Schritts, in dem der erste Fehler passiert; null, wenn alles stimmt.
-6. "summary": ein Satz (z.B. "1 Fehler in Zeile 3 – die Methode stimmt").
-7. "grade": "gut" (alles richtig), "schwer" (Methode richtig, kleine Rechenfehler) oder "nochmal" (falsche Methode oder mehrere Fehler).
-
-Antworte NUR mit JSON:
-{"lines": [{"n": 1, "text": "...", "status": "ok", "comment": "", "fix": ""}], "finalAnswer": "...", "firstErrorStep": null, "summary": "...", "grade": "gut"}""";
 }

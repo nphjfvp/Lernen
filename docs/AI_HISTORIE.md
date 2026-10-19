@@ -1287,3 +1287,8 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Architektur, Design), docs/EINRICHTUNG.md (Setup 1–5, Ausführen, APK, Web-App,
     Signierschlüssel, Backup, Updates, Tests) und CHANGELOG.md (Abschnitte 5a … 6f, neueste oben).
     AI_CONTEXT Abschnitt 7 kurz, die Punkte 1–94 hier. Verweise in Code/Workflows angepasst.
+95. Prompts ausgelagert: die 50 privaten `static const _…Prompt/_…Rule/_…Spec`-Konstanten aus
+    `AiService` sind Top-Level-`const` in `part`-Dateien `lib/services/ai_prompts/` (material,
+    import, check, tasks, visual; `part of '../ai_service.dart'`), Inhalt unverändert (per Skript
+    verglichen). Neue feste Prompts dort anlegen; Prompts mit Parametern bleiben Methoden in
+    AiService. ai_service.dart: 5.227 → 3.626 Zeilen.
