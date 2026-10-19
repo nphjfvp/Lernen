@@ -69,6 +69,7 @@ dependencies:
   background_downloader: ^9.6.4
   # Browser-APIs (Bildschirm wach halten, PDF-Speicher im Web).
   web: ^1.1.1
+  idb_shim: ^2.9.8
 
 dev_dependencies:
   flutter_test:

@@ -471,7 +471,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1569 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1571 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1713,6 +1713,13 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Funktion, Zähler `holds`; Web: Screen Wake Lock API über package:web, bei
     `visibilitychange` neu angefordert; sonst Stub). `AiService._complete` hält ihn um die Anfrage
     (finally). Test: `ai_slow_response_test`.
+88. PDFs im Web: services/pdf_blob_store.dart (`PdfBlobStore(IdbFactory)`, eigene IndexedDB
+    `lernen_pdfs`, Store `pdfs`, put/get/delete; `filePath` = `idb:<materialId>`, `pathFor`/
+    `isBlobPath`/`idOf`). material_file_store_web.dart speichert dort (Fallback Base64, wenn
+    IndexedDB nicht geht); Import jetzt `dart.library.js_interop`. `PdfBlobMigration.run` (main.dart
+    vor `ModuleRepository.load`, über `MaterialFileStore.migrateLegacy`; IO/Stub: 0) zieht
+    `fileBytesBase64` um (`FieldValue.delete`). Tests: `pdf_blob_store_test` (idb memory) und
+    `pdf_blob_store_browser_test` (`@TestOn('browser')`, `flutter test --platform chrome`).
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

@@ -481,7 +481,7 @@ packages:
     source: hosted
     version: "4.1.2"
   idb_shim:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: idb_shim
       sha256: e36a748165663a165e1f292e9d85af6e3aa087f6e2291d16f86b2035103b2950

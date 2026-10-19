@@ -1,16 +1,19 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:sembast/sembast.dart';
+
 import 'material_file_store_stub.dart'
     if (dart.library.io) 'material_file_store_io.dart'
-    if (dart.library.html) 'material_file_store_web.dart' as platform;
+    if (dart.library.js_interop) 'material_file_store_web.dart' as platform;
 
 /// Persistiert die Original-Bytes einer hochgeladenen PDF-Datei dauerhaft –
 /// Grundlage für die visuelle Ansicht + Markier-Funktion in
 /// MaterialViewerScreen (ohne das würde nur der beim Upload extrahierte
 /// Text vorliegen, aber kein Dokument zum Anzeigen/Markieren). Auf
 /// Mobile/Desktop als Datei im Anwendungsverzeichnis, auf Web als Base64
-/// direkt in der DB (dort gibt es kein persistentes Dateisystem).
+/// in einer eigenen IndexedDB (`filePath` = `idb:<id>`, siehe PdfBlobStore –
+/// früher als Base64 direkt in der DB, das liest [load] weiterhin).
 class MaterialFileStore {
   MaterialFileStore._();
 
@@ -26,4 +29,8 @@ class MaterialFileStore {
   }
 
   static Future<void> delete({String? filePath}) => platform.deletePdfFile(filePath);
+
+  /// Web: früher als Base64 gespeicherte PDFs in den eigenen Speicher
+  /// umziehen (siehe PdfBlobMigration); sonst nichts zu tun.
+  static Future<int> migrateLegacy(Database db) => platform.migrateLegacyPdfs(db);
 }

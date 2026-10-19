@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:sembast/sembast.dart';
 
 Future<(String?, String?)> storePdfBytes(String materialId, Uint8List bytes) async {
   final dir = await getApplicationDocumentsDirectory();
@@ -25,3 +26,5 @@ Future<void> deletePdfFile(String? filePath) async {
   final file = File(filePath);
   if (await file.exists()) await file.delete();
 }
+
+Future<int> migrateLegacyPdfs(Database db) async => 0;

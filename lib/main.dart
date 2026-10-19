@@ -26,6 +26,7 @@ import 'repositories/unsupported_task_repository.dart';
 import 'services/auto_sync_service.dart';
 import 'services/background_transport.dart';
 import 'services/database_service.dart';
+import 'services/material_file_store.dart';
 import 'services/sync_backup_service.dart';
 import 'services/ai_service.dart';
 import 'services/reminder_service.dart';
@@ -72,6 +73,13 @@ Future<void> main() async {
   // das Daily Quiz hätte dann z.B. für den Rest der Session KEIN Budget für
   // neue Karten (nur fällige Wiederholungen hängen nicht an `modules`),
   // je nachdem wie schnell der lokale DB-Read gegen den ersten Frame lief.
+  // Web: alte, als Base64 am Material gespeicherte PDFs einmalig in den
+  // eigenen Speicher umziehen – bevor die Materialien geladen werden.
+  try {
+    await MaterialFileStore.migrateLegacy(await DatabaseService.instance.database);
+  } catch (e) {
+    debugPrint('PDF-Umzug fehlgeschlagen ($e).');
+  }
   final moduleRepository = ModuleRepository();
   await moduleRepository.load();
 
