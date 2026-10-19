@@ -1412,6 +1412,23 @@ Historie des App-Zweigs (bleibt dauerhaft erhalten):
 - Daten, die eine neuere Version angelegt hat (z.B. neue Aufgabentypen), zeigt
   die ältere Version als Karteikarte; sie gehen nicht verloren.
 
+### 6c. Web-App fürs iPad (und jeden Browser)
+
+Adresse: **<https://nphjfvp.github.io/Lernen/>** – bei jedem Push automatisch
+auf dem neuesten Stand (Workflow „Web-App“, `.github/workflows/web-app.yml`,
+mit denselben Tests wie Android/Windows davor).
+
+- **Auf dem iPad/iPhone**: in Safari öffnen → **Teilen → Zum Home-Bildschirm**.
+  Dann startet sie im Vollbild wie eine App, und Safari behält die Daten
+  dauerhaft (normale Websites löscht Safari nach 7 Tagen ohne Besuch).
+- **Daten**: liegen im Browser des Geräts; mit Konto-Anmeldung laufen sie per
+  Sync wie gewohnt zwischen Pixel, PC und iPad.
+- **Einmalig einrichten**: GitHub → Settings → Pages → Source „GitHub Actions“.
+  Für die Google-Anmeldung in Firebase → Authentication → Settings →
+  Autorisierte Domains `nphjfvp.github.io` eintragen.
+- **Geht im Browser nicht**: Lernerinnerungen und das Startbildschirm-Widget
+  (nur Android). KI-Anfragen laufen nicht weiter, wenn man die App verlässt.
+
 ### 6b. Animationen laden zuverlässiger
 
 - **Toleranter beim Einlesen**: Schreibt die KI Szenen leicht anders als

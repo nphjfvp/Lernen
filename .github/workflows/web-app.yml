@@ -1,0 +1,72 @@
+name: Web-App
+
+# Baut bei jedem Push auf den App-Zweig die Web-Version und veröffentlicht sie
+# über GitHub Pages unter https://nphjfvp.github.io/Lernen/ – dieselbe App wie
+# auf Android/Windows, im Browser (auch iPad/iPhone: in Safari "Teilen → Zum
+# Home-Bildschirm", dann startet sie im Vollbild wie eine App).
+#
+# Einmalig nötig: GitHub → Settings → Pages → Source: "GitHub Actions".
+# Für die Google-Anmeldung: Firebase → Authentication → Settings →
+# Autorisierte Domains → nphjfvp.github.io.
+on:
+  push:
+    branches: [claude/neue-lern-app-fokus-ej3k48]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Nur eine Veröffentlichung gleichzeitig; ein neuer Push ersetzt eine noch
+# wartende, eine laufende wird aber zu Ende gebracht.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.3"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Qualitäts-Gate wie bei Android/Windows: ohne sauberen Analyzer und
+      # grüne Tests wird nichts veröffentlicht.
+      - name: Analyzer
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test
+        env:
+          TZ: Europe/Berlin
+
+      # --base-href: GitHub Pages liefert das Repo unter /Lernen/ aus.
+      # --no-web-resources-cdn: CanvasKit kommt mit auf die Seite statt von
+      # gstatic.com – eine Abhängigkeit weniger beim Start.
+      - name: Build Web-App
+        run: |
+          flutter build web --release --base-href /Lernen/ --no-web-resources-cdn \
+            --build-number=${{ github.run_number }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build-web
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

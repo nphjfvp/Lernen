@@ -34,7 +34,8 @@ gewünschtes Verhalten.
 ## 2. Tech-Stack
 
 - **Flutter / Dart 3** (SDK `^3.13.3`), Zielplattformen Android, Windows, Web
-  (iOS möglich). CI: `.github/workflows/android-apk.yml`, `windows-app.yml`
+  (iOS möglich). CI: `.github/workflows/android-apk.yml`, `windows-app.yml`, `web-app.yml`
+  (Web: GitHub Pages unter /Lernen/, `--base-href /Lernen/ --no-web-resources-cdn`)
   (Windows: `Lernen-Setup.exe` per Inno Setup aus `windows/installer/lernen.iss`
   plus ZIP; das In-App-Update lädt unter Windows das Setup und installiert
   still, unter Android die APK und öffnet den System-Installer über
@@ -1700,6 +1701,9 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `initialRequest`); Chat: lose Keys werden zur show, `visual-chat-broken-i`/`visual-chat-retry-i`.
     Painter (2D/3D) zeichnen jedes Element in try/catch mit Save-Count-Restore. Tests:
     `visual_diagram_test`, `visual_diagram_view_test`.
+85. Web-App veröffentlicht: `.github/workflows/web-app.yml` (Push auf den App-Zweig → analyze,
+    test, `flutter build web --base-href /Lernen/ --no-web-resources-cdn`, upload-pages-artifact,
+    deploy-pages) → https://nphjfvp.github.io/Lernen/. CanvasKit liegt mit auf der Seite.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
