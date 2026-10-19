@@ -365,7 +365,8 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Content-Security-Policy abgeriegelten Sandbox ohne jeden Netzwerkzugriff,
   siehe `lib/services/html_question_contract.dart`). Die Seite meldet ihr
   Ergebnis rein lokal über einen JavaScript-Kanal zurück – keine erneute
-  API-Anfrage beim Beantworten. Nur auf Android/iOS tatsächlich interaktiv;
+  API-Anfrage beim Beantworten. Auf Android/iOS und im Browser (dort in einem
+  abgeschotteten iframe) tatsächlich interaktiv;
   auf Plattformen ohne WebView-Unterstützung (z.B. Windows-Desktop) oder bei
   einem Ladefehler fällt die Karte automatisch auf eine einfache
   Frage/Antwort-Ansicht mit manueller Selbstbewertung zurück (wie beim
@@ -999,8 +1000,8 @@ Nachbereiten-Modus zu wechseln.
   Frage) – (mehrere prüfen unterschiedliche
   Aspekte), jede in bis zu drei Stufen **Leicht/Mittel/Schwer** desselben
   Fakts. Jede Stufe ist einzeln an-/abwählbar, der Fragetyp pro Stufe per
-  Dropdown wählbar – auch **"Interaktiv"** (html, nur auf Android/iOS
-  interaktiv, sonst Karteikarte) – oder auf **"KI entscheidet"** (Standard)
+  Dropdown wählbar – auch **"Interaktiv"** (html, auf Android/iOS und
+  im Browser interaktiv, unter Windows Karteikarte) – oder auf **"KI entscheidet"** (Standard)
   – dann wählt die KI das Format passend zur Stufe (leicht eher Auswahl,
   schwer eher freies Erinnern, siehe `_variantTypeRule`/Schwierigkeits-
   Eskalation); "Interaktiv", "Bild beschriften" und "Bild markieren" wählt
@@ -1435,6 +1436,9 @@ mit denselben Tests wie Android/Windows davor).
   die der Browser beim Start komplett in den Arbeitsspeicher lädt (bei vielen
   Vorlesungen wurde die App auf dem iPad langsam oder von Safari beendet).
   Schon gespeicherte PDFs ziehen beim ersten Start einmalig um.
+- **Interaktive Fragen („Interaktiv“, html) im Browser**: laufen jetzt auch
+  dort – in einem abgeschotteten Fenster ohne Zugriff auf die App oder das
+  Internet (vorher kam im Browser nur die Karteikarte zum Umdrehen).
 - **Geht im Browser nicht**: Lernerinnerungen und das Startbildschirm-Widget
   (nur Android). KI-Anfragen laufen nicht weiter, wenn man die App verlässt –
   solange eine läuft, hält die App deshalb den Bildschirm an (kein

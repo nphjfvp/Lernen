@@ -62,7 +62,7 @@ gewünschtes Verhalten.
   `syncfusion_flutter_pdfviewer` Anzeige); DOCX/PPTX über `archive` + `xml`.
 - **Optional**: Firebase (`firebase_core`, `cloud_firestore`, `firebase_auth`,
   `google_sign_in`) für Cloud-Sync/Account; `webview_flutter` für den
-  interaktiven `html`-Fragetyp (nur Android/iOS, sonst Fallback);
+  interaktiven `html`-Fragetyp (Android/iOS; Web per iframe, sonst Fallback);
   `flutter_local_notifications` (Lernerinnerung), `home_widget` (Android-Widget),
   `flutter_math_fork` (LaTeX-Formeln, siehe `MathText`).
 - **Tests**: `flutter_test`, reine Logik + Modelle; Repository-Logik über
@@ -471,7 +471,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1571 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1574 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1720,6 +1720,15 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     vor `ModuleRepository.load`, über `MaterialFileStore.migrateLegacy`; IO/Stub: 0) zieht
     `fileBytesBase64` um (`FieldValue.delete`). Tests: `pdf_blob_store_test` (idb memory) und
     `pdf_blob_store_browser_test` (`@TestOn('browser')`, `flutter test --platform chrome`).
+89. html-Fragetyp im Web: ui/daily/html_question_frame.dart (Export Stub/Web je
+    `dart.library.js_interop`, `htmlQuestionFrameSupported`). Web: `HtmlQuestionFrame` =
+    `HtmlElementView.fromTagName('iframe')`, `sandbox="allow-scripts"` (ohne same-origin),
+    `srcdoc` = `withHtmlQuestionBridge(wrapHtmlQuestionPage(html), token)`; die Brücke
+    (services/html_question_bridge.dart) stellt `window.FlutterAnswer.postMessage` bereit →
+    `parent.postMessage({lernenHtmlAnswer: token, message})`; die App nimmt nur Nachrichten aus
+    genau diesem iframe (`e.source`) mit passendem Token (`htmlQuestionBridgeMessage`).
+    `QuestionAnswerView`: `_useHtmlFrame`, `_handleHtmlAnswer(String)`. Test:
+    `html_question_bridge_test`; im Browser von Hand per Playwright geprüft.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

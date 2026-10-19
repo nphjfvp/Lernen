@@ -32,6 +32,7 @@ import '../tasks/sketch_task_view.dart';
 import '../tasks/gantt_task_view.dart';
 import '../tasks/step_task_view.dart';
 import '../widgets/zoomable_image.dart';
+import 'html_question_frame.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
 import '../widgets/relative_image.dart';
@@ -222,6 +223,10 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// Selbstbewertung (front/back sind bei diesem Typ genau dafür gedacht).
   bool _webViewAvailable = true;
 
+  /// Im Browser: die Seite läuft in einem abgeschotteten iframe statt einer
+  /// WebView (siehe HtmlQuestionFrame).
+  bool _useHtmlFrame = false;
+
   // -- KI-Hilfe: Tipp vor dem Antworten, Erklärung danach -----------------
   String? _hint;
   bool _hintLoading = false;
@@ -309,8 +314,12 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
   void _setupWebView() {
     final html = widget.card.htmlContent;
-    final supportsWebView = defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
+    if (html != null && html.trim().isNotEmpty && kIsWeb && htmlQuestionFrameSupported) {
+      _useHtmlFrame = true;
+      return;
+    }
+    final supportsWebView = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
     if (html == null || html.trim().isEmpty || !supportsWebView) {
       setState(() => _webViewAvailable = false);
       return;
@@ -327,7 +336,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             if (mounted) setState(() => _webViewAvailable = false);
           },
         ))
-        ..addJavaScriptChannel(htmlAnswerChannelName, onMessageReceived: _handleHtmlAnswerMessage)
+        ..addJavaScriptChannel(htmlAnswerChannelName, onMessageReceived: (m) => _handleHtmlAnswer(m.message))
         ..loadHtmlString(wrapHtmlQuestionPage(html));
     } catch (_) {
       setState(() => _webViewAvailable = false);
@@ -345,9 +354,9 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   /// Seite zeigt meist ihr eigenes Feedback, das sonst nie zu sehen wäre –
   /// die App zeigt ihr Ergebnis darunter mit "Weiter". Nur der erste
   /// gemeldete Versuch zählt.
-  void _handleHtmlAnswerMessage(JavaScriptMessage message) {
+  void _handleHtmlAnswer(String message) {
     try {
-      final data = jsonDecode(message.message);
+      final data = jsonDecode(message);
       if (data is Map && data['correct'] is bool) {
         final correct = data['correct'] as bool;
         if (widget.examMode) {
@@ -1137,8 +1146,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
   // ---------------------------------------------------------------------
   // html: KI-generierte interaktive Seite (siehe AiService-Prompts) in
-  // einer sandboxed WebView; ohne WebView-Unterstützung (Windows/Web/
-  // Linux) oder bei Ladefehler Fallback auf dieselbe Umdrehen +
+  // einer sandboxed WebView (im Browser: abgeschottetes iframe); ohne
+  // WebView-Unterstützung (Windows/Linux) oder bei Ladefehler Fallback auf dieselbe Umdrehen +
   // Selbstbewertung-Ansicht wie beim einfachen `flashcard`-Typ.
   // ---------------------------------------------------------------------
   Widget _buildHtmlQuestion(AppColors c) {
@@ -1151,7 +1160,17 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             child: Align(alignment: Alignment.centerLeft, child: SourceLinkButton(card: widget.card)),
           ),
         if (_webViewLoading) const LinearProgressIndicator(minHeight: 2),
-        Expanded(child: WebViewWidget(controller: _webViewController!)),
+        Expanded(
+          child: _useHtmlFrame
+              ? HtmlQuestionFrame(
+                  page: wrapHtmlQuestionPage(widget.card.htmlContent!),
+                  onMessage: _handleHtmlAnswer,
+                  onLoaded: () {
+                    if (mounted) setState(() => _webViewLoading = false);
+                  },
+                )
+              : WebViewWidget(controller: _webViewController!),
+        ),
         if (!_checked) _skipRow(c),
         if (_checked)
           ConstrainedBox(
