@@ -27,6 +27,7 @@ import 'lab_photo_reading.dart';
 import 'lab_report_draft.dart';
 import 'json_repair.dart';
 import 'question_parsing.dart';
+import 'screen_awake.dart';
 import 'text_chunker.dart';
 
 /// Wird geworfen, wenn die KI-Antwort kein (reparierbares) JSON enthält.
@@ -329,10 +330,13 @@ Hier ist der Dokumenttext:
     }
 
     final http.Response response;
+    final release = ScreenAwake.hold();
     try {
       response = await _awaitPatiently(send());
     } on http.ClientException catch (e) {
       throw AiServiceException('Keine Verbindung zu OpenRouter: ${e.message}');
+    } finally {
+      release();
     }
 
     if (response.statusCode != 200) {

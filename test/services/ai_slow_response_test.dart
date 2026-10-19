@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lernen/services/ai_service.dart';
+import 'package:lernen/services/screen_awake.dart';
 import 'package:lernen/ui/widgets/slow_ai_dialog.dart';
 
 /// OpenRouter antwortet erst nach [delay].
@@ -39,6 +40,27 @@ void main() {
   tearDown(() {
     AiService.requestTimeout = original;
     AiService.onSlowResponse = null;
+  });
+
+  test('Bildschirm bleibt wach, solange die Anfrage läuft – auch nach einem Abbruch wieder frei', () async {
+    int? during;
+    await _slowAi(
+      const Duration(milliseconds: 10),
+      onRequest: () => during = ScreenAwake.holds,
+    ).explainVisual(lesson: const {});
+    expect(during, 1);
+    expect(ScreenAwake.holds, 0);
+
+    await expectLater(
+      _slowAi(const Duration(milliseconds: 300)).explainVisual(lesson: const {}),
+      throwsA(isA<AiServiceException>()),
+    );
+    expect(ScreenAwake.holds, 0);
+
+    final release = ScreenAwake.hold();
+    release();
+    release();
+    expect(ScreenAwake.holds, 0, reason: 'doppeltes Freigeben zählt nicht doppelt');
   });
 
   test('Ohne Rückfrage-Hook: Abbruch nach der Wartezeit wie bisher', () async {

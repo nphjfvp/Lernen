@@ -1431,7 +1431,9 @@ mit denselben Tests wie Android/Windows davor).
   breiten Bildschirmen (iPad quer, großes Fenster – auch unter Windows) stehen
   die Hauptbereiche mittig statt über die ganze Breite gezogen.
 - **Geht im Browser nicht**: Lernerinnerungen und das Startbildschirm-Widget
-  (nur Android). KI-Anfragen laufen nicht weiter, wenn man die App verlässt.
+  (nur Android). KI-Anfragen laufen nicht weiter, wenn man die App verlässt –
+  solange eine läuft, hält die App deshalb den Bildschirm an (kein
+  automatisches Sperren; Safari ab iOS 16.4, Chrome, Edge).
 
 ### 6b. Animationen laden zuverlässiger
 

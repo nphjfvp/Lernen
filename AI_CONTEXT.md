@@ -471,7 +471,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (September 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1567 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1569 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt (alle vom Nutzer freigegebenen Punkte, je ein Commit):
@@ -1709,6 +1709,10 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `#lernen-loading` bis `flutter-first-frame`, `navigator.storage.persist()`), Manifest-Farben
     #FAFAF7. `RootShell`: Inhalt samt Leiste/Plus-Knopf mittig, höchstens `rootMaxContentWidth`
     (1100). Test: `widget_test` (breiter Bildschirm).
+87. Bildschirm wach während KI: services/screen_awake.dart (`ScreenAwake.hold()` → Freigabe-
+    Funktion, Zähler `holds`; Web: Screen Wake Lock API über package:web, bei
+    `visibilitychange` neu angefordert; sonst Stub). `AiService._complete` hält ihn um die Anfrage
+    (finally). Test: `ai_slow_response_test`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 
