@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
@@ -20,6 +21,7 @@ import '../../services/auto_sync_service.dart';
 import '../../services/pdf_cloud_store.dart';
 import '../../services/pdf_cloud_sync_service.dart';
 import '../../services/reminder_service.dart';
+import '../../services/sync_codes.dart';
 import '../../services/sync_diagnostics.dart';
 import '../../services/sync_service.dart';
 import '../../services/update_checker_service.dart';
@@ -32,6 +34,7 @@ import '../widgets/update_actions.dart';
 import 'model_picker_sheet.dart';
 import 'sync_backups_dialog.dart';
 import 'sync_cloud_history_dialog.dart';
+import 'sync_code_hint.dart';
 import 'sync_diagnosis_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -483,17 +486,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _pushCode() async {
     final target = _codeTarget();
-    if (target != null) await _uploadWithChoice(target, codeToRemember: target.id);
+    if (target != null && _acceptsNewCode(target.id)) await _uploadWithChoice(target, codeToRemember: target.id);
   }
 
   Future<void> _mergeCode() async {
     final target = _codeTarget();
-    if (target != null) await _merge(target, codeToRemember: target.id);
+    if (target != null && _acceptsNewCode(target.id)) await _merge(target, codeToRemember: target.id);
+  }
+
+  /// Neue Codes müssen sicher sein (siehe SyncCodes); der bisher gespeicherte
+  /// darf weiter genutzt werden, bis man umzieht.
+  bool _acceptsNewCode(String code) {
+    if (SyncCodes.isStrong(code) || code == context.read<SettingsRepository>().settings.syncCode) return true;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Der Code ist zu kurz und ließe sich erraten – mindestens ${SyncCodes.minLength} Zeichen. '
+          'Am einfachsten: Feld leeren und „Sicheren Code erzeugen“.'),
+    ));
+    return false;
   }
 
   Future<void> _pullCode() async {
     final target = _codeTarget();
     if (target != null) await _pull(target, codeToRemember: target.id);
+  }
+
+  /// Kurzer Code → neuer, zufälliger: den Stand dort hochladen und den Code
+  /// zeigen, damit man ihn auf den anderen Geräten eingibt. Scheitert der
+  /// Upload, bleibt der alte Code.
+  Future<void> _moveToStrongCode() async {
+    final repo = context.read<SettingsRepository>();
+    final old = _syncCodeController.text;
+    final code = SyncCodes.generate();
+    _syncCodeController.text = code;
+    await _push(SyncTarget.code(code), codeToRemember: code);
+    if (!mounted) return;
+    if (repo.settings.syncCode != code) {
+      _syncCodeController.text = old;
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const ValueKey('sync-code-moved'),
+        title: const Text('Neuer Sync-Code'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Dein Stand liegt jetzt unter diesem Code. Gib ihn auf den anderen Geräten ein '
+                '(„Herunterladen“ oder „Abgleichen“):'),
+            const SizedBox(height: 12),
+            SelectableText(code, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Clipboard.setData(ClipboardData(text: code)),
+            child: const Text('Kopieren'),
+          ),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Fertig')),
+        ],
+      ),
+    );
   }
 
   Future<void> _pushAccount() async {
@@ -1063,6 +1117,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     TextField(
                       controller: _syncCodeController,
                       decoration: _fieldDecoration(context, label: 'Sync-Code'),
+                    ),
+                    const SizedBox(height: 6),
+                    SyncCodeHint(
+                      controller: _syncCodeController,
+                      onGenerate: () => _syncCodeController.text = SyncCodes.generate(),
+                      onMove: syncLocked ? null : _moveToStrongCode,
                     ),
                     const SizedBox(height: 12),
                     _SoftButton(

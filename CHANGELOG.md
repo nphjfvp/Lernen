@@ -1,8 +1,22 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6h) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6i) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6i. Sichere Sync-Codes
+
+- **„Sicheren Code erzeugen“** unter dem Sync-Code-Feld: ein zufälliger Code
+  wie `k7mq-x2vd-9hfa-tn4e`, der sich nicht erraten lässt. Selbst gewählte
+  Codes müssen jetzt mindestens 16 Zeichen haben.
+- **Schon einen kurzen Code?** Er funktioniert weiter, darunter steht aber ein
+  Hinweis mit **„Auf sicheren Code umziehen“**: die App lädt deinen Stand
+  unter einem neuen Code hoch und zeigt ihn zum Abschreiben/Kopieren. Den
+  gibst du auf den anderen Geräten ein.
+- **Danach** (alle Geräte umgezogen): unter „Verbindung prüfen“ die Regeln
+  kopieren und in Firebase (Firestore → Regeln) neu veröffentlichen – ab
+  dann lehnt Firebase kurze Codes ab. Wer nur mit Konto synchronisiert, ist
+  nicht betroffen.
 
 ### 6h. KI-Prompts in eigenen Dateien
 

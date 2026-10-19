@@ -11,7 +11,8 @@ const firestoreRulesText = r'''rules_version = '2';
 //    seit hier auch der BYOK-API-Key mit übertragen wird.
 //  - sync_codes/{code}: Fallback ohne Konto (wie beim Vorgänger) - wer den
 //    Sync-Code kennt, darf genau dieses eine Dokument lesen/schreiben, wie
-//    ein Passwort.
+//    ein Passwort. Mindestens 16 Zeichen: die App erzeugt zufällige Codes,
+//    kurze selbst gewählte ließen sich durchprobieren (SyncCodes).
 // In beiden Fällen ist "list" verboten, damit niemand die Sammlung
 // durchsuchen/aufzählen kann, um an existierende IDs/Codes zu kommen. Alles
 // außerhalb dieser beiden Pfade ist per Default-Regel gesperrt.
@@ -30,11 +31,11 @@ service cloud.firestore {
     }
 
     match /sync_codes/{code} {
-      allow get, write: if code is string && code.size() >= 6;
+      allow get, write: if code is string && code.size() >= 16;
       allow list: if false;
 
       match /sync_parts/{part} {
-        allow get, write: if code is string && code.size() >= 6;
+        allow get, write: if code is string && code.size() >= 16;
         allow list: if false;
       }
     }

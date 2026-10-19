@@ -27,7 +27,7 @@ Display-Formeln, CI ohne Test-Gate, Sync-Code-Key-Injektion im Pull-Pfad.
 | H7 Stats nach Sprint | behoben – Fortschritt lädt nach dem Sprint neu |
 | H8 Checkpoint-Fehler | behoben – werden auch nach Schließen des Viewers gespeichert |
 | H9 Push ohne Transaktion | **zurückgestellt** (Entscheidung Nutzer: gemerkt, vorerst nicht umsetzen) – selten (zwei Geräte im selben Moment); Auto-Sync-Konfliktschutz über `lastSyncedPushId` fängt den Normalfall ab |
-| H10 schwache Sync-Codes | **zurückgestellt** (Entscheidung Nutzer: gemerkt, vorerst nicht umsetzen) – entschärft, da über Sync-Codes keine Schlüssel mehr reisen; Konto-Sync ist der empfohlene Weg |
+| H10 schwache Sync-Codes | **behoben** (Oktober 2026) – App erzeugt zufällige Codes, neue Codes ≥ 16 Zeichen, „Auf sicheren Code umziehen“ für alte; `firestore.rules` verlangt ≥ 16 (wirkt nach erneutem Veröffentlichen) |
 | H11 `Flashcard.fromMap` | behoben – Defaults + `num`→`int` + `tryParse` für Datumswerte |
 | `isCorrect: 1` | behoben |
 | Sprint zählt „Schwer" als falsch | behoben |

@@ -1292,3 +1292,10 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     import, check, tasks, visual; `part of '../ai_service.dart'`), Inhalt unverändert (per Skript
     verglichen). Neue feste Prompts dort anlegen; Prompts mit Parametern bleiben Methoden in
     AiService. ai_service.dart: 5.227 → 3.626 Zeilen.
+96. Sichere Sync-Codes (AUDIT H10): services/sync_codes.dart (`SyncCodes.generate` 4×4 aus 31
+    Zeichen ohne Verwechsler, Random.secure; `minLength` 16; `isStrong`). firestore.rules und
+    `firestoreRulesText`: `code.size() >= 16`. Settings: `SyncCodeHint` (ui/settings/
+    sync_code_hint.dart; `sync-code-generate`, `sync-code-weak`, `sync-code-move`),
+    `_moveToStrongCode` (Upload unter neuem Code, Dialog `sync-code-moved` mit Kopieren; bei
+    Fehlschlag bleibt der alte), `_acceptsNewCode` blockt Hochladen/Abgleichen mit neuen kurzen
+    Codes (der gespeicherte bleibt nutzbar). Test: `sync_codes_test`.
