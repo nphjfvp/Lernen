@@ -1318,3 +1318,16 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `hunt-restart`, `hunt-error`). Zählt NICHT für FSRS; „Diese Karten üben“ →
     `PracticeScreen.cards`. Kachel `game-hunt` in GamesScreen. Tests: `error_hunt_test`,
     `error_hunt_screen_test`.
+99. Echte 3D-Ansicht: assets/three/ (three.js r147 als klassische Skripte: three.min.js,
+    OrbitControls.js, CSS2DRenderer.js, LICENSE.txt; in pubspec als Asset). services/scene3d_html.dart:
+    `Scene3DHtml.build(scene, title, palette, libs, resolveColor)` → eigenständige Seite (Farben
+    vorher per `diagramColor` zu Hex, Szene als JSON mit `<`→\u003c, Titel HTML-maskiert; JS bildet
+    Scene3DObject.number/vector/pointsAt/colorAt/textAt nach, z oben, Raster-Kopien, Schatten,
+    OrbitControls, `spin` = halbe Drehung je Durchlauf, `window.lernen3dReady`). `plainMath`
+    wandelt $…$ in Text (√, Brüche, Hoch-/Tiefzahlen, griechisch, Operatoren mit Abstand, \%).
+    ui/visual/scene3d_open.dart (`Scene3DOpener.open`, Bibliotheken per rootBundle, gecacht;
+    `showsInApp` Web/Android/iOS → Seite mit `htmlPageView`, sonst `openHtmlExternally` = Datei in
+    systemTemp/lernen-3d + launchUrl). scene3d_page/html_page_io.dart (WebView) bzw. _web.dart
+    (iframe srcdoc, sandbox allow-scripts). Knopf `scene3d-open-3d` in `VisualScene3DView`
+    (neuer Parameter `title`, im Lektionsschritt = Schritttitel). Tests: `scene3d_html_test`,
+    `visual_scene3d_view_test`; im Browser per Playwright (WebGL/SwiftShader) geprüft.

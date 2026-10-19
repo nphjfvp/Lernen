@@ -317,7 +317,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     ],
     if (step.show.scene3d != null) ...[
       const SizedBox(height: 12),
-      VisualScene3DView(key: ValueKey('visual-scene3d-$_page'), scene: step.show.scene3d!),
+      VisualScene3DView(key: ValueKey('visual-scene3d-$_page'), scene: step.show.scene3d!, title: step.title),
     ],
     if (VisualSceneView.hasScene(step.show)) ...[
       const SizedBox(height: 12),

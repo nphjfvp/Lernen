@@ -39,7 +39,8 @@ erst nach grünem `flutter analyze` und `flutter test`.
   und markieren, freie Antworten mit KI-Prüfung, interaktive Seiten – dazu
   Rechenwege, Kristallgitter, Zustandsdiagramme, Terminierung (Gantt),
   Stücklisten und Skizzen.
-- **Visuell lernen**: Lektionen mit Animationen (2D und 3D, wo nötig),
+- **Visuell lernen**: Lektionen mit Animationen (2D und 3D, wo nötig – auch als
+  echtes 3D zum Drehen und Zoomen),
   erklärend oder sokratisch, aus PDFs, Fragen oder frei im Chat; Lernpfad für
   ein ganzes Semester.
 - **Labor**: Vorbereitung, Durchführung mit Fotos, Berichtsentwurf.

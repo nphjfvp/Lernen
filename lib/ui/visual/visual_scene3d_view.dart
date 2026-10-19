@@ -7,6 +7,7 @@ import '../../models/visual_scene3d.dart';
 import '../../theme/app_colors.dart';
 import '../tasks/crystal_cube.dart' show CubeProjection;
 import '../widgets/math_text.dart';
+import 'scene3d_open.dart';
 import 'visual_diagram_view.dart' show SceneFormula, diagramColor, hasSceneFormula, sceneFormula;
 
 /// Spielt eine räumliche Szene ([VisualScene3D]) ab – gleiche Projektion und
@@ -14,9 +15,18 @@ import 'visual_diagram_view.dart' show SceneFormula, diagramColor, hasSceneFormu
 /// 15°-Schritten, „Ansicht“ setzt zurück; dazu Abspielen, Zeitregler,
 /// Beschriftung und mitlaufende Größe.
 class VisualScene3DView extends StatefulWidget {
-  const VisualScene3DView({super.key, required this.scene, this.autoplay = true, this.height = 340});
+  const VisualScene3DView({
+    super.key,
+    required this.scene,
+    this.autoplay = true,
+    this.height = 340,
+    this.title = '3D-Szene',
+  });
 
   final VisualScene3D scene;
+
+  /// Überschrift der echten 3D-Ansicht („In 3D ansehen“).
+  final String title;
   final bool autoplay;
   final double height;
 
@@ -132,6 +142,14 @@ class _VisualScene3DViewState extends State<VisualScene3DView> with SingleTicker
                   bottom: 8,
                   child: Row(
                     children: [
+                      _iconPill(
+                        c,
+                        'scene3d-open-3d',
+                        Icons.view_in_ar_rounded,
+                        Scene3DOpener.showsInApp ? 'In 3D ansehen' : 'In 3D ansehen (im Browser)',
+                        () => Scene3DOpener.open(context, s, title: widget.title),
+                      ),
+                      const SizedBox(width: 6),
                       _iconPill(c, 'scene3d-rot-left', Icons.rotate_left, 'Nach links drehen', () => _rotate(-15, 0)),
                       const SizedBox(width: 6),
                       _iconPill(c, 'scene3d-rot-right', Icons.rotate_right, 'Nach rechts drehen', () => _rotate(15, 0)),

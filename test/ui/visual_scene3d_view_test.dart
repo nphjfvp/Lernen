@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/visual_lesson.dart';
@@ -124,5 +127,26 @@ void main() {
     expect(find.byKey(const ValueKey('scene3d-formula-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('scene3d-formula-1')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('„In 3D ansehen“ ohne WebView (Windows): Seite als Datei, ohne Browser ein klarer Hinweis', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final scene = VisualScene3D.fromMap(fccScene())!;
+    await pump(tester, Scaffold(body: VisualScene3DView(scene: scene, autoplay: false, title: 'kfz-Test')));
+    final file = File('${Directory.systemTemp.path}/lernen-3d/kfz-Test.html');
+    if (file.existsSync()) file.deleteSync();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('scene3d-open-3d')));
+      for (var i = 0; i < 40 && !file.existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    expect(file.existsSync(), isTrue);
+    expect(file.readAsStringSync(), contains('THREE.OrbitControls = OrbitControls'));
+    expect(find.text('Die 3D-Ansicht ließ sich nicht im Browser öffnen.'), findsOneWidget);
+    debugDefaultTargetPlatformOverride = null;
   });
 }

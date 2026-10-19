@@ -1,8 +1,22 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6k) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6l) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6l. Echte 3D-Ansicht
+
+- An jeder räumlichen Szene im visuellen Lernen gibt es jetzt den Knopf
+  **„In 3D ansehen“** (Würfel-Symbol): dieselbe Szene als echtes 3D mit Licht
+  und Schatten, mit Finger oder Maus frei drehen, zoomen und verschieben – dazu
+  Abspielen, Zeitregler, Beschriftung und mitlaufende Größe wie gewohnt.
+- **Android, iPad und Browser**: öffnet sich in der App. **Windows**: im
+  Standardbrowser (die Windows-App hat keine eingebaute Webansicht).
+- Läuft offline: die 3D-Bibliothek (three.js, MIT-Lizenz) steckt in der App.
+  Formeln in Beschriftungen erscheinen dort als lesbarer Text (z.B. „a√2/4“,
+  „ΔT“, „x²“), nicht gesetzt wie in der App.
+- Die KI und das Format der Szenen bleiben gleich – die App rechnet weiter
+  selbst, die 3D-Ansicht zeigt es nur schöner.
 
 ### 6k. Spiele: Fehlerjagd
 

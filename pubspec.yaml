@@ -95,6 +95,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # three.js (MIT, siehe assets/three/LICENSE.txt) für „In 3D ansehen“ – liegt
+  # mit in der App, damit die 3D-Ansicht auch offline läuft.
+  assets:
+    - assets/three/
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
