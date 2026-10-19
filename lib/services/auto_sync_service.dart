@@ -250,7 +250,8 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
       _lastError = null;
       _conflictRetries = 0;
       _setStatus(_dirty ? AutoSyncStatus.pending : AutoSyncStatus.idle);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Auto-Sync: Abgleich übersprungen ($e).');
       // Offline o.ä.: kein Grund zu warnen – beim nächsten Start, Zurückkehren
       // oder Upload wird es erneut versucht.
       if (_status == AutoSyncStatus.syncing) _setStatus(AutoSyncStatus.idle);

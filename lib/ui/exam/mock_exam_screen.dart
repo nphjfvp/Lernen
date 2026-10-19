@@ -154,7 +154,7 @@ class _MockExamScreenState extends State<MockExamScreen> with CardReviewMixin<Mo
         ],
       ),
     );
-    if (ok == true) _finish();
+    if (ok == true) unawaited(_finish());
   }
 
   Future<void> _finish() async {

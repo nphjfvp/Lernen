@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sembast/sembast.dart';
 
 import '../models/material_item.dart';
@@ -72,8 +73,8 @@ class PdfCloudSyncService {
     for (final key in keys) {
       try {
         await _store.delete(key);
-      } catch (_) {
-        // Siehe Doc-Kommentar.
+      } catch (e) {
+        debugPrint('PDF-Speicher: $key nicht gelöscht ($e).'); // siehe Doc-Kommentar
       }
     }
   }

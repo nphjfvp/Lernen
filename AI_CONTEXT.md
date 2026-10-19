@@ -1746,6 +1746,10 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `needsReinstall` (`compare(localSigner:)`, fehlend = debug); `applyUpdate` zeigt bei
     Wechsel auf Android `showReinstallDialog` (`update-reinstall`, `update-reinstall-download`).
     Tests: `update_checker_service_test`, `update_reinstall_test`.
+93. Lint `unawaited_futures` an (analysis_options.yaml); bewusst nicht abgewartete Futures stehen
+    in `unawaited(...)` (Lade-Dialoge in material_opener/update_actions, `_finish` in der
+    Probeklausur). Stille Fehler in Sync (Basisstand), Auto-Sync und PDF-Speicher-Löschen jetzt mit
+    `debugPrint`.
 Bewusst nicht: Vorlesen (TTS), KI-Wochenplan, Markdown-Notizen und alles unter
 „BEWUSST NICHT“ in DESIGN_IDEEN.md.
 

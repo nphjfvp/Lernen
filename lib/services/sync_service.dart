@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Filter;
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:sembast/sembast.dart' hide FieldValue;
 import 'package:uuid/uuid.dart';
 
@@ -881,7 +881,9 @@ class SyncService {
     // zu vorsichtigerem Vergleichen, nie zu Verlust.
     try {
       await SyncBaseStore.save(db, payload);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Sync: Basisstand nicht gespeichert ($e).');
+    }
     return pushId;
   }
 

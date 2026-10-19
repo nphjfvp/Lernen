@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,7 +30,8 @@ Future<void> applyUpdate(BuildContext context, UpdateInfo update) async {
   final progress = ValueNotifier<double?>(null);
   final navigator = Navigator.of(context, rootNavigator: true);
   final messenger = ScaffoldMessenger.maybeOf(context);
-  showDialog<void>(
+  // Bleibt offen, während geladen wird; `navigator.pop()` schließt ihn.
+  unawaited(showDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (_) => AlertDialog(
@@ -50,7 +53,7 @@ Future<void> applyUpdate(BuildContext context, UpdateInfo update) async {
         ),
       ),
     ),
-  );
+  ));
   final result = await installUpdate(
     update.downloadUrl,
     buildNumber: update.buildNumber,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -26,7 +28,8 @@ Future<MaterialItem?> ensureLocalPdf(BuildContext context, MaterialItem material
   final messenger = ScaffoldMessenger.of(context);
   final navigator = Navigator.of(context, rootNavigator: true);
   if (store == null || !material.hasRemotePdf) return null;
-  showDialog<void>(
+  // Bleibt offen, während geladen wird; `navigator.pop()` schließt ihn.
+  unawaited(showDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (_) => const AlertDialog(
@@ -38,7 +41,7 @@ Future<MaterialItem?> ensureLocalPdf(BuildContext context, MaterialItem material
         ],
       ),
     ),
-  );
+  ));
   MaterialItem? result;
   try {
     // Nur geräte-lokale Felder ändern sich – kein neuer Upload nötig.
