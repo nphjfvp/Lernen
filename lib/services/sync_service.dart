@@ -66,6 +66,7 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'rollingContextEnabled': settings.rollingContextEnabled,
       'checkpointQuizPageInterval': settings.checkpointQuizPageInterval,
       'bestSprintScore': settings.bestSprintScore,
+      'bossesDefeated': settings.bossesDefeated,
       'themeSkin': settings.themeSkin,
       'themeModePreference': settings.themeModePreference,
       'pageQuestionTierTypes': settings.pageQuestionTierTypes,
@@ -91,6 +92,7 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
   final granularity = synced['chunkGranularity'];
   final interval = (synced['checkpointQuizPageInterval'] as num?)?.toInt();
   final bestSprint = (synced['bestSprintScore'] as num?)?.toInt() ?? 0;
+  final bosses = (synced['bossesDefeated'] as num?)?.toInt() ?? 0;
   return current.copyWith(
     openRouterApiKey: apiKey == null || apiKey.isEmpty ? null : apiKey,
     questionModelId: synced['questionModelId'] as String?,
@@ -102,6 +104,7 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     rollingContextEnabled: synced['rollingContextEnabled'] as bool?,
     checkpointQuizPageInterval: interval != null && interval > 0 ? interval : null,
     bestSprintScore: bestSprint > current.bestSprintScore ? bestSprint : null,
+    bossesDefeated: bosses > current.bossesDefeated ? bosses : null,
     themeSkin: (synced['themeSkin'] as String?)?.trim().isNotEmpty == true ? synced['themeSkin'] as String : null,
     themeModePreference: (synced['themeModePreference'] as String?)?.trim().isNotEmpty == true
         ? synced['themeModePreference'] as String

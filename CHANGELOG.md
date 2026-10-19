@@ -1,8 +1,22 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6i) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6j) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6j. Spiele: Boss-Kampf
+
+- **Fortschritt → Spiele (Pause)** sammelt jetzt die Spiele: den bekannten
+  **Sprint** und neu den **Boss-Kampf**.
+- **Boss-Kampf**: die schwächsten schon gelernten Karten eines Fachs (oder
+  aller Fächer, höchstens zehn) sind der Endgegner. Jede richtige Antwort
+  trifft ihn, jede falsche kostet eines von fünf Herzen – und die Karte kommt
+  drei Karten später noch einmal, bis sie sitzt. Besiegt ist er, wenn jede
+  Karte einmal richtig war; sonst entkommt er („Revanche“). Am Ende stehen die
+  Karten, die gehakt haben.
+- Jede Antwort zählt wie im Daily Quiz für Ampel und Wiederholungsplan. Keine
+  Münzen, nur die eigene Zahl besiegter Bosse (reist per Sync mit, die höhere
+  zählt). Neue, noch nie gelernte Karten bleiben dem Daily Quiz vorbehalten.
 
 ### 6i. Sichere Sync-Codes
 

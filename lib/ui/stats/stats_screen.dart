@@ -11,7 +11,7 @@ import '../../services/mastery_trend_service.dart';
 import '../../services/stats_service.dart';
 import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
-import '../sprint/sprint_screen.dart';
+import '../games/games_screen.dart';
 import '../widgets/mastery_dot.dart';
 import 'weakness_screen.dart';
 
@@ -151,10 +151,10 @@ class _StatsScreenState extends State<StatsScreen> {
                     const SizedBox(height: 10),
                     _SprintEntryCard(
                       onTap: () async {
-                        // Sprint-Antworten zählen für FSRS/Ampel – danach neu
+                        // Spiel-Antworten zählen für FSRS/Ampel – danach neu
                         // laden (der Tab ist schon aktiv, didUpdateWidget greift nicht).
                         await Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const SprintScreen()),
+                          MaterialPageRoute(builder: (_) => const GamesScreen()),
                         );
                         if (mounted) await _load();
                       },
@@ -326,7 +326,7 @@ class _WeaknessEntryCard extends StatelessWidget {
   }
 }
 
-/// Einstieg in den Sprint-Pausenmodus (siehe SprintScreen) – bewusst hier
+/// Einstieg in die Spiele (GamesScreen: Boss-Kampf, Sprint) – bewusst hier
 /// im Fortschritts-Tab statt neben Vorbereiten/Nachbereiten/Daily Quiz, um
 /// es klar vom Kernlernkreislauf abzugrenzen: eine optionale Auflockerung,
 /// kein Ersatz dafür.
@@ -346,15 +346,15 @@ class _SprintEntryCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           child: Row(
             children: [
-              Icon(Icons.bolt_rounded, color: c.warn, size: 20),
+              Icon(Icons.sports_esports_rounded, color: c.warn, size: 20),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Sprint (Pause)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink)),
+                    Text('Spiele (Pause)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.ink)),
                     const SizedBox(height: 2),
-                    Text('60 Sekunden gegen deine schwächsten Karten – zur Auflockerung',
+                    Text('Boss-Kampf und Sprint mit deinen Karten – zur Auflockerung',
                         style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
                   ],
                 ),

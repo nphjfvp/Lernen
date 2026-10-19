@@ -423,6 +423,12 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Übungsrunde genau damit (`PracticeScreen.cards`, zählt normal für
   FSRS/Ampel); "KI: Muster erkennen" (mit API-Key) fasst zusammen, welche
   Themen/Denkfehler dahinterstecken und was gezielt zu wiederholen ist.
+- **Boss-Kampf** (`lib/ui/games/boss_battle_screen.dart`, Logik
+  `lib/services/boss_battle.dart`, unter Fortschritt → Spiele) – die
+  schwächsten schon gelernten Karten eines Fachs als Endgegner: richtig =
+  Treffer, falsch = ein Herz weniger und die Karte kommt drei Karten später
+  wieder, bis jede einmal saß. Zählt wie das Daily Quiz, ohne Münzen; nur die
+  Zahl besiegter Bosse (`AppSettings.bossesDefeated`).
 - **Sprint (Pausenmodus)** – ein optionales, klar vom Kernlernkreislauf
   abgegrenztes Mini-Spiel im Fortschritts-Tab: 60 Sekunden Zeitdruck gegen
   die fachübergreifend schwächsten (Ampel-rot, notfalls +gelb) Karten,

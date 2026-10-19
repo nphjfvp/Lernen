@@ -47,6 +47,10 @@ class AppSettings {
   /// früheren Stand motiviert nachhaltiger als sozialer Vergleich.
   final int bestSprintScore;
 
+  /// Wie viele Bosse im Boss-Kampf (siehe BossBattleScreen) besiegt wurden –
+  /// wie [bestSprintScore] nur der eigene Stand, kein Vergleich.
+  final int bossesDefeated;
+
   /// Alle wie viele gelesenen Seiten der "Lernmodus" (siehe
   /// MaterialViewerScreen) einen kurzen Zwischen-Check anbietet – 0
   /// deaktiviert das Feature komplett. Rein informativ/nicht blockierend:
@@ -134,6 +138,7 @@ class AppSettings {
     this.dailyReminderEnabled = false,
     this.dailyReminderMinuteOfDay = defaultReminderMinuteOfDay,
     this.bestSprintScore = 0,
+    this.bossesDefeated = 0,
     this.checkpointQuizPageInterval = defaultCheckpointQuizPageInterval,
     this.autoSyncEnabled = false,
     this.deviceId,
@@ -177,6 +182,7 @@ class AppSettings {
     bool? dailyReminderEnabled,
     int? dailyReminderMinuteOfDay,
     int? bestSprintScore,
+    int? bossesDefeated,
     int? checkpointQuizPageInterval,
     bool? autoSyncEnabled,
     String? deviceId,
@@ -202,6 +208,7 @@ class AppSettings {
       dailyReminderEnabled: dailyReminderEnabled ?? this.dailyReminderEnabled,
       dailyReminderMinuteOfDay: dailyReminderMinuteOfDay ?? this.dailyReminderMinuteOfDay,
       bestSprintScore: bestSprintScore ?? this.bestSprintScore,
+      bossesDefeated: bossesDefeated ?? this.bossesDefeated,
       checkpointQuizPageInterval: checkpointQuizPageInterval ?? this.checkpointQuizPageInterval,
       autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
       deviceId: deviceId ?? this.deviceId,
@@ -228,6 +235,7 @@ class AppSettings {
         'dailyReminderEnabled': dailyReminderEnabled,
         'dailyReminderMinuteOfDay': dailyReminderMinuteOfDay,
         'bestSprintScore': bestSprintScore,
+        'bossesDefeated': bossesDefeated,
         'checkpointQuizPageInterval': checkpointQuizPageInterval,
         'autoSyncEnabled': autoSyncEnabled,
         'deviceId': deviceId,
@@ -259,6 +267,7 @@ class AppSettings {
         dailyReminderMinuteOfDay:
             (map['dailyReminderMinuteOfDay'] as num?)?.toInt() ?? defaultReminderMinuteOfDay,
         bestSprintScore: (map['bestSprintScore'] as num?)?.toInt() ?? 0,
+        bossesDefeated: (map['bossesDefeated'] as num?)?.toInt() ?? 0,
         checkpointQuizPageInterval:
             (map['checkpointQuizPageInterval'] as num?)?.toInt() ?? defaultCheckpointQuizPageInterval,
         autoSyncEnabled: map['autoSyncEnabled'] as bool? ?? false,

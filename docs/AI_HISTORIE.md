@@ -1299,3 +1299,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `_moveToStrongCode` (Upload unter neuem Code, Dialog `sync-code-moved` mit Kopieren; bei
     Fehlschlag bleibt der alte), `_acceptsNewCode` blockt Hochladen/Abgleichen mit neuen kurzen
     Codes (der gespeicherte bleibt nutzbar). Test: `sync_codes_test`.
+97. Spiele + Boss-Kampf: ui/games/games_screen.dart (`GamesScreen`, Kacheln `game-boss`,
+    `game-sprint`; Einstieg im Fortschritts-Tab statt direkt Sprint, Text „Spiele (Pause)“).
+    services/boss_battle.dart (`BossBattle`: `maxHp` = Kartenzahl, `hearts` 5, `retryGap` 3 –
+    falsche Karte wird 3 Plätze später wieder eingereiht, `answer(correct:)` → `BossHit`,
+    `skip`, `combo`/`bestCombo`, `toReview`; `pickCards`: rot → gelb → grün, ohne `neu`, max. 10,
+    min. 3). ui/games/boss_battle_screen.dart (`BossBattleScreen`, Keys `boss-module`, `boss-start`,
+    `boss-hp`, `boss-hp-text`, `boss-result`, `boss-restart`; Antworten über `CardReviewMixin`,
+    Lernaufgaben/Rechen-Schalter wie Sprint). `AppSettings.bossesDefeated` (Sync: max).
+    Tests: `boss_battle_test`, `boss_battle_screen_test`.

@@ -8,7 +8,7 @@ von damals; ihre Zahlen (z.B. „~24.000 Zeilen“) sind überholt. Heute:
 | | |
 |---|---|
 | Dart-Code in `lib/` | 86.922 Zeilen |
-| Tests | 1584, alle grün (auch mit `TZ=Europe/Berlin`), `flutter analyze` sauber |
+| Tests | 1589, alle grün (auch mit `TZ=Europe/Berlin`), `flutter analyze` sauber |
 | Größte Dateien | `ai_service.dart` 3.626 Zeilen (feste Prompts jetzt in `ai_prompts/`), `question_answer_view.dart` ~2.400, `review_screen.dart` ~2.200, `task_import_screen.dart` ~2.100, `settings_screen.dart` ~1.950 |
 
 Dritte Prüfung (Oktober 2026, zwölf Punkte einer externen Analyse) – Stand:
