@@ -45,6 +45,8 @@ erst nach grünem `flutter analyze` und `flutter test`.
   ein ganzes Semester.
 - **Labor**: Vorbereitung, Durchführung mit Fotos, Berichtsentwurf.
 - **Geräte**: Cloud-Sync (Konto), eigener PDF-Speicher, Sicherungen, Export.
+- **Claude-Postfach**: Claude baut in einer Claude-Code-Sitzung Aufgaben aus
+  deinen Unterlagen und legt sie dir in die App – du prüfst und übernimmst sie.
 
 Ausführlich: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
 

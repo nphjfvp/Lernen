@@ -272,6 +272,23 @@ Ohne Secrets signiert die CI mit dem eingecheckten Debug-Schlüssel
 
 Ohne Secrets bleibt alles wie bisher (Debug-Schlüssel).
 
+### Claude-Postfach
+
+Claude legt in einer Claude-Code-Sitzung (dieses Repo) fertige Aufgaben unter
+einem Postfach-Code ab; die App holt sie ab (`lib/services/claude_inbox.dart`,
+Firestore `inbox/{code}/items`).
+
+1. App: Einstellungen → **Claude-Postfach** → „Postfach-Code erzeugen“ und
+   kopieren. Der Code ist wie ein Passwort; nur Claude und dir geben.
+2. Einmalig die **Firestore-Regeln** neu veröffentlichen (enthalten das
+   Postfach): Einstellungen → Cloud-Sync → „Verbindung prüfen“ → Regeln
+   kopieren → Firebase-Konsole → Firestore → Regeln → einfügen →
+   Veröffentlichen.
+3. In der Claude-Code-Sitzung: „Bau mir die Aufgaben aus diesem Blatt ins
+   Postfach, Code …“ – Claude nutzt dafür den Skill
+   `.claude/skills/postfach/SKILL.md` (Formatregeln holen, prüfen mit
+   `tool/postfach_check_test.dart`, senden mit `tool/postfach.py`).
+
 ### Backup und Wiederherstellen
 
 Vor großen Umbauten wird der Stand als Backup festgehalten – als Commit in der

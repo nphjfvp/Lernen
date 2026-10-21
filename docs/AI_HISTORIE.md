@@ -1331,3 +1331,21 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (iframe srcdoc, sandbox allow-scripts). Knopf `scene3d-open-3d` in `VisualScene3DView`
     (neuer Parameter `title`, im Lektionsschritt = Schritttitel). Tests: `scene3d_html_test`,
     `visual_scene3d_view_test`; im Browser per Playwright (WebGL/SwiftShader) geprüft.
+100. Claude-Postfach: services/claude_inbox.dart (`InboxDelivery` id/title/payload/subject/note/
+    createdAt, `taskCount` über `AiService.parseImportedTasks`; `InboxBackend` + `FirestoreInboxBackend`
+    `inbox/{code}/items`; `ClaudeInbox.fetch` neueste zuerst, `remove`, `testBackend`, `isAvailable`).
+    firestore.rules + `firestoreRulesText`: `inbox/{code}/items/{item}` get/list/create/delete bei
+    `code.size() >= 16`. `AppSettings.inboxCode` (copyWith '' = entfernen; Sync nur mit Secrets,
+    Pull per Sync-Code entfernt ihn). ui/inbox/claude_inbox_screen.dart (`ClaudeInboxScreen`, Keys
+    `inbox-item-i`, `inbox-take-i`, `inbox-discard-i`, `inbox-empty`, `inbox-refresh`, Fach-Dialog
+    `inbox-module`/`inbox-module-ok`, `guessModule` = gleich/enthalten/≥6 gleiche Anfangsbuchstaben;
+    öffnet `TaskImportScreen(initialJson:)`, löscht die Lieferung nur, wenn dort gespeichert wurde),
+    ui/inbox/claude_inbox_settings.dart (`inbox-generate`, `inbox-code`, `inbox-copy`, `inbox-open`,
+    `inbox-renew`; in den Einstellungen vor Cloud-Sync, nur mit Firebase). RootShell zeigt beim Start
+    `inbox-snackbar`. Für Sitzungen: Skill .claude/skills/postfach/SKILL.md, tool/postfach.py
+    (send/list/delete über Firestore-REST, Code nur auf der Kommandozeile), tool/postfach_check_test.dart
+    (`POSTFACH_FILE` prüfen, `POSTFACH_PROMPT` Formatregeln schreiben). Test: `claude_inbox_test`.
+101. Tests mit „in N Tagen“ rechnen in Kalendertagen (`DateTime(y, m, d + N, 12)`) statt
+    `DateTime.now().add(Duration(days: N))` – kurz nach Mitternacht vor einer Zeitumstellung fehlte
+    sonst ein Tag (task_folder_ui_test, lab_screens_test). Die App selbst rechnet richtig
+    (`TaskFolderService.daysUntilExam` über UTC-Mitternachten).

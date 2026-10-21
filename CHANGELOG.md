@@ -1,8 +1,25 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6l) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6m) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6m. Claude-Postfach
+
+- **Claude baut Aufgaben direkt für deine App**: In einer Claude-Code-Sitzung
+  schickst du Claude ein Übungsblatt, eine Altklausur oder Themen. Claude baut
+  die Aufgaben genau im Format der App (alle Fragetypen und interaktiven
+  Aufgaben) und legt sie in dein **Postfach**.
+- **In der App**: beim Start der Hinweis „Neue Lieferung von Claude“, sonst
+  unter Einstellungen → **Claude-Postfach** → „Postfach öffnen“. „Ansehen &
+  übernehmen“ fragt nach dem Fach (Claudes Vorschlag ist vorausgewählt) und
+  öffnet den gewohnten Import zum Prüfen; erst nach dem Speichern verschwindet
+  die Lieferung aus dem Postfach. „Verwerfen“ löscht sie ohne zu übernehmen.
+- **Einrichten**: Einstellungen → Claude-Postfach → „Postfach-Code erzeugen“,
+  den Code Claude geben. Einmalig die Firestore-Regeln neu veröffentlichen
+  (Einstellungen → Cloud-Sync → „Verbindung prüfen“ → Regeln kopieren →
+  Firebase-Konsole → Firestore → Regeln). Der Code reist per Konto-Sync auf
+  deine anderen Geräte; Freunde erzeugen ihren eigenen.
 
 ### 6l. Echte 3D-Ansicht
 

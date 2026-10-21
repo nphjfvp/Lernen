@@ -40,6 +40,14 @@ service cloud.firestore {
       }
     }
 
+    // Claude-Postfach (siehe lib/services/claude_inbox.dart): wer den Code
+    // kennt, darf dort Aufgaben ablegen, lesen und löschen – wie bei den
+    // Sync-Codes. Ändern ist nicht vorgesehen; die Sammlung der Postfächer
+    // selbst lässt sich nicht auflisten.
+    match /inbox/{code}/items/{item} {
+      allow get, list, create, delete: if code is string && code.size() >= 16;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -51,6 +51,11 @@ class AppSettings {
   /// wie [bestSprintScore] nur der eigene Stand, kein Vergleich.
   final int bossesDefeated;
 
+  /// Code des Claude-Postfachs (siehe ClaudeInbox): unter ihm legt Claude in
+  /// einer Claude-Code-Sitzung Aufgaben ab, die App holt sie ab. Geheim wie
+  /// der API-Key (reist nur über den Konto-Sync).
+  final String? inboxCode;
+
   /// Alle wie viele gelesenen Seiten der "Lernmodus" (siehe
   /// MaterialViewerScreen) einen kurzen Zwischen-Check anbietet – 0
   /// deaktiviert das Feature komplett. Rein informativ/nicht blockierend:
@@ -139,6 +144,7 @@ class AppSettings {
     this.dailyReminderMinuteOfDay = defaultReminderMinuteOfDay,
     this.bestSprintScore = 0,
     this.bossesDefeated = 0,
+    this.inboxCode,
     this.checkpointQuizPageInterval = defaultCheckpointQuizPageInterval,
     this.autoSyncEnabled = false,
     this.deviceId,
@@ -183,6 +189,7 @@ class AppSettings {
     int? dailyReminderMinuteOfDay,
     int? bestSprintScore,
     int? bossesDefeated,
+    String? inboxCode,
     int? checkpointQuizPageInterval,
     bool? autoSyncEnabled,
     String? deviceId,
@@ -209,6 +216,8 @@ class AppSettings {
       dailyReminderMinuteOfDay: dailyReminderMinuteOfDay ?? this.dailyReminderMinuteOfDay,
       bestSprintScore: bestSprintScore ?? this.bestSprintScore,
       bossesDefeated: bossesDefeated ?? this.bossesDefeated,
+      // Leer = Postfach-Code entfernen.
+      inboxCode: inboxCode == null ? this.inboxCode : (inboxCode.trim().isEmpty ? null : inboxCode),
       checkpointQuizPageInterval: checkpointQuizPageInterval ?? this.checkpointQuizPageInterval,
       autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
       deviceId: deviceId ?? this.deviceId,
@@ -236,6 +245,7 @@ class AppSettings {
         'dailyReminderMinuteOfDay': dailyReminderMinuteOfDay,
         'bestSprintScore': bestSprintScore,
         'bossesDefeated': bossesDefeated,
+        'inboxCode': inboxCode,
         'checkpointQuizPageInterval': checkpointQuizPageInterval,
         'autoSyncEnabled': autoSyncEnabled,
         'deviceId': deviceId,
@@ -268,6 +278,7 @@ class AppSettings {
             (map['dailyReminderMinuteOfDay'] as num?)?.toInt() ?? defaultReminderMinuteOfDay,
         bestSprintScore: (map['bestSprintScore'] as num?)?.toInt() ?? 0,
         bossesDefeated: (map['bossesDefeated'] as num?)?.toInt() ?? 0,
+        inboxCode: (map['inboxCode'] as String?)?.trim().isNotEmpty == true ? map['inboxCode'] as String : null,
         checkpointQuizPageInterval:
             (map['checkpointQuizPageInterval'] as num?)?.toInt() ?? defaultCheckpointQuizPageInterval,
         autoSyncEnabled: map['autoSyncEnabled'] as bool? ?? false,

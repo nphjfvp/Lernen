@@ -62,6 +62,7 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'crosscheckModelId': settings.crosscheckModelId,
       // Zugangsdaten zum eigenen PDF-Speicher sind geheim wie der API-Key.
       'pdfStorage': includeSecrets ? settings.pdfStorage.toMap() : null,
+      'inboxCode': includeSecrets ? settings.inboxCode : null,
       'chunkGranularity': settings.chunkGranularity.name,
       'rollingContextEnabled': settings.rollingContextEnabled,
       'checkpointQuizPageInterval': settings.checkpointQuizPageInterval,
@@ -93,6 +94,7 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
   final interval = (synced['checkpointQuizPageInterval'] as num?)?.toInt();
   final bestSprint = (synced['bestSprintScore'] as num?)?.toInt() ?? 0;
   final bosses = (synced['bossesDefeated'] as num?)?.toInt() ?? 0;
+  final inbox = (synced['inboxCode'] as String?)?.trim();
   return current.copyWith(
     openRouterApiKey: apiKey == null || apiKey.isEmpty ? null : apiKey,
     questionModelId: synced['questionModelId'] as String?,
@@ -105,6 +107,8 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     checkpointQuizPageInterval: interval != null && interval > 0 ? interval : null,
     bestSprintScore: bestSprint > current.bestSprintScore ? bestSprint : null,
     bossesDefeated: bosses > current.bossesDefeated ? bosses : null,
+    // Wie beim API-Key: ein fehlender Cloud-Wert löscht nie den lokalen Code.
+    inboxCode: inbox == null || inbox.isEmpty ? null : inbox,
     themeSkin: (synced['themeSkin'] as String?)?.trim().isNotEmpty == true ? synced['themeSkin'] as String : null,
     themeModePreference: (synced['themeModePreference'] as String?)?.trim().isNotEmpty == true
         ? synced['themeModePreference'] as String
@@ -123,7 +127,7 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
 /// übernommenen KI-Einstellungen (siehe SyncService.pull) – rein, testbar.
 Map<String, dynamic> syncedAiSettingsForPull(Map<String, dynamic> synced, {required bool acceptApiKey}) {
   if (acceptApiKey) return synced;
-  return {...synced, 'openRouterApiKey': null, 'pdfStorage': null};
+  return {...synced, 'openRouterApiKey': null, 'pdfStorage': null, 'inboxCode': null};
 }
 
 /// Übernimmt Verlauf und Statistik aus einem heruntergeladenen Stand.

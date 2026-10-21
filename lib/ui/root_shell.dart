@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../repositories/settings_repository.dart';
+import '../services/claude_inbox.dart';
 import '../services/update_checker_service.dart';
 import '../theme/app_colors.dart';
 import 'calendar/calendar_screen.dart';
 import 'daily/daily_quiz_screen.dart';
 import 'home/home_screen.dart';
+import 'inbox/claude_inbox_screen.dart';
 import 'modules/module_form_screen.dart';
 import 'settings/settings_screen.dart';
 import 'stats/stats_screen.dart';
@@ -30,7 +34,10 @@ class _RootShellState extends State<RootShell> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForUpdate();
+      _checkInbox();
+    });
   }
 
   /// Einmaliger, stiller Check beim App-Start, ob unter der festen
@@ -47,6 +54,32 @@ class _RootShellState extends State<RootShell> {
         duration: const Duration(seconds: 12),
         content: Text('Update verfügbar (Build ${update.buildNumber}).'),
         action: SnackBarAction(label: updateActionLabel, onPressed: () => applyUpdate(context, update)),
+      ),
+    );
+  }
+
+  /// Liegt etwas im Claude-Postfach (siehe ClaudeInbox)? Still, wenn nicht
+  /// eingerichtet oder nicht erreichbar.
+  Future<void> _checkInbox() async {
+    final code = context.read<SettingsRepository>().settings.inboxCode;
+    if (code == null || !ClaudeInbox.isAvailable) return;
+    final List<InboxDelivery> items;
+    try {
+      items = await ClaudeInbox().fetch(code);
+    } catch (_) {
+      return;
+    }
+    if (items.isEmpty || !mounted) return;
+    final n = items.length;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        key: const ValueKey('inbox-snackbar'),
+        duration: const Duration(seconds: 10),
+        content: Text(n == 1 ? 'Neue Lieferung von Claude: „${items.first.title}“' : '$n neue Lieferungen von Claude'),
+        action: SnackBarAction(
+          label: 'Ansehen',
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ClaudeInboxScreen())),
+        ),
       ),
     );
   }

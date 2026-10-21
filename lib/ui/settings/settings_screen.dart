@@ -18,6 +18,7 @@ import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/auth_service.dart';
 import '../../services/auto_sync_service.dart';
+import '../../services/claude_inbox.dart';
 import '../../services/pdf_cloud_store.dart';
 import '../../services/pdf_cloud_sync_service.dart';
 import '../../services/reminder_service.dart';
@@ -28,6 +29,7 @@ import '../../services/update_checker_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../auth/login_screen.dart';
+import '../inbox/claude_inbox_settings.dart';
 import '../widgets/add_password_dialog.dart';
 import '../widgets/question_type_dropdown.dart';
 import '../widgets/update_actions.dart';
@@ -1035,6 +1037,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 26),
                     child: Divider(height: 1, color: c.border),
                   ),
+                  if (ClaudeInbox.isAvailable) ...[
+                    const ClaudeInboxSettings(),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 26),
+                      child: Divider(height: 1, color: c.border),
+                    ),
+                  ],
                   _SectionLabel('Cloud-Sync'),
                   const SizedBox(height: 4),
                   if (!_syncService.isAvailable) ...[

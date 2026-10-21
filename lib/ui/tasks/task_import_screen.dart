@@ -191,6 +191,7 @@ class TaskImportScreen extends StatefulWidget {
     this.initialDrafts = const [],
     this.scanNotes = const [],
     this.startWithJsonImport = false,
+    this.initialJson,
   });
 
   final String moduleId;
@@ -223,6 +224,10 @@ class TaskImportScreen extends StatefulWidget {
 
   /// Gleich „Importieren (JSON)“ öffnen – Aufgaben von einer externen KI.
   final bool startWithJsonImport;
+
+  /// Aufgaben gleich aus diesem JSON übernehmen (z.B. eine Lieferung aus dem
+  /// Claude-Postfach) – wie „Importieren (JSON)“, nur ohne Einfügen.
+  final String? initialJson;
 
   static const maxImages = 4;
 
@@ -312,7 +317,11 @@ class _TaskImportScreenState extends State<TaskImportScreen> with SafeSetState<T
       if (!mounted) return;
       // Für die Auswahl „Vorlesung“ (Lösung im Skript suchen).
       unawaited(context.read<MaterialRepository?>()?.loadForModule(widget.moduleId));
-      if (widget.startWithJsonImport) _openJsonImport();
+      if (widget.initialJson != null) {
+        unawaited(_importJson(widget.initialJson!));
+      } else if (widget.startWithJsonImport) {
+        _openJsonImport();
+      }
     });
   }
 
