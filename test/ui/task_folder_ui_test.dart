@@ -80,7 +80,10 @@ void main() {
   }
 
   testWidgets('20 Tage vor der Klausur: roter Hinweis mit Tagen und Aufgabenzahl', (tester) async {
-    final exam = DateTime.now().add(const Duration(days: 12));
+    // Kalendertage, nicht 12 × 24 h – sonst kurz nach Mitternacht vor einer
+    // Zeitumstellung ein Tag weniger.
+    final now = DateTime.now();
+    final exam = DateTime(now.year, now.month, now.day + 12, 12);
     await pump(tester, 'tf-red', exam, [
       _task('a', 'tf-red', 'Erstellen Sie ein Gantt-Diagramm.', page: 2),
       _task('b', 'tf-red', 'Zeichnen Sie den Netzplan.', page: 3),
@@ -91,7 +94,8 @@ void main() {
   });
 
   testWidgets('Klausur noch weit weg: neutraler Hinweis, Aufgaben trotzdem einsehbar', (tester) async {
-    final exam = DateTime.now().add(const Duration(days: 90));
+    final now = DateTime.now();
+    final exam = DateTime(now.year, now.month, now.day + 90, 12);
     await pump(tester, 'tf-far', exam, [
       _task('a', 'tf-far', 'Erstellen Sie ein Gantt-Diagramm.', back: 'Zuerst die Dauern eintragen.', page: 2),
     ]);

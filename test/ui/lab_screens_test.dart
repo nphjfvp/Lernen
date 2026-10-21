@@ -381,7 +381,9 @@ void main() {
   });
 
   testWidgets('Fach-Abschnitt: Versuche mit Stand, Tippen öffnet, Anlegen-Knopf', (tester) async {
-    final soon = _experiment(labDate: DateTime.now().add(const Duration(days: 3)));
+    final now = DateTime.now();
+    // Kalendertage – 3 × 24 h wären über eine Zeitumstellung kurz nach Mitternacht ein Tag weniger.
+    final soon = _experiment(labDate: DateTime(now.year, now.month, now.day + 3, 12));
     await pumpApp(
       tester,
       const Scaffold(body: SingleChildScrollView(child: LabExperimentsSection(moduleId: 'm1', moduleName: 'Elektrotechnik'))),
