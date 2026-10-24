@@ -1,8 +1,19 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6m) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6n) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6n. Einführung in die App
+
+- **Einstellungen → Einführung → „Einführung in die App öffnen“** erklärt in
+  12 Kapiteln, was die App kann und **wo** du es findest: Lernkreislauf,
+  Fächer und Material, Vor- und Nachbereiten, Daily Quiz und Lernstand,
+  Fragetypen, Visuell lernen, Spiele, Kalender und Fortschritt, Labor, KI
+  einrichten, Geräte und Sync, Claude-Postfach.
+- Erst eine Übersicht zum gezielten Springen, dann zum Durchblättern
+  („Weiter“/„Zurück“, „Inhalt“ führt zurück zur Übersicht).
+- Startet **nie von selbst** – nur, wenn du sie öffnest.
 
 ### 6m. Claude-Postfach
 

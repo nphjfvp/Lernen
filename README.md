@@ -29,6 +29,9 @@ erst nach grünem `flutter analyze` und `flutter test`.
 
 ## Was die App kann
 
+Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführung**.
+
+
 - **Lernen**: Daily Quiz mit Spaced Repetition (FSRS), Wissensstand-Ampel,
   Stufen Leicht → Mittel → Schwer, Probeklausur mit Note, Fehlertagebuch,
   Kalender, Fortschritt, Lernerinnerung (Android) und Widget.

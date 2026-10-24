@@ -43,6 +43,8 @@ void main() {
 
     expect(find.text('Meine Fächer'), findsOneWidget);
     expect(find.text('Erstes Fach anlegen'), findsOneWidget);
+    // Die Einführung startet nie von selbst (nur über Einstellungen).
+    expect(find.text('Willkommen bei Lernen'), findsNothing);
   });
 
   testWidgets('Breiter Bildschirm (iPad quer): Inhalt und Leiste mittig, nicht über die ganze Breite', (tester) async {

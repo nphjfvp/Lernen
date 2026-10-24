@@ -94,4 +94,28 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('Einstellungen: Einführung nur auf Wunsch öffnen', (tester) async {
+    tester.view.physicalSize = const Size(900, 6000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final settings = SettingsRepository();
+    final auth = AuthRepository();
+    await tester.runAsync(() => settings.update(const AppSettings()));
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: settings),
+        ChangeNotifierProvider.value(value: auth),
+        ChangeNotifierProvider(create: (_) => ModelCatalogRepository()),
+        ChangeNotifierProvider(create: (_) => ModuleRepository()),
+        ChangeNotifierProvider(create: (_) => AutoSyncService(settings: settings, auth: auth)),
+      ],
+      child: MaterialApp(theme: AppTheme.light, home: const Scaffold(body: SettingsScreen())),
+    ));
+    await tester.pump();
+    expect(find.text('Willkommen bei Lernen'), findsNothing);
+    await tester.tap(find.text('Einführung in die App öffnen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Willkommen bei Lernen'), findsOneWidget);
+  });
 }

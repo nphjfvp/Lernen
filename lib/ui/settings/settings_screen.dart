@@ -29,6 +29,7 @@ import '../../services/update_checker_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../auth/login_screen.dart';
+import '../guide/app_guide_screen.dart';
 import '../inbox/claude_inbox_settings.dart';
 import '../widgets/add_password_dialog.dart';
 import '../widgets/question_type_dropdown.dart';
@@ -689,6 +690,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(24, 14, 24, 160),
                 children: [
+                  _SectionLabel('Einführung'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Was die App kann und wo du es findest – startet nur, wenn du es willst.',
+                    style: TextStyle(fontSize: 12, color: c.inkMuted),
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _SoftButton(
+                      icon: Icons.school_outlined,
+                      label: 'Einführung in die App öffnen',
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AppGuideScreen())),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 26),
+                    child: Divider(height: 1, color: c.border),
+                  ),
                   _SectionLabel('Erscheinungsbild'),
                   const SizedBox(height: 4),
                   Text(

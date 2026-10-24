@@ -1349,3 +1349,10 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `DateTime.now().add(Duration(days: N))` – kurz nach Mitternacht vor einer Zeitumstellung fehlte
     sonst ein Tag (task_folder_ui_test, lab_screens_test). Die App selbst rechnet richtig
     (`TaskFolderService.daysUntilExam` über UTC-Mitternachten).
+102. Einführung: ui/guide/app_guide.dart (`GuideChapter`/`GuideItem` mit title, text, where;
+    `appGuideChapters` – 12 Kapitel, bei neuen Funktionen mitpflegen, Wege = Beschriftungen in der App),
+    ui/guide/app_guide_screen.dart (`AppGuideScreen`: PageView, Seite 0 Übersicht mit
+    `guide-chapter-i`, Kapitel je Seite; `guide-prev`, `guide-next` (Los geht’s/Weiter/Fertig),
+    `guide-toc`, `guide-position`). Einstieg nur über Einstellungen (Abschnitt „Einführung“ ganz oben,
+    Knopf „Einführung in die App öffnen“), nie automatisch. Tests: `app_guide_test`,
+    `settings_screen_sync_test`, `widget_test`.
