@@ -1,8 +1,21 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6o) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6p) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6p. Lektionen live ändern
+
+- **„Live ändern“ unter jedem Schritt** einer visuellen Lektion (auch bei
+  gestellten Aufgaben): einfach hinschreiben, wie es sein soll – „zeig das als
+  Graph“, „noch ein Zwischenschritt beim Integrieren“, „markier die Zeit rot“ –
+  oder einen Vorschlag antippen: *Anders visualisieren*, *Zwischenschritt
+  einfügen*, *Kleinschrittiger*, *Größen farbig markieren*, *Als Animation*,
+  *Einfacher erklären*.
+- Der Schritt wird **an Ort und Stelle** umgebaut, du bleibst auf der Seite.
+  Verlangt der Wunsch mehr Schritte, wird aus einem Schritt bis zu fünf; davor
+  und danach bleibt alles, wie es war. Gespeichert, mit **Rückgängig**.
+- „Darstellung ändern“ bleibt für Änderungen an der ganzen Lektion.
 
 ### 6o. Aufgaben visuell lösen
 

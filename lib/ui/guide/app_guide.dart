@@ -232,8 +232,11 @@ const appGuideChapters = <GuideChapter>[
             'öffnet echtes 3D mit Licht, Schatten und Zoom.',
       ),
       GuideItem(
-        'Darstellung ändern',
-        'Passt eine Darstellung nicht, sag der KI, was anders sein soll; lädt eine nicht, „Neu erzeugen“.',
+        'Live ändern',
+        'Unter jedem Schritt: sag, wie es aussehen soll – „zeig das als Graph“, „noch ein Zwischenschritt beim '
+            'Integrieren“, „markier die Zeit rot“. Der Schritt wird sofort umgebaut, auch in mehrere Schritte; '
+            '„Rückgängig“ holt den alten zurück. Für die ganze Lektion: „Darstellung ändern“. Lädt eine Darstellung '
+            'nicht, „Neu erzeugen“.',
       ),
       GuideItem(
         'Lernpfad',

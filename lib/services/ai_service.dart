@@ -3301,13 +3301,25 @@ Antworte NUR mit JSON:
       ..writeln('Zu ändern: $which')
       ..writeln('Wunsch des Nutzers: ${_cap(request.trim(), 3000)}')
       ..writeln()
-      ..writeln(stepIndex == null
-          ? 'Antworte mit {"lesson": {… die komplette überarbeitete Lektion im selben Format …}}.'
-          : 'Antworte mit {"step": {… der überarbeitete Schritt: title, text, formula, show, guide …}, '
-              '"functions": [… nur neue oder geänderte Funktionen, sonst weglassen …]}.');
+      ..writeln(switch (stepIndex) {
+        null => 'Antworte mit {"lesson": {… die komplette überarbeitete Lektion im selben Format …}}.',
+        < 0 => 'Antworte mit {"step": {… der überarbeitete Schritt: title, text, formula, show, guide …}, '
+            '"functions": [… nur neue oder geänderte Funktionen, sonst weglassen …]}.',
+        _ => 'Antworte mit {"step": {… der überarbeitete Schritt: title, text, formula, show, guide …}, '
+            '"functions": [… nur neue oder geänderte Funktionen, sonst weglassen …]}.\n'
+            'Verlangt der Wunsch MEHR Schritte (Zwischenschritt einfügen, aufteilen, kleinschrittiger), antworte '
+            'stattdessen mit {"steps": [… 2 bis 5 Schritte, die diesen EINEN Schritt '
+            'ersetzen – jeder mit eigener Darstellung, die genau seinen Gedanken zeigt …], "functions": […]}. Die '
+            'Schritte davor und danach bleiben unverändert; der letzte neue Schritt muss nahtlos zum nächsten passen.',
+      });
     final raw = await _complete(_visualReviseSystemPrompt, buffer.toString(), temperature: 0.2);
     final json = await _json(raw);
-    if (stepIndex == null ? json['lesson'] is! Map && json['steps'] is! List : json['step'] is! Map) {
+    final ok = switch (stepIndex) {
+      null => json['lesson'] is Map || json['steps'] is List,
+      < 0 => json['step'] is Map,
+      _ => json['step'] is Map || json['steps'] is List,
+    };
+    if (!ok) {
       throw AiServiceException('Die KI hat keine überarbeitete Darstellung geliefert – bitte erneut versuchen.',
           rawResponse: raw);
     }

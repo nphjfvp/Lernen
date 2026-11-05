@@ -328,7 +328,13 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       VisualSceneView(key: ValueKey('visual-scene-$_page'), math: _math, show: step.show),
     ],
     if (step.show.broken.isNotEmpty) _brokenNote(c, step.show, isResult ? -1 : _page),
-    const SizedBox(height: 12),
+    const SizedBox(height: 14),
+    VisualLiveEditBar(
+      key: ValueKey('visual-live-bar-$_page'),
+      split: !isResult,
+      onSend: (request) => _liveRevise(isResult ? -1 : _page, request),
+    ),
+    const SizedBox(height: 10),
     Wrap(
       spacing: 8,
       runSpacing: 6,
@@ -392,31 +398,77 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
           VisualReviseSheet(lesson: before, stepIndex: stepIndex, ai: _reviseAi(context), initialRequest: request),
     );
     if (revised == null || !mounted) return;
-    void apply(VisualLesson l) {
+    _applyRevision(before, revised, 'Darstellung geändert.', repo: repo, messenger: messenger);
+  }
+
+  /// Übernimmt eine Überarbeitung (gespeichert) und bietet „Rückgängig“ an;
+  /// [page] = dorthin springen (z.B. zum ersten neuen Schritt).
+  void _applyRevision(
+    VisualLesson before,
+    VisualLesson revised,
+    String message, {
+    int? page,
+    VisualLessonRepository? repo,
+    ScaffoldMessengerState? messenger,
+  }) {
+    repo ??= context.read<VisualLessonRepository?>();
+    messenger ??= ScaffoldMessenger.of(context);
+    final oldPage = _page;
+    void apply(VisualLesson l, int target) {
       setState(() {
         _lesson = l;
         _math = VisualMath(l);
         _socratic.clear();
         _wrong = null;
-        _page = _page.clamp(0, _pages.length - 1);
+        _page = target.clamp(0, _pages.length - 1);
         if (_short && l.shortVersion == null) _short = false;
       });
       if (repo != null && l.id.isNotEmpty) repo.save(l);
     }
 
-    apply(revised);
+    apply(revised, page ?? _page);
+    messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: const Text('Darstellung geändert.'),
+        content: Text(message),
         action: SnackBarAction(
           key: const ValueKey('visual-revise-undo'),
           label: 'Rückgängig',
           onPressed: () {
-            if (mounted) apply(before);
+            if (mounted) apply(before, oldPage);
           },
         ),
       ),
     );
+  }
+
+  /// „Live ändern“ direkt im Schritt: Wunsch (frei oder per Vorschlag) an die
+  /// KI, der Schritt wird an Ort und Stelle ersetzt – auch durch mehrere
+  /// (Zwischenschritt, kleinschrittiger). Gibt eine Fehlermeldung zurück.
+  Future<String?> _liveRevise(int stepIndex, String request) async {
+    final ai = _reviseAi(context);
+    if (ai == null) return 'Dafür braucht die App deinen OpenRouter-Key (Einstellungen).';
+    final before = _l;
+    try {
+      final json = await ai.reviseVisualLesson(lesson: before.toMap(), request: request, stepIndex: stepIndex);
+      final revised = before.revisedWith(json, stepIndex: stepIndex);
+      if (revised == null || !revised.isUsable) {
+        return 'Die Änderung ließ sich nicht übernehmen – bitte erneut versuchen.';
+      }
+      if (!mounted) return null;
+      final added = revised.steps.length - before.steps.length;
+      _applyRevision(
+        before,
+        VisualMath.sanitize(revised),
+        added > 0 ? 'Aus dem Schritt wurden ${added + 1} Schritte.' : 'Geändert.',
+        page: stepIndex >= 0 ? stepIndex : null,
+      );
+      return null;
+    } on AiServiceException catch (e) {
+      return e.message;
+    } catch (e) {
+      return 'Das hat nicht geklappt: $e';
+    }
   }
 
   Widget _nav(AppColors c, int count) => Padding(
@@ -1214,6 +1266,168 @@ class _VisualReviseSheetState extends State<VisualReviseSheet> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// „Live ändern“ unter jedem Schritt: sagen, wie es aussehen soll („zeig das
+/// als Graph“, „noch ein Zwischenschritt“) – die KI baut den Schritt sofort um.
+class VisualLiveEditBar extends StatefulWidget {
+  const VisualLiveEditBar({super.key, required this.onSend, this.split = true});
+
+  /// Schickt den Wunsch; Ergebnis = Fehlermeldung oder null.
+  final Future<String?> Function(String request) onSend;
+
+  /// Darf der Schritt in mehrere aufgeteilt werden (nicht beim Ergebnis)?
+  final bool split;
+
+  /// Vorschläge: Beschriftung, Wunsch an die KI, nur bei [split].
+  static const suggestions = <({String label, String request, bool split})>[
+    (
+      label: 'Anders visualisieren',
+      request: 'Zeig diesen Schritt mit einer anderen, anschaulicheren Darstellung.',
+      split: false,
+    ),
+    (
+      label: 'Zwischenschritt einfügen',
+      request:
+          'Mach aus diesem Schritt zwei: füge davor einen Zwischenschritt ein, der zeigt, wie man vom vorigen Schritt '
+          'hierher kommt.',
+      split: true,
+    ),
+    (
+      label: 'Kleinschrittiger',
+      request:
+          'Teile diesen Schritt in kleinere Schritte auf – jeder Rechen- oder Denkschritt einzeln mit eigener '
+          'Darstellung.',
+      split: true,
+    ),
+    (
+      label: 'Größen farbig markieren',
+      request:
+          'Markiere jede Größe in einer eigenen Farbe (z.B. alles mit dem Weg grün, alles mit der Zeit rot) – in Text, '
+          'Formeln und Darstellung gleich, damit man sieht, wie sie sich verändern.',
+      split: false,
+    ),
+    (
+      label: 'Als Animation',
+      request: 'Zeig das als Animation, bei der man sieht, wie sich die Größen verändern.',
+      split: false,
+    ),
+    (label: 'Einfacher erklären', request: 'Erklär diesen Schritt einfacher, mit einem Alltagsbezug.', split: false),
+  ];
+
+  @override
+  State<VisualLiveEditBar> createState() => _VisualLiveEditBarState();
+}
+
+class _VisualLiveEditBarState extends State<VisualLiveEditBar> {
+  final _input = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send(String request) async {
+    final r = request.trim();
+    if (r.isEmpty || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final error = await widget.onSend(r);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = error;
+      if (error == null) _input.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final chips = [
+      for (final (i, s) in VisualLiveEditBar.suggestions.indexed)
+        if (widget.split || !s.split) (i: i, s: s),
+    ];
+    return Container(
+      key: const ValueKey('visual-live'),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: c.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_fix_high, size: 18, color: c.accent),
+              const SizedBox(width: 6),
+              Text(
+                'Live ändern',
+                style: TextStyle(fontWeight: FontWeight.w600, color: c.ink),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            key: const ValueKey('visual-live-input'),
+            controller: _input,
+            enabled: !_busy,
+            minLines: 1,
+            maxLines: 3,
+            textInputAction: TextInputAction.send,
+            onSubmitted: _send,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: widget.split
+                  ? 'z.B. „zeig das als Graph“ oder „noch ein Zwischenschritt beim Integrieren“'
+                  : 'z.B. „zeig das als Graph“ oder „markier die Einheiten“',
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                key: const ValueKey('visual-live-send'),
+                tooltip: 'Ändern',
+                onPressed: _busy ? null : () => _send(_input.text),
+                icon: const Icon(Icons.send_rounded),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final e in chips)
+                ActionChip(
+                  key: ValueKey('visual-live-chip-${e.i}'),
+                  label: Text(e.s.label),
+                  onPressed: _busy ? null : () => _send(e.s.request),
+                ),
+            ],
+          ),
+          if (_busy) ...[
+            const SizedBox(height: 10),
+            const LinearProgressIndicator(key: ValueKey('visual-live-busy')),
+            const SizedBox(height: 4),
+            Text('Die KI baut den Schritt um …', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              key: const ValueKey('visual-live-error'),
+              style: TextStyle(color: c.danger),
+            ),
+          ],
+        ],
       ),
     );
   }

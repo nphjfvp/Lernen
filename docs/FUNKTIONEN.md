@@ -430,7 +430,9 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Aufgabe im Stil der Beispiele, gelöst als visuelle Lektion Schritt für
   Schritt; gleiche Größen tragen in allen Formeln dieselbe Farbe. „Im Gespräch
   vertiefen“ (in jeder Lektion) öffnet einen Chat, der Aufgabe, Lösungsweg und
-  den aktuellen Schritt kennt.
+  den aktuellen Schritt kennt. „Live ändern“ unter jedem Schritt baut ihn nach
+  einem Wunsch sofort um – auch in mehrere Schritte (Zwischenschritt,
+  kleinschrittiger), mit Rückgängig.
 - **Boss-Kampf** (`lib/ui/games/boss_battle_screen.dart`, Logik
   `lib/services/boss_battle.dart`, unter Fortschritt → Spiele) – die
   schwächsten schon gelernten Karten eines Fachs als Endgegner: richtig =

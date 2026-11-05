@@ -456,6 +456,9 @@ class VisualLesson {
   /// AiService.reviseVisualLesson). [stepIndex] null = ganze Lektion (was die
   /// KI weglässt, bleibt), sonst nur dieser Schritt (-1 Ergebnis, -2
   /// Kurzfassung) plus neue/geänderte Funktionen. null, wenn unbrauchbar.
+  /// So viele Schritte dürfen beim Aufteilen eines Schritts entstehen.
+  static const maxSplitSteps = 5;
+
   VisualLesson? revisedWith(Map<String, dynamic> json, {int? stepIndex}) {
     final map = toMap();
     if (stepIndex == null) {
@@ -484,11 +487,17 @@ class VisualLesson {
       }
     } else {
       final step = json['step'];
-      if (step is! Map) return null;
+      // Zwischenschritt/Aufteilen: mehrere Schritte ersetzen den einen.
+      final split = [
+        if (json['steps'] is List)
+          for (final s in json['steps'] as List)
+            if (s is Map) s,
+      ].take(maxSplitSteps).toList();
+      if (step is! Map && (split.isEmpty || stepIndex < 0)) return null;
       if (stepIndex >= 0) {
         final steps = [...(map['steps'] as List)];
         if (stepIndex >= steps.length) return null;
-        steps[stepIndex] = step;
+        steps.replaceRange(stepIndex, stepIndex + 1, split.isNotEmpty ? split : [step]);
         map['steps'] = steps;
       } else {
         map[stepIndex == -1 ? 'result' : 'short'] = step;

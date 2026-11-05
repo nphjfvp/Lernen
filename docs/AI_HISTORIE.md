@@ -1374,3 +1374,11 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `visualChat`); ohne Verlauf zeigt der Chat dann die Karte `visual-chat-context` und
     `VisualChatScreen.taskSuggestions` (`visual-chat-task-suggest-i`, füllen das Eingabefeld).
     Test: `visual_task_types_test`.
+104. Live ändern: `VisualLiveEditBar` in ui/visual/visual_lesson_screen.dart unter jedem Schritt und dem
+    Ergebnis (Keys `visual-live`, `visual-live-input`, `visual-live-send`, `visual-live-chip-i` aus
+    `VisualLiveEditBar.suggestions` – Aufteilen-Vorschläge nur bei Schritten, `visual-live-busy`,
+    `visual-live-error`); `_liveRevise` → `AiService.reviseVisualLesson(stepIndex:)`, dessen Antwort bei
+    Schritten jetzt auch `{"steps": [2–5]}` sein darf; `VisualLesson.revisedWith` ersetzt den einen Schritt
+    durch bis zu `VisualLesson.maxSplitSteps` (5) Schritte (beim Ergebnis nicht). Gemeinsames
+    `_applyRevision` (speichern, Snackbar mit `visual-revise-undo`, Sprung zum ersten neuen Schritt) auch für
+    „Darstellung ändern“. Tests in `visual_learn_test` („Aufteilen …“, „Live ändern …“).

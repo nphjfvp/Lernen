@@ -323,6 +323,94 @@ void main() {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
   });
 
+  test('Aufteilen: mehrere Schritte ersetzen den einen, Rest bleibt', () {
+    final base = VisualLesson.fromMap(carLessonJson(), id: 'l-split', moduleId: 'm', createdAt: DateTime(2026))!;
+    final n = base.steps.length;
+    final split = base.revisedWith({
+      'steps': [
+        {'title': 'Zwischenschritt', 'text': 'Erst das.'},
+        {'title': 'Dann', 'text': 'Dann das.'},
+        'kaputt',
+      ],
+    }, stepIndex: 0)!;
+    expect(split.steps.map((s) => s.title).take(2), ['Zwischenschritt', 'Dann']);
+    expect(split.steps, hasLength(n + 1));
+    expect(split.steps.last.title, base.steps.last.title);
+    final many = base.revisedWith({
+      'steps': [
+        for (var i = 0; i < 9; i++) {'title': 'S$i', 'text': 't'},
+      ],
+    }, stepIndex: 0)!;
+    expect(many.steps, hasLength(n - 1 + VisualLesson.maxSplitSteps));
+    expect(base.revisedWith({'steps': []}, stepIndex: 0), isNull);
+    expect(
+      base.revisedWith({
+        'steps': [
+          {'title': 'x', 'text': 'y'},
+        ],
+      }, stepIndex: -1),
+      isNull,
+      reason: 'Ergebnis lässt sich nicht aufteilen',
+    );
+  });
+
+  testWidgets('Live ändern: Zwischenschritt einfügen, Rückgängig, eigener Wunsch', (tester) async {
+    VisualLessonScreen.aiFactory = replying((text) {
+      if (text.contains('Wunsch des Nutzers: Mach aus diesem Schritt zwei')) {
+        return {
+          'steps': [
+            {'title': 'Erst die Strecke', 'text': r'Der Weg $\textcolor{green}{s}$ wächst.'},
+            {'title': 'Dann das Tempo', 'text': 'Schneller wird es.'},
+          ],
+        };
+      }
+      return {
+        'step': {'title': 'Als Graph', 'text': 'So sieht es aus.'},
+      };
+    });
+    final own = VisualLesson.fromMap(carLessonJson(), id: 'l-live', moduleId: 'm-live', createdAt: DateTime(2026))!;
+    final n = own.steps.length;
+    await pumpApp(tester, VisualLessonScreen(lesson: own));
+    expect(find.byKey(const ValueKey('visual-live')), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-live-chip-1')), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('visual-live-chip-1')));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('visual-live-chip-1')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await run(tester, 1);
+    final sent = jsonEncode(requests.single);
+    expect(sent, contains('NUR Schritt 1'));
+    expect(sent, contains('Zwischenschritt'));
+    expect(sent, contains('2 bis 5 Schritte'));
+    expect(find.text('Erst die Strecke'), findsOneWidget);
+    expect(find.text('Aus dem Schritt wurden 2 Schritte.'), findsOneWidget);
+    final saved = await tester.runAsync(() => VisualLessonRepository().forModule('m-live'));
+    expect(saved!.single.steps, hasLength(n + 1));
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Rückgängig'));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await run(tester, 1);
+    expect(find.text('Erst die Strecke'), findsNothing);
+    expect(find.text(own.steps.first.title), findsOneWidget);
+
+    // Eigener Wunsch im Eingabefeld.
+    await tester.enterText(find.byKey(const ValueKey('visual-live-input')), 'Zeig das als Graph');
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('visual-live-send')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await run(tester, 1);
+    expect(jsonEncode(requests.last), contains('Wunsch des Nutzers: Zeig das als Graph'));
+    expect(find.text('Als Graph'), findsOneWidget);
+    expect(find.text('Geändert.'), findsOneWidget);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+  });
+
   testWidgets('Sokratisch: Leitfrage, eigene Antwort, Tipp mit Simulation, selbst gefunden oder auflösen', (
     tester,
   ) async {

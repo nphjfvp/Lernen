@@ -47,7 +47,8 @@ Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführu
   erklärend oder sokratisch, aus PDFs, Fragen oder frei im Chat; Lernpfad für
   ein ganzes Semester. **Aufgaben visuell lösen**: Aufgabentyp und Stufe
   wählen, die KI stellt eine neue Aufgabe und löst sie Schritt für Schritt –
-  Größen farbig markiert, in jedem Schritt im Gespräch nachfragen.
+  Größen farbig markiert, in jedem Schritt im Gespräch nachfragen oder **live
+  ändern** („zeig das als Graph“, „noch ein Zwischenschritt“).
 - **Labor**: Vorbereitung, Durchführung mit Fotos, Berichtsentwurf.
 - **Geräte**: Cloud-Sync (Konto), eigener PDF-Speicher, Sicherungen, Export.
 - **Claude-Postfach**: Claude baut in einer Claude-Code-Sitzung Aufgaben aus
