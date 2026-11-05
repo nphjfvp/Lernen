@@ -376,6 +376,23 @@ class VisualLesson {
   final VisualStep? shortVersion;
   final DateTime createdAt;
 
+  /// Text für ein Gespräch über diese Lektion (VisualChat.context):
+  /// Aufgabe/Ausgangslage, alle Schritte und das Ergebnis; [focus] = der
+  /// Schritt, bei dem der Nutzer gerade ist.
+  String chatContext({String focus = ''}) {
+    final b = StringBuffer()..writeln(intro.isNotEmpty ? intro : title);
+    b
+      ..writeln()
+      ..writeln('Lektion „$title“ – Lösungsweg:');
+    for (final (i, s) in steps.indexed) {
+      b.writeln('${i + 1}. ${s.title}: ${s.text}${s.formula.isEmpty ? '' : ' [\$${s.formula}\$]'}');
+    }
+    final r = result;
+    if (r != null) b.writeln('Ergebnis: ${r.text}${r.formula.isEmpty ? '' : ' [\$${r.formula}\$]'}');
+    if (focus.isNotEmpty) b.writeln('\nDer Nutzer ist gerade bei: $focus');
+    return b.toString().trim();
+  }
+
   VisualFunction? function(String key) {
     for (final f in functions) {
       if (f.key == key) return f;

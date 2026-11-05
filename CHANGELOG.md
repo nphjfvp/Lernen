@@ -1,8 +1,26 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6n) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6o) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6o. Aufgaben visuell lösen
+
+- **Fach → „Aufgaben visuell lösen“**: Die KI ordnet die Aufgaben und Fragen
+  des Fachs in **Aufgabentypen** (z.B. „Weg-Zeit-Funktion aus der
+  Beschleunigung“). Typ antippen, **Leicht / Mittel / Schwer** und
+  **Vorrechnen** oder **Sokratisch** wählen – die KI stellt eine **neue**
+  Aufgabe dieses Typs (im Stil deiner Übungen) und löst sie Schritt für
+  Schritt mit Animationen. Fehlt ein Typ: „Eigener Typ“.
+- **Farbig markiert**: Gleiche Größen haben in allen Formeln dieselbe Farbe
+  (z.B. Weg grün, Zeit rot) – so sieht man, wie sie sich beim Umformen und
+  Integrieren verändern. Das gilt jetzt für alle visuellen Lektionen.
+- **„Im Gespräch vertiefen“** in jedem Schritt einer Lektion öffnet einen
+  Chat, der Aufgabe, Lösungsweg und deinen aktuellen Schritt kennt. Vorschläge
+  wie „Lass uns das an einem einfachen Beispiel durchgehen“ oder „Markier
+  alles mit dem Weg grün und alles mit der Zeit rot“ sind einen Tipp entfernt.
+- Die erkannten Typen bleiben gespeichert; kommen viele Aufgaben dazu, schlägt
+  die App „Neu erkennen“ vor. Gestellte Aufgaben liegen unter „Visuell lernen“.
 
 ### 6n. Einführung in die App
 

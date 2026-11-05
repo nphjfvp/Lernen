@@ -57,4 +57,15 @@ WERKZEUGE DER APP (je Schritt in "show", alles optional, frei kombinierbar – w
 2. "plot" (+ "tangent", "area") – Funktionsgraphen von "functions" über der Variablen der Lektion mit laufender Markierung; "tangent": key (Tangente = Steigung/Ableitung an der laufenden Stelle), "area": key (Fläche bis zur laufenden Stelle = Integral). Für jeden Zusammenhang y = f(x): Spannung–Dehnung, Kosten–Menge, Temperatur–Zeit …
 3. "car" (+ "carFrom": "position" | "velocity") – ein Fahrzeug auf einer Straße, gesteuert von einer Funktion (Weg oder Geschwindigkeit über der Zeit), die App rechnet die Bewegung exakt. NUR für Bewegungen (Kinematik, Ableitung/Integral von Weg und Geschwindigkeit) – nicht für andere Themen. Optional "vehicle": "rocket" | "bike" | "train" | "runner" | "ball" | "plane" | "boat" | "truck" | "bus" | "snail" oder ein beliebiges Emoji (Standard: Auto).
 4. "transform": [{"latex": "Gleichung ohne $", "note": "was passiert und warum"}] – eine Gleichung/Rechnung langsam Schritt für Schritt umformen (jeder Zwischenstand einzeln).
+5. FARBIG MARKIEREN – wenn der Nutzer es wünscht („alles mit dem Weg grün, alles mit der Zeit rot“) oder Zusammenhänge dadurch klarer werden: in Formeln \textcolor{green}{…} um JEDE Stelle dieser Größe (in "text", "formula" und den "transform"-Gleichungen; in JSON den Backslash verdoppeln). Dieselbe Größe hat überall dieselbe Farbe – in allen Schritten, in Szenen (fill/stroke der zugehörigen Formen) und im Text („grün = Weg“). Farben: green, red, blue, orange, purple, brown. So sieht man, wie sich eine markierte Größe beim Umformen, Ableiten oder Integrieren verändert – zeige das ausdrücklich (z.B. mit "transform").
 ''';
+
+const _taskTypesSystemPrompt = r'''
+Du ordnest die Aufgaben und Fragen eines Studienfachs in typische AUFGABENTYPEN – so, wie sie in Übungen und Klausuren drankommen. Du bekommst die Einträge mit ID, Art und Aufgabentext.
+
+- 3 bis 12 Typen, jeder klar abgegrenzt und so benannt, dass man ihn sofort wiedererkennt (z.B. „Weg-Zeit-Funktion aus der Beschleunigung integrieren“, „Vorwärtsterminierung mit Pufferzeiten“, „Packungsdichte einer Elementarzelle berechnen“, „Phasenanteile mit dem Hebelgesetz“). Lieber ein konkreter Rechen- oder Aufgabentyp als ein grobes Kapitel.
+- "description": 1–2 Sätze, was man in diesem Typ typischerweise tun muss (welche Schritte, welche Formeln/Regeln).
+- "cardIds": die IDs der Einträge, die zu diesem Typ gehören (jede ID höchstens einmal). Reine Wissensfragen (Definitionen, Begriffe) dürfen einen eigenen Typ bilden, wenn sie zusammengehören; Einzelfälle weglassen.
+- Wichtige, häufige Typen zuerst. Nur Typen, die im Material wirklich vorkommen – nichts dazuerfinden.
+
+Antworte NUR mit JSON: {"types": [{"title": "…", "description": "…", "cardIds": ["…"]}]}''';

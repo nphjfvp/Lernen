@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../models/flashcard.dart';
 import '../../models/step_task.dart';
+import '../../models/visual_chat.dart';
 import '../../models/visual_lesson.dart';
+import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/visual_lesson_repository.dart';
 import '../../services/ai_service.dart';
@@ -11,6 +14,7 @@ import '../../services/visual_math.dart';
 import '../../theme/app_colors.dart';
 import '../tasks/step_task_view.dart';
 import '../widgets/math_text.dart';
+import 'visual_chat_screen.dart';
 import 'visual_diagram_view.dart';
 import 'visual_scene3d_view.dart';
 import 'visual_show_view.dart';
@@ -341,9 +345,38 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
           icon: const Icon(Icons.auto_fix_high, size: 18),
           label: const Text('Darstellung ändern'),
         ),
+        TextButton.icon(
+          key: const ValueKey('visual-deepen'),
+          onPressed: () => _deepen(step),
+          icon: const Icon(Icons.forum_outlined, size: 18),
+          label: const Text('Im Gespräch vertiefen'),
+        ),
       ],
     ),
   ];
+
+  /// Gespräch über diese Lektion (z.B. eine Aufgabe aus „Aufgaben visuell
+  /// lösen“): die KI kennt Aufgabe, Lösungsweg und den aktuellen Schritt –
+  /// man kann nachfragen, Beispiele durchgehen, Größen farbig markieren lassen.
+  void _deepen(VisualStep step) {
+    final l = _l;
+    final chat = VisualChat(
+      id: const Uuid().v4(),
+      moduleId: l.moduleId,
+      title: 'Vertiefen: ${l.title}',
+      createdAt: DateTime.now(),
+      context: l.chatContext(focus: step.title),
+    );
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VisualChatScreen(
+          moduleId: l.moduleId,
+          moduleName: context.read<ModuleRepository?>()?.byId(l.moduleId)?.name ?? '',
+          chat: chat,
+        ),
+      ),
+    );
+  }
 
   /// „Darstellung ändern“: Wunsch eingeben, die KI baut den Schritt (oder die
   /// ganze Lektion) um; gespeichert, mit Rückgängig.

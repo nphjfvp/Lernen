@@ -57,6 +57,7 @@ import 'material_opener.dart';
 import 'module_form_screen.dart';
 import '../flags/flagged_questions_screen.dart';
 import '../visual/visual_learn_screen.dart';
+import '../visual/visual_task_types_screen.dart';
 
 class ModuleDetailScreen extends StatefulWidget {
   const ModuleDetailScreen({super.key, required this.moduleId});
@@ -249,6 +250,19 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           MaterialPageRoute(
                             builder: (_) => VisualLearnScreen(moduleId: module.id, moduleName: module.name),
                           ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _SoftRow(
+                      key: const ValueKey('module-visual-tasks'),
+                      icon: Icons.draw_outlined,
+                      title: 'Aufgaben visuell lösen',
+                      subtitle: 'Aufgabentyp wählen, Leicht/Mittel/Schwer – neue Aufgabe Schritt für Schritt gelöst, '
+                          'Größen farbig markiert, jederzeit nachfragen',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => VisualTaskTypesScreen(moduleId: module.id, moduleName: module.name),
                         ),
                       ),
                     ),

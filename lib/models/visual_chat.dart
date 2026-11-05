@@ -85,10 +85,15 @@ class VisualChat {
     this.title = '',
     this.messages = const [],
     required this.createdAt,
+    this.context = '',
   });
 
   final String id;
   final String moduleId;
+
+  /// Worauf sich das Gespräch bezieht (z.B. eine Aufgabe samt Lösungsweg aus
+  /// „Aufgaben visuell lösen“) – geht bei jeder Frage an die KI mit.
+  final String context;
 
   /// Kurzer Titel (von der KI bei der ersten Antwort).
   final String title;
@@ -115,6 +120,7 @@ class VisualChat {
       title: (title ?? '').isNotEmpty && this.title.isEmpty ? title! : this.title,
       messages: all.length > maxMessages ? all.sublist(all.length - maxMessages) : all,
       createdAt: createdAt,
+      context: context,
     );
   }
 
@@ -124,6 +130,7 @@ class VisualChat {
     if (title.isNotEmpty) 'title': title,
     'messages': [for (final m in messages) m.toMap()],
     'createdAt': createdAt.toIso8601String(),
+    if (context.isNotEmpty) 'context': context,
   };
 
   static VisualChat? fromMap(Object? raw) {
@@ -140,6 +147,7 @@ class VisualChat {
           for (final m in raw['messages'] as List) ?VisualChatMessage.fromMap(m),
       ],
       createdAt: DateTime.tryParse(_str(raw['createdAt'])) ?? DateTime.now(),
+      context: _str(raw['context']),
     );
   }
 }

@@ -45,7 +45,9 @@ Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführu
 - **Visuell lernen**: Lektionen mit Animationen (2D und 3D, wo nötig – auch als
   echtes 3D zum Drehen und Zoomen),
   erklärend oder sokratisch, aus PDFs, Fragen oder frei im Chat; Lernpfad für
-  ein ganzes Semester.
+  ein ganzes Semester. **Aufgaben visuell lösen**: Aufgabentyp und Stufe
+  wählen, die KI stellt eine neue Aufgabe und löst sie Schritt für Schritt –
+  Größen farbig markiert, in jedem Schritt im Gespräch nachfragen.
 - **Labor**: Vorbereitung, Durchführung mit Fotos, Berichtsentwurf.
 - **Geräte**: Cloud-Sync (Konto), eigener PDF-Speicher, Sicherungen, Export.
 - **Claude-Postfach**: Claude baut in einer Claude-Code-Sitzung Aufgaben aus

@@ -21,6 +21,7 @@ import '../models/phase_task.dart';
 import '../models/step_task.dart';
 import '../models/step_task_review.dart';
 import '../models/task_verification.dart';
+import '../models/visual_task_type.dart';
 import 'calc_engine.dart';
 import 'calc_plan.dart';
 import 'condense_service.dart';
@@ -3151,6 +3152,70 @@ Antworte NUR mit JSON:
     return json;
   }
 
+  // -- Aufgaben visuell lösen -----------------------------------------------
+
+  /// Ordnet die Aufgaben und Fragen eines Fachs ([items]: ID, Art, Text) in
+  /// typische Klausur-Aufgabentypen (siehe VisualTaskType); unbekannte IDs
+  /// fallen weg.
+  Future<List<VisualTaskType>> findTaskTypes(
+    List<({String id, String type, String text})> items, {
+    String subject = '',
+  }) async {
+    if (items.isEmpty) throw AiServiceException('Im Fach gibt es noch keine Aufgaben oder Fragen.');
+    final buffer = StringBuffer();
+    if (subject.trim().isNotEmpty) buffer.writeln('Fach: ${subject.trim()}\n');
+    for (final i in items) {
+      buffer.writeln('ID ${i.id} [${i.type}]: ${_cap(i.text.replaceAll(RegExp(r'\s+'), ' ').trim(), 240)}');
+    }
+    final raw = await _complete(_taskTypesSystemPrompt, buffer.toString(), temperature: 0.2);
+    final json = await _json(raw);
+    final known = {for (final i in items) i.id};
+    final list = json['types'] ?? json['typen'];
+    final types = [
+      if (list is List)
+        for (final (n, t) in list.indexed) ?VisualTaskType.fromMap(t, knownIds: known, fallbackId: 'typ-$n'),
+    ];
+    if (types.isEmpty) {
+      throw AiServiceException('Die KI hat keine Aufgabentypen erkannt – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return types;
+  }
+
+  /// Wunsch an [generateVisualLessons] für „Aufgaben visuell lösen“: eine NEUE
+  /// Aufgabe vom Typ [type] in der Stufe [level] stellen und Schritt für Schritt
+  /// visuell lösen; [examples] (Aufgaben des Fachs) geben Stil und Niveau vor.
+  static String visualTaskTopic({
+    required VisualTaskType type,
+    required VisualTaskLevel level,
+    List<({String front, String back})> examples = const [],
+  }) {
+    final b = StringBuffer()
+      ..writeln('AUFGABE STELLEN UND VISUELL LÖSEN')
+      ..writeln('Aufgabentyp: ${type.title}');
+    if (type.description.isNotEmpty) b.writeln('Worum es geht: ${type.description}');
+    b.writeln('Schwierigkeit: ${level.label} – ${level.meaning}.');
+    if (examples.isNotEmpty) {
+      b.writeln('\nBeispiele dieses Typs aus dem Fach (Stil, Bezeichnungen und Niveau übernehmen, aber NICHT abschreiben):');
+      for (final (i, e) in examples.indexed) {
+        b.writeln('${i + 1}. ${_cap(e.front.trim(), 1200)}');
+        if (e.back.trim().isNotEmpty) b.writeln('   Lösung: ${_cap(e.back.trim(), 800)}');
+      }
+    }
+    b
+      ..writeln()
+      ..writeln('So baust du die Lektion:')
+      ..writeln('- "title": kurzer Titel der Aufgabe.')
+      ..writeln('- "intro": die vollständige NEUE Aufgabenstellung, beginnend mit „Aufgabe:“ – alle gegebenen Größen mit '
+          'Zahlen und Einheiten und was gesucht ist.')
+      ..writeln('- "steps": der Lösungsweg Schritt für Schritt, je Schritt EIN Gedanke (Gegebenes ordnen, Ansatz/Formel '
+          'wählen, einsetzen, umformen, ausrechnen, prüfen) – jeder mit einer Darstellung, die genau diesen Schritt zeigt; '
+          'Rechnungen als "transform".')
+      ..writeln('- "result": das Ergebnis mit Einheit und kurzer Plausibilitätsprüfung.')
+      ..writeln('- "exercise": eine weitere Aufgabe desselben Typs und derselben Schwierigkeit zum Selbstlösen.')
+      ..writeln('Rechne alles sorgfältig nach.');
+    return b.toString();
+  }
+
   /// Visueller Chat: beantwortet [question] im Gespräch ([history]: frühere
   /// Nachrichten, user = Nutzer) – [mode] "visual", "text" oder "both".
   /// Antwort: `{"title", "text", "variable", "domain", "functions", "show",
@@ -3160,10 +3225,17 @@ Antworte NUR mit JSON:
     List<({bool user, String text})> history = const [],
     String mode = 'both',
     String subject = '',
+    String context = '',
   }) async {
     if (question.trim().isEmpty) throw AiServiceException('Stell eine Frage.');
     final buffer = StringBuffer();
     if (subject.trim().isNotEmpty) buffer.writeln('Fach: ${subject.trim()}');
+    if (context.trim().isNotEmpty) {
+      buffer
+        ..writeln('Worauf sich das Gespräch bezieht (Aufgabe bzw. Lektion – Fragen meinen das hier):')
+        ..writeln(_cap(context.trim(), 8000))
+        ..writeln();
+    }
     if (history.isNotEmpty) {
       buffer.writeln('Bisheriges Gespräch:');
       for (final m in history.length > 12 ? history.sublist(history.length - 12) : history) {

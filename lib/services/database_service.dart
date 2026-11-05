@@ -43,6 +43,9 @@ class DatabaseService {
   static final visualCourses = stringMapStoreFactory.store('visual_courses');
   static final visualChats = stringMapStoreFactory.store('visual_chats');
 
+  /// Aufgabentypen je Fach für „Aufgaben visuell lösen“ (nur lokal).
+  static final visualTaskTypes = stringMapStoreFactory.store('visual_task_types');
+
   /// Aufgaben, die die App noch nicht interaktiv prüfen kann (Sammelliste).
   static final unsupportedTasks = stringMapStoreFactory.store('unsupported_tasks');
 

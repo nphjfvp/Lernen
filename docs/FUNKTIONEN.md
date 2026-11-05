@@ -423,6 +423,14 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Übungsrunde genau damit (`PracticeScreen.cards`, zählt normal für
   FSRS/Ampel); "KI: Muster erkennen" (mit API-Key) fasst zusammen, welche
   Themen/Denkfehler dahinterstecken und was gezielt zu wiederholen ist.
+- **Aufgaben visuell lösen** (`lib/ui/visual/visual_task_types_screen.dart`,
+  Fach → „Aufgaben visuell lösen“) – die KI ordnet die Aufgaben und Fragen des
+  Fachs in Aufgabentypen (`AiService.findTaskTypes`, lokal gespeichert, „Eigener
+  Typ“ möglich). Typ + Leicht/Mittel/Schwer + Vorrechnen/Sokratisch → eine neue
+  Aufgabe im Stil der Beispiele, gelöst als visuelle Lektion Schritt für
+  Schritt; gleiche Größen tragen in allen Formeln dieselbe Farbe. „Im Gespräch
+  vertiefen“ (in jeder Lektion) öffnet einen Chat, der Aufgabe, Lösungsweg und
+  den aktuellen Schritt kennt.
 - **Boss-Kampf** (`lib/ui/games/boss_battle_screen.dart`, Logik
   `lib/services/boss_battle.dart`, unter Fortschritt → Spiele) – die
   schwächsten schon gelernten Karten eines Fachs als Endgegner: richtig =

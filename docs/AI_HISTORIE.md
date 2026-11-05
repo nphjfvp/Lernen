@@ -1356,3 +1356,21 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `guide-toc`, `guide-position`). Einstieg nur über Einstellungen (Abschnitt „Einführung“ ganz oben,
     Knopf „Einführung in die App öffnen“), nie automatisch. Tests: `app_guide_test`,
     `settings_screen_sync_test`, `widget_test`.
+103. Aufgaben visuell lösen: models/visual_task_type.dart (`VisualTaskType` id/title/description/cardIds,
+    `fromMap(knownIds:, fallbackId:)` nimmt auch name/typ/cards/examples; `VisualTaskCatalog` je Fach mit
+    cardCount/updatedAt; `VisualTaskLevel` easy/medium/hard mit label + meaning),
+    repositories/visual_task_type_repository.dart (Store `visual_task_types`, nur lokal, beim Löschen des
+    Fachs mit weg). `AiService.findTaskTypes` (Prompt `_taskTypesSystemPrompt`, erfundene Karten-IDs
+    fallen weg) und `AiService.visualTaskTopic` (Wunsch „AUFGABE STELLEN UND VISUELL LÖSEN“ an
+    `generateVisualLessons`: intro = neue Aufgabenstellung, steps = Lösungsweg, exercise = weitere
+    Aufgabe). `_visualToolsSpec` Punkt 5 „FARBIG MARKIEREN“ (`\textcolor`, gleiche Größe = gleiche
+    Farbe). ui/visual/visual_task_types_screen.dart (`VisualTaskTypesScreen`, `aiFactory`, `itemsFor`
+    echte Aufgaben vor Karteikarten/Auswahl, max. 120; Keys `task-types-find`, `task-type-i`,
+    `task-type-custom`, `task-custom-field`/`-ok`, `task-types-stale`, `task-types-empty`,
+    `task-progress`, `task-error`; Sheet `task-level` (`task-level-easy|medium|hard`), `task-style`,
+    `task-start`; Lektion mit source „Aufgabentyp: … · Stufe“). Fach-Einstieg `module-visual-tasks`.
+    `VisualLesson.chatContext(focus:)`; Lektion: Knopf `visual-deepen` → `VisualChatScreen` mit
+    `VisualChat.context` (gespeichert/synchronisiert, geht als „Worauf sich das Gespräch bezieht“ an
+    `visualChat`); ohne Verlauf zeigt der Chat dann die Karte `visual-chat-context` und
+    `VisualChatScreen.taskSuggestions` (`visual-chat-task-suggest-i`, füllen das Eingabefeld).
+    Test: `visual_task_types_test`.

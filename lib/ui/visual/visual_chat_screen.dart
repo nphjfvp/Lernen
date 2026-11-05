@@ -30,6 +30,17 @@ class VisualChatScreen extends StatefulWidget {
   /// Test-Hook statt OpenRouter.
   static AiService? Function(String apiKey, String model)? aiFactory;
 
+  /// Vorschläge, wenn das Gespräch eine Aufgabe vertieft (siehe
+  /// VisualChat.context) – sie landen im Eingabefeld zum Anpassen.
+  static const taskSuggestions = [
+    'Lass uns das an einem einfachen Beispiel durchgehen',
+    'Markiere jede Größe in einer eigenen Farbe, z.B. alles mit dem Weg grün und alles mit der Zeit rot, und zeig, '
+        'wie sie sich durch die Rechnung zieht',
+    'Was passiert dabei anschaulich? Zeig es als Animation',
+    'Erklär mir den schwierigsten Schritt kleinschrittiger',
+    'Welche typischen Fehler macht man bei dieser Aufgabe?',
+  ];
+
   static const suggestions = [
     'Wie funktioniert ein Hebel?',
     'Zeig mir, warum die Ableitung von x² gleich 2x ist',
@@ -99,6 +110,7 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
         history: history,
         mode: _mode.name,
         subject: widget.moduleName,
+        context: _chat.context,
       );
       final visual = <String, dynamic>{
         for (final k in const ['variable', 'domain', 'functions', 'show', 'transform'])
@@ -263,7 +275,54 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
     );
   }
 
-  List<Widget> _empty(AppColors c) => [
+  List<Widget> _empty(AppColors c) => _chat.context.isNotEmpty ? _emptyForTask(c) : _emptyFree(c);
+
+  /// Gespräch zu einer Aufgabe: die Aufgabe oben, Vorschläge zum Vertiefen.
+  List<Widget> _emptyForTask(AppColors c) => [
+    Container(
+      key: const ValueKey('visual-chat-context'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(14)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Darauf bezieht sich das Gespräch', style: TextStyle(fontWeight: FontWeight.w600, color: c.accentOnSoft)),
+          const SizedBox(height: 6),
+          MathText(
+            _chat.context.split('\n\n').first,
+            maxLines: 8,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: c.ink, height: 1.4),
+          ),
+        ],
+      ),
+    ),
+    const SizedBox(height: 14),
+    Text(
+      'Frag nach, lass dir etwas an einem Beispiel zeigen oder Größen farbig markieren – die KI kennt die Aufgabe '
+      'und den Lösungsweg.',
+      style: TextStyle(color: c.inkMuted, height: 1.4),
+    ),
+    const SizedBox(height: 10),
+    Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final (i, s) in VisualChatScreen.taskSuggestions.indexed)
+          ActionChip(
+            key: ValueKey('visual-chat-task-suggest-$i'),
+            label: Text(s, maxLines: 2, overflow: TextOverflow.ellipsis),
+            onPressed: () => setState(
+              () => _input
+                ..text = s
+                ..selection = TextSelection.collapsed(offset: s.length),
+            ),
+          ),
+      ],
+    ),
+  ];
+
+  List<Widget> _emptyFree(AppColors c) => [
     const SizedBox(height: 12),
     Icon(Icons.forum_outlined, size: 40, color: c.accent),
     const SizedBox(height: 8),

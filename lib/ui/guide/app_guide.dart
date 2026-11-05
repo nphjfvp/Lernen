@@ -219,6 +219,14 @@ const appGuideChapters = <GuideChapter>[
         where: 'Fach → Visuell lernen',
       ),
       GuideItem(
+        'Aufgaben visuell lösen',
+        'Die KI ordnet die Aufgaben deines Fachs in Typen. Typ antippen, Leicht, Mittel oder Schwer wählen – sie '
+            'stellt eine neue Aufgabe und löst sie Schritt für Schritt; gleiche Größen haben überall dieselbe Farbe. '
+            '„Im Gespräch vertiefen“ in jedem Schritt: z.B. „Markier alles mit dem Weg grün und alles mit der Zeit '
+            'rot“ oder „Lass uns das an einem Beispiel durchgehen“.',
+        where: 'Fach → Aufgaben visuell lösen',
+      ),
+      GuideItem(
         'Animationen und 3D',
         'Bewegte Szenen mit Regler und Beschriftung; räumliche Szenen lassen sich drehen. „In 3D ansehen“ '
             'öffnet echtes 3D mit Licht, Schatten und Zoom.',
