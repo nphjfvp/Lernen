@@ -1382,3 +1382,11 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     durch bis zu `VisualLesson.maxSplitSteps` (5) Schritte (beim Ergebnis nicht). Gemeinsames
     `_applyRevision` (speichern, Snackbar mit `visual-revise-undo`, Sprung zum ersten neuen Schritt) auch für
     „Darstellung ändern“. Tests in `visual_learn_test` („Aufteilen …“, „Live ändern …“).
+105. Lernen vor dem Lösen: `VisualChat.learn` (gespeichert als `learn: true`), `VisualLesson.learnContext()`
+    (nur Aufgabe/intro + Thema, kein Lösungsweg), `AiService.visualChat(learn:)` hängt `_visualLearnMode`
+    an (LERNMODUS: von Grund auf erklären, Lösung/Lösungsweg/Zwischenergebnisse nicht verraten, keine
+    Aufgaben stellen). Lektion: Karte `visual-learn-card` mit Knopf `visual-learn` unter dem intro und
+    AppBar-Aktion `visual-learn-action`; `_learn` öffnet bzw. setzt den Chat `learn-<lessonId>` fort;
+    Rückgabe true → Seite 0 + Snackbar. Chat im Lernmodus: `_emptyForLearn` („Erst verstehen, dann
+    lösen“), `VisualChatScreen.learnSuggestions` (`visual-chat-learn-suggest-i`, fragen direkt), Leiste
+    `visual-chat-solve` (pop(true)), kein `visual-chat-new`. Tests in `visual_task_types_test`.

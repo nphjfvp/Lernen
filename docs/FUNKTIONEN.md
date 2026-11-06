@@ -432,7 +432,9 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   vertiefen“ (in jeder Lektion) öffnet einen Chat, der Aufgabe, Lösungsweg und
   den aktuellen Schritt kennt. „Live ändern“ unter jedem Schritt baut ihn nach
   einem Wunsch sofort um – auch in mehrere Schritte (Zwischenschritt,
-  kleinschrittiger), mit Rückgängig.
+  kleinschrittiger), mit Rückgängig. „Lernen“ (Karte unter der Aufgabe,
+  Glühbirne oben) öffnet einen Lern-Chat je Aufgabe: Konzepte von Grund auf,
+  ohne Lösung zu verraten; „jetzt lösen“ führt zum ersten Schritt zurück.
 - **Boss-Kampf** (`lib/ui/games/boss_battle_screen.dart`, Logik
   `lib/services/boss_battle.dart`, unter Fortschritt → Spiele) – die
   schwächsten schon gelernten Karten eines Fachs als Endgegner: richtig =

@@ -299,6 +299,102 @@ void main() {
     await settle();
   });
 
+  test('Lern-Chat: nur die Aufgabe als Grundlage, Kennzeichen bleibt erhalten', () {
+    final lesson = VisualLesson.fromMap(carLessonJson(), id: 'l', moduleId: 'm', createdAt: DateTime(2026, 11, 1))!;
+    final text = lesson.learnContext();
+    expect(text, startsWith(lesson.intro));
+    expect(text, contains('Thema der Lektion: ${lesson.title}'));
+    expect(text, isNot(contains('Lösungsweg')));
+    expect(text, isNot(contains(lesson.steps.first.title)));
+    final chat = VisualChat(id: 'c', moduleId: 'm', createdAt: DateTime(2026, 11, 1), context: text, learn: true);
+    expect(VisualChat.fromMap(chat.toMap())!.learn, isTrue);
+    expect(VisualChat.fromMap(chat.toMap()..remove('learn'))!.learn, isFalse);
+    expect(chat.withMessage(VisualChatMessage(user: true, text: 'x', createdAt: DateTime(2026))).learn, isTrue);
+  });
+
+  testWidgets('Lernen in der Aufgabe: erst fragen ohne Lösung, dann „jetzt lösen“, Gespräch bleibt', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final requests = <String>[];
+    VisualChatScreen.aiFactory = (k, m) => AiService(
+      apiKey: k,
+      model: m,
+      client: MockClient((r) async {
+        requests.add('${((jsonDecode(r.body) as Map)['messages'] as List)[1]['content']}');
+        return _reply({'title': 'Begriffe', 'text': 'Ein Weg ist die zurückgelegte Strecke.'});
+      }),
+    );
+    final lesson = VisualLesson.fromMap(
+      carLessonJson(),
+      id: 'l-learn',
+      moduleId: 'm-learn',
+      createdAt: DateTime(2026, 11, 1),
+    )!;
+
+    Future<void> settle([int rounds = 12]) async {
+      for (var i = 0; i < rounds; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    Future<void> tapReal(Finder f) async {
+      await tester.ensureVisible(f);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(f);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await settle();
+    }
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsRepository>.value(value: _SettingsWithKey()),
+          ChangeNotifierProvider<VisualLessonRepository>(create: (_) => VisualLessonRepository()),
+          ChangeNotifierProvider<VisualChatRepository>(create: (_) => VisualChatRepository()),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(extensions: const [AppColors.light]),
+          home: VisualLessonScreen(lesson: lesson),
+        ),
+      ),
+    );
+    await settle(4);
+    expect(find.byKey(const ValueKey('visual-learn-card')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('visual-next')));
+    await tester.pump();
+    await tapReal(find.byKey(const ValueKey('visual-learn-action')));
+    expect(find.byType(VisualChatScreen), findsOneWidget);
+    expect(find.text('Erst verstehen, dann lösen'), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-chat-new')), findsNothing);
+    expect(find.byKey(const ValueKey('visual-chat-solve')), findsOneWidget);
+
+    await tapReal(find.byKey(const ValueKey('visual-chat-learn-suggest-1')));
+    expect(requests.single, contains('LERNMODUS'));
+    expect(requests.single, contains('Verrate weder die Lösung'));
+    expect(requests.single, contains(lesson.intro));
+    expect(requests.single, isNot(contains(lesson.steps.first.title)));
+    expect(requests.single, contains('Frage: Welche Begriffe und Konzepte muss ich dafür kennen?'));
+    expect(find.textContaining('zurückgelegte Strecke'), findsOneWidget);
+
+    await tapReal(find.byKey(const ValueKey('visual-chat-solve')));
+    expect(find.byType(VisualChatScreen), findsNothing);
+    expect(find.text('Los geht’s – Schritt für Schritt.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-learn-card')), findsOneWidget, reason: 'zurück beim ersten Schritt');
+
+    // Wieder öffnen: dasselbe Gespräch.
+    await tapReal(find.byKey(const ValueKey('visual-learn')));
+    expect(find.textContaining('zurückgelegte Strecke'), findsOneWidget);
+    final saved = await tester.runAsync(() => VisualChatRepository().forModule('m-learn'));
+    expect(saved!.single.id, 'learn-l-learn');
+    expect(saved.single.learn, isTrue);
+    await tester.pumpWidget(const SizedBox());
+    await settle();
+  });
+
   testWidgets('Ohne Key: Hinweis statt KI-Aufruf', (tester) async {
     await tester.pumpWidget(
       MultiProvider(

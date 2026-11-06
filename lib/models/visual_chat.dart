@@ -86,7 +86,12 @@ class VisualChat {
     this.messages = const [],
     required this.createdAt,
     this.context = '',
+    this.learn = false,
   });
+
+  /// Lern-Chat zu einer Aufgabe („Lernen“ in der Lektion): erst Begriffe und
+  /// Konzepte verstehen – die KI verrät die Lösung nicht.
+  final bool learn;
 
   final String id;
   final String moduleId;
@@ -121,6 +126,7 @@ class VisualChat {
       messages: all.length > maxMessages ? all.sublist(all.length - maxMessages) : all,
       createdAt: createdAt,
       context: context,
+      learn: learn,
     );
   }
 
@@ -131,6 +137,7 @@ class VisualChat {
     'messages': [for (final m in messages) m.toMap()],
     'createdAt': createdAt.toIso8601String(),
     if (context.isNotEmpty) 'context': context,
+    if (learn) 'learn': true,
   };
 
   static VisualChat? fromMap(Object? raw) {
@@ -148,6 +155,7 @@ class VisualChat {
       ],
       createdAt: DateTime.tryParse(_str(raw['createdAt'])) ?? DateTime.now(),
       context: _str(raw['context']),
+      learn: raw['learn'] == true,
     );
   }
 }

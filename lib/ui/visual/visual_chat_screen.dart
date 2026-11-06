@@ -41,6 +41,15 @@ class VisualChatScreen extends StatefulWidget {
     'Welche typischen Fehler macht man bei dieser Aufgabe?',
   ];
 
+  /// Vorschläge im Lern-Chat (VisualChat.learn) – werden direkt gefragt.
+  static const learnSuggestions = [
+    'Worum geht es in dieser Aufgabe überhaupt?',
+    'Welche Begriffe und Konzepte muss ich dafür kennen?',
+    'Erklär mir den wichtigsten Begriff von Grund auf',
+    'Zeig mir das Konzept an einem einfachen Beispiel – nicht an der Aufgabe',
+    'Wie hängen die Größen zusammen? Visualisier es',
+  ];
+
   static const suggestions = [
     'Wie funktioniert ein Hebel?',
     'Zeig mir, warum die Ableitung von x² gleich 2x ist',
@@ -111,6 +120,7 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
         mode: _mode.name,
         subject: widget.moduleName,
         context: _chat.context,
+        learn: _chat.learn,
       );
       final visual = <String, dynamic>{
         for (final k in const ['variable', 'domain', 'functions', 'show', 'transform'])
@@ -209,17 +219,18 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
             onPressed: hasAnswer && !_busy ? _toLesson : null,
             icon: const Icon(Icons.school_outlined),
           ),
-          IconButton(
-            key: const ValueKey('visual-chat-new'),
-            tooltip: 'Neuer Chat',
-            onPressed: _busy
-                ? null
-                : () => setState(() {
-                    _chat = VisualChat(id: const Uuid().v4(), moduleId: widget.moduleId, createdAt: DateTime.now());
-                    _error = null;
-                  }),
-            icon: const Icon(Icons.add_comment_outlined),
-          ),
+          if (!_chat.learn)
+            IconButton(
+              key: const ValueKey('visual-chat-new'),
+              tooltip: 'Neuer Chat',
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _chat = VisualChat(id: const Uuid().v4(), moduleId: widget.moduleId, createdAt: DateTime.now());
+                      _error = null;
+                    }),
+              icon: const Icon(Icons.add_comment_outlined),
+            ),
           if (_chat.messages.isNotEmpty)
             IconButton(
               key: const ValueKey('visual-chat-delete'),
@@ -266,6 +277,7 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
                     ],
                   ),
                 ),
+                if (_chat.learn) _solveBar(c),
                 _composer(c),
               ],
             ),
@@ -275,28 +287,75 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
     );
   }
 
-  List<Widget> _empty(AppColors c) => _chat.context.isNotEmpty ? _emptyForTask(c) : _emptyFree(c);
+  List<Widget> _empty(AppColors c) => _chat.learn
+      ? _emptyForLearn(c)
+      : _chat.context.isNotEmpty
+      ? _emptyForTask(c)
+      : _emptyFree(c);
+
+  /// Lern-Chat: „Ich bin bereit“ führt zurück in die Aufgabe (Ergebnis true).
+  Widget _solveBar(AppColors c) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+    child: SizedBox(
+      width: double.infinity,
+      child: FilledButton.tonalIcon(
+        key: const ValueKey('visual-chat-solve'),
+        onPressed: _busy ? null : () => Navigator.of(context).pop(true),
+        icon: const Icon(Icons.play_arrow_rounded),
+        label: const Text('Ich hab’s verstanden – jetzt lösen'),
+      ),
+    ),
+  );
+
+  Widget _contextCard(AppColors c, String heading) => Container(
+    key: const ValueKey('visual-chat-context'),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(14)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          heading,
+          style: TextStyle(fontWeight: FontWeight.w600, color: c.accentOnSoft),
+        ),
+        const SizedBox(height: 6),
+        MathText(
+          _chat.context.split('\n\n').first,
+          maxLines: 8,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: c.ink, height: 1.4),
+        ),
+      ],
+    ),
+  );
+
+  /// Lern-Chat: erst Begriffe und Ideen klären, ohne Lösung.
+  List<Widget> _emptyForLearn(AppColors c) => [
+    _contextCard(c, 'Erst verstehen, dann lösen'),
+    const SizedBox(height: 14),
+    Text(
+      'Frag alles, was du für diese Aufgabe wissen willst – Begriffe, die du noch nie gehört hast, Ideen, '
+      'Hintergründe. Die KI erklärt und zeigt es dir, verrät aber die Lösung nicht. Wenn du bereit bist: „Jetzt lösen“.',
+      style: TextStyle(color: c.inkMuted, height: 1.4),
+    ),
+    const SizedBox(height: 10),
+    Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final (i, s) in VisualChatScreen.learnSuggestions.indexed)
+          ActionChip(
+            key: ValueKey('visual-chat-learn-suggest-$i'),
+            label: Text(s, maxLines: 2, overflow: TextOverflow.ellipsis),
+            onPressed: _busy ? null : () => _send(s),
+          ),
+      ],
+    ),
+  ];
 
   /// Gespräch zu einer Aufgabe: die Aufgabe oben, Vorschläge zum Vertiefen.
   List<Widget> _emptyForTask(AppColors c) => [
-    Container(
-      key: const ValueKey('visual-chat-context'),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(14)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Darauf bezieht sich das Gespräch', style: TextStyle(fontWeight: FontWeight.w600, color: c.accentOnSoft)),
-          const SizedBox(height: 6),
-          MathText(
-            _chat.context.split('\n\n').first,
-            maxLines: 8,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: c.ink, height: 1.4),
-          ),
-        ],
-      ),
-    ),
+    _contextCard(c, 'Darauf bezieht sich das Gespräch'),
     const SizedBox(height: 14),
     Text(
       'Frag nach, lass dir etwas an einem Beispiel zeigen oder Größen farbig markieren – die KI kennt die Aufgabe '

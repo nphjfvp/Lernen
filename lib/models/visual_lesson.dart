@@ -376,6 +376,16 @@ class VisualLesson {
   final VisualStep? shortVersion;
   final DateTime createdAt;
 
+  /// Grundlage für den Lern-Chat („Lernen“): nur die Aufgabe bzw. das Thema –
+  /// ohne Lösungsweg, damit die KI ihn nicht verrät.
+  String learnContext() {
+    final b = StringBuffer()..writeln(intro.isNotEmpty ? intro : title);
+    b
+      ..writeln()
+      ..writeln('Thema der Lektion: $title');
+    return b.toString().trim();
+  }
+
   /// Text für ein Gespräch über diese Lektion (VisualChat.context):
   /// Aufgabe/Ausgangslage, alle Schritte und das Ergebnis; [focus] = der
   /// Schritt, bei dem der Nutzer gerade ist.

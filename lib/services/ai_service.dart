@@ -3226,6 +3226,7 @@ Antworte NUR mit JSON:
     String mode = 'both',
     String subject = '',
     String context = '',
+    bool learn = false,
   }) async {
     if (question.trim().isEmpty) throw AiServiceException('Stell eine Frage.');
     final buffer = StringBuffer();
@@ -3236,6 +3237,7 @@ Antworte NUR mit JSON:
         ..writeln(_cap(context.trim(), 8000))
         ..writeln();
     }
+    if (learn) buffer.writeln('$_visualLearnMode\n');
     if (history.isNotEmpty) {
       buffer.writeln('Bisheriges Gespräch:');
       for (final m in history.length > 12 ? history.sublist(history.length - 12) : history) {
@@ -3325,6 +3327,16 @@ Antworte NUR mit JSON:
     }
     return json;
   }
+
+  /// Lern-Chat zu einer Aufgabe: erst verstehen, nicht lösen.
+  static const _visualLearnMode =
+      'LERNMODUS: Der Nutzer will diese Aufgabe noch NICHT lösen, sondern erst die Begriffe und Konzepte dahinter '
+      'verstehen. Erkläre von Grund auf, als hätte er den Begriff noch nie gehört: was er bedeutet, wozu man ihn '
+      'braucht, ein anschauliches Bild und ein kleines eigenes Beispiel (nicht die Aufgabe selbst) – gern mit '
+      'Darstellung. Beantworte jede Rückfrage geduldig und knüpfe an das Gespräch an. Verrate weder die Lösung noch '
+      'den Lösungsweg oder Zwischenergebnisse der Aufgabe, außer der Nutzer verlangt es ausdrücklich. Stell ihm '
+      'keine Aufgaben und dränge nicht zum Lösen – am Ende darfst du kurz anbieten, was man als Nächstes klären '
+      'könnte.';
 
   static const _visualReviseSystemPrompt =
       r'''

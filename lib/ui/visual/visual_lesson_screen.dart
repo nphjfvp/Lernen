@@ -7,6 +7,7 @@ import '../../models/step_task.dart';
 import '../../models/visual_chat.dart';
 import '../../models/visual_lesson.dart';
 import '../../repositories/module_repository.dart';
+import '../../repositories/visual_chat_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/visual_lesson_repository.dart';
 import '../../services/ai_service.dart';
@@ -130,7 +131,17 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     final page = pages[_page.clamp(0, pages.length - 1)];
     return Scaffold(
       backgroundColor: c.bg,
-      appBar: AppBar(title: Text(_l.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+      appBar: AppBar(
+        title: Text(_l.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: [
+          IconButton(
+            key: const ValueKey('visual-learn-action'),
+            tooltip: 'Lernen – erst verstehen, dann lösen',
+            onPressed: _learn,
+            icon: const Icon(Icons.lightbulb_outline),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Align(
           alignment: Alignment.topCenter,
@@ -236,6 +247,8 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                                   ),
                                   child: MathText(_l.intro, style: const TextStyle(fontSize: 14.5, height: 1.45)),
                                 ),
+                                const SizedBox(height: 10),
+                                _learnCard(c),
                                 const SizedBox(height: 14),
                               ],
                               if (_style == VisualStyle.socratic && page.kind == _PageKind.step) ...[
@@ -360,6 +373,70 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       ],
     ),
   ];
+
+  /// „Lernen“ unter der Aufgabe: erst darüber sprechen, dann lösen.
+  Widget _learnCard(AppColors c) => Container(
+    key: const ValueKey('visual-learn-card'),
+    padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+    decoration: BoxDecoration(
+      color: c.surface,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: c.border),
+    ),
+    child: Row(
+      children: [
+        Icon(Icons.lightbulb_outline, color: c.accent),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'Begriffe noch unklar? Erst in Ruhe darüber sprechen und es dir zeigen lassen – gelöst wird danach.',
+            style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.35),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton.icon(
+          key: const ValueKey('visual-learn'),
+          onPressed: _learn,
+          icon: const Icon(Icons.school_outlined, size: 18),
+          label: const Text('Lernen'),
+        ),
+      ],
+    ),
+  );
+
+  /// Lern-Chat zu dieser Aufgabe (je Lektion einer, er bleibt erhalten): die KI
+  /// kennt nur die Aufgabe, nicht den Lösungsweg, und erklärt die Konzepte.
+  /// „Jetzt lösen“ führt zurück zum ersten Schritt.
+  Future<void> _learn() async {
+    final l = _l;
+    final chats = context.read<VisualChatRepository?>();
+    final id = l.id.isEmpty ? const Uuid().v4() : 'learn-${l.id}';
+    VisualChat? chat;
+    if (chats != null && l.id.isNotEmpty) {
+      chat = (await chats.forModule(l.moduleId)).where((c) => c.id == id).firstOrNull;
+    }
+    chat ??= VisualChat(
+      id: id,
+      moduleId: l.moduleId,
+      title: 'Lernen: ${l.title}',
+      createdAt: DateTime.now(),
+      context: l.learnContext(),
+      learn: true,
+    );
+    if (!mounted) return;
+    final moduleName = context.read<ModuleRepository?>()?.byId(l.moduleId)?.name ?? '';
+    final ready = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VisualChatScreen(moduleId: l.moduleId, moduleName: moduleName, chat: chat),
+      ),
+    );
+    if (ready != true || !mounted) return;
+    setState(() {
+      _short = false;
+      _page = 0;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Los geht’s – Schritt für Schritt.')));
+  }
 
   /// Gespräch über diese Lektion (z.B. eine Aufgabe aus „Aufgaben visuell
   /// lösen“): die KI kennt Aufgabe, Lösungsweg und den aktuellen Schritt –

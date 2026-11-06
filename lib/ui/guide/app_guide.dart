@@ -227,6 +227,14 @@ const appGuideChapters = <GuideChapter>[
         where: 'Fach → Aufgaben visuell lösen',
       ),
       GuideItem(
+        'Lernen – erst verstehen, dann lösen',
+        'Kennst du einen Begriff aus der Aufgabe noch gar nicht, tippe in der Aufgabe auf „Lernen“ (oder oben auf '
+            'die Glühbirne). Im Lern-Chat fragst du alles, lässt es dir zeigen und an eigenen Beispielen erklären – '
+            'die KI verrät die Lösung nicht und drängt nicht. Wenn du bereit bist: „Jetzt lösen“. Das Gespräch '
+            'bleibt für später erhalten.',
+        where: 'Aufgabe → Lernen',
+      ),
+      GuideItem(
         'Animationen und 3D',
         'Bewegte Szenen mit Regler und Beschriftung; räumliche Szenen lassen sich drehen. „In 3D ansehen“ '
             'öffnet echtes 3D mit Licht, Schatten und Zoom.',

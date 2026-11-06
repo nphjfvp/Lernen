@@ -1,8 +1,24 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6p) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6q) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6q. Lernen – erst verstehen, dann lösen
+
+- **In jeder Aufgabe bzw. Lektion ein Knopf „Lernen“** (unter der
+  Aufgabenstellung, außerdem oben als Glühbirne auf jeder Seite). Er öffnet
+  einen **Lern-Chat** zu genau dieser Aufgabe: Begriffe, die du noch nie gehört
+  hast („Was macht ein inhomogenes Gleichungssystem aus?“), Ideen und
+  Hintergründe – erklärt von Grund auf, mit Darstellungen und eigenen kleinen
+  Beispielen.
+- Die KI **verrät dabei weder Lösung noch Lösungsweg**, stellt dir keine
+  Aufgaben und drängt nicht – du fragst, so lange du willst. Vorschläge wie
+  „Welche Begriffe muss ich dafür kennen?“ sind einen Tipp entfernt.
+- **„Ich hab’s verstanden – jetzt lösen“** führt zurück zum ersten Schritt der
+  Aufgabe. Das Gespräch bleibt gespeichert und geht beim nächsten „Lernen“
+  weiter.
+- Der sokratische Modus beim Lösen bleibt, wie er ist.
 
 ### 6p. Lektionen live ändern
 
