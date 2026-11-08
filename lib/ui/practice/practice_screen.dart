@@ -11,6 +11,7 @@ import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import '../daily/card_review_mixin.dart';
 import '../daily/question_answer_view.dart';
+import 'study_sequence_screen.dart';
 import '../widgets/calc_tasks_toggle.dart';
 import '../widgets/mastery_dot.dart';
 
@@ -134,7 +135,12 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
   /// Auswahl der Ampel-Stufe; gibt es Rechenaufgaben, darüber der Schalter.
   Widget _pickerWithToggle(List<Flashcard> learnable) {
     context.watch<SettingsRepository?>();
-    final picker = _FilterPicker(cards: _calcFiltered(learnable), mastery: _mastery, onStart: _start);
+    final picker = _FilterPicker(
+      moduleId: widget.moduleId,
+      cards: _calcFiltered(learnable),
+      mastery: _mastery,
+      onStart: _start,
+    );
     if (!learnable.any(CalcTaskDetector.isCalcTask)) return picker;
     return Column(
       children: [
@@ -206,8 +212,9 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
 }
 
 class _FilterPicker extends StatelessWidget {
-  const _FilterPicker({required this.cards, required this.mastery, required this.onStart});
+  const _FilterPicker({required this.moduleId, required this.cards, required this.mastery, required this.onStart});
 
+  final String moduleId;
   final List<Flashcard> cards;
   final MasteryService mastery;
   final void Function(_Filter filter) onStart;
@@ -230,6 +237,7 @@ class _FilterPicker extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
+        if (moduleId.isNotEmpty) StudySequenceSourceList(moduleId: moduleId),
         Text(
           'Übe frei, unabhängig von Fälligkeit oder Klausur-Pacing – jede Antwort '
           'zählt trotzdem für die Spaced-Repetition-Planung im Daily Quiz.',

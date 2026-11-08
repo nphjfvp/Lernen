@@ -33,7 +33,8 @@ Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführu
 
 
 - **Lernen**: Daily Quiz mit Spaced Repetition (FSRS), Wissensstand-Ampel,
-  Stufen Leicht → Mittel → Schwer, Probeklausur mit Note, Fehlertagebuch,
+  Stufen Leicht → Mittel → Schwer, **der Reihe nach** je Einheit/PDF mit
+  gespeichertem Stand, Probeklausur mit Note, Fehlertagebuch,
   Kalender, Fortschritt, Lernerinnerung (Android) und Widget.
 - **Spiele** (zur Pause, aus deinen Karten): Boss-Kampf, Fehlerjagd und Sprint.
 - **Material**: PDFs ansehen und markieren, Texterkennung für Scans, Fragen zu

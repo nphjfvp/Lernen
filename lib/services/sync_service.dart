@@ -224,6 +224,7 @@ Future<Map<String, dynamic>> buildSyncPayload(DatabaseClient db) async {
     'cardFlags': (await DatabaseService.cardFlags.find(db)).map((r) => r.value).toList(),
     'visualCourses': (await DatabaseService.visualCourses.find(db)).map((r) => r.value).toList(),
     'visualChats': (await DatabaseService.visualChats.find(db)).map((r) => r.value).toList(),
+    'studySequences': (await DatabaseService.studySequences.find(db)).map((r) => r.value).toList(),
     // Verlauf und Statistik – ohne sie finge jedes weitere Gerät bei null
     // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
     'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
@@ -264,6 +265,7 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
   if (data.containsKey('cardFlags')) await DatabaseService.cardFlags.delete(txn);
   if (data.containsKey('visualCourses')) await DatabaseService.visualCourses.delete(txn);
   if (data.containsKey('visualChats')) await DatabaseService.visualChats.delete(txn);
+  if (data.containsKey('studySequences')) await DatabaseService.studySequences.delete(txn);
 
   for (final m in (data['modules'] as List? ?? [])) {
     final module = Module.fromMap(Map<String, dynamic>.from(m as Map));
@@ -319,6 +321,11 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     final id = map['id']?.toString() ?? '';
     if (id.isNotEmpty) await DatabaseService.visualChats.record(id).put(txn, map);
   }
+  for (final s in (data['studySequences'] as List? ?? [])) {
+    final map = Map<String, dynamic>.from(s as Map);
+    final id = map['id']?.toString() ?? '';
+    if (id.isNotEmpty) await DatabaseService.studySequences.record(id).put(txn, map);
+  }
 
   await applySyncedHistory(txn, data);
 
@@ -349,6 +356,10 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );
   await DatabaseService.visualChats.delete(
+    txn,
+    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+  );
+  await DatabaseService.studySequences.delete(
     txn,
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );

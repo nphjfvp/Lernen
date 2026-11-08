@@ -25,6 +25,7 @@ import '../../repositories/material_repository.dart';
 import '../../repositories/lab_experiment_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../models/study_sequence.dart';
 import '../../models/summary.dart';
 import '../../repositories/summary_repository.dart';
 import '../../services/ai_service.dart';
@@ -46,6 +47,7 @@ import '../flashcards/task_folder_screen.dart';
 import '../import/pdf_question_import_screen.dart';
 import '../lab/lab_experiments_section.dart';
 import '../practice/practice_screen.dart';
+import '../practice/study_sequence_screen.dart';
 import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
@@ -554,7 +556,21 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     else ...[
                       for (final unit in units)
                         if (materials.any((m) => m.unitId == unit.id)) ...[
-                          _MaterialGroupLabel(unit.title),
+                          _MaterialGroupLabel(
+                            unit.title,
+                            sequenceKey: ValueKey('unit-sequence-${unit.id}'),
+                            sequenceCount: context
+                                    .watch<FlashcardRepository?>()
+                                    ?.forModule(widget.moduleId)
+                                    .where((c) => c.unitId == unit.id)
+                                    .length ??
+                                0,
+                            onSequence: () => openStudySequence(
+                              context,
+                              widget.moduleId,
+                              StudySequenceSource(kind: StudySequenceKind.unit, id: unit.id, title: unit.title),
+                            ),
+                          ),
                           ...materials.where((m) => m.unitId == unit.id).map(_materialRow),
                           const SizedBox(height: 6),
                         ],
@@ -625,6 +641,14 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
         padding: const EdgeInsets.only(bottom: 10),
         child: _MaterialRow(
           material: m,
+          taskCount:
+              context.watch<FlashcardRepository?>()?.forModule(m.moduleId).where((c) => c.sourceMaterialId == m.id).length ??
+              0,
+          onTasks: () => openStudySequence(
+            context,
+            m.moduleId,
+            StudySequenceSource(kind: StudySequenceKind.material, id: m.id, title: m.fileName),
+          ),
           onToggleCovered: (value) =>
               context.read<MaterialRepository>().setCovered(m.id, m.moduleId, value),
           onDelete: () => _deleteMaterial(m),
@@ -1368,8 +1392,14 @@ class _MaterialRow extends StatelessWidget {
     this.onAttachPdf,
     this.onCondense,
     this.onShowText,
+    this.taskCount = 0,
+    this.onTasks,
   });
   final MaterialItem material;
+
+  /// Aufgaben aus dieser PDF – [onTasks] öffnet sie „der Reihe nach“.
+  final int taskCount;
+  final VoidCallback? onTasks;
   final ValueChanged<bool> onToggleCovered;
   final VoidCallback onDelete;
   final VoidCallback? onOpen;
@@ -1437,6 +1467,29 @@ class _MaterialRow extends StatelessWidget {
                       },
                       style: TextStyle(fontSize: 12, color: c.inkMuted),
                     ),
+                    if (taskCount > 0 && onTasks != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2, bottom: 2),
+                        child: InkWell(
+                          key: ValueKey('material-tasks-${material.id}'),
+                          onTap: onTasks,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.format_list_numbered, size: 14, color: c.accent),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$taskCount ${taskCount == 1 ? 'Aufgabe' : 'Aufgaben'} der Reihe nach',
+                                  style: TextStyle(fontSize: 12, color: c.accent, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1791,16 +1844,36 @@ class _UnitSuggestionDialogState extends State<_UnitSuggestionDialog> {
 }
 
 class _MaterialGroupLabel extends StatelessWidget {
-  const _MaterialGroupLabel(this.title);
+  const _MaterialGroupLabel(this.title, {this.sequenceCount = 0, this.onSequence, this.sequenceKey});
   final String title;
+
+  /// Aufgaben der Einheit – mit [onSequence] „der Reihe nach“ lösen.
+  final int sequenceCount;
+  final VoidCallback? onSequence;
+  final Key? sequenceKey;
 
   @override
   Widget build(BuildContext context) {
+    final label = Text(
+      title.toUpperCase(),
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.colors.inkMuted),
+    );
+    if (sequenceCount == 0 || onSequence == null) {
+      return Padding(padding: const EdgeInsets.only(top: 4, bottom: 6, left: 2), child: label);
+    }
     return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 6, left: 2),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.colors.inkMuted),
+      padding: const EdgeInsets.only(left: 2),
+      child: Row(
+        children: [
+          Expanded(child: label),
+          TextButton.icon(
+            key: sequenceKey,
+            onPressed: onSequence,
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: const Icon(Icons.format_list_numbered, size: 16),
+            label: Text('$sequenceCount der Reihe nach', style: const TextStyle(fontSize: 12)),
+          ),
+        ],
       ),
     );
   }

@@ -82,6 +82,7 @@ final Map<String, _KeyOf> _keyed = {
   'cardFlags': _idKey,
   'visualCourses': _idKey,
   'visualChats': _idKey,
+  'studySequences': _idKey,
   'chatMessages': _idKey,
   'unsupportedTasks': _idKey,
   'masterySnapshots': (r) {
@@ -109,6 +110,7 @@ const _perModule = [
   'cardFlags',
   'visualCourses',
   'visualChats',
+  'studySequences',
   'chatMessages',
   'unsupportedTasks',
   'mockExamResults',
@@ -285,6 +287,11 @@ Map<String, dynamic> _resolve(String collection, Map<String, dynamic> local, Map
       return rReps > lReps ? remote : local;
     case 'labExperiments':
       return _labWork(remote) > _labWork(local) ? remote : local;
+    case 'studySequences':
+      // Der zuletzt geänderte Stand gewinnt (zuletzt auf diesem Gerät gelernt).
+      final lu = DateTime.tryParse('${local['updatedAt']}');
+      final ru = DateTime.tryParse('${remote['updatedAt']}');
+      return lu != null && ru != null && ru.isAfter(lu) ? remote : local;
     case 'visualChats':
       // Das längere Gespräch gewinnt (auf einem Gerät weitergeschrieben).
       final lm = (local['messages'] as List?)?.length ?? 0;
@@ -391,6 +398,7 @@ String describeMerge(SyncMergeResult result) {
     'cardFlags': 'markierte Fragen',
     'visualCourses': 'Lernpfade',
     'visualChats': 'visuelle Chats',
+    'studySequences': 'Stände „Der Reihe nach“',
     'chatMessages': 'Chat-Nachrichten',
     'unsupportedTasks': 'Aufgaben auf der Liste „Noch nicht interaktiv“',
     'mockExamResults': 'Probeklausuren',

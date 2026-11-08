@@ -172,6 +172,14 @@ const appGuideChapters = <GuideChapter>[
         where: 'Fach → Üben (Lernmodus) · Probeklausur',
       ),
       GuideItem(
+        'Der Reihe nach',
+        'Aufgaben einer Einheit oder einer PDF von vorne nach hinten lösen – für Stoff, der aufeinander aufbaut. '
+            'Der Stand bleibt gespeichert: Was du nicht geschafft hast, kommt in der nächsten Runde wieder, Gelöstes '
+            'wird übersprungen. „Kann ich schon“ überspringt eine Aufgabe; tippe in der Übersicht eine Aufgabe an, '
+            'um dort neu zu starten, oder starte ganz von vorn. Zufällig üben geht weiterhin.',
+        where: 'Fach → Üben → Der Reihe nach · bei einer PDF „… Aufgaben der Reihe nach“ · im PDF oben',
+      ),
+      GuideItem(
         'Schwachstellen',
         'Das Fehlertagebuch zeigt, was oft schiefgeht; „Die 20 schwächsten üben“ und eine KI-Musteranalyse.',
         where: 'Fortschritt → Schwachstellen',

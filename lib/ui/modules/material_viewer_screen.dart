@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 import '../../models/flashcard.dart';
 import '../../models/material_item.dart';
 import '../../models/page_note.dart';
+import '../../models/study_sequence.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/settings_repository.dart';
@@ -23,6 +24,7 @@ import '../../services/question_parsing.dart';
 import '../../services/task_label_locator.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
+import '../practice/study_sequence_screen.dart';
 import '../tasks/task_import_screen.dart';
 import '../widgets/page_concept_sheet.dart';
 import '../widgets/page_question_creation_sheet.dart';
@@ -838,6 +840,25 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
         appBar: AppBar(
           title: Text(widget.material.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
+            if (context
+                .watch<FlashcardRepository?>()
+                    ?.forModule(widget.material.moduleId)
+                    .any((c) => c.sourceMaterialId == widget.material.id) ??
+                false)
+              IconButton(
+                key: const ValueKey('viewer-sequence'),
+                tooltip: 'Aufgaben dieser PDF der Reihe nach',
+                icon: const Icon(Icons.format_list_numbered),
+                onPressed: () => openStudySequence(
+                  context,
+                  widget.material.moduleId,
+                  StudySequenceSource(
+                    kind: StudySequenceKind.material,
+                    id: widget.material.id,
+                    title: widget.material.fileName,
+                  ),
+                ),
+              ),
             IconButton(
               tooltip: 'Konzept speichern',
               icon: _creatingConcept

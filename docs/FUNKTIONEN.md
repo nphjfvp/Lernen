@@ -414,6 +414,12 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Trefferquote je Einheit (schwächste zuerst), Durchsicht aller Fragen mit
   Lösung und KI-Erklärung, "falsche üben" und ein lokaler Verlauf der
   bisherigen Noten. Beantwortete Fragen zählen normal für FSRS/Ampel.
+- **Der Reihe nach** (`lib/ui/practice/study_sequence_screen.dart`, Logik
+  `lib/services/study_sequence.dart`) – Aufgaben einer Einheit oder PDF in
+  Dokument-Reihenfolge lösen, mit gespeichertem (synchronisiertem) Stand je
+  Quelle: Gelöstes und „Kann ich schon“ fallen weg, nicht Geschafftes kommt in
+  der nächsten Runde; Neustart ab einer beliebigen Aufgabe. Einstieg: Üben →
+  „Der Reihe nach“, an jeder PDF und Einheit im Fach, im PDF-Viewer.
 - **Schwachstellen (Fehlertagebuch)** (`lib/ui/stats/weakness_screen.dart`,
   Einstieg im Fortschritt-Tab): sammelt die Karten, mit denen man sich
   schwertut, direkt aus dem Lernzustand (`WeaknessService`: wie oft eine

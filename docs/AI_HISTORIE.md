@@ -1390,3 +1390,19 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Rückgabe true → Seite 0 + Snackbar. Chat im Lernmodus: `_emptyForLearn` („Erst verstehen, dann
     lösen“), `VisualChatScreen.learnSuggestions` (`visual-chat-learn-suggest-i`, fragen direkt), Leiste
     `visual-chat-solve` (pop(true)), kein `visual-chat-new`. Tests in `visual_task_types_test`.
+106. Der Reihe nach: models/study_sequence.dart (`StudySequenceSource` kind unit/material + id + title,
+    `key` = "unit:<id>"/"material:<id>"; `StudySequenceProgress` moduleId/key/status (Karten-ID →
+    solved/skipped/failed)/nextId/updatedAt, `id` = "moduleId|key"), services/study_sequence.dart
+    (`ordered`: Quelle filtern über unitId bzw. sourceMaterialId, sortiert nach Materialreihenfolge, Seite,
+    createdAt; `round` = offene ab nextId, sonst offene von vorn; `record` setzt Stand und nextId = nächste
+    offene dahinter; `restartAt` = davor erledigt (Gelöstes bleibt solved), ab dort offen; `setUnderstood`),
+    repositories/study_sequence_repository.dart (Store `study_sequences`; synchronisiert als
+    `studySequences`, Abgleich: neueres updatedAt gewinnt; beim Fach-Löschen weg).
+    ui/practice/study_sequence_screen.dart (`StudySequenceScreen`, `openStudySequence`,
+    `studySequenceSources`, `StudySequenceSourceList` oben im Üben-Picker; Keys `sequence-summary`,
+    `sequence-continue`, `sequence-restart` (+ `sequence-restart-field`/`-ok`), `sequence-item-i` mit Sheet
+    `sequence-item-start`/`sequence-item-toggle`, `sequence-position`, `sequence-understood`,
+    `sequence-overview`, `sequence-round-summary`, `sequence-next-round`, `sequence-to-overview`,
+    `sequence-source-i`). Einstiege: `material-tasks-<id>` in `_MaterialRow`, `unit-sequence-<id>` an
+    `_MaterialGroupLabel`, `viewer-sequence` im MaterialViewer. Antworten über `CardReviewMixin.recordReview`
+    (die Seite geht sofort weiter). Tests: `study_sequence_test`, `study_sequence_screen_test`.

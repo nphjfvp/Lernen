@@ -46,6 +46,9 @@ class DatabaseService {
   /// Aufgabentypen je Fach für „Aufgaben visuell lösen“ (nur lokal).
   static final visualTaskTypes = stringMapStoreFactory.store('visual_task_types');
 
+  /// Stand von „Der Reihe nach“ je Einheit/PDF (siehe StudySequenceProgress).
+  static final studySequences = stringMapStoreFactory.store('study_sequences');
+
   /// Aufgaben, die die App noch nicht interaktiv prüfen kann (Sammelliste).
   static final unsupportedTasks = stringMapStoreFactory.store('unsupported_tasks');
 

@@ -1,8 +1,26 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6q) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6r) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6r. Der Reihe nach
+
+- **Aufgaben von vorne nach hinten lösen** – je **Einheit** oder je **PDF**
+  (aus Übungsblättern und aus dem Skript erstellte Aufgaben), in der
+  Reihenfolge des Dokuments. Gedacht für Stoff, der aufeinander aufbaut.
+- **Der Stand bleibt gespeichert** (auch auf anderen Geräten): Hast du 1–7
+  geschafft, 8 nicht und 9–11 wieder, beginnt die nächste Runde bei 8 und
+  überspringt 9–11. Hörst du mitten in einer Runde auf, geht es beim nächsten
+  Mal genau dort weiter.
+- **„Kann ich schon“** überspringt eine Aufgabe dauerhaft. In der
+  **Übersicht** siehst du jede Aufgabe mit ihrem Stand (gelöst, kann ich
+  schon, nicht geschafft, offen); antippen → **ab hier neu starten** oder
+  „kann ich schon“/wieder öffnen. **„Neu starten …“** fragt, ab welcher
+  Aufgabe (z.B. 1 oder 5) – alles davor gilt als erledigt.
+- **Wo**: Fach → Üben → „Der Reihe nach“ (der Zufallsmodus bleibt darunter),
+  bei jeder PDF im Fach „N Aufgaben der Reihe nach“, neben jeder Einheit und
+  im geöffneten PDF oben. Antworten zählen wie beim Üben für den Lernstand.
 
 ### 6q. Lernen – erst verstehen, dann lösen
 
