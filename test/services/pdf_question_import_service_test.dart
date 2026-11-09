@@ -373,4 +373,43 @@ void main() {
       expect(scan.dropped, 1);
     });
   });
+
+  test('Aufgabenbild: nur der Aufgabenbereich, Musterlösung abgedeckt; KI-Angaben werden gelesen', () async {
+    final png = await _pagePng();
+    // Nur die linke (rote) Hälfte als Aufgabe.
+    final task = await PdfQuestionImportService.taskImage(png, taskBox: [0, 0, 0.45, 1]);
+    final left = await _probe(base64Encode(task), 0.3, 0.5);
+    expect(left.width, lessThan(260));
+    expect(left.rgba, 0xFF0000FF, reason: 'rot (RGBA)');
+    // Ganze Seite, rechte Hälfte (Lösung) abgedeckt.
+    final covered = await PdfQuestionImportService.taskImage(png, solutionBoxes: [
+      [0.55, 0.0, 1.0, 1.0],
+    ]);
+    final right = await _probe(base64Encode(covered), 0.85, 0.5);
+    expect(right.width, 400);
+    expect(right.rgba, isNot(0x0000FFFF), reason: 'nicht mehr blau');
+    // Ohne Angaben bleibt die Seite.
+    expect(await PdfQuestionImportService.taskImage(png), same(png));
+    // Zu kleiner Bereich wird nicht zugeschnitten.
+    final tiny = await PdfQuestionImportService.taskImage(png, taskBox: [0.1, 0.1, 0.12, 0.12]);
+    expect((await _probe(base64Encode(tiny), 0.5, 0.5)).width, 400);
+
+    final draft = AiService.parseInteractiveTask({
+      'kind': 'steps',
+      'front': 'Aufgabe 1',
+      'page': 2,
+      'taskBox': [0.05, 0.1, 0.95, 0.4],
+      'solutionBoxes': [
+        [0.05, 0.5, 0.95, 0.9],
+        'kaputt',
+      ],
+    });
+    expect(draft.taskBox, [0.05, 0.1, 0.95, 0.4]);
+    expect(draft.solutionBoxes, [
+      [0.05, 0.5, 0.95, 0.9],
+    ]);
+    expect(draft.page, 2);
+    expect(AiService.parseInteractiveTask({'kind': 'steps', 'solutionBox': [0, 0.5, 1, 1]}).solutionBoxes, hasLength(1));
+    expect(AiService.parseInteractiveTask({'kind': 'steps', 'taskBox': [0.5, 0.5, 0.2, 0.2]}).taskBox, isNull);
+  });
 }

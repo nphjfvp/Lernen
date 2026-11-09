@@ -1046,6 +1046,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         onComplete: _submit,
         onSkip: widget.onSkip,
         canGiveUp: widget.canGiveUp,
+        onImageEdited: widget.onImageEdited,
       );
     }
     if (_answerable && widget.card.type == QuestionType.gantt) {

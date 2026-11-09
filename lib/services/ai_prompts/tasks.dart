@@ -322,6 +322,7 @@ Bei "steps":
   - "prompt": die Frage an den Lernenden, OHNE die Lösung zu verraten,
   - ENTWEDER "options": 3–4 Antworten {"text", "correct": true/false, "feedback"} – jede falsche mit eigener Rückmeldung, warum sie hier nicht passt –
   - ODER "fields": 1–2 Eingabefelder.
+  - Bevorzuge "fields": Schritte, in denen etwas ausgerechnet, umgeformt, abgeleitet oder integriert wird, IMMER als Eingabefeld (die Lernenden sollen selbst rechnen). "options" nur für reine Entscheidungen ohne Rechnung (z.B. welche Regel oder welcher Ansatz).
   - "hints": genau 2 gestufte Tipps (erst ein Denkanstoß, dann deutlicher), ohne die Antwort zu nennen,
   - "result": das Ergebnis des Schritts zum Anzeigen (LaTeX in $…$),
   - "explanation": 1–2 Sätze, wie man darauf kommt.
@@ -401,7 +402,7 @@ Bei "drawing":
 - taskData.uncertain: true, wenn die Aufgabe nicht eindeutig war.
 
 Antworte NUR mit einem JSON-Objekt:
-{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "phase" | "drawing" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
+{"tasks": [{"kind": "steps" | "gantt" | "crystal" | "bom" | "sketch" | "phase" | "drawing" | "question" | "none", "page": Seite (nur bei Dokument-Seiten), "taskBox": [links, oben, rechts, unten], "solutionBoxes": [[links, oben, rechts, unten]], "front": "...", "back": "...", "reason": "...", "needs": "...", "questionType": "...", "taskData": {...}}]}""";
 
 const _externalTaskRules = r'''
 

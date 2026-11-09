@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +13,7 @@ import '../../services/step_checker.dart';
 import '../../theme/app_colors.dart';
 import '../study/explain_chat.dart';
 import '../study/study_aids.dart';
+import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
 import 'math_input_field.dart';
 import 'paper_check_screen.dart';
@@ -41,11 +43,12 @@ class _StepProgress {
   }
 }
 
-enum _Mode { steps, result }
+enum _Mode { steps, write, result }
 
 /// Rechenweg-Aufgabe beantworten ([QuestionType.steps]): Schritt für Schritt
-/// mit Tipps und eigener Rückmeldung je Schritt, oder "Nur Ergebnis" mit
-/// Probe. Die App prüft jede Eingabe selbst (StepChecker) – ohne KI. Auf
+/// mit Tipps und eigener Rückmeldung je Schritt, „Selbst rechnen“ (eigene
+/// Zeilen, beliebig viele, geprüft erst beim Abgeben – auf Wunsch Zeile für
+/// Zeile von der KI) oder "Nur Ergebnis" mit Probe. Die App prüft jede Eingabe selbst (StepChecker) – ohne KI. Auf
 /// Papier Gerechnetes lässt sich per Foto prüfen (PaperCheckScreen).
 ///
 /// Bewertung beim "Weiter": ohne Fehlversuch und ohne Tipp gelöst = gewusst
@@ -62,10 +65,16 @@ class StepTaskView extends StatefulWidget {
     this.onSkip,
     this.canGiveUp = false,
     this.onWrongAnswer,
+    this.onImageEdited,
   });
 
   final Flashcard card;
   final StepTask task;
+
+  /// Gesetzt, wenn das Aufgabenbild hier bearbeitet werden darf (z.B. eine
+  /// mitfotografierte Musterlösung abdecken oder wegschneiden) – bekommt das
+  /// neue Bild zum Speichern, null = Bild entfernt.
+  final Future<void> Function(Uint8List? bytes)? onImageEdited;
 
   /// Eine Eingabe war falsch (nicht leer, lesbar) – z.B. um sie in „Visuell
   /// lernen“ zu simulieren.
@@ -96,15 +105,37 @@ class _StepTaskViewState extends State<StepTaskView> {
   bool _gaveUp = false;
   bool _submitted = false;
 
+  // Selbst rechnen: eigene Zeilen, geprüft erst beim Abgeben.
+  final List<TextEditingController> _lines = [TextEditingController()];
+  final List<FocusNode> _lineFocus = [FocusNode()];
+  int _focusedLine = 0;
+  final _writeResult = TextEditingController();
+  FieldVerdict? _writeVerdict;
+  ProbeReport? _writeProbe;
+
+  /// Je Zeile: welcher Musterlösungs-Schritt (0-basiert) darin steckt, falls
+  /// die App es nachrechnen konnte – nur nach dem Abgeben.
+  List<int?> _lineMatches = const [];
+  int _writeWrong = 0;
+  bool _writeSolved = false;
+  bool _writeRevealed = false;
+
+
   /// Ergebnis einer Foto-Prüfung, falls der Nutzer von dort bewertet hat.
   Grade? _paperGrade;
 
   bool get _stepsFinished => _current >= _progress.length;
   bool get _finished =>
-      _gaveUp || _paperGrade != null || (_mode == _Mode.steps ? _stepsFinished : (_resultSolved || _resultRevealed));
+      _gaveUp ||
+      _paperGrade != null ||
+      switch (_mode) {
+        _Mode.steps => _stepsFinished,
+        _Mode.write => _writeSolved || _writeRevealed,
+        _Mode.result => _resultSolved || _resultRevealed,
+      };
 
-  bool get _anyRevealed => _gaveUp || _resultRevealed || _progress.any((p) => p.revealed);
-  int get _wrongTotal => _progress.fold(0, (n, p) => n + p.wrong) + _resultWrong;
+  bool get _anyRevealed => _gaveUp || _resultRevealed || _writeRevealed || _progress.any((p) => p.revealed);
+  int get _wrongTotal => _progress.fold(0, (n, p) => n + p.wrong) + _resultWrong + _writeWrong;
 
   StepField? get _finalField => widget.task.finalField;
 
@@ -114,6 +145,13 @@ class _StepTaskViewState extends State<StepTaskView> {
       p.dispose();
     }
     _resultController.dispose();
+    for (final l in _lines) {
+      l.dispose();
+    }
+    for (final f in _lineFocus) {
+      f.dispose();
+    }
+    _writeResult.dispose();
     super.dispose();
   }
 
@@ -226,9 +264,122 @@ class _StepTaskViewState extends State<StepTaskView> {
     });
   }
 
-  Future<void> _openPaperCheck() async {
+  // -------------------------------------------------------------------------
+  // Selbst rechnen
+  // -------------------------------------------------------------------------
+
+  List<String> get _writtenLines => [
+    for (final l in _lines)
+      if (l.text.trim().isNotEmpty) l.text.trim(),
+  ];
+
+  /// Was als Ergebnis zählt: das Ergebnisfeld, sonst die rechte Seite der
+  /// letzten Zeile.
+  String get _writtenResult {
+    final r = _writeResult.text.trim();
+    if (r.isNotEmpty) return r;
+    final last = _writtenLines.lastOrNull ?? '';
+    return last.split('=').last.trim();
+  }
+
+  /// Eingabe geändert: alte Rückmeldung weg (die nächste kommt erst beim
+  /// Abgeben), „Abgeben“ ggf. freischalten.
+  void _writeChanged() {
+    setState(() {
+      _writeVerdict = null;
+      _writeProbe = null;
+      _lineMatches = const [];
+    });
+  }
+
+  void _addLine({bool focus = true}) {
+    final node = FocusNode();
+    setState(() {
+      _lines.add(TextEditingController());
+      _lineFocus.add(node);
+      _focusedLine = _lines.length - 1;
+    });
+    if (focus) WidgetsBinding.instance.addPostFrameCallback((_) => node.requestFocus());
+  }
+
+  void _removeLine(int i) {
+    if (_lines.length <= 1) return;
+    final c = _lines.removeAt(i);
+    final f = _lineFocus.removeAt(i);
+    setState(() {
+      _focusedLine = _focusedLine.clamp(0, _lines.length - 1);
+      _lineMatches = const [];
+      _writeVerdict = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      c.dispose();
+      f.dispose();
+    });
+  }
+
+  /// Zeichen in die zuletzt angetippte Zeile einfügen.
+  void _insertInLine(String text) {
+    final i = _focusedLine.clamp(0, _lines.length - 1);
+    final c = _lines[i];
+    final sel = c.selection;
+    final start = sel.isValid ? sel.start : c.text.length;
+    final end = sel.isValid ? sel.end : c.text.length;
+    c.value = TextEditingValue(
+      text: c.text.replaceRange(start, end, text),
+      selection: TextSelection.collapsed(offset: start + text.length),
+    );
+    _lineFocus[i].requestFocus();
+    _writeChanged();
+  }
+
+  /// Welcher Musterlösungs-Schritt in einer Zeile steckt (rechte Seite gegen
+  /// die Felder jedes Schritts) – null, wenn die App es nicht zuordnen kann.
+  int? _matchLine(String line) {
+    final rhs = line.split('=').last.trim();
+    if (rhs.isEmpty) return null;
+    for (final (j, s) in widget.task.steps.indexed) {
+      for (final f in s.fields) {
+        try {
+          if (StepChecker.check(f, rhs).isCorrect) return j;
+        } catch (_) {
+          // Nicht lesbar – dann eben nicht zuordenbar.
+        }
+      }
+    }
+    return null;
+  }
+
+  /// „Abgeben“: erst jetzt wird geprüft – das Ergebnis von der App, die
+  /// Zeilen, soweit sie sich Schritten der Musterlösung zuordnen lassen.
+  void _submitWritten() {
+    final field = _finalField;
+    final answer = _writtenResult;
+    if (answer.isEmpty && _writtenLines.isEmpty) return;
+    setState(() {
+      _lineMatches = [for (final l in _lines) l.text.trim().isEmpty ? null : _matchLine(l.text)];
+      if (field == null) {
+        _writeVerdict = const FieldVerdict(FieldVerdictKind.uncheckable, 'Diese Aufgabe hat kein Ergebnisfeld.');
+        return;
+      }
+      final verdict = StepChecker.check(field, answer);
+      _writeVerdict = verdict;
+      _writeProbe = verdict.kind == FieldVerdictKind.empty || verdict.kind == FieldVerdictKind.invalid
+          ? null
+          : StepChecker.probe(widget.task, answer);
+      if (verdict.isCorrect || verdict.kind == FieldVerdictKind.uncheckable) {
+        _writeSolved = true;
+      } else if (verdict.isAttempt) {
+        _writeWrong++;
+        widget.onWrongAnswer?.call(field, answer);
+      }
+    });
+  }
+
+  Future<void> _openPaperCheck({List<String>? typedLines}) async {
     final outcome = await Navigator.of(context).push<PaperCheckOutcome>(
-      MaterialPageRoute(builder: (_) => PaperCheckScreen(card: widget.card, task: widget.task)),
+      MaterialPageRoute(
+        builder: (_) => PaperCheckScreen(card: widget.card, task: widget.task, typedLines: typedLines),
+      ),
     );
     if (outcome == null || !mounted) return;
     setState(() {
@@ -303,8 +454,15 @@ class _StepTaskViewState extends State<StepTaskView> {
                 child: SegmentedButton<_Mode>(
                   key: const ValueKey('step-mode'),
                   segments: const [
-                    ButtonSegment(value: _Mode.steps, label: Text('Schritt für Schritt')),
-                    ButtonSegment(value: _Mode.result, label: Text('Nur Ergebnis')),
+                    ButtonSegment(
+                      value: _Mode.steps,
+                      label: Text('Schritt für Schritt', textAlign: TextAlign.center),
+                    ),
+                    ButtonSegment(
+                      value: _Mode.write,
+                      label: Text('Selbst rechnen', key: ValueKey('step-mode-write'), textAlign: TextAlign.center),
+                    ),
+                    ButtonSegment(value: _Mode.result, label: Text('Nur Ergebnis', textAlign: TextAlign.center)),
                   ],
                   selected: {_mode},
                   showSelectedIcon: false,
@@ -319,23 +477,78 @@ class _StepTaskViewState extends State<StepTaskView> {
           ),
         ],
         const SizedBox(height: 8),
-        if (_mode == _Mode.steps) ..._buildSteps(c) else ..._buildResult(c),
+        ...switch (_mode) {
+          _Mode.steps => _buildSteps(c),
+          _Mode.write => _buildWrite(c),
+          _Mode.result => _buildResult(c),
+        },
         if (_finished) ..._buildFinish(c),
         if (!_finished && !widget.examMode) ..._buildFooter(c),
       ],
     );
   }
 
+  Uint8List? _editedImage;
+  bool _imageRemoved = false;
+
+  Future<void> _editImage(Uint8List bytes) async {
+    final save = widget.onImageEdited;
+    if (save == null) return;
+    final result = await showImageEditor(context, bytes, title: 'Aufgabenbild bearbeiten');
+    if (result == null || !result.imageChanged || !mounted) return;
+    setState(() => _editedImage = result.bytes);
+    await save(result.bytes);
+  }
+
+  Future<void> _removeImage() async {
+    final save = widget.onImageEdited;
+    if (save == null) return;
+    setState(() => _imageRemoved = true);
+    await save(null);
+  }
+
   Widget _image(String base64) {
+    final Uint8List bytes;
     try {
-      final bytes = base64Decode(base64);
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: ZoomableImage(bytes: bytes),
-      );
+      bytes = _editedImage ?? base64Decode(base64);
     } catch (_) {
       return const SizedBox.shrink();
     }
+    if (_imageRemoved) return const SizedBox.shrink();
+    final canEdit = widget.onImageEdited != null && !widget.examMode;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Stack(
+        children: [
+          ZoomableImage(bytes: bytes),
+          if (canEdit)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton.filledTonal(
+                    key: const ValueKey('step-image-remove'),
+                    tooltip: 'Bild entfernen',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _removeImage,
+                    icon: const Icon(Icons.hide_image_outlined, size: 18),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton.filledTonal(
+                    key: const ValueKey('step-image-edit'),
+                    tooltip: 'Bild bearbeiten (z.B. Musterlösung abdecken oder wegschneiden)',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _editImage(bytes),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   List<Widget> _buildSteps(AppColors c) {
@@ -492,7 +705,9 @@ class _StepTaskViewState extends State<StepTaskView> {
                   controller: p.controllers[k],
                   verdict: k < p.verdicts.length ? p.verdicts[k] : null,
                   autofocus: i > 0 && k == 0,
-                  onChanged: () => setState(() {}),
+                  // Alte Rückmeldung weg, sobald weitergetippt wird – die
+                  // nächste kommt erst beim Prüfen.
+                  onChanged: () => setState(() => p.verdicts = const []),
                   onSubmitted: _checkStep,
                 ),
               ),
@@ -589,7 +804,10 @@ class _StepTaskViewState extends State<StepTaskView> {
               controller: _resultController,
               enabled: !solved,
               verdict: widget.examMode ? null : _resultVerdict,
-              onChanged: () => setState(() {}),
+              onChanged: () => setState(() {
+                _resultVerdict = null;
+                _resultProbe = null;
+              }),
               onSubmitted: solved ? null : _checkResult,
             ),
             if (!widget.examMode && _resultVerdict != null)
@@ -624,6 +842,215 @@ class _StepTaskViewState extends State<StepTaskView> {
         Padding(
           padding: const EdgeInsets.only(top: 10),
           child: ProbeCard(report: _resultProbe!, title: 'Probe deines Ergebnisses – rechnet die App'),
+        ),
+    ];
+  }
+
+  List<Widget> _buildWrite(AppColors c) {
+    final field = _finalField;
+    final done = _writeSolved || _writeRevealed;
+    final names = {...?field?.variables, ...?field?.constants};
+    final keys = ['=', '(', ')', '^', '²', '/', '√(', '∫', 'π', 'e^(', 'ln(', ...names];
+    final displayField = field == null
+        ? null
+        : StepField(
+            label: widget.task.finalLabel.trim().isNotEmpty ? widget.task.finalLabel : field.label,
+            answer: field.answer,
+            kind: field.kind,
+            variables: field.variables,
+            constants: field.constants,
+          );
+    final matched = {for (final m in _lineMatches) ?m};
+    return [
+      Container(
+        key: const ValueKey('step-write'),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border.all(color: c.border),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Rechne selbst – eine Zeile je Rechenschritt, so viele du brauchst. Geprüft wird erst, wenn du abgibst.',
+              style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.35),
+            ),
+            const SizedBox(height: 10),
+            for (final (i, line) in _lines.indexed)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 26,
+                      child: Text(
+                        '${i + 1}.',
+                        style: TextStyle(fontWeight: FontWeight.w600, color: c.inkMuted),
+                      ),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        key: ValueKey('step-line-$i'),
+                        controller: line,
+                        focusNode: _lineFocus[i],
+                        enabled: !done,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        style: const TextStyle(fontSize: 15.5),
+                        textInputAction: TextInputAction.next,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: i == 0 ? 'z.B. v(t) = ∫ a(t) dt = 2t + C' : 'nächster Schritt',
+                          filled: true,
+                          fillColor: c.surfaceAlt,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        ),
+                        onTap: () => _focusedLine = i,
+                        onChanged: (_) {
+                          _focusedLine = i;
+                          _writeChanged();
+                        },
+                        onSubmitted: (_) {
+                          if (i == _lines.length - 1 && line.text.trim().isNotEmpty) {
+                            _addLine();
+                          } else if (i + 1 < _lines.length) {
+                            _lineFocus[i + 1].requestFocus();
+                          }
+                        },
+                      ),
+                    ),
+                    if (i < _lineMatches.length && _lineMatches[i] != null)
+                      Tooltip(
+                        message: 'Entspricht Schritt ${_lineMatches[i]! + 1} der Musterlösung',
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Icon(Icons.check_circle, key: ValueKey('step-line-ok-$i'), color: c.good, size: 20),
+                        ),
+                      ),
+                    if (_lines.length > 1 && !done)
+                      IconButton(
+                        key: ValueKey('step-line-remove-$i'),
+                        tooltip: 'Zeile entfernen',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _removeLine(i),
+                        icon: Icon(Icons.close, size: 18, color: c.inkMuted),
+                      ),
+                  ],
+                ),
+              ),
+            if (!done) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const ValueKey('step-line-add'),
+                  onPressed: _addLine,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Weiterer Schritt'),
+                ),
+              ),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final k in keys)
+                    ActionChip(
+                      key: ValueKey('step-line-key-$k'),
+                      label: Text(k, style: const TextStyle(fontSize: 13.5)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _insertInLine(k),
+                    ),
+                ],
+              ),
+            ],
+            if (displayField != null) ...[
+              const SizedBox(height: 14),
+              Text(
+                'Ergebnis (leer = rechte Seite der letzten Zeile)',
+                style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+              ),
+              const SizedBox(height: 6),
+              MathInputField(
+                key: const ValueKey('step-write-result-field'),
+                fieldKey: const ValueKey('step-write-result'),
+                field: displayField,
+                controller: _writeResult,
+                enabled: !done,
+                verdict: _writeVerdict,
+                onChanged: _writeChanged,
+                onSubmitted: done ? null : _submitWritten,
+              ),
+            ],
+            if (_writeVerdict != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: VerdictBox(verdict: _writeVerdict!),
+              ),
+            if (_lineMatches.isNotEmpty && _writtenLines.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  matched.isEmpty
+                      ? 'Deine Zwischenschritte konnte die App keinem Schritt der Musterlösung zuordnen – das heißt nicht, '
+                            'dass sie falsch sind. Die KI kann jede Zeile prüfen.'
+                      : '${matched.length} von ${widget.task.steps.length} Schritten der Musterlösung stecken in deinen '
+                            'Zeilen (✓).',
+                  key: const ValueKey('step-write-matches'),
+                  style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.35),
+                ),
+              ),
+            if (_writeRevealed && field != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: MathText('Lösung: ${field.label} ${field.answer}'.trim(), style: const TextStyle(fontSize: 15)),
+              ),
+            if (!done) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  FilledButton.icon(
+                    key: const ValueKey('step-write-submit'),
+                    onPressed: _writtenLines.isEmpty && _writeResult.text.trim().isEmpty ? null : _submitWritten,
+                    icon: const Icon(Icons.task_alt, size: 18),
+                    label: const Text('Abgeben'),
+                  ),
+                  if (_writeWrong > 0) ...[
+                    TextButton(
+                      key: const ValueKey('step-write-reveal'),
+                      onPressed: () => setState(() => _writeRevealed = true),
+                      child: const Text('Lösung zeigen'),
+                    ),
+                    TextButton(
+                      key: const ValueKey('step-write-guided'),
+                      onPressed: () => setState(() => _mode = _Mode.steps),
+                      child: const Text('Geführt weiter'),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+      if (_aiAvailable && _writtenLines.isNotEmpty && _paperGrade == null)
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: OutlinedButton.icon(
+            key: const ValueKey('step-write-ai'),
+            onPressed: () => _openPaperCheck(typedLines: _writtenLines),
+            icon: const Icon(Icons.fact_check_outlined, size: 18),
+            label: const Text('Rechenweg Zeile für Zeile von der KI prüfen lassen'),
+          ),
+        ),
+      if (_writeProbe != null && !_writeSolved)
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: ProbeCard(report: _writeProbe!, title: 'Probe deines Ergebnisses – rechnet die App'),
         ),
     ];
   }

@@ -845,7 +845,10 @@ Hier ist der Dokumenttext:
       'Keine imageBox für reinen Text, der schon in der Frage steht. Steht in '
       'der Abbildung die Lösung (z.B. ausgefüllte Beschriftungen in einer '
       'Musterlösung), gib "imageCovers": [[links, oben, rechts, unten], …] an '
-      '(Seitenkoordinaten) – diese Stellen werden abgedeckt. Sind die '
+      '(Seitenkoordinaten) – diese Stellen werden abgedeckt. Eine Musterlösung, '
+      'ein Lösungsweg oder ein Ergebnis auf der Seite gehört NIE in die '
+      'imageBox; lässt es sich nicht ausschließen (oder hängt die ganze Seite '
+      'an), gib den Bereich der Lösung als "imageCovers" an. Sind die '
       'Antwortoptionen einer Auswahlfrage selbst Bilder (z.B. Gefügebilder a–d '
       'zum Zuordnen), gib bei JEDER Option "imageBox": [links, oben, rechts, '
       'unten] um ihr Bild an und als "text" nur die Beschriftung (z.B. "Bild a") '
@@ -2777,6 +2780,16 @@ Antworte in der Sprache der Vorlage.
             'beginnt (höchstens 8)${contextPage == null ? '' : ' – Aufgaben, die schon auf Seite $contextPage beginnen, wurden '
                 'bereits übernommen und gehören nicht dazu'}. Gib bei jeder Aufgabe "page" an (Seite, auf der sie beginnt). '
             'Steht dort keine passende Aufgabe, antworte mit {"tasks": []}.');
+      if (images.isNotEmpty) {
+        buffer.writeln(
+          'Die App zeigt die Aufgabe später als Bild ihrer Seite. Gib deshalb bei jeder Aufgabe "taskBox": '
+          '[links, oben, rechts, unten] an (Werte 0–1 auf der Seite, auf der sie beginnt) – um die Aufgabenstellung '
+          'samt zugehöriger Abbildungen und Tabellen, lieber etwas zu groß, aber OHNE Lösung, Lösungsweg oder '
+          'Musterlösung. Steht auf der Seite eine Lösung, ein Ergebnis oder ein Lösungsweg (z.B. Folien mit '
+          'Musterlösung), gib zusätzlich "solutionBoxes": [[links, oben, rechts, unten], …] an – diese Bereiche deckt '
+          'die App im Bild ab; die Lösung bleibt nur über das Original erreichbar.',
+        );
+      }
     } else if (images.isNotEmpty) {
       buffer
         ..writeln('Dem Text folgen ${images.length} Bild${images.length == 1 ? '' : 'er'} der Aufgabe.')
@@ -2820,7 +2833,16 @@ Antworte in der Sprache der Vorlage.
   /// brauchbare Daten zu liefern, wird der Entwurf als [InteractiveTaskDraft.incomplete]
   /// markiert.
   static InteractiveTaskDraft parseInteractiveTask(Map<String, dynamic> json) {
-    final draft = _parseInteractiveTask(json);
+    var draft = _parseInteractiveTask(json);
+    final taskBox = InteractiveTaskDraft.boxOf(json['taskBox'] ?? json['aufgabeBox']);
+    final rawSolutions = json['solutionBoxes'] ?? json['solutionBox'];
+    final solutions = [
+      if (rawSolutions is List && rawSolutions.isNotEmpty && rawSolutions.first is List)
+        for (final b in rawSolutions) ?InteractiveTaskDraft.boxOf(b)
+      else
+        ?InteractiveTaskDraft.boxOf(rawSolutions),
+    ];
+    if (taskBox != null || solutions.isNotEmpty) draft = draft.withBoxes(taskBox: taskBox, solutionBoxes: solutions);
     final page = json['page'] ?? json['seite'];
     final n = page is num ? page.toInt() : int.tryParse('${page ?? ''}'.trim());
     return n == null || n < 1 ? draft : draft.withPage(n);
@@ -2969,6 +2991,52 @@ Antworte in der Sprache der Vorlage.
         'Auf dem Foto war kein Rechenweg zu erkennen – bitte näher, gerade und bei gutem Licht fotografieren.',
         rawResponse: raw,
       );
+    }
+    return review;
+  }
+
+  /// Wie [reviewPaperSolution], nur mit einem in der App getippten Rechenweg
+  /// ([lines], eine Zeile je Rechenschritt, beliebig viele) statt Fotos.
+  Future<PaperReview> reviewTypedSolution({
+    required String task,
+    required StepTask solution,
+    String solutionText = '',
+    required List<String> lines,
+  }) async {
+    final written = [
+      for (final l in lines)
+        if (l.trim().isNotEmpty) l.trim(),
+    ];
+    if (written.isEmpty) throw AiServiceException('Schreib zuerst deinen Rechenweg auf.');
+    final steps = [
+      for (final (i, s) in solution.steps.indexed) {'n': i + 1, 'title': s.title, 'result': s.resultText},
+    ];
+    final buffer = StringBuffer()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(task.trim(), _interactiveTaskCap))
+      ..writeln()
+      ..writeln('Musterlösung in Schritten:')
+      ..writeln(jsonEncode(steps))
+      ..writeln();
+    if (solutionText.trim().isNotEmpty) {
+      buffer
+        ..writeln('Musterlösung als Text:')
+        ..writeln(_cap(solutionText.trim(), _interactiveTaskCap))
+        ..writeln();
+    }
+    buffer
+      ..writeln('Der Rechenweg wurde NICHT fotografiert, sondern in der App getippt – Zeile für Zeile (Eingabe-')
+      ..writeln('Schreibweise: ^ Potenz, * mal, sqrt() Wurzel). Übernimm jede Zeile als eine Zeile in "lines" (gleiche')
+      ..writeln('Reihenfolge und Nummer), setze sie in "text" als LaTeX mit \$…\$ und bewerte sie. Die Person rechnet')
+      ..writeln('bewusst kleinschrittig – mehr Zeilen als die Musterlösung Schritte hat sind kein Fehler.')
+      ..writeln();
+    for (final (i, l) in written.indexed) {
+      buffer.writeln('${i + 1}: ${_cap(l, 600)}');
+    }
+    final raw = await _complete(_paperReviewSystemPrompt, buffer.toString(), temperature: 0);
+    final review = PaperReview.fromJson(await _json(raw));
+    if (review.lines.isEmpty) {
+      throw AiServiceException('Die KI hat den Rechenweg nicht bewertet – bitte erneut versuchen.', rawResponse: raw);
     }
     return review;
   }

@@ -202,6 +202,14 @@ const appGuideChapters = <GuideChapter>[
             'Diagramm skizzieren und Freihand-Skizzen mit KI-Bewertung.',
       ),
       GuideItem(
+        'Rechenweg: drei Arten zu lösen',
+        '„Schritt für Schritt“ führt dich mit Tipps durch die Musterlösung. „Selbst rechnen“: du schreibst deinen '
+            'eigenen Rechenweg – eine Zeile je Schritt, so viele du willst – und gibst ab; die App prüft das Ergebnis '
+            'und hakt Zeilen ab, die einem Schritt der Musterlösung entsprechen, die KI prüft auf Wunsch jede Zeile. '
+            '„Nur Ergebnis“: auf Papier rechnen, Ergebnis eintippen. Rückmeldung gibt es immer erst beim Prüfen bzw. '
+            'Abgeben. Steht im Aufgabenbild doch eine Lösung: Stift-Symbol am Bild → abdecken oder wegschneiden.',
+      ),
+      GuideItem(
         'Aufgaben-Ordner',
         'Aufgaben zum Verstehen, die sich nicht als Quiz abfragen lassen. 20 Tage vor der Klausur wird der '
             'Ordner rot.',

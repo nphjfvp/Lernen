@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/step_task.dart';
 import 'package:lernen/services/fsrs_service.dart';
+import 'package:lernen/services/math_input.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/daily/question_answer_view.dart';
+import 'package:lernen/ui/tasks/math_input_field.dart';
 
 /// y' = 2x mit y(0) = 1: Methode wählen, integrieren, Konstante bestimmen,
 /// Ergebnis. Die Probe rechnet die App (DGL + Anfangswert).
@@ -259,5 +261,92 @@ void main() {
     ));
     await tester.pump();
     expect(find.byKey(const ValueKey('step-mode')), findsNothing);
+  });
+
+  testWidgets('Beim Tippen keine Fehlermeldung – erst beim Prüfen', (tester) async {
+    String? message;
+    try {
+      MathExpression.parse('x^2 +', names: {'x'});
+    } on MathInputException catch (e) {
+      message = e.message;
+    }
+    expect(message, isNotNull);
+    await pump(tester);
+    await tester.tap(find.text('Nur Ergebnis'));
+    await tester.pump();
+    await enter(tester, 'step-result-input', 'x^2 +');
+    expect(find.text(message!), findsNothing, reason: 'nichts während der Eingabe');
+    expect(find.byType(VerdictBox), findsNothing);
+    await tap(tester, 'step-result-check');
+    expect(find.byType(VerdictBox), findsOneWidget, reason: 'erst nach „Prüfen“');
+    // Weitertippen: die alte Rückmeldung verschwindet wieder.
+    await enter(tester, 'step-result-input', 'x^2 + 2');
+    expect(find.byType(VerdictBox), findsNothing);
+  });
+
+  testWidgets('Selbst rechnen: eigene Zeilen, geprüft erst beim Abgeben, Zeilen den Schritten zugeordnet', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('step-write')), findsOneWidget);
+    await enter(tester, 'step-line-0', 'y = x^2 + C');
+    await tap(tester, 'step-line-add');
+    await enter(tester, 'step-line-1', 'y(0) = 0 + C = 1');
+    await tap(tester, 'step-line-add');
+    await tap(tester, 'step-line-add');
+    expect(find.byKey(const ValueKey('step-line-3')), findsOneWidget, reason: 'beliebig viele Zeilen');
+    await tap(tester, 'step-line-remove-3');
+    expect(find.byKey(const ValueKey('step-line-3')), findsNothing);
+    // Sonderzeichen-Tasten schreiben in die zuletzt benutzte Zeile.
+    await tester.tap(find.byKey(const ValueKey('step-line-2')));
+    await tester.pump();
+    await tap(tester, 'step-line-key-=');
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('step-line-2'))).controller!.text, '=');
+    await enter(tester, 'step-line-2', 'y = x^2 + 2');
+    expect(find.byType(VerdictBox), findsNothing);
+
+    // Falsches Ergebnis (aus der letzten Zeile): Rückmeldung erst jetzt.
+    await tap(tester, 'step-write-submit');
+    expect(find.byType(VerdictBox), findsOneWidget);
+    expect(find.byKey(const ValueKey('step-finished')), findsNothing);
+    expect(find.byKey(const ValueKey('step-line-ok-0')), findsOneWidget, reason: 'x^2 + C = Schritt 2');
+    expect(find.byKey(const ValueKey('step-line-ok-1')), findsOneWidget, reason: 'C = 1 = Schritt 3');
+    expect(find.byKey(const ValueKey('step-write-matches')), findsOneWidget);
+
+    // Korrigieren: die alte Rückmeldung verschwindet, dann richtig abgeben.
+    await enter(tester, 'step-line-2', 'y = x^2 + 1');
+    expect(find.byType(VerdictBox), findsNothing);
+    await tap(tester, 'step-write-submit');
+    expect(find.byKey(const ValueKey('step-finished')), findsOneWidget);
+    expect(find.text('Gelöst – mit Hilfe'), findsOneWidget);
+    await tap(tester, 'step-next');
+    expect(results.single.correct, isTrue);
+    expect(results.single.grade, Grade.hard);
+  });
+
+  testWidgets('Selbst rechnen: Ergebnisfeld zählt vor der letzten Zeile, Lösung zeigen = nicht gewusst', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    await enter(tester, 'step-line-0', 'y = x^2 + C');
+    await enter(tester, 'step-write-result', '1 + x^2');
+    await tap(tester, 'step-write-submit');
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('step-next')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Gelöst – ohne Hilfe'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    await enter(tester, 'step-line-0', 'y = 3*x');
+    await tap(tester, 'step-write-submit');
+    await tap(tester, 'step-write-reveal');
+    expect(find.byKey(const ValueKey('step-finished')), findsOneWidget);
+    await tap(tester, 'step-next');
+    expect(results.single.correct, isFalse);
   });
 }

@@ -647,6 +647,38 @@ class PdfQuestionImportService {
     }
   }
 
+  /// Aufgabenbild aus einem Seitenbild: nur der Bereich [taskBox] (etwas
+  /// größer), Lösungsbereiche [solutionBoxes] abgedeckt – so steht eine
+  /// Musterlösung auf der Folie nie im Bild der Aufgabe. Ohne Angaben bleibt
+  /// die Seite, wie sie ist.
+  static Future<Uint8List> taskImage(
+    Uint8List page, {
+    List<double>? taskBox,
+    List<List<double>> solutionBoxes = const [],
+  }) async {
+    var rect = const Rect.fromLTRB(0, 0, 1, 1);
+    if (taskBox != null) {
+      final r = _clampUnit(Rect.fromLTRB(taskBox[0], taskBox[1], taskBox[2], taskBox[3]).inflate(0.02));
+      // Unplausibel kleine Bereiche lieber nicht zuschneiden.
+      if (r.width >= 0.15 && r.height >= 0.05) rect = r;
+    }
+    final covers = [
+      for (final b in solutionBoxes)
+        _clampUnit(
+          Rect.fromLTRB(
+            (b[0] - rect.left) / rect.width,
+            (b[1] - rect.top) / rect.height,
+            (b[2] - rect.left) / rect.width,
+            (b[3] - rect.top) / rect.height,
+          ).inflate(0.01),
+        ),
+    ].where((r) => r.width > 0 && r.height > 0).toList();
+    var image = page;
+    if (rect != const Rect.fromLTRB(0, 0, 1, 1)) image = await cropImageRelative(page, rect) ?? page;
+    if (covers.isNotEmpty) image = await applyImageEdits(image, [for (final r in covers) CoverEdit(r)]) ?? image;
+    return image;
+  }
+
   /// Bild-Antworten: schneidet bei Auswahlfragen das Bild jeder Option
   /// ("imageBox" in Seitenkoordinaten) aus dem Seitenbild aus und legt es als
   /// "image" an die Option.

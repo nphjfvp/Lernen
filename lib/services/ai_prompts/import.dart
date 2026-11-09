@@ -151,7 +151,8 @@ Auffangtyp für alles; prüfe der Reihe nach:
    Schritt (steht eine Musterlösung im Dokument, erkläre sie verständlich
    und setze "solutionFromDocument": true; sonst erklärst du selbst und
    setzt false). Gib "imageBox" um die KOMPLETTE Aufgabe an, wie sie auf der
-   Seite steht (samt Abbildungen). {"type": "learn", "front": "...",
+   Seite steht (samt Abbildungen) – aber OHNE die Musterlösung bzw. den
+   Lösungsweg, falls der auch auf der Seite steht (die gehört nur in "back"). {"type": "learn", "front": "...",
    "back": "...", "imageBox": [0.05, 0.2, 0.95, 0.6]}
 9. Längere Erklär- oder Diskussionsaufgabe ohne kurze Antwort, die man
    nicht als Aufgabe "durcharbeiten" muss -> "flashcard": "back":

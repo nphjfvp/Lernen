@@ -72,13 +72,14 @@ class _MathInputFieldState extends State<MathInputField> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final text = widget.controller.text;
+    // Beim Tippen nur die Vorschau, wenn die Eingabe schon lesbar ist – was
+    // fehlt oder falsch ist, sagt erst die Prüfung (Prüfen/Abgeben).
     String? preview;
-    String? error;
     if (text.trim().isNotEmpty) {
       try {
         preview = MathExpression.parse(text, names: widget.field.declaredNames).toLatex();
-      } on MathInputException catch (e) {
-        error = e.message;
+      } on MathInputException {
+        preview = null;
       }
     }
     final verdict = widget.verdict;
@@ -152,11 +153,6 @@ class _MathInputFieldState extends State<MathInputField> {
                 Flexible(child: MathText('\$$preview\$', style: const TextStyle(fontSize: 14))),
               ],
             ),
-          )
-        else if (error != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 2),
-            child: Text(error, style: TextStyle(fontSize: 11.5, color: c.warn)),
           ),
         if (widget.enabled)
           Padding(

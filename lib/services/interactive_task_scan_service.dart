@@ -128,11 +128,20 @@ class InteractiveTaskScanService {
             final page = d.page != null && w.pages.contains(d.page) ? d.page! : w.pages.first;
             // Leere Einträge ohne Aufgabe und ohne Begründung sind kein Fund.
             if (d.front.trim().isEmpty && d.kind == null && d.reason.trim().isEmpty) continue;
+            final pageImage = await imageOf(page);
             drafts.add(ScannedTaskDraft(
               draft: d.withPage(page),
               page: page,
               sourceName: source.name,
-              pageImage: await imageOf(page),
+              // Nur die Aufgabe – eine Musterlösung auf der Seite bleibt draußen
+              // bzw. abgedeckt (im Original weiter erreichbar).
+              pageImage: pageImage == null
+                  ? null
+                  : await PdfQuestionImportService.taskImage(
+                      pageImage,
+                      taskBox: d.taskBox,
+                      solutionBoxes: d.solutionBoxes,
+                    ),
               materialId: materialId,
             ));
           }

@@ -34,10 +34,14 @@ class PaperCheckOutcome {
 /// liest jede Zeile und markiert Fehler und Folgefehler, die App prüft das
 /// Endergebnis selbst (Probe + Vergleich mit der Musterlösung).
 class PaperCheckScreen extends StatefulWidget {
-  const PaperCheckScreen({super.key, required this.card, required this.task});
+  const PaperCheckScreen({super.key, required this.card, required this.task, this.typedLines});
 
   final Flashcard card;
   final StepTask task;
+
+  /// In der App getippter Rechenweg („Selbst rechnen“) statt Fotos – dann
+  /// prüft die KI ihn sofort beim Öffnen.
+  final List<String>? typedLines;
 
   static const maxPhotos = 4;
 
@@ -61,11 +65,20 @@ class _PaperCheckScreenState extends State<PaperCheckScreen> with SafeSetState<P
   bool _chat = false;
   PaperGrade? _grade;
 
+  bool get _typed => widget.typedLines != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_typed) WidgetsBinding.instance.addPostFrameCallback((_) => _check());
+  }
+
   AiService? _ai() {
     final settings = context.read<SettingsRepository>().settings;
     if (!settings.hasApiKey) return null;
-    return PaperCheckScreen.aiFactory?.call(settings.openRouterApiKey!, settings.visionModelId) ??
-        AiService(apiKey: settings.openRouterApiKey!, model: settings.visionModelId);
+    final model = _typed ? settings.questionModelId : settings.visionModelId;
+    return PaperCheckScreen.aiFactory?.call(settings.openRouterApiKey!, model) ??
+        AiService(apiKey: settings.openRouterApiKey!, model: model);
   }
 
   Future<void> _pick() async {
@@ -97,12 +110,20 @@ class _PaperCheckScreenState extends State<PaperCheckScreen> with SafeSetState<P
       _raw = null;
     });
     try {
-      final review = await ai.reviewPaperSolution(
-        task: widget.card.front,
-        solution: widget.task,
-        solutionText: widget.card.back,
-        images: List.of(_images),
-      );
+      final typed = widget.typedLines;
+      final review = typed != null
+          ? await ai.reviewTypedSolution(
+              task: widget.card.front,
+              solution: widget.task,
+              solutionText: widget.card.back,
+              lines: typed,
+            )
+          : await ai.reviewPaperSolution(
+              task: widget.card.front,
+              solution: widget.task,
+              solutionText: widget.card.back,
+              images: List.of(_images),
+            );
       setState(() {
         _review = review;
         _grade = review.grade;
@@ -139,7 +160,7 @@ class _PaperCheckScreenState extends State<PaperCheckScreen> with SafeSetState<P
     final c = context.colors;
     final review = _review;
     return Scaffold(
-      appBar: AppBar(title: const Text('Rechenweg prüfen lassen')),
+      appBar: AppBar(title: Text(_typed ? 'Rechenweg prüfen' : 'Rechenweg prüfen lassen')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
@@ -150,12 +171,45 @@ class _PaperCheckScreenState extends State<PaperCheckScreen> with SafeSetState<P
               child: MathText(widget.card.front, style: const TextStyle(fontSize: 14.5, height: 1.4)),
             ),
             const SizedBox(height: 14),
-            if (review == null) ..._buildCapture(c) else ..._buildReview(c, review),
+            if (review != null)
+              ..._buildReview(c, review)
+            else if (_typed)
+              ..._buildTypedWaiting(c)
+            else
+              ..._buildCapture(c),
           ],
         ),
       ),
     );
   }
+
+  /// Getippter Rechenweg: die KI prüft schon – oder es hat nicht geklappt.
+  List<Widget> _buildTypedWaiting(AppColors c) => [
+    if (_busy || _error == null)
+      Row(
+        children: [
+          const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('Die KI prüft deinen Rechenweg Zeile für Zeile …', style: TextStyle(color: c.inkMuted)),
+          ),
+        ],
+      )
+    else ...[
+      Text(
+        _error!,
+        key: const ValueKey('paper-error'),
+        style: TextStyle(color: c.danger),
+      ),
+      const SizedBox(height: 10),
+      FilledButton.icon(
+        key: const ValueKey('paper-retry'),
+        onPressed: _check,
+        icon: const Icon(Icons.refresh, size: 18),
+        label: const Text('Erneut prüfen'),
+      ),
+    ],
+  ];
 
   List<Widget> _buildCapture(AppColors c) {
     return [
@@ -311,7 +365,10 @@ class _PaperCheckScreenState extends State<PaperCheckScreen> with SafeSetState<P
       ),
       Padding(
         padding: const EdgeInsets.only(top: 6),
-        child: Text('Zeile antippen für die Erklärung. Falsch gelesen? Neues Foto machen.',
+        child: Text(
+            _typed
+                ? 'Zeile antippen für die Erklärung.'
+                : 'Zeile antippen für die Erklärung. Falsch gelesen? Neues Foto machen.',
             style: TextStyle(fontSize: 12, color: c.inkMuted)),
       ),
       if (review.firstErrorStep != null && review.firstErrorStep! <= widget.task.steps.length) ...[
@@ -395,9 +452,9 @@ class _PaperCheckScreenState extends State<PaperCheckScreen> with SafeSetState<P
       const SizedBox(height: 8),
       TextButton.icon(
         key: const ValueKey('paper-again'),
-        onPressed: _reset,
+        onPressed: _typed ? () => Navigator.of(context).pop() : _reset,
         icon: const Icon(Icons.restart_alt, size: 18),
-        label: const Text('Neues Foto'),
+        label: Text(_typed ? 'Rechenweg weiter bearbeiten' : 'Neues Foto'),
       ),
     ];
   }

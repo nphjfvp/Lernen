@@ -1406,3 +1406,17 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `sequence-source-i`). Einstiege: `material-tasks-<id>` in `_MaterialRow`, `unit-sequence-<id>` an
     `_MaterialGroupLabel`, `viewer-sequence` im MaterialViewer. Antworten über `CardReviewMixin.recordReview`
     (die Seite geht sofort weiter). Tests: `study_sequence_test`, `study_sequence_screen_test`.
+107. Rechenweg „Selbst rechnen“: `StepTaskView` `_Mode.write` (Segment `step-mode-write`; Zeilen
+    `step-line-i` mit `step-line-add`/`step-line-remove-i`, Tasten `step-line-key-<z>` in die zuletzt
+    benutzte Zeile, Ergebnis `step-write-result` – leer = rechte Seite der letzten Zeile; `step-write-submit`
+    prüft erst dann: `StepChecker.check` aufs Ergebnis, `_matchLine` ordnet Zeilen Schritten zu
+    (`step-line-ok-i`, `step-write-matches`); `step-write-reveal`, `step-write-guided`; `step-write-ai` →
+    `PaperCheckScreen(typedLines:)` → `AiService.reviewTypedSolution` (gleicher `_paperReviewSystemPrompt`,
+    Fragen-Modell, startet sofort; `paper-retry`). Keine Live-Fehler mehr in `MathInputField` (nur Vorschau,
+    wenn lesbar); Verdikte werden beim Weitertippen gelöscht (Schritt- und Ergebnisfeld). Aufgabenbild:
+    `InteractiveTaskDraft.taskBox`/`solutionBoxes` (`boxOf`, aus "taskBox"/"solutionBoxes"/"solutionBox"),
+    Prompt bei Dokument-Seiten mit Bildern, `PdfQuestionImportService.taskImage` (zuschneiden ≥ 15 %×5 %,
+    Lösung per `CoverEdit` abdecken) im `InteractiveTaskScanService`; Fragen-Import-Prompt: Musterlösung nie
+    in imageBox, sonst imageCovers. `StepTaskView.onImageEdited` (`step-image-edit`/`step-image-remove`, von
+    `QuestionAnswerView` durchgereicht). Steps-Prompt: Rechenschritte bevorzugt als "fields". Tests:
+    `step_task_view_test`, `step_write_review_test`, `pdf_question_import_service_test`.

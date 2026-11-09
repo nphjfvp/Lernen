@@ -414,6 +414,12 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Trefferquote je Einheit (schwächste zuerst), Durchsicht aller Fragen mit
   Lösung und KI-Erklärung, "falsche üben" und ein lokaler Verlauf der
   bisherigen Noten. Beantwortete Fragen zählen normal für FSRS/Ampel.
+- **Rechenweg lösen** (`lib/ui/tasks/step_task_view.dart`) – „Schritt für
+  Schritt“ (geführt mit Tipps), „Selbst rechnen“ (eigene Zeilen in beliebiger
+  Zahl, geprüft erst beim Abgeben: Ergebnis von der App, Zeilen soweit
+  zuordenbar abgehakt, auf Wunsch jede Zeile von der KI) oder „Nur Ergebnis“;
+  Rückmeldungen nie schon beim Tippen. Aufgabenbilder zeigen nur die Aufgabe
+  (Musterlösung weggeschnitten/abgedeckt, im Original erreichbar).
 - **Der Reihe nach** (`lib/ui/practice/study_sequence_screen.dart`, Logik
   `lib/services/study_sequence.dart`) – Aufgaben einer Einheit oder PDF in
   Dokument-Reihenfolge lösen, mit gespeichertem (synchronisiertem) Stand je

@@ -1,8 +1,31 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6r) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6s) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6s. Rechenweg selbst rechnen, Aufgabenbilder ohne Lösung
+
+- **Neuer Modus „Selbst rechnen“** beim Rechenweg (neben „Schritt für
+  Schritt“ und „Nur Ergebnis“): Du schreibst deinen eigenen Rechenweg – eine
+  Zeile je Schritt, **so viele Zeilen du willst** (auch 10 statt der 4 der
+  Musterlösung), mit Sonderzeichen-Tasten (=, ^, √, ∫ …) – und tippst auf
+  **„Abgeben“**. Erst dann prüft die App das Ergebnis (Ergebnisfeld oder
+  rechte Seite der letzten Zeile) und hakt Zeilen ab, die einem Schritt der
+  Musterlösung entsprechen. **„Rechenweg Zeile für Zeile von der KI prüfen
+  lassen“** bewertet jede Zeile (Fehler, Folgefehler, Korrektur) wie bei der
+  Foto-Prüfung. Danebengelegen: „Lösung zeigen“ oder „Geführt weiter“.
+- **Keine Meldungen mehr beim Tippen** („da fehlt noch etwas“): Ob etwas
+  fehlt oder falsch ist, sagt die App erst beim Prüfen bzw. Abgeben; tippst
+  du danach weiter, verschwindet die alte Rückmeldung wieder.
+- **Aufgabenbilder ohne Musterlösung**: Beim Erstellen interaktiver Aufgaben
+  aus einer PDF zeigt das Bild nur noch die Aufgabenstellung – steht auf der
+  Folie eine Lösung, wird sie weggeschnitten bzw. abgedeckt. Die Lösung
+  bleibt über „Zur Stelle im Skript/Original“ separat erreichbar. Beim
+  Fragen-Import gilt dasselbe. Ältere Aufgaben: am Bild über das Stift-Symbol
+  die Lösung abdecken oder wegschneiden (neu auch beim Rechenweg).
+- Neu erzeugte Rechenwege lassen Rechenschritte als **Eingabefeld** statt als
+  Auswahl lösen; Auswahl nur noch bei reinen Entscheidungen.
 
 ### 6r. Der Reihe nach
 

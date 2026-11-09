@@ -68,7 +68,16 @@ class InteractiveTaskDraft {
     this.questionType = '',
     this.page,
     this.questionData,
+    this.taskBox,
+    this.solutionBoxes = const [],
   });
+
+  /// Bereich der Aufgabenstellung auf ihrer Seite `[links, oben, rechts,
+  /// unten]` (0–1) – das Aufgabenbild zeigt nur ihn, nie die Lösung.
+  final List<double>? taskBox;
+
+  /// Bereiche mit Lösung/Musterlösung auf der Seite – im Bild abgedeckt.
+  final List<List<double>> solutionBoxes;
 
   /// null = die Aufgabe passt (noch) nicht als interaktive Aufgabe.
   final InteractiveKind? kind;
@@ -114,9 +123,24 @@ class InteractiveTaskDraft {
 
   InteractiveTaskDraft withPage(int? page) => _copy(page: page);
 
+  InteractiveTaskDraft withBoxes({List<double>? taskBox, List<List<double>> solutionBoxes = const []}) =>
+      _copy(taskBox: taskBox, solutionBoxes: solutionBoxes);
+
+  /// `[l, o, r, u]` mit Werten 0–1 aus der KI-Antwort, sonst null.
+  static List<double>? boxOf(Object? raw) {
+    if (raw is! List || raw.length != 4 || raw.any((v) => v is! num)) return null;
+    final b = [for (final v in raw) (v as num).toDouble().clamp(0.0, 1.0)];
+    return b[2] > b[0] && b[3] > b[1] ? b : null;
+  }
+
   InteractiveTaskDraft withQuestionData(Map<String, dynamic>? data) => _copy(questionData: data);
 
-  InteractiveTaskDraft _copy({Object? page = _keep, Object? questionData = _keep}) => InteractiveTaskDraft(
+  InteractiveTaskDraft _copy({
+    Object? page = _keep,
+    Object? questionData = _keep,
+    Object? taskBox = _keep,
+    Object? solutionBoxes = _keep,
+  }) => InteractiveTaskDraft(
         kind: kind,
         front: front,
         back: back,
@@ -134,6 +158,8 @@ class InteractiveTaskDraft {
         questionType: questionType,
         page: page == _keep ? this.page : page as int?,
         questionData: questionData == _keep ? this.questionData : questionData as Map<String, dynamic>?,
+        taskBox: taskBox == _keep ? this.taskBox : taskBox as List<double>?,
+        solutionBoxes: solutionBoxes == _keep ? this.solutionBoxes : solutionBoxes as List<List<double>>,
       );
 
   static const _keep = Object();
