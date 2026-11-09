@@ -375,4 +375,26 @@ void main() {
     expect(find.byKey(const ValueKey('step-line-result-2')), findsNothing);
     expect(find.byKey(const ValueKey('step-line-result-0')), findsOneWidget);
   });
+
+  testWidgets('Selbst rechnen: Rechenblatt zeigt die Zeilen live, Besprechen ohne Key gibt Hinweis', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('hand-sheet')), findsOneWidget);
+    expect(find.byKey(const ValueKey('hand-line-0')), findsNothing);
+    await enter(tester, 'step-line-0', 'y = x^2 + C');
+    expect(find.byKey(const ValueKey('hand-line-0')), findsOneWidget);
+    await tap(tester, 'step-line-check-0');
+    expect(find.byKey(const ValueKey('hand-mark-0')), findsOneWidget, reason: 'Haken auf dem Blatt');
+    await enter(tester, 'step-write-result', 'x^2 + 1');
+    expect(find.byKey(const ValueKey('hand-line-1')), findsOneWidget, reason: 'Ergebnis als letzte Zeile');
+
+    await tap(tester, 'step-line-chat-0');
+    await tester.pumpAndSettle();
+    expect(find.text('Schritt 1 besprechen'), findsOneWidget);
+    expect(find.textContaining('Geprüft'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('step-chat-suggest-0')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('step-chat-error')), findsOneWidget);
+  });
 }

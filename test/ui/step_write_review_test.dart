@@ -215,4 +215,89 @@ void main() {
     await tester.pump();
     expect(find.textContaining('Richtig wäre'), findsOneWidget);
   });
+
+  testWidgets('Selbst rechnen: einen Schritt mit der KI besprechen – vor und nach dem Prüfen', (tester) async {
+    tester.view.physicalSize = const Size(600, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final sent = <String>[];
+    StepTaskView.aiFactory = (key, model) => AiService(
+      apiKey: key,
+      model: model,
+      client: MockClient((r) async {
+        final messages = (jsonDecode(r.body) as Map)['messages'] as List;
+        final system = '${messages[0]['content']}';
+        sent.add('$system\n${messages[1]['content']}');
+        final content = system.contains('Tutor')
+            ? r'Hier integrierst du: gesucht ist eine Funktion, deren Ableitung $2x$ ist.'
+            : jsonEncode({'status': 'fehler', 'comment': 'Vorfaktor prüfen.', 'fix': r'$y = x^2 + C$'});
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {'content': content},
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+    final card = _card();
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SettingsRepository>.value(
+        value: _SettingsWithKey(),
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: QuestionAnswerView(
+              key: ValueKey(card.id),
+              card: card,
+              isNew: false,
+              onComplete: ({Grade? selfGrade, bool? isCorrect}) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    await tester.enterText(find.byKey(const ValueKey('step-line-0')), 'y = 2x^2 + C');
+    await tester.pump();
+
+    // Vor dem Prüfen.
+    await tester.ensureVisible(find.byKey(const ValueKey('step-line-chat-0')));
+    await tester.tap(find.byKey(const ValueKey('step-line-chat-0')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Noch nicht geprüft'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('step-chat-suggest-0')));
+    await tester.pumpAndSettle();
+    expect(sent.last, contains('Der Schritt wurde noch NICHT geprüft.'));
+    expect(sent.last, contains('Frage: Was mache ich in diesem Schritt eigentlich?'));
+    expect(sent.last, contains('Der besprochene Schritt (Zeile 1): y = 2x^2 + C'));
+    expect(find.byKey(const ValueKey('step-chat-msg-1')), findsOneWidget);
+    expect(find.textContaining('deren Ableitung'), findsOneWidget);
+    // Eigene Frage – das Gespräch geht weiter.
+    await tester.enterText(find.byKey(const ValueKey('step-chat-input')), 'Und warum die Konstante C?');
+    await tester.tap(find.byKey(const ValueKey('step-chat-send')));
+    await tester.pumpAndSettle();
+    expect(sent.last, contains('Bisheriges Gespräch über diesen Schritt'));
+    expect(find.byKey(const ValueKey('step-chat-msg-3')), findsOneWidget);
+    Navigator.of(tester.element(find.byKey(const ValueKey('step-chat-input')))).pop();
+    await tester.pumpAndSettle();
+
+    // Nach dem Prüfen (Fehler): andere Vorschläge, Prüfergebnis geht mit.
+    await tester.tap(find.byKey(const ValueKey('step-line-check-0')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('step-line-chat-0')));
+    await tester.tap(find.byKey(const ValueKey('step-line-chat-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('Geprüft: Fehler'), findsOneWidget);
+    expect(find.byKey(const ValueKey('step-chat-msg-3')), findsOneWidget, reason: 'Verlauf bleibt');
+    await tester.tap(find.text('Warum ist das falsch?'));
+    await tester.pumpAndSettle();
+    expect(sent.last, contains('Prüfergebnis: Fehler – Vorfaktor prüfen.'));
+  });
 }

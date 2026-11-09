@@ -3087,6 +3087,73 @@ Antworte in der Sprache der Vorlage.
     );
   }
 
+  /// Gespräch über EINEN Schritt eines selbst gerechneten Rechenwegs – vor
+  /// oder nach dem Prüfen ([check] null = noch nicht geprüft). Antwortet als
+  /// Tutor auf [question], ohne ungefragt Lösung oder nächste Schritte zu
+  /// verraten. [history]: bisheriges Gespräch über diesen Schritt.
+  Future<String> discussStep({
+    required String task,
+    required StepTask solution,
+    String solutionText = '',
+    List<String> previous = const [],
+    required String line,
+    PaperLine? check,
+    List<({bool user, String text})> history = const [],
+    required String question,
+  }) async {
+    if (question.trim().isEmpty) throw AiServiceException('Stell eine Frage zu diesem Schritt.');
+    final buffer = StringBuffer()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(task.trim(), _interactiveTaskCap))
+      ..writeln()
+      ..writeln('Musterlösung in Schritten (NUR für dich):')
+      ..writeln(jsonEncode([
+        for (final (i, s) in solution.steps.indexed) {'n': i + 1, 'title': s.title, 'result': s.resultText},
+      ]))
+      ..writeln();
+    if (solutionText.trim().isNotEmpty) {
+      buffer
+        ..writeln('Musterlösung als Text (nur für dich):')
+        ..writeln(_cap(solutionText.trim(), _interactiveTaskCap))
+        ..writeln();
+    }
+    if (previous.isNotEmpty) {
+      buffer.writeln('Bisherige Zeilen der Person:');
+      for (final (i, p) in previous.indexed) {
+        buffer.writeln('${i + 1}: ${_cap(p, 600)}');
+      }
+    }
+    buffer.writeln('Der besprochene Schritt (Zeile ${previous.length + 1}): ${line.trim().isEmpty ? '(noch leer)' : _cap(line.trim(), 600)}');
+    buffer.writeln(check == null
+        ? 'Der Schritt wurde noch NICHT geprüft.'
+        : 'Prüfergebnis: ${check.status.label}${check.comment.isEmpty ? '' : ' – ${check.comment}'}');
+    if (history.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Bisheriges Gespräch über diesen Schritt:');
+      for (final m in history.length > 12 ? history.sublist(history.length - 12) : history) {
+        buffer.writeln('${m.user ? 'Person' : 'Du'}: ${_cap(m.text, 1500)}');
+      }
+    }
+    buffer
+      ..writeln()
+      ..writeln('Frage: ${_cap(question.trim(), 3000)}');
+    final raw = await _complete(_discussStepSystemPrompt, buffer.toString(), temperature: 0.3);
+    final text = raw.trim();
+    if (text.isEmpty) throw AiServiceException('Die KI hat nicht geantwortet – bitte erneut versuchen.');
+    return text;
+  }
+
+  static const _discussStepSystemPrompt = r'''
+Du bist ein geduldiger Tutor in einer Lern-App. Eine Person rechnet eine Aufgabe selbst, Schritt für Schritt, und möchte über EINEN ihrer Schritte sprechen – vor oder nach dessen Prüfung.
+
+- Beantworte genau die Frage, kurz und klar (meist 2–6 Sätze), Du-Form, auf Deutsch. Formeln in LaTeX mit $…$.
+- Erkläre Begriffe, Regeln und Formeln dahinter verständlich, gern mit einem kleinen eigenen Beispiel.
+- Verrate NICHT ungefragt die nächsten Schritte, Zwischenergebnisse oder das Endergebnis der Aufgabe. Bitte um einen Tipp = ein Denkanstoß, keine Lösung. Nur wenn die Person ausdrücklich nach der Lösung bzw. dem richtigen Schritt fragt, darfst du ihn nennen.
+- Ist der Schritt noch nicht geprüft und fragt die Person, ob er stimmt, darfst du es sagen – begründe kurz.
+- Ist der Schritt als Fehler geprüft, hilf zu verstehen, WARUM, statt nur die Korrektur hinzuschreiben.
+- Antworte als reiner Text (kein JSON, keine Überschriften).''';
+
   static const _typedStepSystemPrompt = r'''
 Du prüfst in einer Lern-App EINEN Rechenschritt, den eine Person gerade selbst getippt hat (Eingabe-Schreibweise: ^ Potenz, * oder · mal, sqrt() bzw. √ Wurzel, ∫ Integral, dy/dx Ableitung, ⇒ folgt). Die Person rechnet bewusst kleinschrittig und darf andere, aber richtige Wege gehen.
 

@@ -206,7 +206,10 @@ const appGuideChapters = <GuideChapter>[
         '„Schritt für Schritt“ führt dich mit Tipps durch die Musterlösung. „Selbst rechnen“: du schreibst deinen '
             'eigenen Rechenweg – eine Zeile je Schritt, so viele du willst – und prüfst mit ✓ hinter der Zeile jeden '
             'Schritt einzeln (die App rechnet nach, sonst die KI, ohne Weiteres zu verraten); unten stehen die '
-            'Zeichen, die zur Aufgabe passen (z.B. dy/dx, y′, ∫, dx, lim, sin). „Abgeben“ prüft das Ergebnis. '
+            'Zeichen, die zur Aufgabe passen (z.B. dy/dx, y′, ∫, dx, lim, sin). Daneben (am Handy darüber) steht '
+            'dein Rechenweg live in Handschrift mit echten Brüchen und Hochzahlen – wie ein Lösungsblatt; mit der '
+            'Sprechblase besprichst du jeden Schritt mit der KI, vor oder nach dem Prüfen. „Abgeben“ prüft das '
+            'Ergebnis. '
             '„Nur Ergebnis“: auf Papier rechnen, Ergebnis eintippen. Rückmeldung gibt es immer erst beim Prüfen bzw. '
             'Abgeben. Steht im Aufgabenbild doch eine Lösung: Stift-Symbol am Bild → abdecken oder wegschneiden.',
       ),

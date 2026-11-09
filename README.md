@@ -41,7 +41,8 @@ Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführu
   einer Seite, Vorlesung kürzen, Formelsammlung, Frage-Chat zum Stoff.
 - **Fragetypen**: Auswahl, Lückentext, Zuordnen, Tabellen, Bilder beschriften
   und markieren, freie Antworten mit KI-Prüfung, interaktive Seiten – dazu
-  Rechenwege (geführt, selbst gerechnet Zeile für Zeile oder nur Ergebnis),
+  Rechenwege (geführt, selbst gerechnet Zeile für Zeile mit Rechenblatt in
+  Handschrift und KI je Schritt, oder nur Ergebnis),
   Kristallgitter, Zustandsdiagramme, Terminierung (Gantt),
   Stücklisten und Skizzen.
 - **Visuell lernen**: Lektionen mit Animationen (2D und 3D, wo nötig – auch als

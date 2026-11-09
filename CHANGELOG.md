@@ -1,8 +1,26 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6t) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6u) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6u. Rechenblatt in Handschrift, jeden Schritt besprechen
+
+- **Dein Rechenweg live als Lösungsblatt**: Bei „Selbst rechnen“ steht neben
+  der Aufgabe (iPad, PC) bzw. über deinen Zeilen (Handy) ein Rechenblatt, das
+  jede Zeile beim Tippen in **Handschrift** zeigt – blau wie auf einem
+  Lösungsblatt, mit echten **Brüchen** (`F/2`, `(a+b)/2`, `dy/dx`),
+  **Hochzahlen** (`x^2`, `10^6`), **Indizes** (`M_b`, `sigma_{ba,vorh}`),
+  **Wurzeln** (`√(…)`), `*` als ·, `=>` als ⇒, `<=` als ≤, griechischen
+  Buchstaben (`alpha`, `sigma` …). Geprüfte Zeilen bekommen rote ✓/✗, das
+  bestätigte Ergebnis wird doppelt unterstrichen. Über ⤢ lässt sich das Blatt
+  groß und zoombar ansehen.
+- **Jeden Schritt mit der KI besprechen** – über die Sprechblase hinter der
+  Zeile, **vor oder nach dem Prüfen**: „Was mache ich in diesem Schritt?“,
+  „Ist mein Ansatz sinnvoll?“, „Gib mir einen Tipp – ohne die Lösung“, nach
+  einem Fehler „Warum ist das falsch?“ – oder eine eigene Frage. Die KI
+  verrät Lösung und nächste Schritte nicht ungefragt; das Gespräch je Zeile
+  bleibt erhalten (Punkt an der Sprechblase).
 
 ### 6t. Selbst rechnen: jeden Schritt prüfen, passende Zeichen
 

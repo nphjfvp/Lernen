@@ -417,7 +417,9 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
 - **Rechenweg lösen** (`lib/ui/tasks/step_task_view.dart`) – „Schritt für
   Schritt“ (geführt mit Tipps), „Selbst rechnen“ (eigene Zeilen in beliebiger
   Zahl, jede Zeile einzeln prüfbar – App oder KI –, Tasten passend zur
-  Aufgabe wie dy/dx, ∫, lim; „Abgeben“ prüft das Ergebnis) oder „Nur Ergebnis“;
+  Aufgabe wie dy/dx, ∫, lim; live gerendertes Rechenblatt in Handschrift
+  daneben; jeder Schritt mit der KI besprechbar, vor oder nach dem Prüfen;
+  „Abgeben“ prüft das Ergebnis) oder „Nur Ergebnis“;
   Rückmeldungen nie schon beim Tippen. Aufgabenbilder zeigen nur die Aufgabe
   (Musterlösung weggeschnitten/abgedeckt, im Original erreichbar).
 - **Der Reihe nach** (`lib/ui/practice/study_sequence_screen.dart`, Logik

@@ -18,8 +18,10 @@ import '../study/explain_chat.dart';
 import '../study/study_aids.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
+import 'hand_math.dart';
 import 'math_input_field.dart';
 import 'paper_check_screen.dart';
+import 'step_line_chat.dart';
 
 /// Fortschritt eines Schritts.
 class _StepProgress {
@@ -129,6 +131,9 @@ class _StepTaskViewState extends State<StepTaskView> {
   final Map<TextEditingController, PaperLine> _lineChecks = {};
   final Set<TextEditingController> _lineBusy = {};
   final Set<TextEditingController> _lineShowFix = {};
+
+  /// Gespräch mit der KI je Zeile („Besprechen“ – vor oder nach dem Prüfen).
+  final Map<TextEditingController, List<({bool user, String text})>> _lineChats = {};
   bool _writeSolved = false;
   bool _writeRevealed = false;
 
@@ -320,6 +325,7 @@ class _StepTaskViewState extends State<StepTaskView> {
     final f = _lineFocus.removeAt(i);
     _lineEdited(c);
     _lineBusy.remove(c);
+    _lineChats.remove(c);
     setState(() {
       _focusedLine = _focusedLine.clamp(0, _lines.length - 1);
       _lineMatches = const [];
@@ -502,8 +508,91 @@ class _StepTaskViewState extends State<StepTaskView> {
 
   bool get _aiAvailable => context.read<SettingsRepository?>()?.settings.hasApiKey ?? false;
 
+  /// Ab dieser Breite steht das Rechenblatt neben der Aufgabe statt darüber.
+  static const sideSheetWidth = 860.0;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final side = _mode == _Mode.write && !widget.examMode && box.maxWidth >= sideSheetWidth;
+        final list = _buildList(context, inlineSheet: !side);
+        if (!side) return list;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: list),
+            SizedBox(
+              width: (box.maxWidth * 0.45).clamp(320.0, 520.0),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(0, 8, 20, 24),
+                child: _sheet(),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Getippte Zeilen fürs Rechenblatt – das Ergebnisfeld als letzte Zeile.
+  ({List<String> lines, Map<int, PaperLineStatus> statuses, int? result}) get _sheetData {
+    final lines = [for (final l in _lines) l.text];
+    final statuses = <int, PaperLineStatus>{
+      for (final (i, l) in _lines.indexed)
+        if (_lineChecks[l] case final check?) i: check.status,
+    };
+    final field = _finalField;
+    final result = _writeResult.text.trim();
+    int? resultLine;
+    if (result.isNotEmpty) {
+      final label = (widget.task.finalLabel.trim().isNotEmpty ? widget.task.finalLabel : field?.label ?? '').trim();
+      final plain = label.replaceAll(r'$', '').trim();
+      lines.add('⇒ ${plain.isEmpty ? '' : (plain.endsWith('=') ? '$plain ' : '$plain = ')}$result');
+      if (_writeSolved) resultLine = lines.length - 1;
+    } else if (_writeSolved) {
+      resultLine = _lines.lastIndexWhere((l) => l.text.trim().isNotEmpty);
+    }
+    return (lines: lines, statuses: statuses, result: resultLine);
+  }
+
+  Widget _sheet() {
+    final data = _sheetData;
+    return HandwrittenSheet(
+      lines: data.lines,
+      statuses: data.statuses,
+      resultLine: data.result,
+      onExpand: () =>
+          showHandwrittenSheet(context, lines: data.lines, statuses: data.statuses, resultLine: data.result),
+    );
+  }
+
+  /// Gespräch über Zeile [i] – vor oder nach dem Prüfen.
+  Future<void> _openLineChat(int i) async {
+    final line = _lines[i];
+    final history = _lineChats.putIfAbsent(line, () => []);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => StepLineChat(
+        card: widget.card,
+        task: widget.task,
+        previous: [
+          for (final l in _lines.take(i))
+            if (l.text.trim().isNotEmpty) l.text.trim(),
+        ],
+        line: line.text,
+        lineNumber: i + 1,
+        check: _lineChecks[line],
+        history: history,
+        ai: _stepAi(),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildList(BuildContext context, {required bool inlineSheet}) {
     final c = context.colors;
     final card = widget.card;
     return ListView(
@@ -570,7 +659,10 @@ class _StepTaskViewState extends State<StepTaskView> {
         const SizedBox(height: 8),
         ...switch (_mode) {
           _Mode.steps => _buildSteps(c),
-          _Mode.write => _buildWrite(c),
+          _Mode.write => [
+            if (inlineSheet) ...[_sheet(), const SizedBox(height: 10)],
+            ..._buildWrite(c),
+          ],
           _Mode.result => _buildResult(c),
         },
         if (_finished) ..._buildFinish(c),
@@ -1028,6 +1120,17 @@ class _StepTaskViewState extends State<StepTaskView> {
                               onPressed: line.text.trim().isEmpty ? null : () => _checkLine(i),
                               icon: Icon(Icons.task_alt, size: 20, color: c.accent),
                             ),
+                    IconButton(
+                      key: ValueKey('step-line-chat-$i'),
+                      tooltip: 'Diesen Schritt mit der KI besprechen',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _openLineChat(i),
+                      icon: Badge(
+                        isLabelVisible: (_lineChats[line]?.isNotEmpty ?? false),
+                        smallSize: 7,
+                        child: Icon(Icons.forum_outlined, size: 20, color: c.inkMuted),
+                      ),
+                    ),
                     if (i < _lineMatches.length && _lineMatches[i] != null && _lineChecks[line] == null)
                       Tooltip(
                         message: 'Entspricht Schritt ${_lineMatches[i]! + 1} der Musterlösung',

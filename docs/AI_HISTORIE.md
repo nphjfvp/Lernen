@@ -1429,3 +1429,16 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (Grundtasten, Funktionen aus „y(x)“, Variablen/Konstanten, je nach Inhalt Ableitung, Integral, ∂, lim/→/∞,
     Σ, sin/cos/tan (Wortgrenzen), e^, ln/log, ≤ ≥ ≠, ±, |, Δ, π, _, griechische Buchstaben; ohne Doppelte).
     Tests: `math_keys_test`, `step_task_view_test`, `step_write_review_test`.
+109. Rechenblatt + Schritt besprechen: ui/tasks/hand_math.dart (`HandMathParser` → `HandText`/`HandGroup`/
+    `HandFrac`/`HandSup`/`HandSub`/`HandSqrt`, Brüche über die Nachbarn von „/“, Klammern um Zähler/Nenner/
+    Exponent fallen weg, `{…}`-Gruppen, `_multi` (<= ≤, => ⇒ …), griechische Namen; `HandMath` rendert mit
+    Font-Familie `Handwriting` = assets/fonts/PatrickHand-Regular.ttf (OFL), fehlende Zeichen aus KaTeX_Math
+    (griechisch kursiv) bzw. KaTeX_Main (Pfeile, ∂, ′, großes Griechisch); `HandwrittenSheet` (`hand-sheet`,
+    `hand-line-i`, `hand-mark-i` rote Icons, Ergebnis doppelt unterstrichen, `hand-sheet-expand` →
+    `showHandwrittenSheet` zoombar)). `StepTaskView`: LayoutBuilder, ab `sideSheetWidth` 860 Blatt rechts
+    neben der Aufgabe, sonst über den Zeilen; `_sheetData` (Ergebnisfeld als letzte Zeile „⇒ y(x) = …“).
+    ui/tasks/step_line_chat.dart `StepLineChat` (Vorschläge `before`/`afterError`/`afterOk`, Keys
+    `step-chat-suggest-i`, `step-chat-input`, `step-chat-send`, `step-chat-msg-i`, `step-chat-error`) über
+    `step-line-chat-i`, Verlauf je Zeile in `_lineChats`; `AiService.discussStep` (`_discussStepSystemPrompt`,
+    Antwort als Text, kennt Prüfergebnis oder „noch NICHT geprüft“). Tests: `hand_math_test`,
+    `step_task_view_test`, `step_write_review_test`.
