@@ -12,6 +12,7 @@ import 'package:lernen/services/fsrs_service.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/daily/question_answer_view.dart';
 import 'package:lernen/ui/tasks/paper_check_screen.dart';
+import 'package:lernen/ui/tasks/step_task_view.dart';
 import 'package:provider/provider.dart';
 
 class _SettingsWithKey extends SettingsRepository {
@@ -60,7 +61,10 @@ Flashcard _card() => Flashcard(
 );
 
 void main() {
-  tearDown(() => PaperCheckScreen.aiFactory = null);
+  tearDown(() {
+    PaperCheckScreen.aiFactory = null;
+    StepTaskView.aiFactory = null;
+  });
 
   testWidgets('Selbst rechnen: getippten Rechenweg Zeile für Zeile von der KI prüfen lassen', (tester) async {
     tester.view.physicalSize = const Size(900, 2600);
@@ -144,5 +148,71 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(PaperCheckScreen), findsNothing);
     expect(results.single.grade, Grade.good);
+  });
+
+  testWidgets('Selbst rechnen: eine Zeile prüft die KI – Fehler mit Erklärung, Korrektur erst auf Wunsch', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final sent = <String>[];
+    StepTaskView.aiFactory = (key, model) => AiService(
+      apiKey: key,
+      model: model,
+      client: MockClient((r) async {
+        final messages = (jsonDecode(r.body) as Map)['messages'] as List;
+        sent.add('${messages[0]['content']}\n${messages[1]['content']}');
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'content': jsonEncode({
+                    'status': 'fehler',
+                    'comment': r'Der Vorfaktor stimmt nicht – welche Funktion ergibt abgeleitet $2x$?',
+                    'fix': r'$y = x^2 + C$',
+                  }),
+                },
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+    final card = _card();
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SettingsRepository>.value(
+        value: _SettingsWithKey(),
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: QuestionAnswerView(
+              key: ValueKey(card.id),
+              card: card,
+              isNew: false,
+              onComplete: ({Grade? selfGrade, bool? isCorrect}) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    await tester.enterText(find.byKey(const ValueKey('step-line-0')), 'y = ∫ 2x dx = 2x^2 + C');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('step-line-check-0')));
+    await tester.pumpAndSettle();
+    expect(sent.single, contains('EINEN Rechenschritt'));
+    expect(sent.single, contains('Zu prüfen – Zeile 1: y = ∫ 2x dx = 2x^2 + C'));
+    expect(find.byKey(const ValueKey('step-line-result-0')), findsOneWidget);
+    expect(find.textContaining('Vorfaktor'), findsOneWidget);
+    expect(find.textContaining('Richtig wäre'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('step-line-fix-0')));
+    await tester.pump();
+    expect(find.textContaining('Richtig wäre'), findsOneWidget);
   });
 }

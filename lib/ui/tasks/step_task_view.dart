@@ -6,9 +6,12 @@ import 'package:provider/provider.dart';
 
 import '../widgets/zoomable_image.dart';
 import '../../models/flashcard.dart';
+import '../../models/paper_review.dart';
 import '../../models/step_task.dart';
 import '../../repositories/settings_repository.dart';
+import '../../services/ai_service.dart';
 import '../../services/fsrs_service.dart';
+import '../../services/math_keys.dart';
 import '../../services/step_checker.dart';
 import '../../theme/app_colors.dart';
 import '../study/explain_chat.dart';
@@ -71,6 +74,9 @@ class StepTaskView extends StatefulWidget {
   final Flashcard card;
   final StepTask task;
 
+  /// Test-Hook statt OpenRouter (Prüfen einer getippten Zeile).
+  static AiService? Function(String apiKey, String model)? aiFactory;
+
   /// Gesetzt, wenn das Aufgabenbild hier bearbeitet werden darf (z.B. eine
   /// mitfotografierte Musterlösung abdecken oder wegschneiden) – bekommt das
   /// neue Bild zum Speichern, null = Bild entfernt.
@@ -117,6 +123,12 @@ class _StepTaskViewState extends State<StepTaskView> {
   /// die App es nachrechnen konnte – nur nach dem Abgeben.
   List<int?> _lineMatches = const [];
   int _writeWrong = 0;
+
+  /// Prüfung je Zeile („Prüfen“ hinter der Zeile) – an den Controller
+  /// gebunden, damit sie beim Einfügen/Löschen von Zeilen mitwandert.
+  final Map<TextEditingController, PaperLine> _lineChecks = {};
+  final Set<TextEditingController> _lineBusy = {};
+  final Set<TextEditingController> _lineShowFix = {};
   bool _writeSolved = false;
   bool _writeRevealed = false;
 
@@ -279,7 +291,7 @@ class _StepTaskViewState extends State<StepTaskView> {
     final r = _writeResult.text.trim();
     if (r.isNotEmpty) return r;
     final last = _writtenLines.lastOrNull ?? '';
-    return last.split('=').last.trim();
+    return _plainMath(last.split('=').last);
   }
 
   /// Eingabe geändert: alte Rückmeldung weg (die nächste kommt erst beim
@@ -306,6 +318,8 @@ class _StepTaskViewState extends State<StepTaskView> {
     if (_lines.length <= 1) return;
     final c = _lines.removeAt(i);
     final f = _lineFocus.removeAt(i);
+    _lineEdited(c);
+    _lineBusy.remove(c);
     setState(() {
       _focusedLine = _focusedLine.clamp(0, _lines.length - 1);
       _lineMatches = const [];
@@ -329,13 +343,90 @@ class _StepTaskViewState extends State<StepTaskView> {
       selection: TextSelection.collapsed(offset: start + text.length),
     );
     _lineFocus[i].requestFocus();
+    _lineEdited(c);
     _writeChanged();
+  }
+
+  /// Getippte Sonderzeichen in die Schreibweise der App-Prüfung.
+  static String _plainMath(String s) =>
+      s.replaceAll('−', '-').replaceAll('·', '*').replaceAll('×', '*').replaceAll('⇒', '').trim();
+
+  void _lineEdited(TextEditingController ctrl) {
+    _lineChecks.remove(ctrl);
+    _lineShowFix.remove(ctrl);
+  }
+
+  AiService? _stepAi() {
+    final settings = context.read<SettingsRepository?>()?.settings;
+    if (settings == null || !settings.hasApiKey) return null;
+    return StepTaskView.aiFactory?.call(settings.openRouterApiKey!, settings.questionModelId) ??
+        AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+  }
+
+  /// „Prüfen“ hinter einer Zeile: erst rechnet die App selbst (entspricht die
+  /// Zeile einem Schritt der Musterlösung?), sonst prüft die KI genau diese
+  /// Zeile im Zusammenhang der Zeilen davor – ohne Weiteres zu verraten.
+  Future<void> _checkLine(int i) async {
+    final ctrl = _lines[i];
+    final text = ctrl.text.trim();
+    if (text.isEmpty || _lineBusy.contains(ctrl)) return;
+    final match = _matchLine(text);
+    if (match != null) {
+      setState(
+        () => _lineChecks[ctrl] = PaperLine(
+          n: i + 1,
+          text: text,
+          comment: 'Stimmt – das ist Schritt ${match + 1} der Musterlösung („${widget.task.steps[match].title}“).',
+        ),
+      );
+      return;
+    }
+    final ai = _stepAi();
+    if (ai == null) {
+      setState(
+        () => _lineChecks[ctrl] = PaperLine(
+          n: i + 1,
+          text: text,
+          status: PaperLineStatus.unclear,
+          comment:
+              'Diesen Zwischenschritt kann die App nicht selbst nachrechnen – mit deinem OpenRouter-Key '
+              '(Einstellungen) prüft ihn die KI.',
+        ),
+      );
+      return;
+    }
+    setState(() => _lineBusy.add(ctrl));
+    PaperLine result;
+    try {
+      result = await ai.checkTypedStep(
+        task: widget.card.front,
+        solution: widget.task,
+        solutionText: widget.card.back,
+        previous: [
+          for (final l in _lines.take(i))
+            if (l.text.trim().isNotEmpty) l.text.trim(),
+        ],
+        line: text,
+      );
+    } on AiServiceException catch (e) {
+      result = PaperLine(n: i + 1, text: text, status: PaperLineStatus.unclear, comment: e.message);
+    } catch (e) {
+      result = PaperLine(n: i + 1, text: text, status: PaperLineStatus.unclear, comment: 'Prüfen fehlgeschlagen: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      _lineBusy.remove(ctrl);
+      // Inzwischen geändert oder gelöscht: das Ergebnis gilt nicht mehr.
+      if (!_lines.contains(ctrl) || ctrl.text.trim() != text) return;
+      _lineChecks[ctrl] = result;
+      if (result.status == PaperLineStatus.error) _writeWrong++;
+    });
   }
 
   /// Welcher Musterlösungs-Schritt in einer Zeile steckt (rechte Seite gegen
   /// die Felder jedes Schritts) – null, wenn die App es nicht zuordnen kann.
   int? _matchLine(String line) {
-    final rhs = line.split('=').last.trim();
+    final rhs = _plainMath(line.split('=').last);
     if (rhs.isEmpty) return null;
     for (final (j, s) in widget.task.steps.indexed) {
       for (final f in s.fields) {
@@ -849,8 +940,7 @@ class _StepTaskViewState extends State<StepTaskView> {
   List<Widget> _buildWrite(AppColors c) {
     final field = _finalField;
     final done = _writeSolved || _writeRevealed;
-    final names = {...?field?.variables, ...?field?.constants};
-    final keys = ['=', '(', ')', '^', '²', '/', '√(', '∫', 'π', 'e^(', 'ln(', ...names];
+    final keys = MathKeys.forTask(widget.task, text: widget.card.front);
     final displayField = field == null
         ? null
         : StepField(
@@ -874,11 +964,12 @@ class _StepTaskViewState extends State<StepTaskView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Rechne selbst – eine Zeile je Rechenschritt, so viele du brauchst. Geprüft wird erst, wenn du abgibst.',
+              'Rechne selbst – eine Zeile je Rechenschritt, so viele du brauchst. Mit ✓ hinter einer Zeile prüfst du '
+              'genau diesen Schritt; „Abgeben“ prüft das Ergebnis.',
               style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.35),
             ),
             const SizedBox(height: 10),
-            for (final (i, line) in _lines.indexed)
+            for (final (i, line) in _lines.indexed) ...[
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
@@ -912,6 +1003,7 @@ class _StepTaskViewState extends State<StepTaskView> {
                         onTap: () => _focusedLine = i,
                         onChanged: (_) {
                           _focusedLine = i;
+                          _lineEdited(line);
                           _writeChanged();
                         },
                         onSubmitted: (_) {
@@ -923,7 +1015,20 @@ class _StepTaskViewState extends State<StepTaskView> {
                         },
                       ),
                     ),
-                    if (i < _lineMatches.length && _lineMatches[i] != null)
+                    if (!done)
+                      _lineBusy.contains(line)
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                            )
+                          : IconButton(
+                              key: ValueKey('step-line-check-$i'),
+                              tooltip: 'Diesen Schritt prüfen',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: line.text.trim().isEmpty ? null : () => _checkLine(i),
+                              icon: Icon(Icons.task_alt, size: 20, color: c.accent),
+                            ),
+                    if (i < _lineMatches.length && _lineMatches[i] != null && _lineChecks[line] == null)
                       Tooltip(
                         message: 'Entspricht Schritt ${_lineMatches[i]! + 1} der Musterlösung',
                         child: Padding(
@@ -942,6 +1047,8 @@ class _StepTaskViewState extends State<StepTaskView> {
                   ],
                 ),
               ),
+              if (_lineChecks[line] case final check?) _lineCheckBox(c, i, line, check),
+            ],
             if (!done) ...[
               Align(
                 alignment: Alignment.centerLeft,
@@ -1053,6 +1160,56 @@ class _StepTaskViewState extends State<StepTaskView> {
           child: ProbeCard(report: _writeProbe!, title: 'Probe deines Ergebnisses – rechnet die App'),
         ),
     ];
+  }
+
+  /// Ergebnis von „Prüfen“ unter einer Zeile; die Korrektur erst auf Wunsch.
+  Widget _lineCheckBox(AppColors c, int i, TextEditingController line, PaperLine check) {
+    final (icon, color, bg) = switch (check.status) {
+      PaperLineStatus.ok => (Icons.check_circle, c.good, c.goodSoft),
+      PaperLineStatus.error => (Icons.cancel_outlined, c.danger, c.dangerSoft),
+      PaperLineStatus.follow => (Icons.subdirectory_arrow_right, c.warn, c.warnSoft),
+      PaperLineStatus.unclear => (Icons.help_outline, c.inkMuted, c.surfaceAlt),
+    };
+    final showFix = _lineShowFix.contains(line);
+    return Container(
+      key: ValueKey('step-line-result-$i'),
+      margin: const EdgeInsets.only(left: 26, bottom: 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: MathText(
+                  check.comment.isEmpty ? check.status.label : check.comment,
+                  style: const TextStyle(fontSize: 13.5, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+          if (check.fix.isNotEmpty && check.status != PaperLineStatus.ok)
+            showFix
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 6, left: 26),
+                    child: MathText('Richtig wäre: ${check.fix}', style: const TextStyle(fontSize: 14)),
+                  )
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      key: ValueKey('step-line-fix-$i'),
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      onPressed: () => setState(() => _lineShowFix.add(line)),
+                      child: const Text('Korrektur zeigen'),
+                    ),
+                  ),
+        ],
+      ),
+    );
   }
 
   List<Widget> _buildFooter(AppColors c) {

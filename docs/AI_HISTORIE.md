@@ -1420,3 +1420,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     in imageBox, sonst imageCovers. `StepTaskView.onImageEdited` (`step-image-edit`/`step-image-remove`, von
     `QuestionAnswerView` durchgereicht). Steps-Prompt: Rechenschritte bevorzugt als "fields". Tests:
     `step_task_view_test`, `step_write_review_test`, `pdf_question_import_service_test`.
+108. Selbst rechnen – Zeile prüfen: `step-line-check-i` → `_checkLine` (erst `_matchLine` gegen die Felder der
+    Musterlösung, sonst `AiService.checkTypedStep` mit `_typedStepSystemPrompt`, Antwort als `PaperLine`
+    status/comment/fix, Fehler zählen in `_writeWrong`); Ergebnis `step-line-result-i` (`_lineCheckBox`),
+    Korrektur hinter `step-line-fix-i`; Prüfungen hängen am Controller (`_lineChecks`, `_lineBusy`,
+    `_lineShowFix`) und fallen beim Ändern weg. `_plainMath` (− · × ⇒) vor dem Nachrechnen.
+    `StepTaskView.aiFactory` als Test-Hook. Tasten: services/math_keys.dart `MathKeys.forTask(task, text:)`
+    (Grundtasten, Funktionen aus „y(x)“, Variablen/Konstanten, je nach Inhalt Ableitung, Integral, ∂, lim/→/∞,
+    Σ, sin/cos/tan (Wortgrenzen), e^, ln/log, ≤ ≥ ≠, ±, |, Δ, π, _, griechische Buchstaben; ohne Doppelte).
+    Tests: `math_keys_test`, `step_task_view_test`, `step_write_review_test`.

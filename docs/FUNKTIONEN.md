@@ -416,8 +416,8 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   bisherigen Noten. Beantwortete Fragen zählen normal für FSRS/Ampel.
 - **Rechenweg lösen** (`lib/ui/tasks/step_task_view.dart`) – „Schritt für
   Schritt“ (geführt mit Tipps), „Selbst rechnen“ (eigene Zeilen in beliebiger
-  Zahl, geprüft erst beim Abgeben: Ergebnis von der App, Zeilen soweit
-  zuordenbar abgehakt, auf Wunsch jede Zeile von der KI) oder „Nur Ergebnis“;
+  Zahl, jede Zeile einzeln prüfbar – App oder KI –, Tasten passend zur
+  Aufgabe wie dy/dx, ∫, lim; „Abgeben“ prüft das Ergebnis) oder „Nur Ergebnis“;
   Rückmeldungen nie schon beim Tippen. Aufgabenbilder zeigen nur die Aufgabe
   (Musterlösung weggeschnitten/abgedeckt, im Original erreichbar).
 - **Der Reihe nach** (`lib/ui/practice/study_sequence_screen.dart`, Logik

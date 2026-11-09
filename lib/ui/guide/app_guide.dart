@@ -204,8 +204,9 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Rechenweg: drei Arten zu lösen',
         '„Schritt für Schritt“ führt dich mit Tipps durch die Musterlösung. „Selbst rechnen“: du schreibst deinen '
-            'eigenen Rechenweg – eine Zeile je Schritt, so viele du willst – und gibst ab; die App prüft das Ergebnis '
-            'und hakt Zeilen ab, die einem Schritt der Musterlösung entsprechen, die KI prüft auf Wunsch jede Zeile. '
+            'eigenen Rechenweg – eine Zeile je Schritt, so viele du willst – und prüfst mit ✓ hinter der Zeile jeden '
+            'Schritt einzeln (die App rechnet nach, sonst die KI, ohne Weiteres zu verraten); unten stehen die '
+            'Zeichen, die zur Aufgabe passen (z.B. dy/dx, y′, ∫, dx, lim, sin). „Abgeben“ prüft das Ergebnis. '
             '„Nur Ergebnis“: auf Papier rechnen, Ergebnis eintippen. Rückmeldung gibt es immer erst beim Prüfen bzw. '
             'Abgeben. Steht im Aufgabenbild doch eine Lösung: Stift-Symbol am Bild → abdecken oder wegschneiden.',
       ),

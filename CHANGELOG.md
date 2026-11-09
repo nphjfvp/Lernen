@@ -1,8 +1,24 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6s) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6t) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6t. Selbst rechnen: jeden Schritt prüfen, passende Zeichen
+
+- **Prüfen nach jedem Schritt**: Hinter jeder Zeile bei „Selbst rechnen“
+  steht ✓. Ein Tipp prüft genau diesen Schritt: Entspricht er einem Schritt
+  der Musterlösung, bestätigt das die App selbst; sonst prüft die KI die
+  Zeile im Zusammenhang der Zeilen davor (richtig, Fehler mit Erklärung,
+  Folgefehler) – ohne die nächsten Schritte oder das Ergebnis zu verraten.
+  Die Korrektur der Zeile gibt es erst auf „Korrektur zeigen“. Änderst du die
+  Zeile, verschwindet die alte Prüfung.
+- **Zeichen passend zur Aufgabe**: Unter den Zeilen stehen die Größen und
+  Funktionen der Aufgabe (z.B. y(x), x, C) und alles, was beim Aufgabentyp
+  vorkommen kann – bei Ableitungen dy/dx, d/dx, y′, y″, bei Integralen ∫, dx,
+  C, bei Grenzwerten lim, →, ∞, dazu sin/cos/tan, ln, e^, Σ, ∂, ±, ≤/≥,
+  griechische Buchstaben … – nur, was zur Aufgabe passt. Dazu immer = ⇒ + − ·
+  / ^ ² ( ) √.
 
 ### 6s. Rechenweg selbst rechnen, Aufgabenbilder ohne Lösung
 

@@ -349,4 +349,30 @@ void main() {
     await tap(tester, 'step-next');
     expect(results.single.correct, isFalse);
   });
+
+  testWidgets('Selbst rechnen: jede Zeile einzeln prüfen – App erkennt Schritte, ohne Key Hinweis', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('step-line-key-y(x)')), findsOneWidget, reason: 'Tasten passend zur Aufgabe');
+    await enter(tester, 'step-line-0', 'y = x^2 + C');
+    await tap(tester, 'step-line-check-0');
+    expect(find.byKey(const ValueKey('step-line-result-0')), findsOneWidget);
+    expect(find.textContaining('Stimmt – das ist Schritt 2'), findsOneWidget);
+    expect(find.byKey(const ValueKey('step-finished')), findsNothing, reason: 'Prüfen ist nicht Abgeben');
+
+    await tap(tester, 'step-line-add');
+    await enter(tester, 'step-line-1', 'y(0) = 0 + C ⇒ C = 1');
+    await tap(tester, 'step-line-check-1');
+    expect(find.textContaining('Stimmt – das ist Schritt 3'), findsOneWidget);
+
+    await tap(tester, 'step-line-add');
+    await enter(tester, 'step-line-2', 'dy/dx = 2x');
+    await tap(tester, 'step-line-check-2');
+    expect(find.textContaining('nicht selbst nachrechnen'), findsOneWidget);
+    // Ändern löscht die Prüfung dieser Zeile.
+    await enter(tester, 'step-line-2', 'dy/dx = 2*x');
+    expect(find.byKey(const ValueKey('step-line-result-2')), findsNothing);
+    expect(find.byKey(const ValueKey('step-line-result-0')), findsOneWidget);
+  });
 }

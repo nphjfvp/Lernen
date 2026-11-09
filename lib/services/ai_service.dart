@@ -3041,6 +3041,67 @@ Antworte in der Sprache der Vorlage.
     return review;
   }
 
+  /// Prüft EINE getippte Zeile eines selbst gerechneten Rechenwegs („Selbst
+  /// rechnen“, Prüfen nach jedem Schritt): folgt sie richtig aus der Aufgabe
+  /// und den Zeilen davor ([previous])? Verrät die nächsten Schritte nicht.
+  /// Antwort als [PaperLine] (status, comment, fix).
+  Future<PaperLine> checkTypedStep({
+    required String task,
+    required StepTask solution,
+    String solutionText = '',
+    List<String> previous = const [],
+    required String line,
+  }) async {
+    if (line.trim().isEmpty) throw AiServiceException('Schreib zuerst den Schritt hin.');
+    final buffer = StringBuffer()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(task.trim(), _interactiveTaskCap))
+      ..writeln()
+      ..writeln('Musterlösung in Schritten (NUR für dich, nicht verraten):')
+      ..writeln(jsonEncode([
+        for (final (i, s) in solution.steps.indexed) {'n': i + 1, 'title': s.title, 'result': s.resultText},
+      ]))
+      ..writeln();
+    if (solutionText.trim().isNotEmpty) {
+      buffer
+        ..writeln('Musterlösung als Text (nur für dich):')
+        ..writeln(_cap(solutionText.trim(), _interactiveTaskCap))
+        ..writeln();
+    }
+    if (previous.isNotEmpty) {
+      buffer.writeln('Bisherige Zeilen der Person:');
+      for (final (i, p) in previous.indexed) {
+        buffer.writeln('${i + 1}: ${_cap(p, 600)}');
+      }
+      buffer.writeln();
+    }
+    buffer.writeln('Zu prüfen – Zeile ${previous.length + 1}: ${_cap(line.trim(), 600)}');
+    final raw = await _complete(_typedStepSystemPrompt, buffer.toString(), temperature: 0);
+    final json = await _json(raw);
+    return PaperLine(
+      n: previous.length + 1,
+      text: line.trim(),
+      status: paperLineStatusFrom(json['status']),
+      comment: '${json['comment'] ?? ''}'.trim(),
+      fix: '${json['fix'] ?? ''}'.trim(),
+    );
+  }
+
+  static const _typedStepSystemPrompt = r'''
+Du prüfst in einer Lern-App EINEN Rechenschritt, den eine Person gerade selbst getippt hat (Eingabe-Schreibweise: ^ Potenz, * oder · mal, sqrt() bzw. √ Wurzel, ∫ Integral, dy/dx Ableitung, ⇒ folgt). Die Person rechnet bewusst kleinschrittig und darf andere, aber richtige Wege gehen.
+
+"status":
+- "ok": der Schritt ist mathematisch richtig (folgt korrekt aus der Aufgabe bzw. den Zeilen davor) – auch wenn er anders aussieht als die Musterlösung oder ein Zwischenschritt ist, den die Musterlösung überspringt.
+- "fehler": hier passiert ein eigener Fehler.
+- "folgefehler": richtig weitergerechnet, aber auf Basis einer falschen früheren Zeile.
+- "unklar": nicht verständlich, was gemeint ist.
+
+"comment": ein bis zwei kurze Sätze an die Person (Du-Form). Bei "ok" kurz bestätigen, was stimmt. Bei "fehler" konkret sagen, WAS falsch ist (z.B. „Beim Integrieren von $2x$ stimmt der Vorfaktor nicht – welche Funktion ergibt abgeleitet $2x$?“), ohne die nächsten Schritte oder das Endergebnis zu verraten.
+"fix": nur bei "fehler"/"folgefehler" die korrigierte Fassung GENAU DIESER Zeile, sonst leer.
+Formeln in comment und fix in LaTeX mit $…$.
+
+Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
+
   // -- Visuell lernen ------------------------------------------------------------
 
   /// Erzeugt Lektionen für „Visuell lernen“: aus einem Thema / eigenen Beispiel
