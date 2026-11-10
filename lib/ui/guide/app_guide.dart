@@ -256,8 +256,9 @@ const appGuideChapters = <GuideChapter>[
       ),
       GuideItem(
         'Animationen und 3D',
-        'Bewegte Szenen mit Regler und Beschriftung; räumliche Szenen lassen sich drehen. „In 3D ansehen“ '
-            'öffnet echtes 3D mit Licht, Schatten und Zoom.',
+        'Bewegte Szenen mit Regler und Beschriftung; räumliche Szenen lassen sich drehen – Kristallgitter '
+            'ebenso wie Bauteile (Wellen und Achsen mit Absätzen). „In 3D ansehen“ öffnet echtes 3D mit Licht, '
+            'Schatten und Zoom.',
       ),
       GuideItem(
         'Live ändern',

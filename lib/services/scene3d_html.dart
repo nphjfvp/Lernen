@@ -342,7 +342,32 @@ const _template = r'''<!DOCTYPE html>
   const camera = new THREE.PerspectiveCamera(38, 1, m * 0.01, m * 100);
   camera.up.set(0, 0, 1); // z nach oben wie in der App
   const center = new THREE.Vector3(box[0] / 2, box[1] / 2, box[2] / 2);
-  const home = new THREE.Vector3(center.x + m * 1.7, center.y - m * 2.3, center.z + m * 1.3);
+  // Wie weit die Szene von der Mitte reicht (wie Scene3DPainter._fitZoom):
+  // lang gestreckte oder kleine Szenen (z.B. eine Welle) rückt die Kamera näher.
+  let far = 0, minZ = 0;
+  const reach = (v, extra) => {
+    far = Math.max(far, Math.hypot(v[0] - center.x, v[1] - center.y, v[2] - center.z) + (extra || 0));
+    minZ = Math.min(minZ, v[2] - (extra || 0));
+  };
+  if (S.frame || S.axes) {
+    for (const x of [0, box[0]]) for (const y of [0, box[1]]) for (const z of [0, box[2]]) reach([x, y, z]);
+  }
+  for (const o of S.objects) {
+    const r = Math.max(o.numbers.r || 0, o.numbers.r2 || 0);
+    const sh = [0, 1, 2].map(q => (o.n[q] - 1) * o.d[q]);
+    const all = [o, ...o.keys];
+    for (const src of all) {
+      for (const key of ['at', 'from', 'to']) {
+        const v = src.vectors && src.vectors[key];
+        if (!v) continue;
+        reach(v, r);
+        reach([v[0] + sh[0], v[1] + sh[1], v[2] + sh[2]], r);
+      }
+      for (const v of src.points || []) reach(v, 0);
+    }
+  }
+  const fit = far > 1e-9 ? Math.max(1, Math.min(2.2, 0.866 * m / far)) : 1;
+  const home = new THREE.Vector3(center.x + m * 1.7 / fit, center.y - m * 2.3 / fit, center.z + m * 1.3 / fit);
   camera.position.copy(home);
   const controls = new THREE.OrbitControls(camera, labels.domElement);
   controls.target.copy(center);
@@ -358,7 +383,7 @@ const _template = r'''<!DOCTYPE html>
   Object.assign(sun.shadow.camera, { left: -m * 2, right: m * 2, top: m * 2, bottom: -m * 2, near: m * 0.1, far: m * 8 });
   scene.add(sun, sun.target);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(m * 8, m * 8), new THREE.ShadowMaterial({ opacity: 0.16 }));
-  ground.position.set(center.x, center.y, -m * 0.02);
+  ground.position.set(center.x, center.y, minZ - m * 0.02);
   ground.receiveShadow = true;
   scene.add(ground);
 
@@ -498,6 +523,16 @@ const _template = r'''<!DOCTYPE html>
         group.add(it.mesh, it.edges);
         it.label = label('', P.warn, 13);
         group.add(it.label);
+      } else if (o.shape === 'cylinder') {
+        const r1 = typeof o.numbers.r === 'number' ? o.numbers.r : m * 0.08;
+        const r2 = typeof o.numbers.r2 === 'number' ? o.numbers.r2 : r1;
+        // Verjüngung (Kegelstumpf) steckt in der Geometrie: Radius am Ende "to" relativ zu r.
+        it.mesh = new THREE.Mesh(new THREE.CylinderGeometry(r1 > 1e-9 ? r2 / r1 : 1, 1, 1, 56), material('#9aa5b1', 1));
+        it.mesh.castShadow = true;
+        it.mesh.receiveShadow = true;
+        group.add(it.mesh);
+        it.label = label('', P.ink, 13);
+        group.add(it.label);
       } else if (o.shape === 'polygon') {
         it.mesh = new THREE.Mesh(new THREE.BufferGeometry(),
           material(P.accent, 0.35, { side: THREE.DoubleSide, depthWrite: false }));
@@ -583,6 +618,17 @@ const _template = r'''<!DOCTYPE html>
         it.edges.material.opacity = opacity;
         it.label.position.set(o0[0] + dims[0], o0[1] + dims[1], o0[2] + dims[2] + m * 0.04);
         setLabel(it.label, text, f);
+      } else if (o.shape === 'cylinder') {
+        const a = it.mv(vec(o, 'from', p)), e = it.mv(vec(o, 'to', p));
+        const r = Math.max(num(o, 'r', p) ?? m * 0.08, 1e-4);
+        placeRod(it.mesh, a, e);
+        it.mesh.scale.x = it.mesh.scale.z = r;
+        it.mesh.material.color.set(fill || '#9aa5b1');
+        it.mesh.material.opacity = opacity;
+        it.mesh.material.transparent = opacity < 1;
+        const rr = Math.max(r, num(o, 'r2', p) ?? r);
+        it.label.position.set((a[0] + e[0]) / 2, (a[1] + e[1]) / 2, (a[2] + e[2]) / 2 + rr * 1.15 + m * 0.03);
+        setLabel(it.label, text, P.ink);
       } else if (o.shape === 'polygon') {
         const pts = pointsAt(o, p).map(it.mv);
         if (pts.length >= 3) {

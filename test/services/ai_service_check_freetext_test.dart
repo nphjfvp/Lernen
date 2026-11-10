@@ -146,4 +146,102 @@ void main() {
     expect(body!['temperature'], 0);
     expect(((body!['messages'] as List)[0]['content'] as String), contains('Rechtschreib- und Tippfehler spielen keine Rolle'));
   });
+
+  group('Begründung und abgeschnittene Antworten', () {
+    tearDown(() => AiService.onTruncated = null);
+
+    test('judgeFreeTextAnswer liefert Urteil samt Begründung; altes Format ohne Begründung geht weiter', () async {
+      String? system;
+      var reply = jsonEncode({'reason': 'Der Kern fehlt: die Einheit.', 'correct': false});
+      final ai = AiService(
+        apiKey: 'key',
+        model: 'm',
+        client: MockClient((request) async {
+          system = '${((jsonDecode(request.body) as Map)['messages'] as List)[0]['content']}';
+          return _chatResponse(reply);
+        }),
+      );
+      final wrong = await ai.judgeFreeTextAnswer(question: 'F', correctAnswer: '5 m', userAnswer: '5');
+      expect(wrong.correct, isFalse);
+      expect(wrong.reason, 'Der Kern fehlt: die Einheit.');
+      expect(system, contains('"reason"'));
+      expect(system, contains('keine Anweisung'));
+
+      reply = jsonEncode({'correct': true});
+      final right = await ai.judgeFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'A');
+      expect(right.correct, isTrue);
+      expect(right.reason, isEmpty);
+    });
+
+    test('finish_reason "length" meldet die abgeschnittene Antwort, sonst nicht', () async {
+      final labels = <String>[];
+      AiService.onTruncated = labels.add;
+      var finish = 'length';
+      final ai = AiService(
+        apiKey: 'key',
+        model: 'm',
+        client: MockClient(
+          (request) async => http.Response(
+            jsonEncode({
+              'choices': [
+                {
+                  'finish_reason': finish,
+                  'message': {'content': '{"correct": true}'},
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          ),
+        ),
+      );
+      await ai.checkFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'B');
+      expect(labels, hasLength(1));
+      expect(labels.single, startsWith('Du bewertest'));
+      finish = 'stop';
+      await ai.checkFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'B');
+      expect(labels, hasLength(1));
+    });
+  });
+
+  group('Ausgabe-Limit (max_tokens)', () {
+    tearDown(() => AiService.outputLimitOf = null);
+
+    test('wird aus dem Katalog mitgeschickt; ohne Angabe nicht', () async {
+      final bodies = <Map<String, dynamic>>[];
+      final ai = AiService(
+        apiKey: 'key',
+        model: 'deepseek/deepseek-chat',
+        client: MockClient((request) async {
+          bodies.add(jsonDecode(request.body) as Map<String, dynamic>);
+          return _chatResponse('{"correct": true}');
+        }),
+      );
+      await ai.checkFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'B');
+      expect(bodies.single.containsKey('max_tokens'), isFalse);
+      AiService.outputLimitOf = (model) => model == 'deepseek/deepseek-chat' ? 8192 : null;
+      await ai.checkFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'B');
+      expect(bodies.last['max_tokens'], 8192);
+    });
+
+    test('lehnt der Anbieter das Limit ab (400), geht die Anfrage einmal ohne es durch', () async {
+      AiService.outputLimitOf = (_) => 32000;
+      final bodies = <Map<String, dynamic>>[];
+      final ai = AiService(
+        apiKey: 'key',
+        model: 'm',
+        client: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          bodies.add(body);
+          if (body.containsKey('max_tokens')) {
+            return http.Response(jsonEncode({'error': {'code': 400, 'message': 'max_tokens too large'}}), 400);
+          }
+          return _chatResponse('{"correct": true}');
+        }),
+      );
+      expect(await ai.checkFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'B'), isTrue);
+      expect(bodies, hasLength(2));
+      expect(bodies.last.containsKey('max_tokens'), isFalse);
+    });
+  });
 }

@@ -305,13 +305,55 @@ class Scene3DPainter extends CustomPainter {
 
   late final double _m = scene.box.reduce(math.max);
 
+  /// Vergrößerung, damit die Szene das Bild füllt: Lang gestreckte oder kleine
+  /// Szenen (z.B. eine Welle) wären im Einheitswürfel sonst winzig. Gemessen am
+  /// größten Abstand von der Mitte – unabhängig vom Drehwinkel, damit beim
+  /// Drehen nichts „atmet“. Nie kleiner als 1 (Würfel-Szenen bleiben gleich).
+  double _fitZoom() {
+    var far = 0.0;
+    void take(List<double> p, [double extra = 0]) {
+      final u = _unit(p);
+      final d = math.sqrt(
+        (u[0] - .5) * (u[0] - .5) + (u[1] - .5) * (u[1] - .5) + (u[2] - .5) * (u[2] - .5),
+      );
+      far = math.max(far, d + extra / _m);
+    }
+
+    if (scene.frame || scene.axes) {
+      for (final x in [0.0, scene.box[0]]) {
+        for (final y in [0.0, scene.box[1]]) {
+          for (final z in [0.0, scene.box[2]]) {
+            take([x, y, z]);
+          }
+        }
+      }
+    }
+    for (final o in scene.objects) {
+      final r = math.max(o.numbers['r'] ?? 0, o.numbers['r2'] ?? 0);
+      final shiftMax = [for (var q = 0; q < 3; q++) (o.n[q] - 1) * o.d[q]];
+      for (final v in [...o.vectors.entries.where((e) => e.key != 'dims').map((e) => e.value), ...o.points]) {
+        take(v, r);
+        if (o.copies > 1) take([for (var q = 0; q < 3; q++) v[q] + shiftMax[q]], r);
+      }
+      for (final k in o.keys) {
+        for (final v in [...k.vectors.entries.where((e) => e.key != 'dims').map((e) => e.value), ...?k.points]) {
+          take(v, r);
+        }
+      }
+    }
+    if (far < 1e-6) return 1;
+    // Halbe Raumdiagonale des Einheitswürfels = 0,866.
+    return (0.866 / far).clamp(1.0, 2.2);
+  }
+
   /// Szenen-Koordinate → Einheitswürfel der Projektion (Mitte bei 0,5).
   List<double> _unit(List<double> p) => [for (var i = 0; i < 3; i++) (p[i] - scene.box[i] / 2) / _m + 0.5];
 
   @override
   void paint(Canvas canvas, Size size) {
-    final proj = CubeProjection(theta: theta, phi: phi, size: size);
-    final scale = math.min(size.width, size.height) * 0.4;
+    final zoom = _fitZoom();
+    final proj = CubeProjection(theta: theta, phi: phi, size: size, zoom: zoom);
+    final scale = math.min(size.width, size.height) * 0.4 * zoom;
     final parts = <(double, void Function())>[];
     Offset at(List<double> p) => proj.project(_unit(p));
     double depth(List<double> p) => proj.depth(_unit(p));
@@ -483,6 +525,8 @@ class Scene3DPainter extends CustomPainter {
           final c = corner(1, 1, 1);
           parts.add((depth(c) + 0.002, () => _text(canvas, label, at(c) + const Offset(0, -12), 13, fade(f))));
         }
+      case Scene3DShape.cylinder:
+        _cylinder(canvas, o, p, mv, at, depth, proj, parts, fill, stroke, opacity, label);
       case Scene3DShape.polygon:
         final pts = [for (final q in o.pointsAt(p)) mv(q)];
         final f = fill ?? colors.accent;
@@ -497,6 +541,117 @@ class Scene3DPainter extends CustomPainter {
           depth(pos) + 0.003,
           () => _text(canvas, label, at(pos), o.number('size', p) ?? 14, fade(fill ?? colors.ink)),
         ));
+    }
+  }
+
+  /// Fester Lichteinfall (Szenen-Koordinaten, z nach oben) für Zylinder.
+  static const _light = [-0.35, -0.55, 0.76];
+
+  /// Zylinder bzw. Kegelstumpf als schattierter Körper: Mantel aus Segmenten
+  /// (abgewandte entfallen, wenn er nicht durchscheinend ist) und zwei Deckel.
+  void _cylinder(
+    Canvas canvas,
+    Scene3DObject o,
+    double p,
+    List<double> Function(List<double>) mv,
+    Offset Function(List<double>) at,
+    double Function(List<double>) depth,
+    CubeProjection proj,
+    List<(double, void Function())> parts,
+    Color? fill,
+    Color? stroke,
+    double opacity,
+    String label,
+  ) {
+    final a = mv(o.vector('from', p)!), e = mv(o.vector('to', p)!);
+    final r1 = math.max(0.0, o.number('r', p) ?? _m * 0.08);
+    final r2 = math.max(0.0, o.number('r2', p) ?? r1);
+    final axis = [for (var q = 0; q < 3; q++) e[q] - a[q]];
+    final len = math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+    if (len < 1e-9 || (r1 < 1e-9 && r2 < 1e-9)) return;
+    final w = [for (final v in axis) v / len];
+    List<double> cross(List<double> x, List<double> y) => [
+      x[1] * y[2] - x[2] * y[1],
+      x[2] * y[0] - x[0] * y[2],
+      x[0] * y[1] - x[1] * y[0],
+    ];
+    final helper = w[2].abs() < 0.9 ? const [0.0, 0.0, 1.0] : const [1.0, 0.0, 0.0];
+    var u = cross(w, helper);
+    final ul = math.sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    u = [for (final v in u) v / ul];
+    final v = cross(w, u);
+    const seg = 28;
+    List<double> dir(double angle) => [for (var q = 0; q < 3; q++) math.cos(angle) * u[q] + math.sin(angle) * v[q]];
+    List<double> on(List<double> c, double r, double angle) {
+      final d = dir(angle);
+      return [for (var q = 0; q < 3; q++) c[q] + r * d[q]];
+    }
+
+    final base = fill ?? const Color(0xFF9AA5B1);
+    final solid = opacity >= 0.98;
+    Color shade(List<double> n) {
+      final dot = n[0] * _light[0] + n[1] * _light[1] + n[2] * _light[2];
+      final k = 0.5 + 0.5 * dot.clamp(-1.0, 1.0);
+      final c = k < 0.5
+          ? Color.lerp(Colors.black, base, 0.55 + 0.9 * k)!
+          : Color.lerp(base, Colors.white, (k - 0.5) * 0.7)!;
+      return c.withValues(alpha: c.a * opacity);
+    }
+
+    List<double> centroid(List<List<double>> pts) => [
+      for (var q = 0; q < 3; q++) pts.map((x) => x[q]).reduce((s, x) => s + x) / pts.length,
+    ];
+    for (var i = 0; i < seg; i++) {
+      final t0 = 2 * math.pi * i / seg, t1 = 2 * math.pi * (i + 1) / seg;
+      final n = dir((t0 + t1) / 2);
+      if (solid && !proj.faces(n)) continue;
+      final quad = [on(a, r1, t0), on(a, r1, t1), on(e, r2, t1), on(e, r2, t0)];
+      final color = shade(n);
+      parts.add((
+        depth(centroid(quad)),
+        () {
+          final path = Path()..addPolygon([for (final q in quad) at(q)], true);
+          canvas.drawPath(path, Paint()..color = color);
+          // Haarlinie in derselben Farbe schließt die Fugen zwischen Segmenten
+          // (nicht bei durchscheinenden Körpern – dort würde sie doppelt decken).
+          if (solid) {
+            canvas.drawPath(
+              path,
+              Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 0.8
+                ..color = color,
+            );
+          }
+        },
+      ));
+    }
+    final edge = (stroke ?? Color.lerp(base, Colors.black, 0.45)!).withValues(alpha: opacity);
+    void cap(List<double> c, double r, List<double> n) {
+      if (r < 1e-9 || (solid && !proj.faces(n))) return;
+      final ring = [for (var i = 0; i < seg; i++) on(c, r, 2 * math.pi * i / seg)];
+      final color = shade(n);
+      parts.add((
+        depth(c) + 0.0005,
+        () {
+          final path = Path()..addPolygon([for (final q in ring) at(q)], true);
+          canvas.drawPath(path, Paint()..color = color);
+          canvas.drawPath(
+            path,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.1
+              ..color = edge,
+          );
+        },
+      ));
+    }
+
+    cap(a, r1, [for (final x in w) -x]);
+    cap(e, r2, w);
+    if (label.isNotEmpty) {
+      final mid = [for (var q = 0; q < 3; q++) (a[q] + e[q]) / 2 + (q == 2 ? math.max(r1, r2) * 1.15 : 0)];
+      parts.add((depth(mid) + 0.5, () => _text(canvas, label, at(mid) + const Offset(0, -8), 13, colors.ink)));
     }
   }
 

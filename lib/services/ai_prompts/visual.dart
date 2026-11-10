@@ -38,7 +38,7 @@ WERKZEUGE DER APP (je Schritt in "show", alles optional, frei kombinierbar – w
    - Farben: accent (blau), red, green, orange, purple, brown, gray, ink (schwarz), white, cyan, pink oder #RRGGBB. Text mittig an (x, y), Größe "size" in Szenen-Einheiten.
    - Höchstens 600 Formen. Zeichne SAUBER: sinnvolle Koordinaten, nichts überlappt ungewollt, Beschriftungen gut lesbar, alles innerhalb von width × height.
    - Erzähl mit der Animation: Was passiert nacheinander? Nutze "captions", damit der Text zur Bewegung passt.
-1b. "scene3d" – RÄUMLICHE SZENE, NUR wenn der räumliche Aufbau das Wesentliche ist und 2D ihn nicht zeigen kann: Elementarzellen (krz/kfz/hdp), Packungsdichte (Kugeln wachsen, bis sie sich berühren), Tetraeder-/Oktaederlücken, Gleitebenen und -richtungen im Würfel, Moleküle, Kräfte/Momente im Raum. Sonst IMMER 2D ("scene") – das ist fast immer klarer. Der Nutzer kann die Szene mit dem Finger drehen.
+1b. "scene3d" – RÄUMLICHE SZENE, NUR wenn der räumliche Aufbau das Wesentliche ist und 2D ihn nicht zeigen kann: Elementarzellen (krz/kfz/hdp), Packungsdichte (Kugeln wachsen, bis sie sich berühren), Tetraeder-/Oktaederlücken, Gleitebenen und -richtungen im Würfel, Moleküle, Kräfte/Momente im Raum, die GESTALT eines Bauteils (Welle/Achse mit Absätzen, Lagersitze, Bolzen, Rohr – wo sitzt der gefährdete Querschnitt, wo greifen die Kräfte an?). Sonst IMMER 2D ("scene") – das ist fast immer klarer: Verläufe (Biegemoment, Querkraft, Spannung), Schnittgrößen, Freikörperbilder in einer Ebene und Rechnungen gehören in "scene", "plot" bzw. "transform", nicht in 3D. Der Nutzer kann die Szene mit dem Finger drehen.
    {"box": [1, 1, 1],                      ← Raum 0…box, z nach OBEN (z.B. eine Elementarzelle mit a = 1)
     "frame": true, "axes": true,           ← Kanten des Raums und x/y/z-Achsen zeigen (Standard true)
     "spin": false,                         ← beim Abspielen langsam mitdrehen
@@ -50,8 +50,10 @@ WERKZEUGE DER APP (je Schritt in "show", alles optional, frei kombinierbar – w
       {"type": "arrow", "from": [0, 0, 0], "to": [1, 1, 0], "stroke": "green", "text": "[110]"},
       {"type": "polygon", "points": [[1,0,0],[0,1,0],[0,0,1]], "fill": "purple", "text": "(111)"},
       {"type": "box", "at": [0, 0, 0], "dims": [0.5, 0.5, 0.5], "fill": "orange"},
+      {"type": "cylinder", "from": [0, 0.5, 0.5], "to": [0.4, 0.5, 0.5], "r": 0.12, "fill": "gray", "text": "d = 60"},   ← Vollkörper von from nach to mit Radius r; "r2" = Radius am Ende "to" (Kegelstumpf, 0 = Kegel)
       {"type": "text", "at": [0.5, 0.5, 1.15], "text": "kfz"}]}
    - "keys" wie bei "scene", die Zeit heißt hier "t": [{"t": 1, "r": 0.354}]. Animierbar: at, from, to, dims (je [x, y, z]), r, opacity, width, draw, size, points, fill/stroke, text.
+   - Bauteile (Wellen, Achsen): je Abschnitt EIN "cylinder" hintereinander auf derselben Achse (Durchmesser → r = d/2), maßstäblich in den echten Maßen (z.B. mm: "box": [1000, 140, 140], Achse in der Mitte), "frame": false. Kräfte und Lagerreaktionen als "arrow", die kritische Stelle farbig (z.B. ein kurzer roter Zylinder oder ein "text"). Halbdurchsichtig mit "opacity", wenn etwas im Inneren zu sehen sein soll.
    - "repeat": {"n": [nx, ny, nz], "d": [dx, dy, dz]} für Gitter (je Richtung höchstens 8). Höchstens 400 Objekte.
    - Rechne Radien und Abstände korrekt (kfz: Atome berühren sich auf der Flächendiagonale, r = a·√2/4 ≈ 0,354·a; krz: auf der Raumdiagonale, r = a·√3/4 ≈ 0,433·a).
 2. "plot" (+ "tangent", "area") – Funktionsgraphen von "functions" über der Variablen der Lektion mit laufender Markierung; "tangent": key (Tangente = Steigung/Ableitung an der laufenden Stelle), "area": key (Fläche bis zur laufenden Stelle = Integral). Für jeden Zusammenhang y = f(x): Spannung–Dehnung, Kosten–Menge, Temperatur–Zeit …

@@ -55,6 +55,8 @@ class VisualLessonRepository extends ChangeNotifier {
   Future<void> delete(String id) async {
     final db = await _open();
     await DatabaseService.visualLessons.record(id).delete(db);
+    // Der Lern-Chat der Lektion („Lernen“, Kennung learn-<id>) gehört dazu.
+    await DatabaseService.visualChats.record('learn-$id').delete(db);
     notifyListeners();
   }
 }

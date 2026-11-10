@@ -96,6 +96,7 @@ Future<void> main() async {
 
   // Antwortet die KI lange nicht: fragen statt abbrechen.
   AiService.onSlowResponse = SlowAiPrompt.ask;
+  AiService.onTruncated = TruncatedAiNotice.show;
   // Fehler mit klarem Code anzeigen statt still (siehe AppErrorReporter).
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
@@ -147,7 +148,15 @@ class LernenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => VisualCourseRepository()),
         ChangeNotifierProvider(create: (_) => VisualChatRepository()),
         ChangeNotifierProvider.value(value: settingsRepository),
-        ChangeNotifierProvider(create: (_) => ModelCatalogRepository()..loadCached()),
+        ChangeNotifierProvider(
+          create: (_) {
+            final catalog = ModelCatalogRepository();
+            // Ausgabe-Limit des gewählten Modells je Anfrage mitschicken.
+            AiService.outputLimitOf = (model) => catalog.byId(model)?.requestMaxTokens;
+            unawaited(catalog.loadCached());
+            return catalog;
+          },
+        ),
         ChangeNotifierProvider(
           lazy: false,
           create: (ctx) => AutoSyncService(

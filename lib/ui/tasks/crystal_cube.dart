@@ -51,18 +51,21 @@ class CubeDot {
 /// Projektion des Würfels: Drehung um z ([theta]) und Neigung ([phi]),
 /// leichte Perspektive. x zeigt nach vorne links, y nach rechts, z nach oben.
 class CubeProjection {
-  CubeProjection({required this.theta, required this.phi, required this.size});
+  CubeProjection({required this.theta, required this.phi, required this.size, this.zoom = 1});
 
   final double theta;
   final double phi;
   final Size size;
+
+  /// Vergrößerung um die Bildmitte (1 = der Einheitswürfel passt bequem).
+  final double zoom;
 
   double get _th => theta * math.pi / 180;
   double get _ph => phi * math.pi / 180;
   List<double> get _d => [math.cos(_th) * math.cos(_ph), math.sin(_th) * math.cos(_ph), math.sin(_ph)];
   List<double> get _r => [-math.sin(_th), math.cos(_th), 0];
   List<double> get _u => [-math.cos(_th) * math.sin(_ph), -math.sin(_th) * math.sin(_ph), math.cos(_ph)];
-  double get _scale => math.min(size.width, size.height) * 0.4;
+  double get _scale => math.min(size.width, size.height) * 0.4 * zoom;
 
   double depth(List<double> p) {
     final d = _d;

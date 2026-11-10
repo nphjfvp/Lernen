@@ -65,4 +65,18 @@ void main() {
     expect(few, isNot(contains('∫')));
     expect(few, isNot(contains('lim')));
   });
+
+  test('Δ aus dem Aufgabentext (groß geschrieben) wird erkannt', () {
+    final task = _task([
+      {
+        'title': 'Längenänderung',
+        'prompt': 'Berechne Δl.',
+        'fields': [
+          {'label': 'Δl =', 'kind': 'number', 'answer': '2'},
+        ],
+        'result': r'$\Delta l = 2$',
+      },
+    ]);
+    expect(MathKeys.forTask(task), contains('Δ'));
+  });
 }

@@ -1,10 +1,13 @@
 /// Räumliche Szene für „Visuell lernen“ – nur dort, wo der räumliche Aufbau
 /// wesentlich ist (Elementarzellen, Packungsdichte, Lücken im Gitter,
-/// Gleitebenen, Moleküle, Kräfte im Raum). Die KI liefert Kugeln, Linien,
-/// Pfeile, Quader, ebene Flächen und Text mit 3D-Koordinaten und
+/// Gleitebenen, Moleküle, Kräfte im Raum, Wellen und Achsen mit Absätzen). Die
+/// KI liefert Kugeln, Linien, Pfeile, Quader, Zylinder/Kegel, ebene Flächen und
+/// Text mit 3D-Koordinaten und
 /// Schlüsselbildern; die App projiziert, sortiert nach Tiefe und lässt drehen.
 /// Für fast alles andere bleibt die 2D-Szene ([VisualDiagram]) die erste Wahl.
 library;
+
+import 'dart:math' as math;
 
 double? _num(Object? raw) {
   final v = raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
@@ -33,7 +36,7 @@ List<List<double>>? _vecs(Object? raw) {
 }
 
 /// Zahl-Eigenschaften, die sich animieren lassen.
-const scene3dNumberProps = ['r', 'opacity', 'width', 'draw', 'size'];
+const scene3dNumberProps = ['r', 'r2', 'opacity', 'width', 'draw', 'size'];
 
 /// Vektor-Eigenschaften (x, y, z), die sich animieren lassen.
 const scene3dVectorProps = ['at', 'from', 'to', 'dims'];
@@ -87,13 +90,36 @@ class Scene3DKey {
   }
 }
 
-enum Scene3DShape { sphere, line, arrow, box, polygon, text }
+enum Scene3DShape {
+  sphere,
+  line,
+  arrow,
+  box,
+
+  /// Zylinder von `from` nach `to` mit Radius `r`; mit `r2` (Radius am Ende
+  /// `to`) ein Kegelstumpf bzw. Kegel – für Wellen, Achsen, Bolzen, Rohre.
+  cylinder,
+  polygon,
+  text,
+}
 
 Scene3DShape? _shape(String raw) => switch (raw.toLowerCase()) {
   'sphere' || 'kugel' || 'atom' || 'ball' => Scene3DShape.sphere,
   'line' || 'linie' || 'edge' || 'kante' => Scene3DShape.line,
   'arrow' || 'pfeil' || 'vector' => Scene3DShape.arrow,
   'box' || 'cube' || 'quader' || 'würfel' || 'wuerfel' => Scene3DShape.box,
+  'cylinder' ||
+  'zylinder' ||
+  'shaft' ||
+  'welle' ||
+  'achse' ||
+  'rod' ||
+  'stab' ||
+  'bolzen' ||
+  'tube' ||
+  'rohr' ||
+  'cone' ||
+  'kegel' => Scene3DShape.cylinder,
   'polygon' || 'plane' || 'ebene' || 'face' || 'fläche' || 'flaeche' => Scene3DShape.polygon,
   'text' || 'label' => Scene3DShape.text,
   _ => null,
@@ -236,11 +262,43 @@ class Scene3DObject {
       for (final k in scene3dNumberProps)
         if (!(k == 'size' && raw[k] is List)) k: ?_num(raw[k]),
     };
+    // Gängige Schreibweisen für den Radius: "radius", "d"/"diameter" (halbiert).
+    if (!numbers.containsKey('r')) {
+      final radius = _num(raw['radius']);
+      final diameter = raw['d'] is List ? null : _num(raw['d'] ?? raw['diameter'] ?? raw['durchmesser']);
+      if (radius != null) {
+        numbers['r'] = radius;
+      } else if (diameter != null && shape != Scene3DShape.text) {
+        numbers['r'] = diameter / 2;
+      }
+    }
+    if (shape == Scene3DShape.cylinder) {
+      final type = _str(raw['type'] ?? raw['shape']).toLowerCase();
+      // Kegel ohne Angabe laufen spitz zu.
+      if ((type == 'cone' || type == 'kegel') && !numbers.containsKey('r2')) numbers['r2'] = 0;
+      // Auch "at" + "axis"/"height" statt from/to.
+      if (!vectors.containsKey('from') && vectors.containsKey('at')) {
+        final axis = _vec(raw['axis'] ?? raw['direction']);
+        final height = _num(raw['height'] ?? raw['length'] ?? raw['h'] ?? raw['l']);
+        final a = vectors['at']!;
+        if (axis != null) {
+          final norm = math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+          final f = height != null && norm > 1e-12 ? height / norm : 1.0;
+          vectors['from'] = a;
+          vectors['to'] = [for (var q = 0; q < 3; q++) a[q] + axis[q] * f];
+        } else if (height != null) {
+          vectors['from'] = a;
+          vectors['to'] = [a[0], a[1], a[2] + height];
+        }
+      }
+    }
     final points = _vecs(raw['points']) ?? const [];
     final text = _str(raw['text'] ?? raw['label']);
     final ok = switch (shape) {
       Scene3DShape.sphere || Scene3DShape.box => vectors.containsKey('at'),
-      Scene3DShape.line || Scene3DShape.arrow => vectors.containsKey('from') && vectors.containsKey('to'),
+      Scene3DShape.line ||
+      Scene3DShape.arrow ||
+      Scene3DShape.cylinder => vectors.containsKey('from') && vectors.containsKey('to'),
       Scene3DShape.polygon => points.length >= 3,
       Scene3DShape.text => vectors.containsKey('at') && text.isNotEmpty,
     };

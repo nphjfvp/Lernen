@@ -1,8 +1,32 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6u) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6v) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6v. Tiefe Durchsicht: abgeschnittene KI-Antworten, 3D-Zylinder, Fach-Seite am Handy
+
+Ergebnis der Durchsicht in [PROJEKTBERICHT.md](PROJEKTBERICHT.md).
+
+- **Lange KI-Antworten brechen seltener ab.** Die App schickt jetzt das
+  Ausgabe-Limit des gewählten Modells mit (aus dem OpenRouter-Katalog). Ohne
+  das galt die Voreinstellung des Anbieters, bei manchen nur wenige tausend
+  Tokens – dann fehlten still die letzten Aufgaben oder Schritte. Bricht eine
+  Antwort trotzdem ab, erscheint ein **Hinweis**, dass am Ende etwas fehlt.
+- **Freitext-Antworten: die KI begründet ihr Urteil.** Unter der Antwort steht
+  kurz, was stimmt oder fehlt. Zahlenwert und Einheit müssen passen; bei
+  „Nenne drei …“ reicht einer nicht.
+- **3D: Zylinder und Kegel** – damit lassen sich Wellen, Achsen mit Absätzen,
+  Bolzen und Rohre zeigen (eingebaute Ansicht und „In 3D ansehen“). Lang
+  gestreckte Szenen füllen jetzt das Bild statt winzig in der Mitte zu stehen.
+- **Fach-Seite am Handy:** Dateinamen stehen über die volle Breite (vorher
+  nach ~12 Zeichen abgeschnitten), „N Aufgaben der Reihe nach“ läuft nicht
+  mehr über, **Löschen steht im ⋮-Menü** statt neben der Checkbox; die Karten
+  „Vorbereiten“/„Nachbereiten“ sind gleich hoch.
+- **Selbst rechnen:** Eine Zahl mit Einheit (`= 175 mm`, `= 61,9 N/mm^2`)
+  bestätigt die App jetzt selbst, ohne KI.
+- Kleinigkeiten: Der Lern-Chat wird mit seiner Lektion gelöscht; „Δ“ erscheint
+  bei den Rechen-Tasten.
 
 ### 6u. Rechenblatt in Handschrift, jeden Schritt besprechen
 

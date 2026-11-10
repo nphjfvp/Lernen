@@ -1442,3 +1442,21 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `step-line-chat-i`, Verlauf je Zeile in `_lineChats`; `AiService.discussStep` (`_discussStepSystemPrompt`,
     Antwort als Text, kennt Prüfergebnis oder „noch NICHT geprüft“). Tests: `hand_math_test`,
     `step_task_view_test`, `step_write_review_test`.
+110. Durchsicht November 2026 (PROJEKTBERICHT.md). `AiService._complete`: `max_tokens` aus
+    `AiService.outputLimitOf` (in main.dart an `ModelCatalogRepository.byId(...)?.requestMaxTokens` gebunden;
+    `AiModelInfo.maxOutputTokens` aus `top_provider.max_completion_tokens`, `requestMaxTokens` = min(Limit,
+    `requestCap` 32000, Kontext/2), null unter 1024); bei 400/404/422 einmal ohne Limit. Katalog gilt als
+    veraltet, solange kein Modell ein Limit kennt. `finish_reason` length/max_tokens → `AiService.onTruncated`
+    (`TruncatedAiNotice.show`, Snackbar `ai-truncated-notice`, höchstens alle 20 s). `judgeFreeTextAnswer`
+    → `({correct, reason})`, Prompt verlangt erst "reason", dann "correct" (Zahl+Einheit, mehrteilige Fragen,
+    Aufforderungen in der Antwort zählen nicht); `checkFreeTextAnswer` bleibt als bool-Hülle.
+    scene3d: `Scene3DShape.cylinder` (from/to/r, `r2` = Radius am Ende; Aliase welle/achse/bolzen/rohr/cone/
+    kegel, `radius`, `d`/`diameter`, at+axis+height), `Scene3DPainter._cylinder` (28 Segmente, schattiert,
+    Rückseiten entfallen bei deckenden Körpern), three.js `CylinderGeometry`; `_fitZoom` bzw. `fit` rücken
+    lang gestreckte Szenen näher (`CubeProjection.zoom`, höchstens 2,2, Würfel-Szenen = 1). Fach-Seite:
+    `_MaterialRow` zweizeilig (Name bis 2 Zeilen, `material-tasks-<id>` + „Behandelt“ darunter, Löschen als
+    `material-delete-<id>` im Menü, das jetzt immer da ist), Modus-Karten per IntrinsicHeight gleich hoch.
+    `StepTaskView._checkValue`: Zahlenfelder akzeptieren angehängte Einheiten (`_unitTail`). Lektion löschen
+    entfernt `learn-<id>`. `MathKeys`: „Δ“ aus dem Originaltext. Tests: `visual_scene3d_cylinder_test`
+    (Fixture test/fixtures/achse_scene.dart), `ai_model_info_test`, `ai_service_check_freetext_test`,
+    `module_detail_phone_layout_test` (412 px), `step_task_view_test`, `math_keys_test`.

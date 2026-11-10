@@ -68,7 +68,8 @@ Ausführlich: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
 | [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md) | Flutter, API-Key, Cloud-Sync, Account, PDF-Speicher, Builds, Web-App, Signierschlüssel, Backups, Updates, Tests |
 | [CHANGELOG.md](CHANGELOG.md) | Was sich wann geändert hat (das Neueste oben) |
 | [AI_CONTEXT.md](AI_CONTEXT.md) | Arbeitsgrundlage für KI-Sitzungen: Regeln, Datenmodell, Stolperfallen, Stand |
-| [AUDIT.md](AUDIT.md), [CODE_ANALYSE.md](CODE_ANALYSE.md) | Code-Prüfungen und ihr Stand |
+| [PROJEKTBERICHT.md](PROJEKTBERICHT.md) | Durchsicht November 2026: Code, Prompts, Bedienung, 3D – Befunde und offene Punkte |
+| [AUDIT.md](AUDIT.md), [CODE_ANALYSE.md](CODE_ANALYSE.md) | Frühere Code-Prüfungen und ihr Stand |
 | [DESIGN_IDEEN.md](DESIGN_IDEEN.md) | Ideen-Liste mit Bewertung |
 
 ## Entwickeln

@@ -148,6 +148,19 @@ class AiService {
   /// Ohne Hook (Tests, kein Bildschirm) bricht die Anfrage wie bisher ab.
   static Future<bool> Function(Duration waited, Future<void> done)? onSlowResponse;
 
+  /// Die Antwort wurde am Ausgabe-Limit des Modells abgeschnitten
+  /// (`finish_reason: length`). Abgeschnittenes JSON repariert die App zwar
+  /// lokal ([JsonRepair]) – dann fehlt aber still das Ende (z.B. die letzten
+  /// Aufgaben eines Blatts). Der Hook macht das sichtbar; [label] beschreibt
+  /// die Anfrage.
+  static void Function(String label)? onTruncated;
+
+  /// `max_tokens` für ein Modell (aus dem OpenRouter-Katalog, siehe
+  /// AiModelInfo.requestMaxTokens); null = nichts mitschicken (Voreinstellung
+  /// des Anbieters). Lehnt ein Anbieter den Wert ab (400/404/422), wiederholt
+  /// [_complete] die Anfrage einmal ohne ihn.
+  static int? Function(String model)? outputLimitOf;
+
   /// Zeichenobergrenze für Aufrufe, die bewusst NICHT gechunkt werden
   /// (Crosscheck-Quellmaterial dient nur als Kontext, keine vollständige
   /// Neuverarbeitung).
@@ -280,14 +293,17 @@ Hier ist der Dokumenttext:
       'HTTP-Referer': 'https://github.com/nphjfvp/lernen',
       'X-Title': 'Lernen',
     };
-    final body = jsonEncode({
+    final outputLimit = outputLimitOf?.call(model);
+    String encode({required bool withLimit}) => jsonEncode({
       'model': model,
       'temperature': temperature,
+      if (withLimit && outputLimit != null) 'max_tokens': outputLimit,
       'messages': [
         {'role': 'system', 'content': systemPrompt},
         {'role': 'user', 'content': userContent},
       ],
     });
+    var body = encode(withLimit: true);
     Future<http.Response> sendOnce() async {
       final background = _useBackground ? backgroundTransport : null;
       if (background != null) {
@@ -321,10 +337,17 @@ Hier ist der Dokumenttext:
       }
     }
 
-    final http.Response response;
+    http.Response response;
     final release = ScreenAwake.hold();
     try {
       response = await _awaitPatiently(send());
+      // Der Anbieter nimmt unser Ausgabe-Limit nicht an: einmal ohne.
+      if (outputLimit != null &&
+          const {400, 404, 422}.contains(OpenRouterErrors.codeOf(response.statusCode, response.body))) {
+        body = encode(withLimit: false);
+        attempts = 0;
+        response = await _awaitPatiently(send());
+      }
     } on http.ClientException catch (e) {
       throw AiServiceException('Keine Verbindung zu OpenRouter: ${e.message}');
     } finally {
@@ -349,6 +372,10 @@ Hier ist der Dokumenttext:
     if (content == null || content.trim().isEmpty) {
       throw AiServiceException('Leere Antwort vom Modell erhalten.',
           rawResponse: response.body);
+    }
+    final finish = choices.first['finish_reason'] ?? choices.first['native_finish_reason'];
+    if (finish == 'length' || finish == 'max_tokens' || finish == 'MAX_TOKENS') {
+      onTruncated?.call(_labelOf(systemPrompt));
     }
     return content;
   }
@@ -1641,12 +1668,22 @@ Antworte in der Sprache der Vorlage.
     required String question,
     required String correctAnswer,
     required String userAnswer,
+  }) async =>
+      (await judgeFreeTextAnswer(question: question, correctAnswer: correctAnswer, userAnswer: userAnswer)).correct;
+
+  /// Wie [checkFreeTextAnswer], dazu die kurze Begründung der KI – damit ein
+  /// „falsch“ nachvollziehbar ist (und anfechtbar, wenn die KI danebenliegt).
+  Future<({bool correct, String reason})> judgeFreeTextAnswer({
+    required String question,
+    required String correctAnswer,
+    required String userAnswer,
   }) async {
     final userPrompt =
         'Frage: $question\nMusterlösung: $correctAnswer\nAntwort des Lernenden: $userAnswer';
     final raw = await _complete(_checkFreeTextSystemPrompt, userPrompt, temperature: 0);
     final parsed = await _json(raw);
-    return parsed['correct'] == true;
+    final reason = '${parsed['reason'] ?? parsed['note'] ?? parsed['begruendung'] ?? ''}'.trim();
+    return (correct: parsed['correct'] == true, reason: reason.length > 220 ? '${reason.substring(0, 220)}…' : reason);
   }
 
   /// Zweitmeinung für Lückentexte, analog zu [checkFreeTextAnswer]: der

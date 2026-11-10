@@ -11,7 +11,29 @@ class AiModelInfo {
     required this.completionPricePerMillion,
     required this.supportsVision,
     required this.isFree,
+    this.maxOutputTokens,
   });
+
+  /// Wie viele Tokens das Modell höchstens ausgeben kann (OpenRouter:
+  /// `top_provider.max_completion_tokens`); null, wenn nicht gemeldet.
+  final int? maxOutputTokens;
+
+  /// Obergrenze, die die App je Anfrage als `max_tokens` mitschickt.
+  static const requestCap = 32000;
+
+  /// `max_tokens` für Anfragen an dieses Modell: sein Ausgabe-Limit, höchstens
+  /// [requestCap] und höchstens das halbe Kontextfenster (der Prompt braucht
+  /// auch Platz). Ohne Angabe gilt sonst die Voreinstellung des Anbieters –
+  /// bei manchen nur 4096 Tokens, dann brechen lange Antworten (viele
+  /// Aufgaben, Lektionen mit Szenen) mittendrin ab.
+  int? get requestMaxTokens {
+    final max = maxOutputTokens;
+    if (max == null || max < 1024) return null;
+    var limit = max > requestCap ? requestCap : max;
+    final context = contextLength;
+    if (context != null && limit > context ~/ 2) limit = context ~/ 2;
+    return limit < 1024 ? null : limit;
+  }
 
   final String id;
   final String name;
@@ -43,6 +65,10 @@ class AiModelInfo {
       completionPricePerMillion: completionPrice,
       supportsVision: supportsVision,
       isFree: id.endsWith(':free') || (promptPrice == 0 && completionPrice == 0),
+      maxOutputTokens: switch (json['top_provider']) {
+        final Map top => (top['max_completion_tokens'] as num?)?.toInt(),
+        _ => null,
+      },
     );
   }
 
@@ -61,6 +87,7 @@ class AiModelInfo {
         'completionPricePerMillion': completionPricePerMillion,
         'supportsVision': supportsVision,
         'isFree': isFree,
+        if (maxOutputTokens != null) 'maxOutputTokens': maxOutputTokens,
       };
 
   factory AiModelInfo.fromMap(Map<String, dynamic> map) => AiModelInfo(
@@ -71,5 +98,6 @@ class AiModelInfo {
         completionPricePerMillion: (map['completionPricePerMillion'] as num?)?.toDouble(),
         supportsVision: map['supportsVision'] as bool,
         isFree: map['isFree'] as bool,
+        maxOutputTokens: (map['maxOutputTokens'] as num?)?.toInt(),
       );
 }

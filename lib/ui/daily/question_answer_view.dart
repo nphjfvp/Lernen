@@ -645,12 +645,14 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
 
     setState(() => _aiChecking = true);
     try {
-      final aiCorrect = await ai.checkFreeTextAnswer(
+      final verdict = await ai.judgeFreeTextAnswer(
         question: card.front,
         correctAnswer: card.correctText ?? '',
         userAnswer: _freeTextController.text,
       );
-      _checkInfo = aiCorrect ? 'Von der KI als richtig erkannt.' : 'Von der KI nachgeprüft.';
+      final aiCorrect = verdict.correct;
+      final info = aiCorrect ? 'Von der KI als richtig erkannt' : 'Von der KI nachgeprüft';
+      _checkInfo = verdict.reason.isEmpty ? '$info.' : '$info: ${verdict.reason}';
       return AnswerCheckResult(isCorrect: aiCorrect, correctAnswerLabel: localResult.correctAnswerLabel);
     } catch (e) {
       _checkInfo = _aiFailedInfo(e);

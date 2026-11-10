@@ -397,4 +397,64 @@ void main() {
     await tester.pump();
     expect(find.byKey(const ValueKey('step-chat-error')), findsOneWidget);
   });
+
+  testWidgets('Selbst rechnen: Zahl mit Einheit zählt (Zeile prüfen und Abgeben)', (tester) async {
+    tester.view.physicalSize = const Size(900, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final card = Flashcard(
+      id: 'einheit',
+      moduleId: 'm1',
+      front: r'Achse: $F = 12\,\mathrm{kN}$, Hebelarm aus Radabstand 1000 mm und Lagerabstand 650 mm.',
+      back: '',
+      createdAt: DateTime(2026, 1, 1),
+      due: DateTime(2026, 1, 1),
+      type: QuestionType.steps,
+      taskData: {
+        'kind': 'steps',
+        'steps': [
+          {
+            'title': 'Hebelarm',
+            'prompt': 'Berechne a.',
+            'fields': [
+              {'label': 'a =', 'kind': 'number', 'answer': '175'},
+            ],
+            'result': r'$a = 175\,\mathrm{mm}$',
+          },
+          {
+            'title': 'Biegemoment',
+            'prompt': 'Berechne M_b.',
+            'fields': [
+              {'label': 'M_b =', 'kind': 'number', 'answer': '1312500'},
+            ],
+            'result': r'$M_b = 1{,}3125 \cdot 10^6\,\mathrm{Nmm}$',
+          },
+        ],
+      },
+    );
+    results = [];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: QuestionAnswerView(
+            key: ValueKey(card.id),
+            card: card,
+            isNew: false,
+            onComplete: ({Grade? selfGrade, bool? isCorrect}) => results.add((grade: selfGrade, correct: isCorrect)),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    await enter(tester, 'step-line-0', 'a = (1000 mm - 650 mm)/2 = 175 mm');
+    await tap(tester, 'step-line-check-0');
+    expect(find.textContaining('Stimmt – das ist Schritt 1'), findsOneWidget);
+    await tap(tester, 'step-line-add');
+    await enter(tester, 'step-line-1', 'M_b = 1,25 * 6000 N * 175 mm = 1,3125 * 10^6 Nmm');
+    await tap(tester, 'step-write-submit');
+    expect(find.byKey(const ValueKey('step-finished')), findsOneWidget, reason: 'Ergebnis mit Einheit zählt');
+  });
 }

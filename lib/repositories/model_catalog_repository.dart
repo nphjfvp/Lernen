@@ -45,7 +45,12 @@ class ModelCatalogRepository extends ChangeNotifier {
       notifyListeners();
     }
 
-    final isStale = _lastUpdated == null || DateTime.now().difference(_lastUpdated!) > const Duration(days: 7);
+    // Auch neu laden, wenn der gespeicherte Stand noch keine Ausgabe-Limits
+    // kennt (ältere App-Version) – sie werden für `max_tokens` gebraucht.
+    final isStale =
+        _lastUpdated == null ||
+        DateTime.now().difference(_lastUpdated!) > const Duration(days: 7) ||
+        _models.every((m) => m.maxOutputTokens == null);
     if (refreshIfStale && isStale) {
       await refresh();
     }

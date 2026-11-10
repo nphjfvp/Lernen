@@ -73,3 +73,31 @@ class _SlowAiDialog extends StatelessWidget {
     );
   }
 }
+
+/// Hinweis, wenn eine KI-Antwort am Ausgabe-Limit abgeschnitten wurde (Hook
+/// für `AiService.onTruncated`) – sonst fehlte das Ende unbemerkt.
+class TruncatedAiNotice {
+  TruncatedAiNotice._();
+
+  static DateTime? _last;
+
+  static void show(String label) {
+    final context = appNavigatorKey.currentContext;
+    if (context == null || !context.mounted) return;
+    // Mehrere Abschnitte nacheinander: nicht jedes Mal neu melden.
+    final now = DateTime.now();
+    if (_last != null && now.difference(_last!) < const Duration(seconds: 20)) return;
+    _last = now;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        key: ValueKey('ai-truncated-notice'),
+        duration: Duration(seconds: 10),
+        content: Text(
+          'Die KI-Antwort wurde abgeschnitten (Ausgabe-Limit des Modells) – am Ende fehlt wahrscheinlich etwas. '
+          'Weniger Seiten auf einmal schicken oder ein Modell mit längerer Ausgabe wählen.',
+        ),
+      ),
+    );
+  }
+}
+

@@ -84,7 +84,8 @@ class MathKeys {
     if (has(['ungleich', '≤', '≥', r'\le', r'\ge', '<', '>'])) add(['≤', '≥', '≠']);
     if (has(['±', 'pq', 'p-q', 'mitternacht', 'quadratisch', r'\pm'])) add(['±']);
     if (has(['betrag', '|'])) add(['|']);
-    if (has(['delta', 'Δ', 'differenz', 'änderung'])) add(['Δ']);
+    // „Δ“ steht im Original groß – im kleingeschriebenen Text wäre es „δ“.
+    if (corpus.contains('Δ') || has([r'\delta', 'differenz', 'änderung'])) add(['Δ']);
     if (word('pi') || has(['π', r'\pi', 'kreis'])) add(['π']);
     if (corpus.contains('_')) add(['_']);
     for (final e in _greek.entries) {

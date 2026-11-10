@@ -357,6 +357,22 @@ class _StepTaskViewState extends State<StepTaskView> {
   static String _plainMath(String s) =>
       s.replaceAll('−', '-').replaceAll('·', '*').replaceAll('×', '*').replaceAll('⇒', '').trim();
 
+  /// Einheit am Ende einer Zahl („175 mm“, „61,9 N/mm^2“, „1,3 · 10^6 Nmm“).
+  static final _unitTail = RegExp(
+    r'(?<=[\d)])\s*[A-Za-zµμΩ°%]+(?:\^?-?\d+|[²³])?(?:\s*[/·*]\s*[A-Za-zµμΩ°%]+(?:\^?-?\d+|[²³])?)*\s*$',
+  );
+
+  /// Prüft [input] gegen [field]; bei Zahlenfeldern zählt auch eine Zahl mit
+  /// angehängter Einheit (die App rechnet nur mit der Zahl).
+  static FieldVerdict _checkValue(StepField field, String input) {
+    final verdict = StepChecker.check(field, input);
+    if (verdict.isCorrect || field.kind != StepFieldKind.number) return verdict;
+    final bare = input.replaceFirst(_unitTail, '');
+    if (bare == input || bare.trim().isEmpty) return verdict;
+    final stripped = StepChecker.check(field, bare);
+    return stripped.isCorrect ? stripped : verdict;
+  }
+
   void _lineEdited(TextEditingController ctrl) {
     _lineChecks.remove(ctrl);
     _lineShowFix.remove(ctrl);
@@ -437,7 +453,7 @@ class _StepTaskViewState extends State<StepTaskView> {
     for (final (j, s) in widget.task.steps.indexed) {
       for (final f in s.fields) {
         try {
-          if (StepChecker.check(f, rhs).isCorrect) return j;
+          if (_checkValue(f, rhs).isCorrect) return j;
         } catch (_) {
           // Nicht lesbar – dann eben nicht zuordenbar.
         }
@@ -458,7 +474,7 @@ class _StepTaskViewState extends State<StepTaskView> {
         _writeVerdict = const FieldVerdict(FieldVerdictKind.uncheckable, 'Diese Aufgabe hat kein Ergebnisfeld.');
         return;
       }
-      final verdict = StepChecker.check(field, answer);
+      final verdict = _checkValue(field, answer);
       _writeVerdict = verdict;
       _writeProbe = verdict.kind == FieldVerdictKind.empty || verdict.kind == FieldVerdictKind.invalid
           ? null

@@ -215,7 +215,10 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       ),
                       const SizedBox(height: 26),
                     ],
-                    Row(
+                    // Gleich hohe Karten, auch wenn ein Untertitel länger umbricht.
+                    IntrinsicHeight(
+                      child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Expanded(
                           child: _ModeCard(
@@ -239,6 +242,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           ),
                         ),
                       ],
+                    ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -295,9 +299,8 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     _SoftRow(
                       icon: Icons.manage_search,
                       title: 'Fragen aus PDF importieren',
-                      subtitle: 'KI liest beliebig viele PDFs fortlaufend und übernimmt jede vorhandene Frage/Aufgabe ins '
-                          'Quiz – oder macht daraus interaktive Aufgaben (z.B. alle Mathe-Aufgaben als Rechenweg); '
-                          'auch JSON einer externen KI importieren',
+                      subtitle: 'Vorhandene Fragen und Aufgaben aus PDFs ins Quiz übernehmen – auch als interaktive '
+                          'Aufgaben (z.B. Rechenweg) oder aus dem JSON einer externen KI',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PdfQuestionImportScreen(moduleId: module.id, moduleName: module.name),
@@ -1424,91 +1427,62 @@ class _MaterialRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: Row(
+          // Zwei Zeilen: oben Name (bis zu zwei Zeilen – am Handy war er sonst nach
+          // ~12 Zeichen abgeschnitten) und das Menü, darunter „der Reihe nach“
+          // und „Behandelt“. Löschen steht im Menü statt neben der Checkbox.
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(11)),
-                alignment: Alignment.center,
-                child: Icon(
-                  switch (material.kind) {
-                    MaterialKind.slide => Icons.slideshow_outlined,
-                    MaterialKind.exercise => Icons.assignment_outlined,
-                    MaterialKind.practiceExam => Icons.school_outlined,
-                    MaterialKind.condensed => Icons.content_cut,
-                  },
-                  size: 16,
-                  color: c.inkMuted,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      material.fileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      switch (material.kind) {
-                        MaterialKind.slide => material.highlights.isNotEmpty
-                            ? 'Folien · ${material.highlights.length} markiert'
-                            : 'Folien',
-                        MaterialKind.exercise => 'Übungsaufgabe',
-                        MaterialKind.practiceExam => 'Übungsklausur (Stil-Referenz)',
-                        MaterialKind.condensed => material.condensed == null
-                            ? 'Gekürzt'
-                            : 'Gekürzt · ${material.condensed!.shareText} · aus ${material.condensed!.sourceName}',
-                      },
-                      style: TextStyle(fontSize: 12, color: c.inkMuted),
-                    ),
-                    if (taskCount > 0 && onTasks != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2, bottom: 2),
-                        child: InkWell(
-                          key: ValueKey('material-tasks-${material.id}'),
-                          onTap: onTasks,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.format_list_numbered, size: 14, color: c.accent),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '$taskCount ${taskCount == 1 ? 'Aufgabe' : 'Aufgaben'} der Reihe nach',
-                                  style: TextStyle(fontSize: 12, color: c.accent, fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
               Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
-                  Checkbox(
-                    value: material.covered,
-                    onChanged: (v) => onToggleCovered(v ?? false),
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(11)),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      switch (material.kind) {
+                        MaterialKind.slide => Icons.slideshow_outlined,
+                        MaterialKind.exercise => Icons.assignment_outlined,
+                        MaterialKind.practiceExam => Icons.school_outlined,
+                        MaterialKind.condensed => Icons.content_cut,
+                      },
+                      size: 16,
+                      color: c.inkMuted,
+                    ),
                   ),
-                  // Seltenere Aktionen im Menü – nebeneinander wird die Zeile
-                  // auf dem Handy zu schmal für den Dateinamen.
-                  if (onImportQuestions != null ||
-                      onInteractiveTasks != null ||
-                      onRecognizeText != null ||
-                      onAttachPdf != null ||
-                      onCondense != null ||
-                      onShowText != null)
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        Text(
+                          material.fileName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.25),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          switch (material.kind) {
+                            MaterialKind.slide => material.highlights.isNotEmpty
+                                ? 'Folien · ${material.highlights.length} markiert'
+                                : 'Folien',
+                            MaterialKind.exercise => 'Übungsaufgabe',
+                            MaterialKind.practiceExam => 'Übungsklausur (Stil-Referenz)',
+                            MaterialKind.condensed => material.condensed == null
+                                ? 'Gekürzt'
+                                : 'Gekürzt · ${material.condensed!.shareText} · aus ${material.condensed!.sourceName}',
+                          },
+                          style: TextStyle(fontSize: 12, color: c.inkMuted),
+                        ),
+                        ],
+                      ),
+                    ),
+                  ),
                     PopupMenuButton<VoidCallback>(
                       tooltip: 'Weitere Aktionen',
                       icon: Icon(Icons.more_vert, size: 18, color: c.inkMuted),
@@ -1572,16 +1546,66 @@ class _MaterialRow extends StatelessWidget {
                               contentPadding: EdgeInsets.zero,
                             ),
                           ),
+                        PopupMenuItem(
+                          key: ValueKey('material-delete-${material.id}'),
+                          value: onDelete,
+                          child: ListTile(
+                            leading: Icon(Icons.delete_outline, color: c.danger),
+                            title: Text('Löschen …', style: TextStyle(color: c.danger)),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
                       ],
                     ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    color: c.inkMuted,
-                    onPressed: onDelete,
-                  ),
+                  if (onOpen != null) Icon(Icons.chevron_right_rounded, size: 16, color: c.inkMuted),
                 ],
               ),
-              if (onOpen != null) Icon(Icons.chevron_right_rounded, size: 16, color: c.inkMuted),
+              Padding(
+                padding: const EdgeInsets.only(left: 46),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: taskCount > 0 && onTasks != null
+                          ? Align(
+                              alignment: Alignment.centerLeft,
+                              child: InkWell(
+                                key: ValueKey('material-tasks-${material.id}'),
+                                onTap: onTasks,
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.format_list_numbered, size: 14, color: c.accent),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          '$taskCount ${taskCount == 1 ? 'Aufgabe' : 'Aufgaben'} der Reihe nach',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(fontSize: 12, color: c.accent, fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    Text('Behandelt', style: TextStyle(fontSize: 11.5, color: c.inkMuted)),
+                    SizedBox(
+                      height: 36,
+                      child: Checkbox(
+                        value: material.covered,
+                        visualDensity: VisualDensity.compact,
+                        onChanged: (v) => onToggleCovered(v ?? false),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
