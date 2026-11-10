@@ -1460,3 +1460,19 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     entfernt `learn-<id>`. `MathKeys`: „Δ“ aus dem Originaltext. Tests: `visual_scene3d_cylinder_test`
     (Fixture test/fixtures/achse_scene.dart), `ai_model_info_test`, `ai_service_check_freetext_test`,
     `module_detail_phone_layout_test` (412 px), `step_task_view_test`, `math_keys_test`.
+111. Fach-Seite in Gruppen: `_GroupHeader` (`module-group-learn`/`-understand`/`-material`), Reihenfolge
+    Üben (`module-practice`) · Probeklausur · Markierte Fragen | Vorbereiten/Nachbereiten · Visuell lernen
+    (jetzt `_SoftRow`, Key `module-visual-learn` bleibt) · Aufgaben visuell lösen · Fragen stellen | Fragen aus
+    PDF importieren, dann die bisherigen Abschnitte; kurze Untertitel. „Der Reihe nach“:
+    `StudySequenceOrder` document/difficulty in `StudySequenceProgress.order` (gespeichert als `order`, nur
+    wenn ≠ document), `StudySequence.ordered(order:)` sortiert stabil nach `StageGate.levelOf`;
+    `sequence-order` (`sequence-order-document|difficulty`), `_setOrder` behält den Stand und setzt nextId
+    zurück; Stufe steht bei „Leicht → Schwer“ in der Zeile. 3D: `AppSettings.scene3dModelId` (null = wie
+    Fragen-Modell; `clearScene3dModel`; synchronisiert wie `helpModelId`), Einstellungen `model-scene3d`
+    (+ `-reset`), `VisualLiveEditBar.onScene3d` → Chip `visual-live-3d` → `_make3d`: mit eigenem Modell erst
+    Dialog `scene3d-confirm` (Kostenschätzung aus dem Katalog: Lektion/3,2 + 4500 Eingabe-, 5000
+    Ausgabe-Tokens; `scene3d-confirm-ok` / `scene3d-confirm-default`), dann `_liveRevise(..., model:)` mit
+    `scene3dRequest`. `AiService._complete`: bei 400/422 (und 404 mit Limit) einmal `encode(bare: true)` ohne
+    `temperature` und `max_tokens`. Tests: `visual_learn_test` („3D-Modell erzeugen …“),
+    `calc_tasks_schedule_test`, `ai_service_check_freetext_test`, `study_sequence_test`,
+    `study_sequence_screen_test`.

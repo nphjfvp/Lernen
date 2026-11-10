@@ -158,7 +158,7 @@ class AiService {
   /// `max_tokens` für ein Modell (aus dem OpenRouter-Katalog, siehe
   /// AiModelInfo.requestMaxTokens); null = nichts mitschicken (Voreinstellung
   /// des Anbieters). Lehnt ein Anbieter den Wert ab (400/404/422), wiederholt
-  /// [_complete] die Anfrage einmal ohne ihn.
+  /// [_complete] die Anfrage einmal ohne ihn (und ohne `temperature`).
   static int? Function(String model)? outputLimitOf;
 
   /// Zeichenobergrenze für Aufrufe, die bewusst NICHT gechunkt werden
@@ -294,16 +294,18 @@ Hier ist der Dokumenttext:
       'X-Title': 'Lernen',
     };
     final outputLimit = outputLimitOf?.call(model);
-    String encode({required bool withLimit}) => jsonEncode({
+    // [bare]: ohne die optionalen Angaben – manche Modelle lehnen ein
+    // Ausgabe-Limit oder `temperature` mit einem 400 ab.
+    String encode({required bool bare}) => jsonEncode({
       'model': model,
-      'temperature': temperature,
-      if (withLimit && outputLimit != null) 'max_tokens': outputLimit,
+      if (!bare) 'temperature': temperature,
+      if (!bare && outputLimit != null) 'max_tokens': outputLimit,
       'messages': [
         {'role': 'system', 'content': systemPrompt},
         {'role': 'user', 'content': userContent},
       ],
     });
-    var body = encode(withLimit: true);
+    var body = encode(bare: false);
     Future<http.Response> sendOnce() async {
       final background = _useBackground ? backgroundTransport : null;
       if (background != null) {
@@ -341,10 +343,11 @@ Hier ist der Dokumenttext:
     final release = ScreenAwake.hold();
     try {
       response = await _awaitPatiently(send());
-      // Der Anbieter nimmt unser Ausgabe-Limit nicht an: einmal ohne.
-      if (outputLimit != null &&
-          const {400, 404, 422}.contains(OpenRouterErrors.codeOf(response.statusCode, response.body))) {
-        body = encode(withLimit: false);
+      // Der Anbieter nimmt Ausgabe-Limit oder `temperature` nicht an (z.B.
+      // Modelle ohne Sampling-Parameter): einmal ohne beides.
+      if (const {400, 422}.contains(OpenRouterErrors.codeOf(response.statusCode, response.body)) ||
+          (outputLimit != null && OpenRouterErrors.codeOf(response.statusCode, response.body) == 404)) {
+        body = encode(bare: true);
         attempts = 0;
         response = await _awaitPatiently(send());
       }

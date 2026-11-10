@@ -114,6 +114,48 @@ void main() {
     expect(((merged.payload['studySequences'] as List).single as Map)['nextId'], 'c');
   });
 
+  test('Reihenfolge nach Schwierigkeit: leicht, mittel, schwer – je Stufe wie im Dokument; Wahl wird gespeichert', () {
+    Flashcard c(String id, int minute, {int? level, QuestionType type = QuestionType.flashcard}) => Flashcard(
+      id: id,
+      moduleId: 'm',
+      front: id,
+      back: 'x',
+      createdAt: DateTime(2026, 11, 1, 10, minute),
+      due: DateTime(2026, 11, 1),
+      sourceMaterialId: 'p1',
+      stageLevel: level,
+      type: type,
+    );
+    final cards = [
+      c('schwer1', 1, level: 2),
+      c('leicht1', 2, level: 0),
+      c('mittel-karte', 3), // Karteikarte ohne Stufe = mittel
+      c('leicht2', 4, level: 0),
+      c('auswahl', 5, type: QuestionType.singleChoice), // Auswahl ohne Stufe = leicht
+      c('schwer2', 6, level: 2),
+    ];
+    expect(StudySequence.ordered(cards, pdf).map((x) => x.id), [
+      'schwer1',
+      'leicht1',
+      'mittel-karte',
+      'leicht2',
+      'auswahl',
+      'schwer2',
+    ]);
+    expect(StudySequence.ordered(cards, pdf, order: StudySequenceOrder.difficulty).map((x) => x.id), [
+      'leicht1',
+      'leicht2',
+      'auswahl',
+      'mittel-karte',
+      'schwer1',
+      'schwer2',
+    ]);
+    final p = empty().copyWith(order: StudySequenceOrder.difficulty);
+    expect(StudySequenceProgress.fromMap(p.toMap())!.order, StudySequenceOrder.difficulty);
+    expect(StudySequenceProgress.fromMap(empty().toMap())!.order, StudySequenceOrder.document);
+    expect(empty().toMap().containsKey('order'), isFalse);
+  });
+
   test('Auswahl: nur Einheiten und PDFs mit Aufgaben, mit Anzahl', () {
     final sources = studySequenceSources(
       units: [

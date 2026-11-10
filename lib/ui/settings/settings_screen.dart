@@ -153,6 +153,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await repo.update(repo.settings.copyWith(visionModelId: picked));
       case 'crosscheck':
         await repo.update(repo.settings.copyWith(crosscheckModelId: picked));
+      case 'scene3d':
+        await repo.update(picked == repo.settings.questionModelId
+            ? repo.settings.copyWith(clearScene3dModel: true)
+            : repo.settings.copyWith(scene3dModelId: picked));
       case 'help':
         // Dasselbe wie das Fragen-Modell = "folgt ihm" (ändert sich dann mit).
         await repo.update(picked == repo.settings.questionModelId
@@ -893,6 +897,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               title: 'Crosscheck-Modell',
                               models: catalog.models,
                               selectedId: settings.crosscheckModelId,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _ModelSelectorTile(
+                            key: const ValueKey('model-scene3d'),
+                            label: '3D-Modelle',
+                            sublabel: settings.scene3dModelId == null
+                                ? '„3D-Modell erzeugen“ in einer Lektion – zurzeit wie Fragenerstellen'
+                                : '„3D-Modell erzeugen“ in einer Lektion – die App fragt vor jeder Nutzung nach',
+                            selectedId: settings.scene3dModelId ?? settings.questionModelId,
+                            catalog: catalog,
+                            trailing: settings.scene3dModelId == null
+                                ? null
+                                : IconButton(
+                                    key: const ValueKey('model-scene3d-reset'),
+                                    tooltip: 'Wie Fragenerstellen',
+                                    icon: Icon(Icons.undo, size: 18, color: c.inkMuted),
+                                    onPressed: () => context
+                                        .read<SettingsRepository>()
+                                        .update(settings.copyWith(clearScene3dModel: true)),
+                                  ),
+                            onTap: () => _pickModel(
+                              role: 'scene3d',
+                              title: 'Modell für 3D-Modelle',
+                              models: catalog.models,
+                              selectedId: settings.scene3dModelId ?? settings.questionModelId,
                             ),
                           ),
                         ],

@@ -10,6 +10,7 @@ import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/study_sequence_repository.dart';
 import '../../services/fsrs_service.dart';
+import '../../services/stage_gate_service.dart';
 import '../../services/study_sequence.dart';
 import '../../theme/app_colors.dart';
 import '../daily/card_review_mixin.dart';
@@ -139,13 +140,27 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
     final progress = await _repo.load(widget.moduleId, widget.source);
     if (!mounted) return;
     setState(() {
-      _ordered = StudySequence.ordered(
-        cards.forModule(widget.moduleId),
-        widget.source,
-        materialOrder: [for (final m in materials?.forModule(widget.moduleId) ?? const <MaterialItem>[]) m.id],
-      );
+      _ordered = _orderedFor(progress.order);
       _progress = progress;
     });
+  }
+
+  List<Flashcard> _orderedFor(StudySequenceOrder order) => StudySequence.ordered(
+    context.read<FlashcardRepository>().forModule(widget.moduleId),
+    widget.source,
+    materialOrder: [
+      for (final m in context.read<MaterialRepository?>()?.forModule(widget.moduleId) ?? const <MaterialItem>[]) m.id,
+    ],
+    order: order,
+  );
+
+  /// Reihenfolge umschalten: Der Stand je Aufgabe bleibt, die Runde beginnt
+  /// in der neuen Reihenfolge bei der ersten offenen Aufgabe.
+  void _setOrder(StudySequenceOrder order) {
+    final p = _progress;
+    if (p == null || p.order == order) return;
+    setState(() => _ordered = _orderedFor(order));
+    _update(p.copyWith(order: order, clearNext: true));
   }
 
   void _update(StudySequenceProgress p) {
@@ -332,7 +347,18 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
             valueColor: AlwaysStoppedAnimation(c.good),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
+        SegmentedButton<StudySequenceOrder>(
+          key: const ValueKey('sequence-order'),
+          segments: [
+            for (final o in StudySequenceOrder.values)
+              ButtonSegment(value: o, label: Text(o.label, key: ValueKey('sequence-order-${o.name}'))),
+          ],
+          selected: {p.order},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) => _setOrder(s.first),
+        ),
+        const SizedBox(height: 14),
         if (next != null)
           FilledButton.icon(
             key: const ValueKey('sequence-continue'),
@@ -393,7 +419,14 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
           ),
         ),
         title: Text(text.isEmpty ? card.type.label : text, maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text(isNext ? '$label · als Nächstes' : label, style: TextStyle(color: color, fontSize: 12)),
+        subtitle: Text(
+          [
+            if (_progress!.order == StudySequenceOrder.difficulty) StageGate.levelOf(card).label,
+            label,
+            if (isNext) 'als Nächstes',
+          ].join(' · '),
+          style: TextStyle(color: color, fontSize: 12),
+        ),
         trailing: Icon(icon, color: color, size: 20),
         onTap: () => _itemSheet(i),
       ),

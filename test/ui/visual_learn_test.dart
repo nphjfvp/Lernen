@@ -34,6 +34,11 @@ class _SettingsWithKey extends SettingsRepository {
   AppSettings get settings => const AppSettings(openRouterApiKey: 'sk-test');
 }
 
+class _SettingsWith3d extends SettingsRepository {
+  @override
+  AppSettings get settings => const AppSettings(openRouterApiKey: 'sk-test', scene3dModelId: 'stark/modell');
+}
+
 http.Response _chat(Object json) => http.Response(
   jsonEncode({
     'choices': [
@@ -408,6 +413,88 @@ void main() {
     expect(jsonEncode(requests.last), contains('Wunsch des Nutzers: Zeig das als Graph'));
     expect(find.text('Als Graph'), findsOneWidget);
     expect(find.text('Geändert.'), findsOneWidget);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+  });
+
+  testWidgets('3D-Modell erzeugen: ohne eigenes Modell direkt, mit eigenem erst nach Rückfrage', (tester) async {
+    Object reply(String text) => {
+      'step': {
+        'title': 'Räumlich',
+        'text': 'So sieht es aus.',
+        'show': {
+          'scene3d': {
+            'box': [100, 40, 40],
+            'frame': false,
+            'objects': [
+              {'type': 'cylinder', 'from': [0, 20, 20], 'to': [100, 20, 20], 'r': 10},
+            ],
+          },
+        },
+      },
+    };
+    VisualLessonScreen.aiFactory = replying(reply);
+    final own = VisualLesson.fromMap(carLessonJson(), id: 'l-3d', moduleId: 'm-3d', createdAt: DateTime(2026))!;
+
+    // Alles in echter Zeit tippen: Die Anfrage und das Speichern laufen in
+    // der Zone, in der der Knopf gedrückt wurde – sonst bleibt die Datenbank
+    // für die folgenden Tests gesperrt.
+    Future<void> tapReal(String key) async {
+      await tester.ensureVisible(find.byKey(ValueKey(key)));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(ValueKey(key)));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await run(tester, 1);
+    }
+
+    // Kein eigenes 3D-Modell: sofort mit dem Fragen-Modell, ohne Rückfrage.
+    await pumpApp(tester, VisualLessonScreen(lesson: own));
+    await tapReal('visual-live-3d');
+    expect(find.byKey(const ValueKey('scene3d-confirm')), findsNothing);
+    expect(requests.single['model'], AppSettings.defaultQuestionModel);
+    expect(jsonEncode(requests.single), contains('scene3d'));
+    expect(find.text('Räumlich'), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-scene3d-0')), findsOneWidget);
+
+    // Eigenes (teures) Modell: erst fragen. Abbrechen = keine Anfrage.
+    requests.clear();
+    await tester.pumpWidget(const SizedBox());
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsRepository>.value(value: _SettingsWith3d()),
+          ChangeNotifierProvider<VisualLessonRepository>(create: (_) => VisualLessonRepository()),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(extensions: const [AppColors.light]),
+          home: VisualLessonScreen(lesson: own),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tapReal('visual-live-3d');
+    expect(find.byKey(const ValueKey('scene3d-confirm')), findsOneWidget);
+    expect(find.textContaining('stark/modell'), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Abbrechen'));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await run(tester, 1);
+    expect(requests, isEmpty);
+
+    // Bestätigen: genau dieses Modell wird benutzt.
+    await tapReal('visual-live-3d');
+    await tapReal('scene3d-confirm-ok');
+    expect(requests.single['model'], 'stark/modell');
+
+    // „Standard-Modell“ in der Rückfrage: das Fragen-Modell.
+    requests.clear();
+    await tapReal('visual-live-3d');
+    await tapReal('scene3d-confirm-default');
+    expect(requests.single['model'], AppSettings.defaultQuestionModel);
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
   });
 

@@ -75,6 +75,7 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       // Leer heißt "wie das Fragen-Modell" – als '' statt null, damit ein
       // älterer Stand (Feld fehlt) von einer bewussten Wahl unterscheidbar bleibt.
       'helpModelId': settings.helpModelId ?? '',
+      'scene3dModelId': settings.scene3dModelId ?? '',
     };
 
 /// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
@@ -120,6 +121,10 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     // Fehlt das Feld (älterer Stand), bleibt der lokale Wert; '' = wie das Fragen-Modell.
     helpModelId: (synced['helpModelId'] as String?)?.trim().isNotEmpty == true ? synced['helpModelId'] as String : null,
     clearHelpModel: synced['helpModelId'] is String && (synced['helpModelId'] as String).trim().isEmpty,
+    scene3dModelId: (synced['scene3dModelId'] as String?)?.trim().isNotEmpty == true
+        ? synced['scene3dModelId'] as String
+        : null,
+    clearScene3dModel: synced['scene3dModelId'] is String && (synced['scene3dModelId'] as String).trim().isEmpty,
   );
 }
 

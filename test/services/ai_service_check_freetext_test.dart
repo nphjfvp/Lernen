@@ -244,4 +244,24 @@ void main() {
       expect(bodies.last.containsKey('max_tokens'), isFalse);
     });
   });
+
+  test('Modell lehnt temperature ab (400): die Anfrage geht einmal ohne optionale Angaben durch', () async {
+    final bodies = <Map<String, dynamic>>[];
+    final ai = AiService(
+      apiKey: 'key',
+      model: 'stark/modell',
+      client: MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        bodies.add(body);
+        if (body.containsKey('temperature')) {
+          return http.Response(jsonEncode({'error': {'code': 400, 'message': 'temperature is not supported'}}), 400);
+        }
+        return _chatResponse('{"correct": true}');
+      }),
+    );
+    expect(await ai.checkFreeTextAnswer(question: 'F', correctAnswer: 'A', userAnswer: 'B'), isTrue);
+    expect(bodies, hasLength(2));
+    expect(bodies.last.containsKey('temperature'), isFalse);
+    expect(bodies.last['model'], 'stark/modell');
+  });
 }

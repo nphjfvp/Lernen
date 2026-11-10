@@ -215,6 +215,57 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       ),
                       const SizedBox(height: 26),
                     ],
+                    // Drei Gruppen statt einer langen Liste: erst, was man täglich
+                    // braucht (Lernen), dann Verstehen, dann Material.
+                    const _GroupHeader('Lernen', key: ValueKey('module-group-learn')),
+                    _SoftRow(
+                      key: const ValueKey('module-practice'),
+                      icon: Icons.style_outlined,
+                      title: 'Üben (Lernmodus)',
+                      subtitle: 'Frei oder der Reihe nach – zählt für den Lernstand',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PracticeScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftRow(
+                      icon: Icons.assignment_outlined,
+                      title: 'Probeklausur',
+                      subtitle: 'Ohne Hilfen, mit Zeitlimit und Note',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => MockExamScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Builder(
+                      builder: (context) {
+                        final flags = context.watch<CardFlagRepository?>();
+                        if (flags == null) return const SizedBox.shrink();
+                        if (!flags.isLoaded) WidgetsBinding.instance.addPostFrameCallback((_) => flags.load());
+                        final list = flags.list(moduleId: module.id);
+                        final errors = list.where((f) => f.kind == CardFlagKind.error).length;
+                        return Padding(
+                          padding: EdgeInsets.zero,
+                          child: _SoftRow(
+                            key: const ValueKey('module-flagged'),
+                            icon: Icons.bookmarks_outlined,
+                            title: 'Markierte Fragen${list.isEmpty ? '' : ' (${list.length})'}',
+                            subtitle: list.isEmpty
+                                ? 'Im Daily Quiz per Lesezeichen merken oder Fehler melden'
+                                : '$errors mit Fehler gemeldet, ${list.length - errors} gemerkt',
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => FlaggedQuestionsScreen(moduleId: module.id)),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    const _GroupHeader('Verstehen', key: ValueKey('module-group-understand')),
                     // Gleich hohe Karten, auch wenn ein Untertitel länger umbricht.
                     IntrinsicHeight(
                       child: Row(
@@ -224,7 +275,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           child: _ModeCard(
                             icon: Icons.auto_stories_outlined,
                             title: 'Vorbereiten',
-                            subtitle: 'Folien hochladen → KI-Überblick',
+                            subtitle: 'Vor der Vorlesung: Überblick',
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => PrepareScreen(moduleId: module.id)),
                             ),
@@ -235,7 +286,7 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           child: _ModeCard(
                             icon: Icons.auto_awesome_outlined,
                             title: 'Nachbereiten',
-                            subtitle: 'Folien + Übungen → Konzepte & Karten · Speedrun',
+                            subtitle: 'Danach: Konzepte und Karten',
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => ReviewScreen(moduleId: module.id)),
                             ),
@@ -244,103 +295,54 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       ],
                     ),
                     ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: _ModeCard(
-                        key: const ValueKey('module-visual-learn'),
-                        icon: Icons.animation_outlined,
-                        title: 'Visuell lernen',
-                        subtitle: 'Thema oder PDF → Schritt für Schritt erklärt und simuliert, dann selbst lösen',
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => VisualLearnScreen(moduleId: module.id, moduleName: module.name),
-                          ),
+                    const SizedBox(height: 10),
+                    _SoftRow(
+                      key: const ValueKey('module-visual-learn'),
+                      icon: Icons.animation_outlined,
+                      title: 'Visuell lernen',
+                      subtitle: 'Thema oder PDF Schritt für Schritt erklärt und simuliert',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => VisualLearnScreen(moduleId: module.id, moduleName: module.name),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     _SoftRow(
                       key: const ValueKey('module-visual-tasks'),
                       icon: Icons.draw_outlined,
                       title: 'Aufgaben visuell lösen',
-                      subtitle: 'Aufgabentyp wählen, Leicht/Mittel/Schwer – neue Aufgabe Schritt für Schritt gelöst, '
-                          'Größen farbig markiert, jederzeit nachfragen',
+                      subtitle: 'Neue Aufgabe je Typ und Stufe, Schritt für Schritt gelöst',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => VisualTaskTypesScreen(moduleId: module.id, moduleName: module.name),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Builder(
-                      builder: (context) {
-                        final flags = context.watch<CardFlagRepository?>();
-                        if (flags == null) return const SizedBox.shrink();
-                        if (!flags.isLoaded) WidgetsBinding.instance.addPostFrameCallback((_) => flags.load());
-                        final list = flags.list(moduleId: module.id);
-                        final errors = list.where((f) => f.kind == CardFlagKind.error).length;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _SoftRow(
-                            key: const ValueKey('module-flagged'),
-                            icon: Icons.bookmarks_outlined,
-                            title: 'Markierte Fragen${list.isEmpty ? '' : ' (${list.length})'}',
-                            subtitle: list.isEmpty
-                                ? 'Im Daily Quiz per Lesezeichen markieren – Fehler melden oder Fragen merken'
-                                : '$errors mit Fehler gemeldet, ${list.length - errors} gemerkt',
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => FlaggedQuestionsScreen(moduleId: module.id)),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    _SoftRow(
-                      icon: Icons.manage_search,
-                      title: 'Fragen aus PDF importieren',
-                      subtitle: 'Vorhandene Fragen und Aufgaben aus PDFs ins Quiz übernehmen – auch als interaktive '
-                          'Aufgaben (z.B. Rechenweg) oder aus dem JSON einer externen KI',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PdfQuestionImportScreen(moduleId: module.id, moduleName: module.name),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _SoftRow(
-                      icon: Icons.style_outlined,
-                      title: 'Üben (Lernmodus)',
-                      subtitle: 'Frei üben, unabhängig von Fälligkeit/Klausur-Pacing – zählt trotzdem für die Planung',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PracticeScreen(moduleId: module.id, moduleName: module.name),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _SoftRow(
-                      icon: Icons.assignment_outlined,
-                      title: 'Probeklausur',
-                      subtitle: 'Wie in der Klausur: ohne Hilfen, mit Zeitlimit und Note am Ende',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => MockExamScreen(moduleId: module.id, moduleName: module.name),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     _SoftRow(
                       icon: Icons.forum_outlined,
                       title: 'Fragen stellen',
-                      subtitle: 'Zu deinen hochgeladenen Materialien nachfragen – nur wenn du fragst',
+                      subtitle: 'Zu deinen Unterlagen nachfragen',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => ModuleChatScreen(moduleId: module.id, moduleName: module.name),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 26),
+                    const SizedBox(height: 24),
+                    const _GroupHeader('Material', key: ValueKey('module-group-material')),
+                    _SoftRow(
+                      icon: Icons.manage_search,
+                      title: 'Fragen aus PDF importieren',
+                      subtitle: 'Fragen und Aufgaben aus PDFs ins Quiz übernehmen',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PdfQuestionImportScreen(moduleId: module.id, moduleName: module.name),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
                     _SectionHeader(title: 'Zusammenfassungen', count: summaries.length),
                     const SizedBox(height: 10),
                     if (summaries.isEmpty)
@@ -1291,7 +1293,7 @@ class _RoundIconButton extends StatelessWidget {
 }
 
 class _ModeCard extends StatelessWidget {
-  const _ModeCard({super.key, required this.icon, required this.title, required this.subtitle, required this.onTap});
+  const _ModeCard({required this.icon, required this.title, required this.subtitle, required this.onTap});
   final IconData icon;
   final String title;
   final String subtitle;
@@ -1957,6 +1959,21 @@ class _StatPill extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Überschrift einer Gruppe von Einstiegen (Lernen / Verstehen / Material).
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader(this.title, {super.key});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10, left: 2),
+    child: Text(
+      title,
+      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: context.colors.ink),
+    ),
+  );
 }
 
 class _SectionHeader extends StatelessWidget {

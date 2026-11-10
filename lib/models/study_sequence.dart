@@ -32,14 +32,31 @@ enum StudySequenceStatus {
   failed,
 }
 
+/// In welcher Reihenfolge die Aufgaben drankommen.
+enum StudySequenceOrder {
+  /// Wie im Dokument (Material, Seite, Reihenfolge beim Import).
+  document('Wie im Dokument'),
+
+  /// Erst alle leichten, dann die mittleren, dann die schweren – innerhalb
+  /// einer Stufe wie im Dokument.
+  difficulty('Leicht → Schwer');
+
+  const StudySequenceOrder(this.label);
+  final String label;
+}
+
 class StudySequenceProgress {
   const StudySequenceProgress({
     required this.moduleId,
     required this.key,
     this.status = const {},
     this.nextId,
+    this.order = StudySequenceOrder.document,
     required this.updatedAt,
   });
+
+  /// Gewählte Reihenfolge (bleibt je Einheit/PDF gespeichert).
+  final StudySequenceOrder order;
 
   final String moduleId;
   final String key;
@@ -63,12 +80,14 @@ class StudySequenceProgress {
     Map<String, StudySequenceStatus>? status,
     String? nextId,
     bool clearNext = false,
+    StudySequenceOrder? order,
     DateTime? updatedAt,
   }) => StudySequenceProgress(
     moduleId: moduleId,
     key: key,
     status: status ?? this.status,
     nextId: clearNext ? null : (nextId ?? this.nextId),
+    order: order ?? this.order,
     updatedAt: updatedAt ?? DateTime.now(),
   );
 
@@ -78,6 +97,7 @@ class StudySequenceProgress {
     'key': key,
     'status': {for (final e in status.entries) e.key: e.value.name},
     if (nextId != null) 'nextId': nextId,
+    if (order != StudySequenceOrder.document) 'order': order.name,
     'updatedAt': updatedAt.toIso8601String(),
   };
 
@@ -96,6 +116,9 @@ class StudySequenceProgress {
             '${e.key}': ?StudySequenceStatus.values.where((s) => s.name == '${e.value}').firstOrNull,
       },
       nextId: _str(raw['nextId']).isEmpty ? null : _str(raw['nextId']),
+      order:
+          StudySequenceOrder.values.where((o) => o.name == _str(raw['order'])).firstOrNull ??
+          StudySequenceOrder.document,
       updatedAt: DateTime.tryParse(_str(raw['updatedAt'])) ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }

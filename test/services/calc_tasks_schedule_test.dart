@@ -168,5 +168,17 @@ void main() {
       expect(mergeAiSettings(local, {'helpModelId': ''}).helpModelId, isNull);
       expect(mergeAiSettings(local, {'questionModelId': 'x/y'}).helpModelId, 'lokal/model');
     });
+
+    test('3D-Modell: gespeichert, im Sync übernommen, "" setzt zurück, fehlendes Feld lässt es stehen', () {
+      const settings = AppSettings(questionModelId: 'q/model');
+      expect(settings.scene3dModelId, isNull);
+      final chosen = settings.copyWith(scene3dModelId: 'stark/modell');
+      expect(AppSettings.fromMap(chosen.toMap()).scene3dModelId, 'stark/modell');
+      expect(chosen.copyWith(clearScene3dModel: true).scene3dModelId, isNull);
+      expect(syncedSettingsOf(chosen, includeSecrets: false)['scene3dModelId'], 'stark/modell');
+      expect(mergeAiSettings(chosen, {'scene3dModelId': 'cloud/modell'}).scene3dModelId, 'cloud/modell');
+      expect(mergeAiSettings(chosen, {'scene3dModelId': ''}).scene3dModelId, isNull);
+      expect(mergeAiSettings(chosen, {'questionModelId': 'x/y'}).scene3dModelId, 'stark/modell');
+    });
   });
 }

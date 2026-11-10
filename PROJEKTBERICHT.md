@@ -58,7 +58,7 @@ aber an der Grenze dessen, was die jetzige Struktur trägt.
 | 8 | **Abhängigkeiten:** 68 Pakete haben neuere Versionen, die die jetzigen Grenzen ausschließen. | niedrig | offen |
 | 9 | **Uneinheitliche Formatierung.** Ältere Dateien sind anders umgebrochen; ein Formatierlauf erzeugt riesige Änderungen in fremden Zeilen. Ein einmaliger reiner Formatier-Commit würde das beenden. | niedrig | offen |
 | 10 | Lern-Chat blieb nach dem Löschen der Lektion liegen; „Δ“ wurde bei den Rechen-Tasten nie erkannt. | niedrig | **behoben** |
-| 11 | „Der Reihe nach“ zeigt alle Aufgaben, auch solche, die im Üben erst nach der leichteren Stufe freigeschaltet würden. | Designfrage | offen – deine Entscheidung |
+| 11 | „Der Reihe nach“ zeigte alle Aufgaben nur in Dokument-Reihenfolge, auch schwere vor leichten. | Designfrage | **gelöst** – Umschalter „Wie im Dokument“ / „Leicht → Schwer“ |
 
 ## 2. System-Prompts
 
@@ -123,12 +123,11 @@ Schrift). Daran würde ich nichts Grundsätzliches ändern.
 4. **Lektionen in zwei Stufen erzeugen** (siehe 2.5) – schneller sichtbar,
    robuster, billiger bei Fehlern.
 
-**Vorschlag für die Fach-Seite** (nicht umgesetzt, weil es deine tägliche
-Hauptseite umbaut): drei Gruppen mit Überschrift – **Lernen** (Üben, Der Reihe
-nach, Probeklausur, Markierte Fragen), **Verstehen** (Vorbereiten,
+**Fach-Seite** (nach deinem Ja umgesetzt): drei Gruppen mit Überschrift –
+**Lernen** (Üben, Probeklausur, Markierte Fragen), **Verstehen** (Vorbereiten,
 Nachbereiten, Visuell lernen, Aufgaben visuell lösen, Fragen stellen),
-**Material** (Einheiten, Dateien, Import) – und je Einstieg nur eine Zeile
-Text.
+**Material** (Import, Zusammenfassungen, Konzepte, Karten, Einheiten, Dateien)
+– und je Einstieg nur noch eine kurze Zeile Text.
 
 ## 4. 3D-Modelle zur Erklärung – sinnvoll?
 
@@ -215,10 +214,14 @@ Einschätzung an deinen echten Aufgaben nach.
 4. Fach-Seite gruppieren (nach deinem Ja).
 5. Prüfsatz für Prompts – danach erst an Wortlaut und JSON-Modus gehen.
 
-## 7. Entscheidungen, die bei dir liegen
+## 7. Entscheidungen – Stand nach deiner Rückmeldung
 
-- Fach-Seite umbauen wie in Abschnitt 3 vorgeschlagen?
-- Soll „Der Reihe nach“ die Stufen-Freischaltung beachten (schwere Stufe erst
-  nach der leichten) oder weiter alles in Dokument-Reihenfolge zeigen?
-- Voreingestellte Modelle: Welche nutzt du tatsächlich? Dann passe ich die
-  Voreinstellungen an.
+- **Fach-Seite:** umgebaut (siehe 3).
+- **„Der Reihe nach“:** Umschalter für die Reihenfolge, je Einheit/PDF
+  gespeichert.
+- **Modelle:** Für „3D-Modell erzeugen“ lässt sich ein eigenes Modell wählen
+  (Einstellungen → 3D-Modelle). Ist eines gewählt, fragt die App vor jeder
+  Nutzung nach und nennt eine grobe Kostenschätzung. Die übrigen
+  Voreinstellungen habe ich nicht geändert: Die genauen Modell-Kennungen bei
+  OpenRouter konnte ich von hier nicht nachsehen, und deine eigene Auswahl in
+  den Einstellungen bleibt ohnehin erhalten.

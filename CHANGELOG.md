@@ -1,8 +1,28 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6v) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6w) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6w. Fach-Seite in drei Gruppen, Reihenfolge umschalten, eigenes 3D-Modell
+
+- **Fach-Seite neu geordnet:** drei Gruppen mit Überschrift – **Lernen**
+  (Üben, Probeklausur, Markierte Fragen), **Verstehen** (Vorbereiten,
+  Nachbereiten, Visuell lernen, Aufgaben visuell lösen, Fragen stellen) und
+  **Material** (Import, Zusammenfassungen, Konzepte, Karten, Einheiten,
+  Dateien). „Üben“ steht jetzt ganz oben; jeder Einstieg hat nur noch eine
+  kurze Zeile Erklärung.
+- **„Der Reihe nach“ – Reihenfolge umschalten:** „Wie im Dokument“ oder
+  „Leicht → Schwer“ (erst alle leichten, dann mittlere, dann schwere; je Stufe
+  wie im Dokument). Die Wahl bleibt je Einheit/PDF gespeichert, dein Stand je
+  Aufgabe bleibt beim Umschalten erhalten.
+- **„3D-Modell erzeugen“** unter jedem Schritt einer Lektion (bei „Live
+  ändern“): baut den Schritt als drehbares 3D-Modell. In den Einstellungen →
+  KI-Modelle → **3D-Modelle** lässt sich dafür ein eigenes, stärkeres Modell
+  wählen. Ist eines gewählt, **fragt die App vor jeder Nutzung nach** – mit
+  grober Kostenschätzung und der Wahl „Standard-Modell“ als günstigerem Weg.
+- Modelle, die `temperature` oder ein Ausgabe-Limit ablehnen, funktionieren
+  jetzt trotzdem: Die App wiederholt die Anfrage einmal ohne diese Angaben.
 
 ### 6v. Tiefe Durchsicht: abgeschnittene KI-Antworten, 3D-Zylinder, Fach-Seite am Handy
 

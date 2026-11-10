@@ -138,6 +138,17 @@ void main() {
     await settle(tester);
     expect(summary(), '2 von 4 erledigt', reason: '1 gelöst, 2 davor gilt als erledigt, ab 3 offen');
 
+    // Reihenfolge umschalten: bleibt gespeichert, der Stand je Aufgabe auch.
+    expect(find.byKey(const ValueKey('sequence-order')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sequence-order-difficulty')));
+    await settle(tester);
+    expect(summary(), '2 von 4 erledigt');
+    expect(find.textContaining('Mittel ·'), findsWidgets, reason: 'Stufe steht in der Zeile');
+    final ordered = await tester.runAsync(() => StudySequenceRepository().load('sm', source));
+    expect(ordered!.order, StudySequenceOrder.difficulty);
+    await tester.tap(find.byKey(const ValueKey('sequence-order-document')));
+    await settle(tester);
+
     // Neu starten von vorn über den Dialog.
     await tester.tap(find.byKey(const ValueKey('sequence-restart')));
     await tester.pumpAndSettle();

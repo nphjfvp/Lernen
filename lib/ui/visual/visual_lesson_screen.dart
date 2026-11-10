@@ -6,6 +6,7 @@ import '../../models/flashcard.dart';
 import '../../models/step_task.dart';
 import '../../models/visual_chat.dart';
 import '../../models/visual_lesson.dart';
+import '../../repositories/model_catalog_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/visual_chat_repository.dart';
 import '../../repositories/settings_repository.dart';
@@ -346,6 +347,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       key: ValueKey('visual-live-bar-$_page'),
       split: !isResult,
       onSend: (request) => _liveRevise(isResult ? -1 : _page, request),
+      onScene3d: () => _make3d(isResult ? -1 : _page),
     ),
     const SizedBox(height: 10),
     Wrap(
@@ -522,8 +524,57 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
   /// „Live ändern“ direkt im Schritt: Wunsch (frei oder per Vorschlag) an die
   /// KI, der Schritt wird an Ort und Stelle ersetzt – auch durch mehrere
   /// (Zwischenschritt, kleinschrittiger). Gibt eine Fehlermeldung zurück.
-  Future<String?> _liveRevise(int stepIndex, String request) async {
-    final ai = _reviseAi(context);
+  /// Wunsch an die KI für „3D-Modell erzeugen“.
+  static const scene3dRequest =
+      'Zeig diesen Schritt als räumliches 3D-Modell ("scene3d" statt der bisherigen Darstellung): das Bauteil bzw. '
+      'den räumlichen Aufbau maßstäblich in den Maßen der Aufgabe, die wichtigen Stellen beschriftet, Kräfte als '
+      'Pfeile, die entscheidende Stelle farbig hervorgehoben. Titel, Text und Formel des Schritts bleiben.';
+
+  /// „3D-Modell erzeugen“: mit dem eigenen 3D-Modell (Einstellungen), falls
+  /// eines gewählt ist – dann fragt die App vor JEDER Nutzung nach, weil
+  /// solche Modelle teuer sind –, sonst mit dem Fragen-Modell.
+  Future<String?> _make3d(int stepIndex) async {
+    final settings = context.read<SettingsRepository?>()?.settings;
+    final own = settings?.scene3dModelId;
+    if (settings == null || own == null) return _liveRevise(stepIndex, scene3dRequest);
+    final info = context.read<ModelCatalogRepository?>()?.byId(own);
+    // Grobe Schätzung: Lektion + Werkzeugbeschreibung rein, eine Szene raus.
+    final inTokens = _l.toMap().toString().length / 3.2 + 4500;
+    const outTokens = 5000;
+    final inPrice = info?.promptPricePerMillion, outPrice = info?.completionPricePerMillion;
+    final cost = inPrice == null || outPrice == null ? null : (inTokens * inPrice + outTokens * outPrice) / 1e6;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const ValueKey('scene3d-confirm'),
+        icon: const Icon(Icons.view_in_ar_outlined),
+        title: const Text('3D-Modell erzeugen?'),
+        content: Text(
+          'Dafür ist „${info?.name ?? own}“ eingestellt. '
+          '${cost == null ? 'Den Preis kennt die App nicht.' : 'Das kostet grob ${cost < 0.01 ? 'unter 1 Cent' : '${(cost * 100).round()} Cent'} (Schätzung in US-Cent, je nach Länge der Lektion).'}'
+          '\n\nMit dem Standard-Modell („${settings.questionModelId}“) geht es günstiger, aber oft ungenauer.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+          TextButton(
+            key: const ValueKey('scene3d-confirm-default'),
+            onPressed: () => Navigator.of(ctx).pop('default'),
+            child: const Text('Standard-Modell'),
+          ),
+          FilledButton(
+            key: const ValueKey('scene3d-confirm-ok'),
+            onPressed: () => Navigator.of(ctx).pop('own'),
+            child: const Text('Erzeugen'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return null;
+    return _liveRevise(stepIndex, scene3dRequest, model: choice == 'own' ? own : null);
+  }
+
+  Future<String?> _liveRevise(int stepIndex, String request, {String? model}) async {
+    final ai = _reviseAi(context, model: model);
     if (ai == null) return 'Dafür braucht die App deinen OpenRouter-Key (Einstellungen).';
     final before = _l;
     try {
@@ -1178,11 +1229,12 @@ class _VisualAskSheetState extends State<VisualAskSheet> {
 }
 
 /// KI für „Darstellung ändern“ (Fragen-Modell wie beim Erstellen) – null ohne Key.
-AiService? _reviseAi(BuildContext context) {
+AiService? _reviseAi(BuildContext context, {String? model}) {
   final settings = context.read<SettingsRepository?>()?.settings;
   if (settings == null || !settings.hasApiKey) return null;
-  return VisualLessonScreen.aiFactory?.call(settings.openRouterApiKey!, settings.questionModelId) ??
-      AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+  final id = model ?? settings.questionModelId;
+  return VisualLessonScreen.aiFactory?.call(settings.openRouterApiKey!, id) ??
+      AiService(apiKey: settings.openRouterApiKey!, model: id);
 }
 
 /// Wunsch zur Darstellung eingeben – für diesen Schritt oder die ganze
@@ -1351,7 +1403,12 @@ class _VisualReviseSheetState extends State<VisualReviseSheet> {
 /// „Live ändern“ unter jedem Schritt: sagen, wie es aussehen soll („zeig das
 /// als Graph“, „noch ein Zwischenschritt“) – die KI baut den Schritt sofort um.
 class VisualLiveEditBar extends StatefulWidget {
-  const VisualLiveEditBar({super.key, required this.onSend, this.split = true});
+  const VisualLiveEditBar({super.key, required this.onSend, this.onScene3d, this.split = true});
+
+  /// „3D-Modell erzeugen“ (eigener Knopf, weil dafür ein eigenes Modell
+  /// eingestellt sein kann, nach dem vorher gefragt wird); Ergebnis wie bei
+  /// [onSend].
+  final Future<String?> Function()? onScene3d;
 
   /// Schickt den Wunsch; Ergebnis = Fehlermeldung oder null.
   final Future<String?> Function(String request) onSend;
@@ -1408,6 +1465,20 @@ class _VisualLiveEditBarState extends State<VisualLiveEditBar> {
   void dispose() {
     _input.dispose();
     super.dispose();
+  }
+
+  Future<void> _make3d() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final error = await widget.onScene3d!();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = error;
+    });
   }
 
   Future<void> _send(String request) async {
@@ -1487,6 +1558,13 @@ class _VisualLiveEditBarState extends State<VisualLiveEditBar> {
                   key: ValueKey('visual-live-chip-${e.i}'),
                   label: Text(e.s.label),
                   onPressed: _busy ? null : () => _send(e.s.request),
+                ),
+              if (widget.onScene3d != null)
+                ActionChip(
+                  key: const ValueKey('visual-live-3d'),
+                  avatar: const Icon(Icons.view_in_ar_outlined, size: 16),
+                  label: const Text('3D-Modell erzeugen'),
+                  onPressed: _busy ? null : _make3d,
                 ),
             ],
           ),

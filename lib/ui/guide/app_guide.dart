@@ -176,7 +176,8 @@ const appGuideChapters = <GuideChapter>[
         'Aufgaben einer Einheit oder einer PDF von vorne nach hinten lösen – für Stoff, der aufeinander aufbaut. '
             'Der Stand bleibt gespeichert: Was du nicht geschafft hast, kommt in der nächsten Runde wieder, Gelöstes '
             'wird übersprungen. „Kann ich schon“ überspringt eine Aufgabe; tippe in der Übersicht eine Aufgabe an, '
-            'um dort neu zu starten, oder starte ganz von vorn. Zufällig üben geht weiterhin.',
+            'um dort neu zu starten, oder starte ganz von vorn. Die Reihenfolge lässt sich umschalten: wie im '
+            'Dokument oder von leicht nach schwer. Zufällig üben geht weiterhin.',
         where: 'Fach → Üben → Der Reihe nach · bei einer PDF „… Aufgaben der Reihe nach“ · im PDF oben',
       ),
       GuideItem(
@@ -264,8 +265,9 @@ const appGuideChapters = <GuideChapter>[
         'Live ändern',
         'Unter jedem Schritt: sag, wie es aussehen soll – „zeig das als Graph“, „noch ein Zwischenschritt beim '
             'Integrieren“, „markier die Zeit rot“. Der Schritt wird sofort umgebaut, auch in mehrere Schritte; '
-            '„Rückgängig“ holt den alten zurück. Für die ganze Lektion: „Darstellung ändern“. Lädt eine Darstellung '
-            'nicht, „Neu erzeugen“.',
+            '„Rückgängig“ holt den alten zurück. „3D-Modell erzeugen“ baut den Schritt als drehbares Modell; ist '
+            'dafür in den Einstellungen ein eigenes (teureres) Modell gewählt, fragt die App vor jeder Nutzung '
+            'nach. Für die ganze Lektion: „Darstellung ändern“. Lädt eine Darstellung nicht, „Neu erzeugen“.',
       ),
       GuideItem(
         'Lernpfad',

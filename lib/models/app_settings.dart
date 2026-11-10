@@ -112,6 +112,11 @@ class AppSettings {
   /// [questionModelId] (bis jemand bewusst ein anderes wählt).
   final String? helpModelId;
 
+  /// Eigenes (meist stärkeres, teureres) Modell für „3D-Modell erzeugen“ in
+  /// einer Lektion. `null` = wie [questionModelId]. Ist eines gewählt, fragt
+  /// die App vor JEDER Nutzung nach (mit grober Kostenschätzung).
+  final String? scene3dModelId;
+
   /// Rechenaufgaben (Taschenrechner nötig, siehe Flashcard.needsCalculator) in
   /// Daily Quiz, Üben, Sprint und Speedrun mitnehmen. Bewusst geräte-lokal: am
   /// Schreibtisch-PC an, auf dem Handy im Bett aus – wird nicht synchronisiert.
@@ -155,6 +160,7 @@ class AppSettings {
     this.pageQuestionTierTypes = const {},
     this.favoriteModelIds = const [],
     this.helpModelId,
+    this.scene3dModelId,
     this.includeCalcTasks = true,
   });
 
@@ -201,6 +207,8 @@ class AppSettings {
     List<String>? favoriteModelIds,
     String? helpModelId,
     bool clearHelpModel = false,
+    String? scene3dModelId,
+    bool clearScene3dModel = false,
     bool? includeCalcTasks,
   }) {
     return AppSettings(
@@ -228,6 +236,7 @@ class AppSettings {
       pageQuestionTierTypes: pageQuestionTierTypes ?? this.pageQuestionTierTypes,
       favoriteModelIds: favoriteModelIds ?? this.favoriteModelIds,
       helpModelId: clearHelpModel ? null : (helpModelId ?? this.helpModelId),
+      scene3dModelId: clearScene3dModel ? null : (scene3dModelId ?? this.scene3dModelId),
       includeCalcTasks: includeCalcTasks ?? this.includeCalcTasks,
     );
   }
@@ -256,6 +265,7 @@ class AppSettings {
         'pageQuestionTierTypes': pageQuestionTierTypes,
         'favoriteModelIds': favoriteModelIds,
         'helpModelId': helpModelId,
+        'scene3dModelId': scene3dModelId,
         'includeCalcTasks': includeCalcTasks,
       };
 
@@ -292,6 +302,9 @@ class AppSettings {
         pageQuestionTierTypes: parseTierTypes(map['pageQuestionTierTypes']) ?? const {},
         favoriteModelIds: parseModelIds(map['favoriteModelIds']) ?? const [],
         helpModelId: (map['helpModelId'] as String?)?.trim().isEmpty ?? true ? null : map['helpModelId'] as String,
+        scene3dModelId: (map['scene3dModelId'] as String?)?.trim().isEmpty ?? true
+            ? null
+            : map['scene3dModelId'] as String,
         includeCalcTasks: map['includeCalcTasks'] as bool? ?? true,
       );
 

@@ -1,5 +1,6 @@
 import '../models/flashcard.dart';
 import '../models/study_sequence.dart';
+import 'stage_gate_service.dart';
 
 /// Logik für „Der Reihe nach“: Reihenfolge der Aufgaben einer Einheit/PDF,
 /// welche in einer Runde drankommen und wie eine Antwort den Stand ändert.
@@ -16,6 +17,7 @@ class StudySequence {
     List<Flashcard> moduleCards,
     StudySequenceSource source, {
     List<String> materialOrder = const [],
+    StudySequenceOrder order = StudySequenceOrder.document,
   }) {
     final cards = [
       for (final c in moduleCards)
@@ -36,6 +38,15 @@ class StudySequence {
       final byTime = a.createdAt.compareTo(b.createdAt);
       return byTime != 0 ? byTime : a.id.compareTo(b.id);
     });
+    if (order == StudySequenceOrder.difficulty) {
+      // Nach Stufe (leicht, mittel, schwer – siehe StageGate.levelOf), innerhalb
+      // einer Stufe bleibt die Dokument-Reihenfolge.
+      return [
+        for (final level in StageLevel.values)
+          for (final c in cards)
+            if (StageGate.levelOf(c) == level) c,
+      ];
+    }
     return cards;
   }
 
