@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import '../models/ai_usage.dart';
 import '../models/app_settings.dart';
 import '../models/condense.dart';
 import '../models/bom_task.dart';
@@ -21,6 +22,7 @@ import '../models/phase_task.dart';
 import '../models/step_task.dart';
 import '../models/step_task_review.dart';
 import '../models/task_verification.dart';
+import '../models/visual_lesson.dart';
 import '../models/visual_task_type.dart';
 import 'calc_engine.dart';
 import 'calc_plan.dart';
@@ -154,6 +156,10 @@ class AiService {
   /// Aufgaben eines Blatts). Der Hook macht das sichtbar; [label] beschreibt
   /// die Anfrage.
   static void Function(String label)? onTruncated;
+
+  /// Verbrauch jeder beantworteten Anfrage (Tokens und Kosten, wie OpenRouter
+  /// sie meldet) – für die Kostenanzeige.
+  static void Function(AiUsage usage)? onUsage;
 
   /// `max_tokens` für ein Modell (aus dem OpenRouter-Katalog, siehe
   /// AiModelInfo.requestMaxTokens); null = nichts mitschicken (Voreinstellung
@@ -366,6 +372,7 @@ Hier ist der Dokumenttext:
     }
 
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    _reportUsage(decoded, systemPrompt);
     final choices = decoded['choices'] as List?;
     if (choices == null || choices.isEmpty) {
       throw AiServiceException('Leere Antwort vom Modell erhalten.',
@@ -408,6 +415,19 @@ Hier ist der Dokumenttext:
           );
         }
       }
+    }
+  }
+
+  /// Meldet den Verbrauch der Antwort an [onUsage]. Auch eine leere Antwort
+  /// kostet – deshalb vor der Prüfung des Inhalts. Darf nie eine Antwort kosten.
+  void _reportUsage(Object? decoded, String systemPrompt) {
+    final report = onUsage;
+    if (report == null || decoded is! Map) return;
+    try {
+      final usage = AiUsage.fromResponse(decoded['usage'], model: model, label: _labelOf(systemPrompt));
+      if (usage != null) report(usage);
+    } catch (_) {
+      // Kostenanzeige ist Nebensache.
     }
   }
 
@@ -3218,6 +3238,14 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
   /// will sich die Schritte selbst erarbeiten (Leitfragen besonders
   /// sorgfältig). Liefert die rohen Lektions-Objekte (siehe
   /// VisualLesson.fromMap).
+  ///
+  /// [staged] (Standard): in zwei Stufen – diese Anfrage liefert Texte,
+  /// Formeln, Funktionen und je Szene nur einen Bauplan ("idea"); die Szenen
+  /// selbst werden danach einzeln gezeichnet ([drawPendingScenes]). So bleibt
+  /// die Antwort kurz, und ein Fehler kostet nur eine Szene statt der ganzen
+  /// Lektion. [drawScenes] false: die Baupläne offen lassen – der
+  /// Lektions-Bildschirm zeichnet sie beim Öffnen, man sieht die Lektion
+  /// sofort. [onSceneProgress]: (fertig, gesamt) über alle Lektionen.
   Future<List<Map<String, dynamic>>> generateVisualLessons({
     String topic = '',
     String material = '',
@@ -3226,6 +3254,9 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
     int maxLessons = 1,
     bool socratic = false,
     String courseContext = '',
+    bool staged = true,
+    bool drawScenes = true,
+    void Function(int done, int total)? onSceneProgress,
   }) async {
     if (topic.trim().isEmpty && material.trim().isEmpty && images.isEmpty) {
       throw AiServiceException('Gib ein Thema oder Beispiel ein oder wähle eine PDF.');
@@ -3265,7 +3296,7 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
     }
     if (images.isNotEmpty) buffer.writeln('Dem Text folgen ${images.length} Seite${images.length == 1 ? '' : 'n'} als Bild.');
     final raw = await _complete(
-      _visualLessonSystemPrompt,
+      staged ? _visualLessonSystemPrompt + _visualStagedRule : _visualLessonSystemPrompt,
       _textWithImages(buffer.toString(), images, 'Seite'),
       temperature: 0.2,
     );
@@ -3280,7 +3311,182 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
     if (lessons.isEmpty) {
       throw AiServiceException('Die KI hat keine Lektion geliefert – bitte erneut versuchen.', rawResponse: raw);
     }
-    return lessons.take(maxLessons).toList();
+    final result = lessons.take(maxLessons).toList();
+    if (!staged || !drawScenes) return result;
+
+    // Stufe 2: die offenen Szenen zeichnen. Scheitert eine, bleibt ihr Bauplan
+    // stehen – die Lektion ist trotzdem da, die Szene lässt sich nachholen.
+    final parsed = [for (final l in result) VisualLesson.fromMap(l)];
+    final total = parsed.fold<int>(0, (sum, l) => sum + (l?.pendingScenes.length ?? 0));
+    var done = 0;
+    for (final (i, first) in parsed.indexed) {
+      if (first == null || first.pendingScenes.isEmpty) continue;
+      var lesson = first;
+      await drawPendingScenes(
+        current: () => lesson,
+        apply: (updated) => lesson = updated,
+        onDone: () => onSceneProgress?.call(++done, total),
+      );
+      result[i] = lesson.toMap();
+    }
+    return result;
+  }
+
+  /// Stufe 2 der Lektions-Erzeugung: zeichnet alle Szenen, für die bisher nur
+  /// ein Bauplan da ist ([VisualLesson.pendingScenes]). Die erste allein – sie
+  /// dient den übrigen als Vorlage für Aufbau und Maßstab –, die anderen bis
+  /// zu [parallel] gleichzeitig. [current] liefert jeweils den aktuellen Stand
+  /// (der Nutzer kann währenddessen weiterblättern oder ändern), [apply]
+  /// übernimmt eine fertige Szene, [onFailed] meldet eine gescheiterte
+  /// (Schritt-Index, Meldung) – ihr Bauplan bleibt. [first]: dieser Schritt
+  /// zuerst (der, den der Nutzer gerade sieht).
+  Future<void> drawPendingScenes({
+    required VisualLesson Function() current,
+    required void Function(VisualLesson updated) apply,
+    void Function(int stepIndex, String message)? onFailed,
+    void Function(int stepIndex)? onStart,
+    void Function()? onDone,
+    int parallel = 3,
+    int? first,
+  }) async {
+    final pending = current().pendingScenes;
+    if (first != null && pending.remove(first)) pending.insert(0, first);
+    // Über den Bauplan wiederfinden: Schritte können sich inzwischen verschoben haben.
+    final ideas = [for (final i in pending) current().stepAt(i)!.show.idea];
+    int? locate(String idea) {
+      final lesson = current();
+      for (final i in lesson.pendingScenes) {
+        if (lesson.stepAt(i)!.show.idea == idea) return i;
+      }
+      return null;
+    }
+
+    Future<void> draw(String idea) async {
+      var index = locate(idea);
+      if (index == null) return;
+      onStart?.call(index);
+      try {
+        final json = await drawVisualScene(lesson: current().toMap(), stepIndex: index);
+        index = locate(idea);
+        if (index == null) return;
+        final updated = current().withScene(index, json);
+        if (updated == null) {
+          onFailed?.call(index, 'Die Szene ließ sich nicht lesen.');
+        } else {
+          apply(updated);
+        }
+      } on AiServiceException catch (e) {
+        onFailed?.call(locate(idea) ?? index!, e.message);
+      } catch (e) {
+        onFailed?.call(locate(idea) ?? index!, 'Das hat nicht geklappt: $e');
+      } finally {
+        onDone?.call();
+      }
+    }
+
+    if (ideas.isEmpty) return;
+    await draw(ideas.first);
+    final queue = ideas.skip(1).toList();
+    Future<void> worker() async {
+      while (queue.isNotEmpty) {
+        await draw(queue.removeAt(0));
+      }
+    }
+
+    await Future.wait([for (var i = 0; i < parallel && i < queue.length; i++) worker()]);
+  }
+
+  /// Zeichnet EINE Szene nach ihrem Bauplan (Stufe 2, siehe
+  /// [generateVisualLessons]). [lesson] = die Lektion als JSON, [stepIndex] =
+  /// Index in "steps", -1 = Ergebnis, -2 = Kurzfassung. Antwort:
+  /// `{"show": {"scene": {…}} | {"scene3d": {…}}, "functions": […]}`.
+  Future<Map<String, dynamic>> drawVisualScene({required Map<String, dynamic> lesson, required int stepIndex}) async {
+    final steps = [
+      if (lesson['steps'] is List)
+        for (final s in lesson['steps'] as List)
+          if (s is Map) s,
+    ];
+    final target = switch (stepIndex) {
+      -1 => lesson['result'],
+      -2 => lesson['short'],
+      _ => stepIndex >= 0 && stepIndex < steps.length ? steps[stepIndex] : null,
+    };
+    final show = target is Map ? target['show'] : null;
+    final idea = show is Map ? '${show['idea'] ?? ''}'.trim() : '';
+    if (target is! Map || idea.isEmpty) {
+      throw AiServiceException('Für diesen Schritt gibt es keinen Bauplan – nutze „Live ändern“.');
+    }
+    final spatial = show is Map && '${show['kind'] ?? ''}'.contains('3d');
+
+    // Überblick ohne die schon gezeichneten Szenen (die wären riesig).
+    Map<String, dynamic> brief(Map step) {
+      final s = step['show'];
+      return {
+        'title': step['title'],
+        if (step['text'] != null) 'text': step['text'],
+        if (step['formula'] != null) 'formula': step['formula'],
+        if (s is Map)
+          'show': {
+            for (final k in const ['idea', 'kind', 'plot', 'tangent', 'area', 'car'])
+              if (s[k] != null) k: s[k],
+            if (s['scene'] != null) 'scene': '(schon gezeichnet)',
+            if (s['scene3d'] != null) 'scene3d': '(schon gezeichnet)',
+            if (s['transform'] != null) 'transform': '(Umformung vorhanden)',
+          },
+      };
+    }
+
+    final outline = {
+      for (final k in const ['title', 'intro', 'variable', 'domain', 'functions', 'look'])
+        if (lesson[k] != null) k: lesson[k],
+      'steps': [for (final s in steps) brief(s)],
+      if (lesson['result'] is Map) 'result': brief(lesson['result'] as Map),
+      if (lesson['short'] is Map) 'short': brief(lesson['short'] as Map),
+    };
+    // Vorlage: die letzte schon gezeichnete Szene derselben Art davor (sonst
+    // irgendeine) – für gleichen Aufbau, Maßstab und Farben.
+    final key = spatial ? 'scene3d' : 'scene';
+    final order = stepIndex >= 0 ? [...steps.take(stepIndex).toList().reversed, ...steps.skip(stepIndex + 1)] : steps.reversed;
+    Object? reference;
+    String referenceTitle = '';
+    for (final s in order) {
+      final other = s['show'];
+      if (other is Map && other[key] is Map) {
+        reference = other[key];
+        referenceTitle = '${s['title'] ?? ''}';
+        break;
+      }
+    }
+    final which = switch (stepIndex) {
+      -1 => 'das ERGEBNIS ("result")',
+      -2 => 'die KURZFASSUNG ("short") – EINE Darstellung, die das Wichtigste auf einen Blick zeigt',
+      _ => 'Schritt ${stepIndex + 1} von ${steps.length} (steps[$stepIndex]): „${target['title'] ?? ''}“',
+    };
+    final buffer = StringBuffer()
+      ..writeln('Lektion im Überblick (JSON):')
+      ..writeln(_cap(jsonEncode(outline), 30000))
+      ..writeln()
+      ..writeln('Zu zeichnen: $which')
+      ..writeln('Art: ${spatial ? 'räumlich – "scene3d"' : '2D – "scene"'}')
+      ..writeln('Bauplan: ${_cap(idea, 3000)}');
+    if (reference != null) {
+      final encoded = jsonEncode(reference);
+      // Eine abgeschnittene Vorlage wäre kaputtes JSON – dann lieber keine.
+      if (encoded.length <= 12000) {
+        buffer
+          ..writeln()
+          ..writeln('Vorlage – die fertige Szene von „$referenceTitle“. Übernimm Aufbau, Maßstab, Koordinaten, Farben '
+              'und Beschriftungen für alles, was dein Schritt ebenfalls zeigt, damit die Szenen zusammenpassen:')
+          ..writeln(encoded);
+      }
+    }
+    final raw = await _complete(_visualSceneSystemPrompt, buffer.toString(), temperature: 0.2);
+    final json = await _json(raw);
+    final drawn = json['show'] is Map ? json['show'] as Map : json;
+    if (drawn['scene'] is! Map && drawn['scene3d'] is! Map) {
+      throw AiServiceException('Die KI hat keine Szene geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return json;
   }
 
   /// Analysiert Material für „Visuell lernen“ (wie die Themenliste bei
@@ -3770,6 +3976,33 @@ Regeln für "exercise" (eine Übung wie ein Rechenweg – die App prüft Zahlen 
 - Rechne jede erwartete Antwort selbst nach.
 
 Allgemein: Deutsch, du-Form, Fachbegriffe erklären. Formeln in Texten in $…$, in JSON jeden Backslash verdoppeln.''';
+
+  /// Zusatz zum Lektions-Prompt für die Erzeugung in zwei Stufen.
+  static const _visualStagedRule = r'''
+
+
+ZWEI STUFEN – WICHTIG, geht allem oben vor: Die Szenen werden NACH dieser Antwort einzeln gezeichnet. Liefere für "scene" und "scene3d" deshalb hier KEINE Formen und Objekte, sondern nur den Bauplan:
+  "show": {"idea": "…", "kind": "scene" | "scene3d"}
+- "idea": 2–5 Sätze, so genau, dass ein Zeichner ohne Rückfrage loslegen kann: WAS zu sehen ist (Objekte, Anordnung, Beschriftungen, Zahlenwerte aus der Aufgabe), WAS sich bewegt oder verändert und in welcher Reihenfolge, welche Größe mitläuft und welche Sätze unter der Szene erscheinen. Kein „eine passende Animation“ – beschreibe sie.
+- Kleine Darstellungen lieferst du wie oben DIREKT und vollständig: "plot" (+ "tangent"/"area"), "car", "transform". Sie dürfen neben einem Bauplan stehen: "show": {"plot": ["s"], "idea": "…"}.
+- Je Lektion zusätzlich "look": 2–4 Sätze zum gemeinsamen Aufbau ALLER Szenen – was wo steht (in einem Feld 100 × 60: links/rechts/oben/unten, grobe Koordinaten), welche Farbe wofür steht, welche Bezeichnungen und Zahlenwerte gelten. Alle Baupläne halten sich daran, damit die Szenen zusammenpassen und aufeinander aufbauen.
+- Dasselbe gilt für "result" und "short".''';
+
+  static const _visualSceneSystemPrompt =
+      r'''
+Du zeichnest in einer Lern-App EINE Darstellung für einen Schritt einer Lektion aus "Visuell lernen". Die Lektion steht fest (Texte, Formeln, Funktionen); zu diesem Schritt gibt es einen Bauplan. Du lieferst nur seine Szene.
+''' +
+      _visualToolsSpec +
+      r'''
+
+Regeln:
+- Zeichne genau das, was der Bauplan und der Text des Schritts beschreiben – vollständig, mit Bewegung über "keys" und passenden "captions". Die Szene soll den Gedanken dieses Schritts sichtbar machen, nicht nur bebildern.
+- Halte dich an "look" (gemeinsamer Aufbau der Lektion) und, falls eine Vorlage mitkommt, an deren Aufbau, Maßstab, Koordinaten, Farben und Beschriftungen – der Lernende soll die Szenen als EINE fortlaufende Darstellung erkennen. Neu ist nur, was dieser Schritt zeigt.
+- Zahlen, Bezeichnungen und Formeln wie in der Lektion; rechne Koordinaten und Größen nach. Formeln in Szenen-Texten in $…$, in JSON jeden Backslash verdoppeln.
+- Sauber zeichnen: nichts überlappt ungewollt, Texte passen in ihre Kästen (lieber kürzer oder kleiner), alles innerhalb der Szene.
+- Nur die verlangte Art ("scene" ODER "scene3d"). Bezüge ("plot" usw.) nur auf vorhandene "functions"; brauchst du eine neue, liefere sie in "functions" mit.
+
+Antworte NUR mit JSON: {"show": {"scene": {…}}} bzw. {"show": {"scene3d": {…}}} – optional daneben "functions": [{"key", "label", "expr", "unit"}].''';
 
   static const _visualExplainSystemPrompt =
       r'''

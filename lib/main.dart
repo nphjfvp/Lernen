@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
+import 'repositories/ai_usage_repository.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/card_flag_repository.dart';
 import 'repositories/chat_repository.dart';
@@ -155,6 +156,17 @@ class LernenApp extends StatelessWidget {
             AiService.outputLimitOf = (model) => catalog.byId(model)?.requestMaxTokens;
             unawaited(catalog.loadCached());
             return catalog;
+          },
+        ),
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (ctx) {
+            // Kosten jeder KI-Anfrage mitschreiben (Einstellungen → KI-Kosten).
+            final catalog = ctx.read<ModelCatalogRepository>();
+            final usage = AiUsageRepository(modelInfo: catalog.byId);
+            AiService.onUsage = usage.record;
+            unawaited(usage.load());
+            return usage;
           },
         ),
         ChangeNotifierProvider(

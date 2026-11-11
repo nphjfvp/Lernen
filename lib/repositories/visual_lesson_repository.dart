@@ -38,6 +38,13 @@ class VisualLessonRepository extends ChangeNotifier {
     return lessons.firstOrNull;
   }
 
+  /// Der gespeicherte Stand einer Lektion (null = nicht gespeichert).
+  Future<VisualLesson?> byId(String id) async {
+    if (id.isEmpty) return null;
+    final db = await _open();
+    return VisualLesson.fromMap(await DatabaseService.visualLessons.record(id).get(db));
+  }
+
   Future<void> save(VisualLesson lesson) async {
     final db = await _open();
     await DatabaseService.visualLessons.record(lesson.id).put(db, lesson.toMap());

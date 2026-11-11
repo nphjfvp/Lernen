@@ -190,21 +190,27 @@ class _ClaudeInboxScreenState extends State<ClaudeInboxScreen> {
               Text(d.note, style: TextStyle(color: c.ink, height: 1.4)),
             ],
             const SizedBox(height: 12),
-            Row(
-              children: [
-                TextButton(
-                  key: ValueKey('inbox-discard-$i'),
-                  onPressed: () => _discard(d),
-                  child: const Text('Verwerfen'),
-                ),
-                const Spacer(),
-                FilledButton.icon(
-                  key: ValueKey('inbox-take-$i'),
-                  onPressed: count == 0 ? null : () => _take(d),
-                  icon: const Icon(Icons.move_to_inbox_outlined, size: 18),
-                  label: const Text('Ansehen & übernehmen'),
-                ),
-              ],
+            // Umbrechen statt überlaufen (schmales Handy, große Schrift).
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 4,
+                children: [
+                  TextButton(
+                    key: ValueKey('inbox-discard-$i'),
+                    onPressed: () => _discard(d),
+                    child: const Text('Verwerfen'),
+                  ),
+                  FilledButton.icon(
+                    key: ValueKey('inbox-take-$i'),
+                    onPressed: count == 0 ? null : () => _take(d),
+                    icon: const Icon(Icons.move_to_inbox_outlined, size: 18),
+                    label: const Text('Ansehen & übernehmen'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

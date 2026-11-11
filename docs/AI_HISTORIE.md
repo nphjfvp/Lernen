@@ -1476,3 +1476,34 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `temperature` und `max_tokens`. Tests: `visual_learn_test` („3D-Modell erzeugen …“),
     `calc_tasks_schedule_test`, `ai_service_check_freetext_test`, `study_sequence_test`,
     `study_sequence_screen_test`.
+112. KI-Kosten: `AiUsage` (`lib/models/ai_usage.dart`, `fromResponse` liest `usage.prompt_tokens`/
+    `completion_tokens`/`cost`; `withEstimate` aus Katalogpreisen, `estimated`), `AiService.onUsage` (in
+    `_complete` nach dem Dekodieren, `_reportUsage`, darf nie werfen), `AiUsageRepository` (Stores `ai_usage` =
+    letzte `keepEntries` 200 Anfragen, `ai_usage_totals` = Summe je Tag|Modell; `record` über eine Warteschlange,
+    `settled`, `today`/`thisMonth`/`sum`/`byModel`/`averageFor`/`clear`; nicht synchronisiert), in `main.dart`
+    verdrahtet (`modelInfo: catalog.byId`). UI: `AiUsageTile` (`ai-usage-tile`, `ai-usage-summary`) in den
+    Einstellungen, `AiUsageScreen` (`ai-usage-today|month|total`, `ai-usage-model-<id>`, `ai-usage-entry-<i>`,
+    `ai-usage-reset`/`-ok`); `formatUsd`. 3D-Rückfrage nennt `averageFor(own)`, danach Snackbar `scene3d-cost`.
+    Zwei Stufen: `VisualShow.idea`/`ideaKind`/`isPending` (gespeichert als `idea`/`kind`, nur solange offen),
+    `VisualLesson.look`, `pendingScenes`, `stepAt`, `withScene`; `AiService.generateVisualLessons(staged:,
+    drawScenes:, onSceneProgress:)` hängt `_visualStagedRule` an, `drawPendingScenes` (erste Szene allein, dann
+    `parallel` 3, findet Schritte über den Bauplan wieder), `drawVisualScene` (`_visualSceneSystemPrompt`,
+    Überblick ohne fertige Szenen, „Vorlage“ = letzte fertige Szene derselben Art bis 12000 Zeichen).
+    `VisualLessonScreen._drawPending` (beim Öffnen; nimmt vorher den gespeicherten Stand über
+    `VisualLessonRepository.byId`, speichert jede Szene), `_pendingScene` (`visual-scene-pending`,
+    `visual-scene-draw`); `_drawingLessons` (statisch) + `_reloadWhileWatching`: ein zweiter Bildschirm
+    derselben Lektion fragt nichts an, sondern übernimmt die Stände des ersten. Aufrufer: einzelne Lektion `drawScenes: false`, mehrere/„Alle vorbereiten“ `true`.
+    `AppSettings.stagedLessons` (Standard an, synchronisiert), Schalter `staged-lessons`. Bausteine:
+    `Scene3DBlocks` (`lib/models/visual_scene3d_blocks.dart`: `isBlock`, `expand`, `fmt`, `heightColor`) –
+    `surface` (expr in x, y; `x`/`y`/`z`-Bereich, `n` ≤ 24, `points`, `tangent`, `gradient`, `curve`) und
+    `shaft` (`segments` d/l, `axis`, `from`, `supports`, `forces`, `marks`); `VisualScene3D.blocks`,
+    `Scene3DObject.fromBlock` (nicht gespeichert – `toMap` schreibt den Baustein) und `solid` (deckende Fläche,
+    auch in `scene3d_html.dart`); Welle ohne `box`: Raum = Bauteil, ohne Rahmen/Achsen. Textgröße in 3D ist in
+    Pixeln. Prompt: Bausteine in `_visualToolsSpec`. Handy: `Wrap` statt `Row` in `flashcard_list_screen`
+    (`card-actions-<id>`), `_shortBody`, `claude_inbox_screen`, `card_flag_sheet`; `_nav` mit `Expanded`;
+    Rechenweg-Zeile `minLines 1`/`maxLines 3` mit `TextInputType.text`. Tests: `ai_usage_repository_test`,
+    `visual_staged_test`, `visual_scene3d_blocks_test`, `visual_lesson_phone_layout_test`,
+    `flashcard_list_phone_layout_test`, `calc_tasks_schedule_test`. Vorgehen für den Handy-Lauf (nicht im
+    Repo): alle `physicalSize` in den Tests vorübergehend auf 412 px, Roboto über `flutter_test_config`
+    laden (mit der Test-Schrift Ahem melden sich viele Schein-Überläufe), Tests mit `devicePixelRatio = 3`
+    ausnehmen.

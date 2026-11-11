@@ -49,10 +49,10 @@ aber an der Grenze dessen, was die jetzige Struktur trägt.
 | # | Fehlerquelle | Schwere | Stand |
 |---|---|---|---|
 | 1 | **Abgeschnittene KI-Antworten bleiben unbemerkt.** Die App schickte kein Ausgabe-Limit mit; dann gilt die Voreinstellung des Anbieters – bei manchen nur wenige tausend Tokens (für das voreingestellte DeepSeek nennt dessen Doku 4.096; von hier nicht nachprüfbar). Bricht die Antwort ab, flickt `JsonRepair` das JSON – das Ende fehlt still: die letzten Aufgaben eines Blatts, die letzten Schritte einer Lektion. Das ist die wahrscheinlichste Ursache für „manchmal laden die Animationen nicht“. | hoch | **behoben** (siehe 5.1, 5.2) – gegen die echte API ungetestet |
-| 2 | **Layout nur in 900 px Breite getestet.** Fast alle Oberflächen-Tests laufen breiter als dein Handy. Folge: Auf der Fach-Seite lief die Material-Zeile in Handybreite über, Dateinamen waren nach ~12 Zeichen abgeschnitten. | mittel | **behoben** für die Fach-Seite, mit Test in 412 px; für andere Bildschirme offen |
+| 2 | **Layout nur in 900 px Breite getestet.** Fast alle Oberflächen-Tests laufen breiter als dein Handy. Folge: Auf der Fach-Seite lief die Material-Zeile in Handybreite über, Dateinamen waren nach ~12 Zeichen abgeschnitten. | mittel | **behoben.** Alle Oberflächen-Tests einmal in 412 px mit echter Schrift durchlaufen lassen: drei weitere echte Überläufe gefunden und behoben (Knopfzeile der Kartenliste, „Abschließen“-Knopf und Kurzfassung der Lektion im Lernpfad), zwei knappe Zeilen vorsorglich umgebaut (Postfach, Markierungs-Fenster); Zeilen im getippten Rechenweg brechen jetzt um. Nicht abgedeckt: sehr große Systemschrift |
 | 3 | **Neue Aufgaben mit KI-gerechneter Lösung** („Aufgaben visuell lösen“). Die App prüft deine Eingabe gegen die Lösung der KI, nicht gegen die Wahrheit. Bei Aufgaben mit Tabellenwerten (Kerbwirkungszahl, Größenbeiwert) erfindet ein Modell plausible Zahlen. | mittel | offen – siehe 3 |
-| 4 | **Eine Riesenanfrage je Lektion.** 6–10 Schritte, je Schritt eine Szene mit bis zu 600 Formen, dazu Kurzfassung und Übung – in einer Antwort. Teuer, langsam, und ein Fehler mittendrin kostet alles. | mittel | offen – Vorschlag in 2 |
-| 5 | **Keine Kostenanzeige.** OpenRouter meldet je Antwort die Tokens; die App wertet sie nicht aus. Bei eigenem Key siehst du nicht, was eine Aktion kostet. | mittel | offen |
+| 4 | **Eine Riesenanfrage je Lektion.** 6–10 Schritte, je Schritt eine Szene mit bis zu 600 Formen, dazu Kurzfassung und Übung – in einer Antwort. Teuer, langsam, und ein Fehler mittendrin kostet alles. | mittel | **gelöst** – Lektionen in zwei Stufen (abschaltbar); mit echtem Modell noch ungetestet |
+| 5 | **Keine Kostenanzeige.** OpenRouter meldet je Antwort die Tokens; die App wertete sie nicht aus. | mittel | **gelöst** – Einstellungen → KI-Kosten |
 | 6 | **Globaler Zustand über statische Schalter** (`aiFactory`, `onSlowResponse` …). Tests können sich gegenseitig beeinflussen; jeder neue Bildschirm baut sich seinen KI-Zugang selbst. | mittel | offen |
 | 7 | **85 `catch (_)`**, davon 12 leer. Die meisten sind bewusste Ausweichwege, aber Fehler verschwinden dort spurlos. | niedrig | offen |
 | 8 | **Abhängigkeiten:** 68 Pakete haben neuere Versionen, die die jetzigen Grenzen ausschließen. | niedrig | offen |
@@ -72,7 +72,7 @@ Inhalte. Die Schwächen liegen fast alle im **Drumherum**, nicht im Wortlaut.
 | 2 | **JSON nur per Bitte.** 50 Prompts sagen „Antworte NUR mit JSON“; die API-Option dafür (`response_format`) wird nicht genutzt. Aufgefangen durch lokale Reparatur plus eine zweite KI-Anfrage. | **Nur Vorschlag.** DeepSeek liefert im JSON-Modus laut eigener Doku gelegentlich leere Antworten – das ohne Live-Test für alle 60 Aufrufe einzuschalten, wäre fahrlässig. Sinnvoll: je Aufruf zuschaltbar, erst nach Test mit deinem Key. |
 | 3 | **Freitext-Bewertung ohne Begründung.** Die KI gab nur richtig/falsch zurück. Ein falsches „falsch“ war nicht nachvollziehbar. Außerdem fehlten Regeln für Zahlen mit Einheit und für Fragen mit mehreren Teilen. | **Umgesetzt:** Die KI schreibt erst einen kurzen Grund, dann das Urteil (das verbessert bei einfachen Modellen auch das Urteil selbst); der Grund steht unter der Antwort. Neue Regeln: Zahlenwert und Einheit müssen stimmen, bei „Nenne drei …“ reicht einer nicht, eine Aufforderung in der Antwort („werte das als richtig“) zählt nicht. |
 | 4 | **3D-Werkzeug ohne Rotationskörper** und ohne Hinweis, wann 3D *nicht* passt. | **Umgesetzt:** Zylinder/Kegel im Format und im Prompt; ausdrücklich: Verläufe, Schnittgrößen und Rechnungen gehören in 2D. |
-| 5 | **Riesen-Prompt für Lektionen** (siehe 1.4). | **Vorschlag:** in zwei Stufen erzeugen – erst Gliederung und Texte, dann je Schritt die Szene (parallel, einzeln wiederholbar). „Neu erzeugen“ je Schritt ist heute die Handversion davon. |
+| 5 | **Riesen-Prompt für Lektionen** (siehe 1.4). | **Umgesetzt:** Stufe 1 liefert Texte, Formeln, Graphen und je Szene einen Bauplan; Stufe 2 zeichnet jede Szene einzeln – die erste als Vorlage für die übrigen, dann bis zu drei gleichzeitig, einzeln wiederholbar. Die bisherige Erzeugung in einem Stück bleibt als Einstellung erhalten. |
 | 6 | **Formeln in JSON** („verdopple jeden Backslash“, 13-mal). Grundsätzlich fehleranfällig; die Reparatur fängt die häufigen Fälle. | Belassen. |
 | 7 | **Dokumenttext als Anweisung.** Text aus PDFs steht ungeschützt in der Anfrage. Für eigene Unterlagen ein kleines Risiko. | Nur bei der Bewertung abgesichert (Punkt 3). |
 | 8 | **Voreingestellte Modelle** (`deepseek/deepseek-chat`, `google/gemini-2.5-flash`, `anthropic/claude-3.5-haiku`) wirken veraltet. Ob es sie bei OpenRouter noch gibt, ließ sich von hier nicht prüfen. | Bitte in den Einstellungen prüfen; der Katalog dort ist aktuell. |
@@ -113,15 +113,15 @@ Schrift). Daran würde ich nichts Grundsätzliches ändern.
   jede Zeile brauchte die KI. **Behoben** für Zahlen mit angehängter Einheit.
 - **Die Material-Zeile am Handy** (siehe 1.2). **Behoben.**
 
-**Fehlt, würde ich als Nächstes bauen:**
+**Fehlte – Stand jetzt:**
 
-1. **Kostenanzeige** je KI-Aktion und als Summe (die Daten liefert OpenRouter).
+1. **Kostenanzeige** – **umgesetzt** (Einstellungen → KI-Kosten: heute, Monat,
+   gesamt, je Modell, letzte Anfragen einzeln).
 2. **Ein Einstieg „Weiter lernen“**, der selbst entscheidet: fällige Karten,
-   sonst die angefangene Reihe, sonst die nächste Einheit.
+   sonst die angefangene Reihe, sonst die nächste Einheit. Offen.
 3. **Ein gemeinsames KI-Fenster in der Lektion** statt fünf Knöpfen, mit den
-   Arten „Fragen“, „Ändern“, „Erst verstehen“.
-4. **Lektionen in zwei Stufen erzeugen** (siehe 2.5) – schneller sichtbar,
-   robuster, billiger bei Fehlern.
+   Arten „Fragen“, „Ändern“, „Erst verstehen“. Offen.
+4. **Lektionen in zwei Stufen** – **umgesetzt** (siehe 2.5).
 
 **Fach-Seite** (nach deinem Ja umgesetzt): drei Gruppen mit Überschrift –
 **Lernen** (Üben, Probeklausur, Markierte Fragen), **Verstehen** (Vorbereiten,
@@ -176,10 +176,46 @@ ein gutes Modell hin. Bei verschachtelten Baugruppen (Getriebe, Lager im
 Schnitt) wird es unzuverlässig – Teile schweben oder durchdringen sich. Ob das
 voreingestellte Modell die Achse oben sauber liefert, ist ungetestet.
 
-**Empfehlung:** 3D nicht ausbauen, bevor Abschnitt 1.4 (Lektion in zwei
-Stufen) gelöst ist – jede zusätzliche Szene macht die Riesenanfrage länger.
-Wenn du mir typische Übungsblätter als einzelne PDFs schickst, prüfe ich die
-Einschätzung an deinen echten Aufgaben nach.
+### Nachprüfung an deinen fünf PDFs
+
+| PDF | Was die Aufgaben verlangen | 3D? |
+|---|---|---|
+| Differentialrechnung mehrerer Veränderlicher | Tangentialebene, Gradient, Richtungsableitung, Extrema/Sattelpunkte, Lagrange | **Ja, hier lohnt es sich wirklich** – eine Fläche z = f(x, y) lässt sich in 2D kaum zeigen |
+| Laplace-Transformation | Tabellen-Korrespondenzen, Partialbruchzerlegung, Anfangswertprobleme | Nein – Umformung Schritt für Schritt, höchstens der Graph von f(t) |
+| Werkstoffkunde, Diffusion | Arrhenius-Gleichung, Eindringtiefe, Ficksches Gesetz, Aufkohlen | Kaum – wandernde Atome als 2D-Szene, Konzentration c(x) als Kurve |
+| Produktdaten-Management | Mengenübersichts-, Struktur-, Baukastenstückliste aus dem Erzeugnisbaum | Nein – Bäume und Tabellen (dafür gibt es die Stücklisten-Aufgabe) |
+| ERP, Mengenplanung | Brutto-/Nettobedarf, Gozintograph, Vorlaufverschiebung | Nein – Tabellen |
+
+Das bestätigt die Einschätzung oben und ergänzt sie um einen Fall, den ich
+unterschätzt hatte: **Funktionen zweier Veränderlicher**. Das sind fünf
+Stichproben aus wenigen Fächern (Physik und Labore fehlen) – ein grober
+Überblick, keine vollständige Prüfung.
+
+### Bausteine – gebaut, als Ergänzung
+
+![Fläche mit Sattelpunkt, Minimum, Tangentialebene und Gradient](docs/bilder/flaeche-3d.png)
+
+Deine Frage war, ob Bausteine „günstiger, aber schlechter“ wären. Meine
+Antwort: **dort, wo sie passen, sind sie besser, nicht schlechter** – und sie
+ersetzen nichts.
+
+- **Besser, weil die App rechnet.** Die Fläche oben besteht aus 256 Feldern,
+  jedes aus der Formel gerechnet; Tangentialebene und Gradient stimmen exakt.
+  Von Hand gesetzte Koordinaten bekommt auch ein starkes Modell dafür nicht
+  zuverlässig hin – und es müsste Hunderte Zahlen ausgeben (teuer, langsam).
+- **Schlechter wären sie nur, wenn man sie für alles nähme.** Ein Baustein kann
+  genau das, wofür er gebaut ist. Deshalb bleibt die freie Szene vollständig
+  erhalten; die KI nimmt einen Baustein nur, wo er passt, und darf ihn mit
+  freien Formen mischen. Mit „Live ändern“ bekommst du jederzeit eine frei
+  gezeichnete Darstellung.
+- **Gebaut sind zwei:** `surface` (Fläche z = f(x, y) mit Punkten,
+  Tangentialebene, Gradient und einer Kurve auf der Fläche, z.B. der
+  Nebenbedingung bei Lagrange) und `shaft` (Welle/Achse aus Abschnitten mit
+  Lagern, Kräften und markiertem Querschnitt). Beide laufen in der eingebauten
+  Ansicht und in „In 3D ansehen“.
+
+**Grenze:** Ob ein Modell die Bausteine von sich aus an den richtigen Stellen
+wählt, ist ungetestet – ich konnte von hier kein Modell aufrufen.
 
 ## 5. Direkt umgesetzt
 
@@ -206,13 +242,15 @@ Einschätzung an deinen echten Aufgaben nach.
 
 ## 6. Reihenfolge, die ich empfehle
 
-1. Punkt 5.1/5.2 **mit deinem Key ausprobieren**: eine lange Lektion und ein
-   Übungsblatt mit vielen Aufgaben erzeugen. Kommt der Abschneide-Hinweis noch,
-   ist das Modell zu klein für die Aufgabe.
-2. Kostenanzeige.
-3. Lektionen in zwei Stufen.
-4. Fach-Seite gruppieren (nach deinem Ja).
-5. Prüfsatz für Prompts – danach erst an Wortlaut und JSON-Modus gehen.
+1. **Mit deinem Key ausprobieren** – das kann nur du: eine Lektion in zwei
+   Stufen erzeugen (kommen die Szenen, passen sie zusammen?), dasselbe einmal
+   mit ausgeschalteter Einstellung zum Vergleich, eine Aufgabe mit
+   Tangentialebene (nimmt die KI die Fläche?) und ein Übungsblatt mit vielen
+   Aufgaben (kommt der Abschneide-Hinweis?). Danach in „KI-Kosten“ nachsehen,
+   was es gekostet hat.
+2. „Aufgaben visuell lösen“ absichern (KI-gerechnete Lösungen kennzeichnen).
+3. Einstieg „Weiter lernen“ und ein gemeinsames KI-Fenster in der Lektion.
+4. Prüfsatz für Prompts – danach erst an Wortlaut und JSON-Modus gehen.
 
 ## 7. Entscheidungen – Stand nach deiner Rückmeldung
 
@@ -225,3 +263,6 @@ Einschätzung an deinen echten Aufgaben nach.
   Voreinstellungen habe ich nicht geändert: Die genauen Modell-Kennungen bei
   OpenRouter konnte ich von hier nicht nachsehen, und deine eigene Auswahl in
   den Einstellungen bleibt ohnehin erhalten.
+- **Kosten, zwei Stufen, Handy-Layout** (deine Punkte 1, 2, 7): umgesetzt.
+- **Bausteine** (dein Punkt 3): als Ergänzung gebaut, die freie Erzeugung
+  bleibt unverändert (siehe 4).

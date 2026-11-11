@@ -530,7 +530,24 @@ class Scene3DPainter extends CustomPainter {
       case Scene3DShape.polygon:
         final pts = [for (final q in o.pointsAt(p)) mv(q)];
         final f = fill ?? colors.accent;
-        _polygon(canvas, pts, f.withValues(alpha: f.a * 0.35), stroke ?? f, o.dashed, fade, at, depth, parts);
+        if (o.solid) {
+          // Deckend mit feinem, dunklerem Rand (Felder einer Funktionsfläche).
+          final edge = stroke ?? Color.lerp(f, Colors.black, 0.35)!;
+          _polygon(
+            canvas,
+            pts,
+            f.withValues(alpha: f.a * 0.92),
+            edge.withValues(alpha: edge.a * 0.55),
+            o.dashed,
+            fade,
+            at,
+            depth,
+            parts,
+            strokeWidth: 0.6,
+          );
+        } else {
+          _polygon(canvas, pts, f.withValues(alpha: f.a * 0.35), stroke ?? f, o.dashed, fade, at, depth, parts);
+        }
         if (label.isNotEmpty) {
           final c = [for (var q = 0; q < 3; q++) pts.map((v) => v[q]).reduce((a, b) => a + b) / pts.length];
           parts.add((depth(c) + 0.002, () => _text(canvas, label, at(c), 13, fade(colors.ink))));
@@ -664,8 +681,9 @@ class Scene3DPainter extends CustomPainter {
     Color Function(Color) fade,
     Offset Function(List<double>) at,
     double Function(List<double>) depth,
-    List<(double, void Function())> parts,
-  ) {
+    List<(double, void Function())> parts, {
+    double strokeWidth = 1.4,
+  }) {
     if (pts.length < 3) return;
     final c = [for (var q = 0; q < 3; q++) pts.map((v) => v[q]).reduce((a, b) => a + b) / pts.length];
     parts.add((
@@ -676,7 +694,7 @@ class Scene3DPainter extends CustomPainter {
         canvas.drawPath(path, Paint()..color = fade(fill));
         final paint = Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.4
+          ..strokeWidth = strokeWidth
           ..color = fade(stroke);
         if (dashed) {
           for (var i = 0; i < screen.length; i++) {

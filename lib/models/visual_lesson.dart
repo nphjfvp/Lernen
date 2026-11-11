@@ -108,7 +108,20 @@ class VisualShow {
     this.scene,
     this.scene3d,
     this.broken = '',
+    this.idea = '',
+    this.ideaKind = 'scene',
   });
+
+  /// Bauplan einer Szene, die noch nicht gezeichnet ist (Lektionen in zwei
+  /// Stufen: erst Texte und Baupläne, dann je Schritt die Szene). Leer, sobald
+  /// die Szene da ist.
+  final String idea;
+
+  /// Was nach [idea] gezeichnet wird: "scene" (2D) oder "scene3d".
+  final String ideaKind;
+
+  /// Wartet dieser Schritt noch auf seine Szene?
+  bool get isPending => idea.isNotEmpty && scene == null && scene3d == null;
 
   /// Funktion, die das Auto fährt (null = kein Auto).
   final String? car;
@@ -181,6 +194,8 @@ class VisualShow {
     scene: scene,
     scene3d: scene3d,
     broken: broken,
+    idea: idea,
+    ideaKind: ideaKind,
   );
 
   Map<String, dynamic> toMap() => {
@@ -194,6 +209,8 @@ class VisualShow {
     if (scene != null) 'scene': scene!.toMap(),
     if (scene3d != null) 'scene3d': scene3d!.toMap(),
     if (broken.isNotEmpty) 'broken': broken,
+    if (isPending) 'idea': idea,
+    if (isPending && ideaKind != 'scene') 'kind': ideaKind,
   };
 
   static VisualShow fromMap(Object? raw) {
@@ -234,6 +251,8 @@ class VisualShow {
       scene: scene,
       scene3d: scene3d,
       broken: broken.join(' · '),
+      idea: scene == null && scene3d == null ? _str(raw['idea'] ?? raw['plan'] ?? raw['bauplan']) : '',
+      ideaKind: _str(raw['kind'] ?? raw['ideaKind']).toLowerCase().contains('3d') ? 'scene3d' : 'scene',
     );
   }
 }
@@ -268,7 +287,7 @@ class VisualStep {
     'title': title,
     if (text.isNotEmpty) 'text': text,
     if (formula.isNotEmpty) 'formula': formula,
-    if (!show.isEmpty) 'show': show.toMap(),
+    if (!show.isEmpty || show.isPending) 'show': show.toMap(),
     if (guide.isNotEmpty) 'guide': guide,
   };
 
@@ -286,7 +305,7 @@ class VisualStep {
             raw['visual'] ??
             raw['anzeige'] ??
             // Manche Modelle setzen die Darstellung direkt an den Schritt.
-            (const ['scene', 'scene3d', 'car', 'plot', 'transform'].any(raw.containsKey) ? raw : null),
+            (const ['scene', 'scene3d', 'car', 'plot', 'transform', 'idea'].any(raw.containsKey) ? raw : null),
       ),
       guide: _str(raw['guide'] ?? raw['leitfrage'] ?? raw['question']),
     );
@@ -323,6 +342,7 @@ class VisualLesson {
     this.courseId,
     this.recap = '',
     this.shortVersion,
+    this.look = '',
     required this.createdAt,
   });
 
@@ -374,6 +394,10 @@ class VisualLesson {
   /// Kurzfassung zum schnellen Wiedereinsteigen (Kernpunkte, Formel, eine
   /// Darstellung).
   final VisualStep? shortVersion;
+
+  /// Gemeinsamer Aufbau aller Szenen (was wo steht, welche Farbe wofür) –
+  /// damit einzeln gezeichnete Szenen zusammenpassen.
+  final String look;
   final DateTime createdAt;
 
   /// Grundlage für den Lern-Chat („Lernen“): nur die Aufgabe bzw. das Thema –
@@ -439,8 +463,45 @@ class VisualLesson {
     courseId: courseId,
     recap: recap,
     shortVersion: shortVersion,
+    look: look,
     createdAt: createdAt,
   );
+
+  /// Schritte, deren Szene noch gezeichnet werden muss (siehe
+  /// [VisualShow.idea]): Index in [steps], -1 = Ergebnis, -2 = Kurzfassung.
+  List<int> get pendingScenes => [
+    for (final (i, s) in steps.indexed)
+      if (s.show.isPending) i,
+    if (result?.show.isPending ?? false) -1,
+    if (shortVersion?.show.isPending ?? false) -2,
+  ];
+
+  /// Schritt [index] (-1 = Ergebnis, -2 = Kurzfassung); null, wenn es ihn nicht gibt.
+  VisualStep? stepAt(int index) => switch (index) {
+    -1 => result,
+    -2 => shortVersion,
+    _ => index >= 0 && index < steps.length ? steps[index] : null,
+  };
+
+  /// Die Lektion mit der nachgelieferten Szene für Schritt [stepIndex]
+  /// (Antwort von AiService.drawVisualScene: `{"show": {…}, "functions": […]}`).
+  /// Was der Schritt schon zeigt (Graph, Umformung), bleibt; der Bauplan
+  /// entfällt. null, wenn die Antwort keine lesbare Szene enthält.
+  VisualLesson? withScene(int stepIndex, Map<String, dynamic> json) {
+    final step = stepAt(stepIndex);
+    final rawShow = json['show'] is Map ? json['show'] as Map : json;
+    final drawn = VisualShow.fromMap(rawShow);
+    if (step == null || (drawn.scene == null && drawn.scene3d == null)) return null;
+    final show = <String, dynamic>{
+      ...step.show.toMap()..remove('idea')..remove('kind'),
+      for (final k in const ['scene', 'scene3d', 'transform', 'plot', 'tangent', 'area'])
+        if (rawShow[k] != null) k: rawShow[k],
+    };
+    return revisedWith({
+      'step': {...step.toMap(), 'show': show},
+      if (json['functions'] is List) 'functions': json['functions'],
+    }, stepIndex: stepIndex);
+  }
 
   /// Dieselbe Lektion mit genau diesen Funktionen ([extra] ergänzt bzw.
   /// ersetzt gleichnamige); Bezüge auf fehlende Funktionen fallen weg.
@@ -483,6 +544,7 @@ class VisualLesson {
         'result',
         'short',
         'recap',
+        'look',
         'exercise',
         'exerciseFront',
         'simulate',
@@ -560,6 +622,7 @@ class VisualLesson {
     'courseId': ?courseId,
     if (recap.isNotEmpty) 'recap': recap,
     if (shortVersion != null) 'short': shortVersion!.toMap(),
+    if (look.isNotEmpty) 'look': look,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -646,6 +709,7 @@ class VisualLesson {
       courseId: courseId ?? (_str(raw['courseId']).isEmpty ? null : _str(raw['courseId'])),
       recap: _str(raw['recap'] ?? raw['rueckblick'] ?? raw['rückblick']),
       shortVersion: clean(VisualStep.fromMap(raw['short'] ?? raw['kurzfassung'])),
+      look: _str(raw['look'] ?? raw['aufbau']),
       createdAt: created,
     );
   }

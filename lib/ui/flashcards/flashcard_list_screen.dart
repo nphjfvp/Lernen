@@ -1176,8 +1176,12 @@ class _FlashcardTile extends StatelessWidget {
                 ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                // Umbrechen statt überlaufen: Am Handy passen die bis zu
+                // sechs Knöpfe nicht in eine Zeile.
+                child: Wrap(
+                  key: ValueKey('card-actions-${card.id}'),
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     if (card.imageBase64 != null &&
                         card.type != QuestionType.diagramLabel &&

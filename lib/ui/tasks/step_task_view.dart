@@ -1099,6 +1099,11 @@ class _StepTaskViewState extends State<StepTaskView> {
                         autocorrect: false,
                         enableSuggestions: false,
                         style: const TextStyle(fontSize: 15.5),
+                        // Lange Zeilen brechen um (am Handy ist das Feld schmal) –
+                        // Enter springt trotzdem zur nächsten Zeile.
+                        keyboardType: TextInputType.text,
+                        minLines: 1,
+                        maxLines: 3,
                         textInputAction: TextInputAction.next,
                         decoration: InputDecoration(
                           isDense: true,

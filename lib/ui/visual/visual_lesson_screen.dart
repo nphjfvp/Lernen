@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -6,6 +8,8 @@ import '../../models/flashcard.dart';
 import '../../models/step_task.dart';
 import '../../models/visual_chat.dart';
 import '../../models/visual_lesson.dart';
+import '../../models/ai_usage.dart';
+import '../../repositories/ai_usage_repository.dart';
 import '../../repositories/model_catalog_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/visual_chat_repository.dart';
@@ -96,8 +100,199 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
 
   VisualLesson get _l => _lesson;
 
+  /// Läuft gerade das Nachzeichnen offener Szenen (Lektion in zwei Stufen)?
+  bool _drawRunning = false;
+
+  /// Gescheiterte Szenen: Bauplan → Meldung.
+  final _drawFailed = <String, String>{};
+
+  /// Lektionen, deren Szenen gerade irgendwo gezeichnet werden – ein zweiter
+  /// Bildschirm derselben Lektion fragt sie nicht noch einmal an (und bezahlt
+  /// sie nicht doppelt), sondern wartet auf das Ergebnis des ersten.
+  static final _drawingLessons = <String>{};
+
+  /// Wartet dieser Bildschirm auf das Zeichnen eines anderen (siehe
+  /// [_drawingLessons])?
+  VisualLessonRepository? _watching;
+
+  @override
+  void initState() {
+    super.initState();
+    // Lektion in zwei Stufen: Szenen, für die erst ein Bauplan da ist, jetzt zeichnen.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _drawPending();
+    });
+  }
+
+  /// Zeichnet alle Szenen, für die bisher nur ein Bauplan da ist – die des
+  /// gerade sichtbaren Schritts zuerst. Jede fertige Szene erscheint sofort
+  /// und wird gespeichert; auch wenn der Bildschirm inzwischen zu ist.
+  Future<void> _drawPending() async {
+    if (_drawRunning || _l.pendingScenes.isEmpty) return;
+    final ai = _reviseAi(context);
+    final repo = context.read<VisualLessonRepository?>();
+    final id = _l.id;
+    if (repo != null && _drawingLessons.contains(id)) {
+      // Wird schon gezeichnet: zusehen statt noch einmal anfragen.
+      _watching = repo..addListener(_reloadWhileWatching);
+      setState(() => _drawRunning = true);
+      return;
+    }
+    // Sofort vormerken (vor dem ersten Warten), damit ein zweiter Bildschirm
+    // derselben Lektion nicht gleichzeitig loslegt.
+    if (id.isNotEmpty) _drawingLessons.add(id);
+    setState(() {
+      _drawRunning = true;
+      _drawFailed.clear();
+    });
+    var stored = false;
+    try {
+      // Wurde die Lektion mit einem älteren Stand geöffnet (z.B. aus einer
+      // Liste, die noch nichts von inzwischen gezeichneten Szenen weiß): den
+      // gespeicherten nehmen – sonst würde dieselbe Szene zweimal bezahlt.
+      if (repo != null && id.isNotEmpty) {
+        try {
+          final saved = await repo.byId(id);
+          stored = saved != null;
+          if (saved != null && saved.pendingScenes.length < _l.pendingScenes.length) {
+            final l = VisualMath.sanitize(saved);
+            _lesson = l;
+            _math = VisualMath(l);
+            if (mounted) setState(() {});
+          }
+        } catch (_) {
+          // Dann eben mit dem Stand, der da ist.
+        }
+      }
+      if (_l.pendingScenes.isEmpty) return;
+      if (ai == null) {
+        for (final i in _l.pendingScenes) {
+          _drawFailed[_l.stepAt(i)!.show.idea] = 'Dafür braucht die App deinen OpenRouter-Key (Einstellungen).';
+        }
+        return;
+      }
+      final pages = _pages;
+      final first = _short
+          ? -2
+          : switch (pages.isEmpty ? null : pages[_page.clamp(0, pages.length - 1)].kind) {
+              _PageKind.step => _page,
+              _PageKind.result => -1,
+              _ => null,
+            };
+      await ai.drawPendingScenes(
+        current: () => _l,
+        first: first,
+        apply: (updated) {
+          final l = VisualMath.sanitize(updated);
+          void take() {
+            _lesson = l;
+            _math = VisualMath(l);
+          }
+
+          mounted ? setState(take) : take();
+          if (repo != null && l.id.isNotEmpty) repo.save(l);
+        },
+        onFailed: (index, message) {
+          final idea = _l.stepAt(index)?.show.idea;
+          if (idea == null) return;
+          _drawFailed[idea] = message;
+          if (mounted) setState(() {});
+        },
+      );
+    } finally {
+      _drawingLessons.remove(id);
+      _drawRunning = false;
+      if (mounted) setState(() {});
+      // Bildschirme, die zusehen, erfahren so vom Ende (nur bei gespeicherten
+      // Lektionen – eine ungespeicherte wird hier nicht angelegt).
+      if (repo != null && stored) unawaited(repo.save(_l));
+    }
+  }
+
+  /// Ein anderer Bildschirm zeichnet die Szenen dieser Lektion: nach jedem
+  /// Speichern den neuen Stand übernehmen; ist er fertig, selbst wieder frei.
+  Future<void> _reloadWhileWatching() async {
+    final repo = _watching;
+    if (repo == null) return;
+    final stored = await repo.byId(_l.id);
+    if (!mounted || _watching == null) return;
+    final done = !_drawingLessons.contains(_l.id);
+    if (done) {
+      repo.removeListener(_reloadWhileWatching);
+      _watching = null;
+    }
+    setState(() {
+      if (stored != null && stored.pendingScenes.length <= _l.pendingScenes.length) {
+        final l = VisualMath.sanitize(stored);
+        _lesson = l;
+        _math = VisualMath(l);
+      }
+      if (done) _drawRunning = false;
+    });
+  }
+
+  /// Platzhalter für eine Szene, die noch gezeichnet wird (oder gescheitert ist).
+  Widget _pendingScene(AppColors c, VisualShow show) {
+    final failed = _drawFailed[show.idea];
+    final working = _drawRunning && failed == null;
+    return Container(
+      key: const ValueKey('visual-scene-pending'),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: failed == null ? c.surfaceAlt : c.warnSoft,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (working)
+                const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                Icon(
+                  failed == null ? Icons.draw_outlined : Icons.broken_image_outlined,
+                  size: 20,
+                  color: failed == null ? c.inkMuted : c.warn,
+                ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  working
+                      ? 'Die Darstellung wird gezeichnet …'
+                      : failed ?? 'Die Darstellung ist noch nicht gezeichnet.',
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Geplant: ${show.idea}',
+            maxLines: 6,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.35),
+          ),
+          if (!working)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                key: const ValueKey('visual-scene-draw'),
+                onPressed: _drawPending,
+                icon: const Icon(Icons.draw_outlined, size: 18),
+                label: const Text('Jetzt zeichnen'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _watching?.removeListener(_reloadWhileWatching);
+    _watching = null;
     for (final s in _socratic.values) {
       s.answer.dispose();
     }
@@ -341,6 +536,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       const SizedBox(height: 12),
       VisualSceneView(key: ValueKey('visual-scene-$_page'), math: _math, show: step.show),
     ],
+    if (step.show.isPending) _pendingScene(c, step.show),
     if (step.show.broken.isNotEmpty) _brokenNote(c, step.show, isResult ? -1 : _page),
     const SizedBox(height: 14),
     VisualLiveEditBar(
@@ -543,6 +739,9 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     const outTokens = 5000;
     final inPrice = info?.promptPricePerMillion, outPrice = info?.completionPricePerMillion;
     final cost = inPrice == null || outPrice == null ? null : (inTokens * inPrice + outTokens * outPrice) / 1e6;
+    // Was dieses Modell auf diesem Gerät bisher wirklich gekostet hat.
+    final usage = context.read<AiUsageRepository?>();
+    final past = usage?.averageFor(own);
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -552,6 +751,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
         content: Text(
           'Dafür ist „${info?.name ?? own}“ eingestellt. '
           '${cost == null ? 'Den Preis kennt die App nicht.' : 'Das kostet grob ${cost < 0.01 ? 'unter 1 Cent' : '${(cost * 100).round()} Cent'} (Schätzung in US-Cent, je nach Länge der Lektion).'}'
+          '${past == null ? '' : '\nBisher mit diesem Modell: im Schnitt ${formatUsd(past.cost)} je Anfrage (${past.calls} gezählt).'}'
           '\n\nMit dem Standard-Modell („${settings.questionModelId}“) geht es günstiger, aber oft ungenauer.',
         ),
         actions: [
@@ -570,7 +770,21 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       ),
     );
     if (choice == null || !mounted) return null;
-    return _liveRevise(stepIndex, scene3dRequest, model: choice == 'own' ? own : null);
+    if (choice != 'own') return _liveRevise(stepIndex, scene3dRequest);
+    final before = usage?.last;
+    final result = await _liveRevise(stepIndex, scene3dRequest, model: own);
+    // Nach der teuren Anfrage gleich sagen, was sie gekostet hat.
+    await usage?.settled;
+    final spent = usage?.last;
+    if (mounted && spent != null && !identical(spent, before) && spent.model == own && spent.cost != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const ValueKey('scene3d-cost'),
+          content: Text('3D-Modell: ${spent.estimated ? 'etwa ' : ''}${formatUsd(spent.cost!)}'),
+        ),
+      );
+    }
+    return result;
   }
 
   Future<String?> _liveRevise(int stepIndex, String request, {String? model}) async {
@@ -609,24 +823,32 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
           icon: const Icon(Icons.chevron_left),
           label: const Text('Zurück'),
         ),
-        const Spacer(),
-        if (_page < count - 1)
-          FilledButton.icon(
-            key: const ValueKey('visual-next'),
-            onPressed: () => setState(() => _page++),
-            icon: const Icon(Icons.chevron_right),
-            label: Text(_pages[_page + 1].kind == _PageKind.exercise ? 'Jetzt du' : 'Weiter'),
-          )
-        else if (widget.onFinished != null)
-          FilledButton.icon(
-            key: const ValueKey('visual-finish'),
-            onPressed: () {
-              widget.onFinished!();
-              Navigator.of(context).maybePop();
-            },
-            icon: const Icon(Icons.check),
-            label: Text(widget.finishLabel),
+        const SizedBox(width: 8),
+        // Der Abschluss-Knopf im Lernpfad nennt das nächste Thema – am Handy
+        // bricht sein Text um, statt die Zeile zu sprengen.
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _page < count - 1
+                ? FilledButton.icon(
+                    key: const ValueKey('visual-next'),
+                    onPressed: () => setState(() => _page++),
+                    icon: const Icon(Icons.chevron_right),
+                    label: Text(_pages[_page + 1].kind == _PageKind.exercise ? 'Jetzt du' : 'Weiter'),
+                  )
+                : widget.onFinished != null
+                ? FilledButton.icon(
+                    key: const ValueKey('visual-finish'),
+                    onPressed: () {
+                      widget.onFinished!();
+                      Navigator.of(context).maybePop();
+                    },
+                    icon: const Icon(Icons.check),
+                    label: Text(widget.finishLabel, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  )
+                : const SizedBox.shrink(),
           ),
+        ),
       ],
     ),
   );
@@ -659,8 +881,12 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
           const SizedBox(height: 12),
           VisualSceneView(math: _math, show: s.show),
         ],
+        if (s.show.isPending) _pendingScene(c, s.show),
         const SizedBox(height: 16),
-        Row(
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             TextButton.icon(
               key: const ValueKey('visual-short-revise'),
@@ -668,14 +894,12 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
               icon: const Icon(Icons.auto_fix_high, size: 18),
               label: const Text('Ändern'),
             ),
-            const SizedBox(width: 6),
             OutlinedButton.icon(
               key: const ValueKey('visual-short-full'),
               onPressed: () => setState(() => _short = false),
               icon: const Icon(Icons.subject),
               label: const Text('Ausführlich ansehen'),
             ),
-            const Spacer(),
             if (widget.onFinished != null)
               FilledButton.icon(
                 key: const ValueKey('visual-short-finish'),

@@ -34,6 +34,7 @@ import '../inbox/claude_inbox_settings.dart';
 import '../widgets/add_password_dialog.dart';
 import '../widgets/question_type_dropdown.dart';
 import '../widgets/update_actions.dart';
+import 'ai_usage_screen.dart';
 import 'model_picker_sheet.dart';
 import 'sync_backups_dialog.dart';
 import 'sync_cloud_history_dialog.dart';
@@ -929,6 +930,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 4),
+                  SwitchListTile(
+                    key: const ValueKey('staged-lessons'),
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.stagedLessons,
+                    activeThumbColor: c.accent,
+                    onChanged: (v) => context.read<SettingsRepository>().update(settings.copyWith(stagedLessons: v)),
+                    title: const Text(
+                      'Lektionen in zwei Stufen erzeugen',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Erst Texte und Formeln, dann jede Darstellung einzeln: Die Lektion ist schneller da, und '
+                      'scheitert eine Darstellung, lässt sich nur sie nachholen. Aus = wie früher alles in einer '
+                      'einzigen Anfrage.',
+                      style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const AiUsageTile(key: ValueKey('ai-usage-tile')),
                   const SizedBox(height: 22),
                   _SectionLabel('Frage erstellen'),
                   const SizedBox(height: 4),

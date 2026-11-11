@@ -411,7 +411,9 @@ class _VisualCourseScreenState extends State<VisualCourseScreen> {
   }
 
   /// Lektion zu Thema [i] – vorhanden oder jetzt erzeugt.
-  Future<VisualLesson?> _ensureLesson(int i) async {
+  /// [drawScenes] false: gleich öffnen – der Lektions-Bildschirm zeichnet die
+  /// Szenen; true (alle vorbereiten): fertig gezeichnet ablegen.
+  Future<VisualLesson?> _ensureLesson(int i, {bool drawScenes = false}) async {
     final unit = _course.units[i];
     final existing = unit.lessonId == null ? null : _lessons[unit.lessonId];
     if (existing != null) return existing;
@@ -421,12 +423,19 @@ class _VisualCourseScreenState extends State<VisualCourseScreen> {
       return null;
     }
     final repo = context.read<VisualLessonRepository>();
+    final staged = context.read<SettingsRepository?>()?.settings.stagedLessons ?? true;
     setState(() {
       _busyIndex = i;
       _error = null;
     });
     try {
-      final lesson = await VisualCourseService(ai).lessonFor(_course, i, _lessons);
+      final lesson = await VisualCourseService(ai).lessonFor(
+        _course,
+        i,
+        _lessons,
+        staged: staged,
+        drawScenes: drawScenes,
+      );
       await repo.save(lesson);
       if (!mounted) return lesson;
       _lessons = {..._lessons, lesson.id: lesson};
@@ -467,7 +476,7 @@ class _VisualCourseScreenState extends State<VisualCourseScreen> {
     });
     for (var i = 0; i < _course.units.length && !_stop && mounted; i++) {
       if (_course.units[i].lessonId != null && _lessons.containsKey(_course.units[i].lessonId)) continue;
-      final lesson = await _ensureLesson(i);
+      final lesson = await _ensureLesson(i, drawScenes: true);
       if (lesson == null) break;
     }
     if (mounted) setState(() => _preparing = false);

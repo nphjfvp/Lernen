@@ -9,6 +9,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'visual_scene3d_blocks.dart';
+
 double? _num(Object? raw) {
   final v = raw is num ? raw.toDouble() : double.tryParse('${raw ?? ''}'.trim().replaceAll(',', '.'));
   // „NaN“/„Infinity“ der KI zählen als fehlend – sie zerschießen sonst die Zeichnung.
@@ -140,7 +142,17 @@ class Scene3DObject {
     this.keys = const [],
     this.n = const [1, 1, 1],
     this.d = const [0, 0, 0],
+    this.fromBlock = false,
+    this.solid = false,
   });
+
+  /// Fläche deckend zeichnen (statt durchscheinend) – z.B. die Felder einer
+  /// Funktionsfläche.
+  final bool solid;
+
+  /// Von der App aus einem Baustein gerechnet (siehe [Scene3DBlocks]) – wird
+  /// nicht einzeln gespeichert, sondern der Baustein.
+  final bool fromBlock;
 
   final Scene3DShape shape;
   final Map<String, double> numbers;
@@ -244,6 +256,7 @@ class Scene3DObject {
     if (stroke.isNotEmpty) 'stroke': stroke,
     if (text.isNotEmpty) 'text': text,
     if (dashed) 'dashed': true,
+    if (solid) 'solid': true,
     if (copies > 1) 'repeat': {'n': n, 'd': d},
     if (keys.isNotEmpty) 'keys': [for (final k in keys) k.toMap()],
   };
@@ -322,6 +335,8 @@ class Scene3DObject {
       ],
       n: rn is List && rn.length >= 3 ? [for (final v in rn.take(3)) count(v)] : const [1, 1, 1],
       d: _vec(rd) ?? const [0, 0, 0],
+      fromBlock: raw['fromBlock'] == true,
+      solid: raw['solid'] == true,
     );
   }
 }
@@ -340,7 +355,13 @@ class VisualScene3D {
     this.paramFrom = 0,
     this.paramTo = 1,
     this.seconds = 6,
+    this.blocks = const [],
   });
+
+  /// Bausteine dieser Szene, wie die KI sie geliefert hat (Fläche z = f(x, y),
+  /// Welle aus Abschnitten …). Ihre Formen stehen fertig gerechnet in
+  /// [objects]; gespeichert wird nur der Baustein.
+  final List<Map<String, dynamic>> blocks;
 
   /// Raum 0…box (x, y, z; z nach oben).
   final List<double> box;
@@ -379,7 +400,11 @@ class VisualScene3D {
     if (!frame) 'frame': false,
     if (!axes) 'axes': false,
     if (spin) 'spin': true,
-    'objects': [for (final o in objects) o.toMap()],
+    'objects': [
+      for (final o in objects)
+        if (!o.fromBlock) o.toMap(),
+      ...blocks,
+    ],
     if (captions.isNotEmpty)
       'captions': [
         for (final c in captions) {'at': c.at, 'text': c.text},
@@ -392,9 +417,24 @@ class VisualScene3D {
     if (raw is! Map) return null;
     final rawObjects = raw['objects'] ?? raw['elements'];
     final objects = <Scene3DObject>[];
+    final blocks = <Map<String, dynamic>>[];
+    final givenBox = _vec(raw['box'] ?? raw['size']);
+    final blockBox = [for (final v in givenBox ?? const [1.0, 1.0, 1.0]) v <= 0 ? 1.0 : v];
     var count = 0;
     if (rawObjects is List) {
       for (final o in rawObjects) {
+        // Bausteine: Die App rechnet ihre Formen (zählen nicht zur Obergrenze).
+        if (Scene3DBlocks.isBlock(o)) {
+          final parts = [
+            for (final part in Scene3DBlocks.expand(o as Map, blockBox))
+              ?Scene3DObject.fromMap({...part, 'fromBlock': true}),
+          ];
+          if (parts.isNotEmpty) {
+            objects.addAll(parts);
+            blocks.add(Map<String, dynamic>.from(o));
+          }
+          continue;
+        }
         final obj = Scene3DObject.fromMap(o);
         if (obj == null || count + obj.copies > maxObjects) continue;
         count += obj.copies;
@@ -402,15 +442,33 @@ class VisualScene3D {
       }
     }
     if (objects.isEmpty) return null;
-    final box = _vec(raw['box'] ?? raw['size']) ?? const [1.0, 1.0, 1.0];
+    var box = givenBox ?? const [1.0, 1.0, 1.0];
+    var bare = false;
+    if (givenBox == null && blocks.any((b) => b['segments'] is List)) {
+      // Welle ohne Raumangabe: Der Raum ist so groß wie das Bauteil, ohne
+      // Rahmen und Achsen (die würden nur stören).
+      final hi = [0.0, 0.0, 0.0];
+      for (final o in objects) {
+        final r = o.numbers['r'] ?? 0;
+        for (final v in [o.vectors['at'], o.vectors['from'], o.vectors['to']]) {
+          if (v == null) continue;
+          for (var q = 0; q < 3; q++) {
+            hi[q] = math.max(hi[q], v[q] + r);
+          }
+        }
+      }
+      box = hi;
+      bare = true;
+    }
     final rawCaptions = raw['captions'];
     final param = raw['param'] is Map ? raw['param'] as Map : const {};
     return VisualScene3D(
       box: [for (final v in box) v <= 0 ? 1.0 : v],
-      frame: raw['frame'] != false,
-      axes: raw['axes'] != false,
+      frame: raw['frame'] == null ? !bare : raw['frame'] != false,
+      axes: raw['axes'] == null ? !bare : raw['axes'] != false,
       spin: raw['spin'] == true,
       objects: objects,
+      blocks: blocks,
       captions: [
         if (rawCaptions is List)
           for (final c in rawCaptions)

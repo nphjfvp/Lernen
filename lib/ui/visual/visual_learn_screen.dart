@@ -259,6 +259,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
     String material = '',
     List<Uint8List> images = const [],
     required String source,
+    bool drawScenes = true,
   }) async {
     final repo = context.read<VisualLessonRepository>();
     final raws = await ai.generateVisualLessons(
@@ -267,6 +268,9 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
       images: images,
       detail: _detail,
       socratic: _style == VisualStyle.socratic,
+      staged: context.read<SettingsRepository?>()?.settings.stagedLessons ?? true,
+      // false: Die Lektion öffnet sich gleich – ihr Bildschirm zeichnet die Szenen.
+      drawScenes: drawScenes,
     );
     final lesson = [
       for (final raw in raws)
@@ -317,6 +321,7 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
         material: read.material,
         images: read.images,
         source: pages.isEmpty ? (topic.isEmpty ? '' : 'eigenes Beispiel') : _sourceOf(pages),
+        drawScenes: false,
       );
       if (lesson == null) {
         throw AiServiceException('Die KI-Antwort ließ sich nicht als Lektion lesen – bitte erneut versuchen.');
@@ -468,6 +473,8 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
           material: read.material,
           images: read.images,
           source: _sourceOf(pages),
+          // Eine einzige Lektion öffnet sich gleich; mehrere werden fertig gezeichnet abgelegt.
+          drawScenes: chosen.length > 1,
         );
         if (lesson == null) {
           failed.add('„${t.title}“: Antwort unbrauchbar');

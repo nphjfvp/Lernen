@@ -59,4 +59,9 @@ class DatabaseService {
   /// – getrennt, damit das Auflisten nicht alles lädt – die Daten selbst.
   static final syncBackups = stringMapStoreFactory.store('sync_backups');
   static final syncBackupData = stringMapStoreFactory.store('sync_backup_data');
+
+  /// KI-Kosten dieses Geräts (siehe AiUsageRepository): die letzten Anfragen
+  /// einzeln und Summen je Tag und Modell. Nicht synchronisiert.
+  static final aiUsage = stringMapStoreFactory.store('ai_usage');
+  static final aiUsageTotals = stringMapStoreFactory.store('ai_usage_totals');
 }

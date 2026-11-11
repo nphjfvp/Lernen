@@ -184,6 +184,7 @@ class _VisualTaskTypesScreenState extends State<VisualTaskTypesScreen> {
       VisualTaskLevel.medium => 'mittelschwere',
       VisualTaskLevel.hard => 'schwere',
     };
+    final staged = context.read<SettingsRepository?>()?.settings.stagedLessons ?? true;
     await _run('Die KI stellt eine $what Aufgabe und löst sie Schritt für Schritt …', (ai) async {
       final raws = await ai.generateVisualLessons(
         topic: AiService.visualTaskTopic(
@@ -196,6 +197,9 @@ class _VisualTaskTypesScreenState extends State<VisualTaskTypesScreen> {
         ),
         detail: 'ausführlich',
         socratic: style == VisualStyle.socratic,
+        staged: staged,
+        // Die Lektion öffnet sich gleich – ihr Bildschirm zeichnet die Szenen.
+        drawScenes: false,
       );
       final lesson = [
         for (final raw in raws)

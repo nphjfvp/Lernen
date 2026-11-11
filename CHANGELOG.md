@@ -1,8 +1,55 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6w) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6x) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6x. KI-Kosten, Lektionen in zwei Stufen, 3D-Bausteine, Handy-Layout
+
+- **KI-Kosten** (Einstellungen → KI-Modelle → „KI-Kosten“): Die App zählt bei
+  jeder Antwort mit, was OpenRouter dafür meldet – Tokens und Betrag in
+  US-Dollar. Übersicht: heute, dieser Monat, gesamt; je Modell; die letzten
+  200 Anfragen einzeln (was, wann, welches Modell, wie viel). Meldet eine
+  Antwort keinen Betrag, rechnet die App ihn aus Tokens und Listenpreis und
+  markiert ihn mit „≈“. Gezählt wird je Gerät (nicht synchronisiert) und erst
+  ab jetzt; verbindlich bleibt die Abrechnung bei OpenRouter.
+- **„3D-Modell erzeugen“ mit eigenem Modell:** Die Rückfrage nennt zusätzlich,
+  was dieses Modell bei dir bisher im Schnitt gekostet hat; nach dem Erzeugen
+  steht kurz der echte Preis da.
+- **Lektionen in zwei Stufen** (Visuell lernen, Aufgaben visuell lösen,
+  „Visuell erklären“, Lernpfad, Chat → Lektion): Stufe 1 liefert Texte,
+  Formeln, Graphen/Umformungen und je Szene nur einen **Bauplan**; Stufe 2
+  zeichnet jede Szene einzeln – die erste allein, sie dient den übrigen als
+  Vorlage für Aufbau und Farben, der Rest bis zu drei gleichzeitig.
+  - Eine einzelne Lektion **öffnet sich sofort** nach Stufe 1; die Szenen
+    erscheinen nach und nach, die des sichtbaren Schritts zuerst
+    („Die Darstellung wird gezeichnet …“ mit dem Bauplan darunter).
+  - Scheitert eine Szene, bleibt der Rest der Lektion erhalten; „Jetzt
+    zeichnen“ holt nur die fehlende nach. Fertige Szenen werden sofort
+    gespeichert.
+  - Mehrere Lektionen auf einmal (ganze PDF, „Alle vorbereiten“ im Lernpfad)
+    werden fertig gezeichnet abgelegt.
+  - Keine Szene wird doppelt angefragt – auch nicht, wenn die Lektion mit
+    einem älteren Stand oder ein zweites Mal geöffnet wird, während noch
+    gezeichnet wird.
+  - Abschaltbar: Einstellungen → „Lektionen in zwei Stufen erzeugen“ – aus
+    heißt wie bisher alles in einer einzigen Anfrage.
+- **3D-Bausteine** – zusätzlich zur freien 3D-Szene, nicht statt ihr: Für zwei
+  Fälle liefert die KI nur noch Parameter, die App rechnet und baut die Formen.
+  - **Fläche z = f(x, y)** für Funktionen zweier Veränderlicher: aus dem Term
+    gerechnet, nach Höhe gefärbt, Achsen mit den echten Werten beschriftet.
+    Dazu Punkte auf der Fläche, **Tangentialebene**, **Gradient** und eine
+    Kurve auf der Fläche (Nebenbedingung bei Lagrange).
+  - **Welle/Achse aus Abschnitten** (Durchmesser, Länge): maßstäblich, mit
+    Lagern, Kräften und markiertem Querschnitt.
+  - Beide laufen in der eingebauten Ansicht und in „In 3D ansehen“.
+- **Handy-Layout:** alle Oberflächen-Tests einmal in 412 px Breite mit echter
+  Schrift durchlaufen lassen. Behoben: Die Knopfzeile unter einer Karte in der
+  Kartenliste lief über; in der Lektion im Lernpfad der „Abschließen“-Knopf
+  (nennt das nächste Thema) und die Knöpfe der Kurzfassung. Vorsorglich
+  umgebaut: Knopfzeilen im Postfach und im Markierungs-Fenster. Im getippten
+  Rechenweg („Selbst rechnen“) brechen lange Zeilen jetzt um, statt im
+  schmalen Feld zu verschwinden.
 
 ### 6w. Fach-Seite in drei Gruppen, Reihenfolge umschalten, eigenes 3D-Modell
 

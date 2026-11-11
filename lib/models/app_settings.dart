@@ -122,6 +122,11 @@ class AppSettings {
   /// Schreibtisch-PC an, auf dem Handy im Bett aus – wird nicht synchronisiert.
   final bool includeCalcTasks;
 
+  /// „Visuell lernen“: Lektionen in zwei Stufen erzeugen – erst Texte und
+  /// Baupläne, dann jede Szene einzeln (siehe AiService.generateVisualLessons).
+  /// Aus = wie früher alles in einer Anfrage.
+  final bool stagedLessons;
+
   /// Das tatsächlich genutzte Modell für Erklärungen und Hilfe.
   String get effectiveHelpModelId {
     final id = helpModelId?.trim();
@@ -162,6 +167,7 @@ class AppSettings {
     this.helpModelId,
     this.scene3dModelId,
     this.includeCalcTasks = true,
+    this.stagedLessons = true,
   });
 
   bool get hasApiKey =>
@@ -210,6 +216,7 @@ class AppSettings {
     String? scene3dModelId,
     bool clearScene3dModel = false,
     bool? includeCalcTasks,
+    bool? stagedLessons,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -238,6 +245,7 @@ class AppSettings {
       helpModelId: clearHelpModel ? null : (helpModelId ?? this.helpModelId),
       scene3dModelId: clearScene3dModel ? null : (scene3dModelId ?? this.scene3dModelId),
       includeCalcTasks: includeCalcTasks ?? this.includeCalcTasks,
+      stagedLessons: stagedLessons ?? this.stagedLessons,
     );
   }
 
@@ -267,6 +275,7 @@ class AppSettings {
         'helpModelId': helpModelId,
         'scene3dModelId': scene3dModelId,
         'includeCalcTasks': includeCalcTasks,
+        'stagedLessons': stagedLessons,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
@@ -306,6 +315,7 @@ class AppSettings {
             ? null
             : map['scene3dModelId'] as String,
         includeCalcTasks: map['includeCalcTasks'] as bool? ?? true,
+        stagedLessons: map['stagedLessons'] as bool? ?? true,
       );
 
   bool isFavoriteModel(String id) => favoriteModelIds.contains(id);

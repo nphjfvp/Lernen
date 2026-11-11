@@ -208,7 +208,14 @@ class VisualCourseService {
   }
 
   /// Schritt 3: die Lektion zu Thema [index] (Rückblick, Kurzfassung).
-  Future<VisualLesson> lessonFor(VisualCourse course, int index, Map<String, VisualLesson> lessons) async {
+  /// [staged]/[drawScenes]: siehe AiService.generateVisualLessons.
+  Future<VisualLesson> lessonFor(
+    VisualCourse course,
+    int index,
+    Map<String, VisualLesson> lessons, {
+    bool staged = true,
+    bool drawScenes = true,
+  }) async {
     final unit = course.units[index];
     final raws = await ai.generateVisualLessons(
       topic: [
@@ -220,6 +227,8 @@ class VisualCourseService {
       detail: course.detail,
       socratic: course.style == VisualStyle.socratic,
       courseContext: contextFor(course, index, lessons),
+      staged: staged,
+      drawScenes: drawScenes,
     );
     final lesson = [
       for (final raw in raws)

@@ -240,6 +240,14 @@ const appGuideChapters = <GuideChapter>[
         where: 'Fach → Visuell lernen',
       ),
       GuideItem(
+        'Erst der Text, dann die Bilder',
+        'Eine Lektion öffnet sich, sobald Texte und Formeln stehen. Die Darstellungen werden danach einzeln '
+            'gezeichnet und erscheinen nach und nach – die des Schritts, den du gerade siehst, zuerst. Klappt eine '
+            'nicht, holt „Jetzt zeichnen“ nur sie nach. Lieber alles in einem Stück wie früher? Das lässt sich '
+            'umstellen.',
+        where: 'Einstellungen → Lektionen in zwei Stufen erzeugen',
+      ),
+      GuideItem(
         'Aufgaben visuell lösen',
         'Die KI ordnet die Aufgaben deines Fachs in Typen. Typ antippen, Leicht, Mittel oder Schwer wählen – sie '
             'stellt eine neue Aufgabe und löst sie Schritt für Schritt; gleiche Größen haben überall dieselbe Farbe. '
@@ -258,8 +266,9 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Animationen und 3D',
         'Bewegte Szenen mit Regler und Beschriftung; räumliche Szenen lassen sich drehen – Kristallgitter '
-            'ebenso wie Bauteile (Wellen und Achsen mit Absätzen). „In 3D ansehen“ öffnet echtes 3D mit Licht, '
-            'Schatten und Zoom.',
+            'ebenso wie Bauteile (Wellen und Achsen mit Absätzen). Funktionen zweier Veränderlicher erscheinen als '
+            'Fläche z = f(x, y) mit Tangentialebene, Gradient und Extrempunkten; Fläche und Welle rechnet die App '
+            'selbst aus der Formel bzw. den Maßen. „In 3D ansehen“ öffnet echtes 3D mit Licht, Schatten und Zoom.',
       ),
       GuideItem(
         'Live ändern',
@@ -355,9 +364,16 @@ const appGuideChapters = <GuideChapter>[
       ),
       GuideItem(
         'Modelle',
-        'Getrennt wählbar für Fragenerstellen, Erklärungen, Vision (gescannte Folien) und Crosscheck. Favoriten '
-            'markieren; Claude, GPT, Gemini usw. sind alle über OpenRouter verfügbar.',
+        'Getrennt wählbar für Fragenerstellen, Erklärungen, Vision (gescannte Folien), Crosscheck und '
+            '3D-Modelle. Favoriten markieren; Claude, GPT, Gemini usw. sind alle über OpenRouter verfügbar.',
         where: 'Einstellungen → Modelle',
+      ),
+      GuideItem(
+        'Was es kostet',
+        'Die App zählt mit, was OpenRouter für jede Antwort meldet: heute, in diesem Monat und insgesamt, je '
+            'Modell und für die letzten Anfragen einzeln. Gezählt wird auf diesem Gerät, in US-Dollar; '
+            'verbindlich ist die Abrechnung bei OpenRouter.',
+        where: 'Einstellungen → KI-Kosten',
       ),
       GuideItem(
         'Wenn es hakt',

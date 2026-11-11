@@ -92,6 +92,7 @@ class _VisualFromCardDialogState extends State<VisualFromCardDialog> {
       return;
     }
     final repo = context.read<VisualLessonRepository>();
+    final staged = context.read<SettingsRepository?>()?.settings.stagedLessons ?? true;
     setState(() {
       _busy = true;
       _error = null;
@@ -116,6 +117,9 @@ class _VisualFromCardDialogState extends State<VisualFromCardDialog> {
             : '--- ${source.material.fileName}, Seite ${source.page} ---\n${source.pageText.trim()}',
         images: [?image],
         socratic: _style == VisualStyle.socratic,
+        staged: staged,
+        // Die Lektion öffnet sich gleich – ihr Bildschirm zeichnet die Szenen.
+        drawScenes: false,
       );
       final front = _card.front.trim().replaceAll(RegExp(r'\s+'), ' ');
       final lesson = [

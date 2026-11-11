@@ -52,7 +52,11 @@ Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführu
   wählen, die KI stellt eine neue Aufgabe und löst sie Schritt für Schritt –
   Größen farbig markiert, in jedem Schritt im Gespräch nachfragen oder **live
   ändern** („zeig das als Graph“, „noch ein Zwischenschritt“). Mit **„Lernen“**
-  erst in Ruhe über Begriffe und Konzepte chatten, dann lösen.
+  erst in Ruhe über Begriffe und Konzepte chatten, dann lösen. Flächen
+  z = f(x, y) (Tangentialebene, Gradient, Extrema) und Wellen mit Absätzen
+  rechnet die App selbst aus Formel bzw. Maßen.
+- **KI-Kosten im Blick**: was jede Anfrage gekostet hat – heute, im Monat, je
+  Modell.
 - **Labor**: Vorbereitung, Durchführung mit Fotos, Berichtsentwurf.
 - **Geräte**: Cloud-Sync (Konto), eigener PDF-Speicher, Sicherungen, Export.
 - **Claude-Postfach**: Claude baut in einer Claude-Code-Sitzung Aufgaben aus

@@ -93,6 +93,7 @@ class Scene3DHtml {
             'stroke': hex(o.stroke),
             'text': plainMath(o.text),
             'dashed': o.dashed,
+            'solid': o.solid,
             'n': o.n,
             'd': o.d,
             'keys': [
@@ -639,9 +640,11 @@ const _template = r'''<!DOCTYPE html>
           it.outline.geometry.setFromPoints(pts.map(v => new THREE.Vector3(...v)));
           const f = fill || P.accent;
           it.mesh.material.color.set(f);
-          it.mesh.material.opacity = 0.35 * opacity;
+          // "solid": deckend mit feinem Rand (Felder einer Funktionsfläche).
+          it.mesh.material.opacity = (o.solid ? 0.92 : 0.35) * opacity;
+          it.mesh.material.depthWrite = !!o.solid;
           it.outline.material.color.set(stroke || f);
-          it.outline.material.opacity = opacity;
+          it.outline.material.opacity = (o.solid ? 0.25 : 1) * opacity;
           const c = [0, 1, 2].map(q => pts.reduce((s, v) => s + v[q], 0) / pts.length);
           it.label.position.set(...c);
         }

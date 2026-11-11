@@ -160,6 +160,7 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
     if (ai == null) return;
     final repo = context.read<VisualLessonRepository>();
     final navigator = Navigator.of(context);
+    final staged = context.read<SettingsRepository?>()?.settings.stagedLessons ?? true;
     final transcript = [for (final m in _chat.messages) '${m.user ? 'Frage' : 'Antwort'}: ${m.text}'].join('\n');
     setState(() {
       _busy = true;
@@ -171,6 +172,9 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
         topic:
             'Mach aus diesem Gespräch eine Lektion – genau zu dem, was gefragt und erklärt wurde, mit Übung:\n'
             '$transcript',
+        staged: staged,
+        // Die Lektion öffnet sich gleich – ihr Bildschirm zeichnet die Szenen.
+        drawScenes: false,
       );
       final lesson = [
         for (final raw in raws)

@@ -551,6 +551,25 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Auswahl-Anfrage selbst fehl (Fehler statt Ergebnis), greift ein
   Sicherheitsnetz auf ein Zeichenbudget-basiertes Zusammenstellen aller
   Materialien zurück (Vorrang für behandelte).
+- **KI-Kosten** (`lib/ui/settings/ai_usage_screen.dart`,
+  `AiUsageRepository`, Einstellungen → KI-Modelle) – die App zählt je Antwort
+  mit, was OpenRouter dafür meldet (`usage`: Tokens, Betrag in US-Dollar):
+  Summen für heute, den Monat und gesamt, je Modell, dazu die letzten 200
+  Anfragen einzeln. Ohne gemeldeten Betrag rechnet sie aus Tokens und
+  Listenpreis („≈“). Bleibt auf dem Gerät (nicht synchronisiert).
+- **Lektionen in zwei Stufen** (`AiService.generateVisualLessons`,
+  `drawPendingScenes`, `drawVisualScene`) – Stufe 1 liefert Texte, Formeln,
+  Graphen/Umformungen und je Szene einen Bauplan (`VisualShow.idea`), Stufe 2
+  zeichnet jede Szene einzeln (die erste als Vorlage für die übrigen, dann bis
+  zu drei gleichzeitig). Eine einzelne Lektion öffnet sich nach Stufe 1; ihr
+  Bildschirm zeichnet nach, speichert jede fertige Szene und bietet für
+  gescheiterte „Jetzt zeichnen“. Abschaltbar (`AppSettings.stagedLessons`).
+- **3D-Bausteine** (`lib/models/visual_scene3d_blocks.dart`) – in einer
+  räumlichen Szene liefert die KI für zwei Fälle nur Parameter, die App rechnet
+  und baut die Formen: `surface` (Fläche z = f(x, y) mit Punkten,
+  Tangentialebene, Gradient, Kurve auf der Fläche) und `shaft` (Welle/Achse aus
+  Abschnitten mit Lagern, Kräften, markierten Querschnitten). Ergänzt die freie
+  Szene, ersetzt sie nicht.
 - **BYOK** – die KI läuft über [OpenRouter](https://openrouter.ai) mit einem
   selbst mitgebrachten API-Key. Es gibt keinen App-eigenen Server; Anfragen
   gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von

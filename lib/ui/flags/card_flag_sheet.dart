@@ -144,18 +144,24 @@ class _CardFlagSheetState extends State<_CardFlagSheet> {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              if (_existing != null)
-                TextButton.icon(
-                  key: const ValueKey('card-flag-remove'),
-                  onPressed: _remove,
-                  icon: const Icon(Icons.bookmark_remove_outlined, size: 18),
-                  label: const Text('Markierung entfernen'),
-                ),
-              const Spacer(),
-              FilledButton(key: const ValueKey('card-flag-save'), onPressed: _save, child: const Text('Speichern')),
-            ],
+          // Umbrechen statt überlaufen (schmales Handy, große Schrift).
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: _existing == null ? WrapAlignment.end : WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: 4,
+              children: [
+                if (_existing != null)
+                  TextButton.icon(
+                    key: const ValueKey('card-flag-remove'),
+                    onPressed: _remove,
+                    icon: const Icon(Icons.bookmark_remove_outlined, size: 18),
+                    label: const Text('Markierung entfernen'),
+                  ),
+                FilledButton(key: const ValueKey('card-flag-save'), onPressed: _save, child: const Text('Speichern')),
+              ],
+            ),
           ),
         ],
       ),

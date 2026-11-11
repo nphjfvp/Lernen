@@ -180,5 +180,16 @@ void main() {
       expect(mergeAiSettings(chosen, {'scene3dModelId': ''}).scene3dModelId, isNull);
       expect(mergeAiSettings(chosen, {'questionModelId': 'x/y'}).scene3dModelId, 'stark/modell');
     });
+
+    test('Lektionen in zwei Stufen: Standard an, abschaltbar, gespeichert und im Sync übernommen', () {
+      const settings = AppSettings();
+      expect(settings.stagedLessons, isTrue);
+      expect(AppSettings.fromMap(const {}).stagedLessons, isTrue, reason: 'ältere Daten ohne das Feld');
+      final off = settings.copyWith(stagedLessons: false);
+      expect(AppSettings.fromMap(off.toMap()).stagedLessons, isFalse);
+      expect(syncedSettingsOf(off, includeSecrets: false)['stagedLessons'], isFalse);
+      expect(mergeAiSettings(settings, {'stagedLessons': false}).stagedLessons, isFalse);
+      expect(mergeAiSettings(off, {'questionModelId': 'x/y'}).stagedLessons, isFalse, reason: 'fehlt das Feld, bleibt es');
+    });
   });
 }
