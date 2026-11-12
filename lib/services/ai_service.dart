@@ -3246,6 +3246,7 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
   /// Lektion. [drawScenes] false: die Baupläne offen lassen – der
   /// Lektions-Bildschirm zeichnet sie beim Öffnen, man sieht die Lektion
   /// sofort. [onSceneProgress]: (fertig, gesamt) über alle Lektionen.
+  /// [spatialAi]: zeichnet die räumlichen Szenen der zweiten Stufe.
   Future<List<Map<String, dynamic>>> generateVisualLessons({
     String topic = '',
     String material = '',
@@ -3257,6 +3258,7 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
     bool staged = true,
     bool drawScenes = true,
     void Function(int done, int total)? onSceneProgress,
+    AiService? spatialAi,
   }) async {
     if (topic.trim().isEmpty && material.trim().isEmpty && images.isEmpty) {
       throw AiServiceException('Gib ein Thema oder Beispiel ein oder wähle eine PDF.');
@@ -3326,6 +3328,7 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
         current: () => lesson,
         apply: (updated) => lesson = updated,
         onDone: () => onSceneProgress?.call(++done, total),
+        spatial: spatialAi,
       );
       result[i] = lesson.toMap();
     }
@@ -3339,7 +3342,8 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
   /// (der Nutzer kann währenddessen weiterblättern oder ändern), [apply]
   /// übernimmt eine fertige Szene, [onFailed] meldet eine gescheiterte
   /// (Schritt-Index, Meldung) – ihr Bauplan bleibt. [first]: dieser Schritt
-  /// zuerst (der, den der Nutzer gerade sieht).
+  /// zuerst (der, den der Nutzer gerade sieht). [spatial]: zeichnet die
+  /// räumlichen Szenen (siehe Scene3dModel), sonst dieses Modell.
   Future<void> drawPendingScenes({
     required VisualLesson Function() current,
     required void Function(VisualLesson updated) apply,
@@ -3348,6 +3352,7 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
     void Function()? onDone,
     int parallel = 3,
     int? first,
+    AiService? spatial,
   }) async {
     final pending = current().pendingScenes;
     if (first != null && pending.remove(first)) pending.insert(0, first);
@@ -3366,7 +3371,9 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
       if (index == null) return;
       onStart?.call(index);
       try {
-        final json = await drawVisualScene(lesson: current().toMap(), stepIndex: index);
+        // Räumliche Szenen zeichnet das 3D-Modell ([spatial]), wenn eines da ist.
+        final artist = current().stepAt(index)!.show.ideaKind == 'scene3d' ? (spatial ?? this) : this;
+        final json = await artist.drawVisualScene(lesson: current().toMap(), stepIndex: index);
         index = locate(idea);
         if (index == null) return;
         final updated = current().withScene(index, json);

@@ -11,6 +11,7 @@ import '../../models/visual_lesson.dart';
 import '../../models/ai_usage.dart';
 import '../../repositories/ai_usage_repository.dart';
 import '../../repositories/model_catalog_repository.dart';
+import '../../services/scene3d_model.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/visual_chat_repository.dart';
 import '../../repositories/settings_repository.dart';
@@ -130,6 +131,8 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
   Future<void> _drawPending() async {
     if (_drawRunning || _l.pendingScenes.isEmpty) return;
     final ai = _reviseAi(context);
+    // Räumliche Szenen zeichnet das (automatische) 3D-Modell.
+    final spatial = _reviseAi(context, model: scene3dAutoModelOf(context));
     final repo = context.read<VisualLessonRepository?>();
     final id = _l.id;
     if (repo != null && _drawingLessons.contains(id)) {
@@ -182,6 +185,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       await ai.drawPendingScenes(
         current: () => _l,
         first: first,
+        spatial: spatial,
         apply: (updated) {
           final l = VisualMath.sanitize(updated);
           void take() {
@@ -732,8 +736,11 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
   Future<String?> _make3d(int stepIndex) async {
     final settings = context.read<SettingsRepository?>()?.settings;
     final own = settings?.scene3dModelId;
-    if (settings == null || own == null) return _liveRevise(stepIndex, scene3dRequest);
-    final info = context.read<ModelCatalogRepository?>()?.byId(own);
+    // Ohne eigene Wahl: das automatisch gewählte günstige 3D-Modell.
+    final auto = scene3dAutoModelOf(context);
+    if (settings == null || own == null) return _liveRevise(stepIndex, scene3dRequest, model: auto);
+    final catalog = context.read<ModelCatalogRepository?>();
+    final info = catalog?.byId(own);
     // Grobe Schätzung: Lektion + Werkzeugbeschreibung rein, eine Szene raus.
     final inTokens = _l.toMap().toString().length / 3.2 + 4500;
     const outTokens = 5000;
@@ -752,7 +759,8 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
           'Dafür ist „${info?.name ?? own}“ eingestellt. '
           '${cost == null ? 'Den Preis kennt die App nicht.' : 'Das kostet grob ${cost < 0.01 ? 'unter 1 Cent' : '${(cost * 100).round()} Cent'} (Schätzung in US-Cent, je nach Länge der Lektion).'}'
           '${past == null ? '' : '\nBisher mit diesem Modell: im Schnitt ${formatUsd(past.cost)} je Anfrage (${past.calls} gezählt).'}'
-          '\n\nMit dem Standard-Modell („${settings.questionModelId}“) geht es günstiger, aber oft ungenauer.',
+          '\n\nMit dem Standard-Modell für 3D („${catalog?.byId(auto ?? '')?.name ?? auto ?? settings.questionModelId}“) '
+          'geht es günstiger, aber oft ungenauer.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
@@ -770,7 +778,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       ),
     );
     if (choice == null || !mounted) return null;
-    if (choice != 'own') return _liveRevise(stepIndex, scene3dRequest);
+    if (choice != 'own') return _liveRevise(stepIndex, scene3dRequest, model: auto);
     final before = usage?.last;
     final result = await _liveRevise(stepIndex, scene3dRequest, model: own);
     // Nach der teuren Anfrage gleich sagen, was sie gekostet hat.
@@ -1274,23 +1282,57 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     );
   }
 
-  Future<void> _ask({VisualStep? step, ({StepField field, String input})? wrong}) => showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (_) => VisualAskSheet(lesson: _l, step: step, wrong: wrong, ai: visualAi(context)),
-  );
+  Future<void> _ask({VisualStep? step, ({StepField field, String input})? wrong}) {
+    // Wo ein behaltener Schritt hinkommt: hinter den gefragten Schritt, sonst
+    // (Ergebnis, Übung) ans Ende der Schritte.
+    final asked = step == null ? -1 : _l.steps.indexOf(step);
+    final repo = context.read<VisualLessonRepository?>();
+    final messenger = ScaffoldMessenger.of(context);
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => VisualAskSheet(
+        lesson: _l,
+        step: step,
+        wrong: wrong,
+        ai: visualAi(context),
+        onKeep: (answer, functions) {
+          final before = _l;
+          final revised = before.withStepAfter(asked < 0 ? null : asked, answer, functions: functions);
+          if (revised == null || !revised.isUsable) return false;
+          final at = asked < 0 ? before.steps.length : asked + 1;
+          _applyRevision(
+            before,
+            VisualMath.sanitize(revised),
+            'Antwort als Schritt ${at + 1} gespeichert.',
+            // Aus einem Schritt heraus zum neuen springen; sonst bleiben, wo man ist
+            // (die Seiten dahinter rücken um eins).
+            page: asked >= 0 ? at : _page + 1,
+            repo: repo,
+            messenger: messenger,
+          );
+          return true;
+        },
+      ),
+    );
+  }
 }
 
 /// Rückfrage zu einem Schritt bzw. „Warum ist meine Antwort falsch?“ – der
 /// Nutzer wählt visuell, schriftlich oder beides.
 class VisualAskSheet extends StatefulWidget {
-  const VisualAskSheet({super.key, required this.lesson, this.step, this.wrong, this.ai});
+  const VisualAskSheet({super.key, required this.lesson, this.step, this.wrong, this.ai, this.onKeep});
 
   final VisualLesson lesson;
   final VisualStep? step;
   final ({StepField field, String input})? wrong;
   final AiService? ai;
+
+  /// „Als Schritt behalten“: die Antwort (Schritt im Lektionsformat) und ihre
+  /// neuen Funktionen in die Lektion übernehmen – sonst ist sie mit dem
+  /// Schließen weg und müsste neu (bezahlt) erfragt werden. true = übernommen.
+  final bool Function(Map<String, dynamic> step, Object? functions)? onKeep;
 
   @override
   State<VisualAskSheet> createState() => _VisualAskSheetState();
@@ -1306,10 +1348,36 @@ class _VisualAskSheetState extends State<VisualAskSheet> {
   VisualMath? _math;
   VisualShow _show = const VisualShow();
 
+  /// Die letzte Antwort der KI, wie sie kam (für „Als Schritt behalten“).
+  Map<String, dynamic>? _answer;
+  String _asked = '';
+
   @override
   void dispose() {
     _question.dispose();
     super.dispose();
+  }
+
+  /// Die Antwort als Schritt der Lektion: Titel = die Frage, Text und
+  /// Darstellung wie gezeigt.
+  void _keep() {
+    final json = _answer;
+    final keep = widget.onKeep;
+    if (json == null || keep == null) return;
+    final question = _asked.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final title = question.isEmpty
+        ? (widget.wrong != null ? 'Warum war das falsch?' : 'Rückfrage')
+        : (question.length > 70 ? '${question.substring(0, 70)}…' : question);
+    final show = <String, dynamic>{
+      if (json['show'] is Map) ...Map<String, dynamic>.from(json['show'] as Map),
+      if (json['transform'] is List) 'transform': json['transform'],
+    };
+    final ok = keep({'title': title, 'text': _text, if (show.isNotEmpty) 'show': show}, json['functions']);
+    if (ok) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() => _error = 'Die Antwort ließ sich nicht als Schritt übernehmen.');
+    }
   }
 
   Future<void> _send() async {
@@ -1342,6 +1410,8 @@ class _VisualAskSheetState extends State<VisualAskSheet> {
       final derived = widget.lesson.withFunctions(widget.lesson.functions, extra: extra);
       final known = {for (final f in derived.functions) f.key};
       setState(() {
+        _answer = json;
+        _asked = _question.text;
         _text = '${json['text'] ?? ''}'.trim();
         _transform = [
           if (json['transform'] is List)
@@ -1446,10 +1516,33 @@ class _VisualAskSheetState extends State<VisualAskSheet> {
             const SizedBox(height: 12),
             VisualSceneView(key: const ValueKey('visual-answer-scene'), math: math, show: _show),
           ],
+          if (_answer != null && widget.onKeep != null && !_busy) ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              key: const ValueKey('visual-answer-keep'),
+              onPressed: _keep,
+              icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+              label: const Text('Als Schritt behalten'),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Speichert die Antwort samt Darstellung in der Lektion. Sonst ist sie mit dem Schließen weg.',
+              style: TextStyle(fontSize: 12, color: c.inkMuted),
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+/// Das Modell für räumliche Szenen, wenn der Nutzer keines dafür gewählt hat
+/// (siehe [Scene3dModel]) – null ohne Einstellungen.
+String? scene3dAutoModelOf(BuildContext context) {
+  final settings = context.read<SettingsRepository?>()?.settings;
+  if (settings == null) return null;
+  final catalog = context.read<ModelCatalogRepository?>();
+  return Scene3dModel.auto(questionModelId: settings.questionModelId, info: (id) => catalog?.byId(id));
 }
 
 /// KI für „Darstellung ändern“ (Fragen-Modell wie beim Erstellen) – null ohne Key.

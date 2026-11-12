@@ -213,6 +213,66 @@ void main() {
     await run(tester, 10);
   });
 
+  testWidgets('Rückfrage behalten: Die Antwort samt 3D-Szene wird ein Schritt der Lektion – ohne neue Anfrage', (
+    tester,
+  ) async {
+    VisualLessonScreen.aiFactory = replying(
+      (_) => {
+        'text': 'Im Raum sieht das so aus.',
+        'functions': [
+          {'key': 'sek', 'label': 'Sekante', 'expr': '7*t - 10'},
+        ],
+        'show': {
+          'scene3d': {
+            'objects': [
+              {
+                'type': 'sphere',
+                'at': [0.5, 0.5, 0.5],
+                'r': 0.2,
+              },
+            ],
+          },
+          'plot': ['sek'],
+        },
+      },
+    );
+    final own = VisualLesson.fromMap(carLessonJson(), id: 'l-keep', moduleId: 'm-keep', createdAt: DateTime(2026, 11, 12))!;
+    await tester.runAsync(() => VisualLessonRepository().save(own));
+    await pumpApp(tester, VisualLessonScreen(lesson: own));
+    await tap(tester, 'visual-next');
+    await tap(tester, 'visual-ask');
+    expect(find.byKey(const ValueKey('visual-answer-keep')), findsNothing, reason: 'erst mit einer Antwort');
+    await tester.enterText(find.byKey(const ValueKey('visual-question')), 'Wie sieht das räumlich aus?');
+    await tap(tester, 'visual-ask-send');
+    await run(tester, 2);
+    expect(find.byKey(const ValueKey('visual-answer-scene3d')), findsOneWidget);
+
+    // Behalten (in echter Zeit: es wird gespeichert).
+    await tester.ensureVisible(find.byKey(const ValueKey('visual-answer-keep')));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('visual-answer-keep')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await run(tester, 2);
+    expect(requests, hasLength(1), reason: 'Behalten kostet keine Anfrage');
+    expect(find.byKey(const ValueKey('visual-answer-keep')), findsNothing, reason: 'Fenster ist zu');
+    // Der neue Schritt steht hinter dem gefragten und ist aufgeschlagen.
+    expect(tester.widget<Text>(find.byKey(const ValueKey('visual-step-title'))).data, 'Wie sieht das räumlich aus?');
+    expect(find.byKey(const ValueKey('visual-scene3d-2')), findsOneWidget);
+    expect(find.text('Antwort als Schritt 3 gespeichert.'), findsOneWidget);
+    final saved = await tester.runAsync(() => VisualLessonRepository().forModule('m-keep'));
+    final lessonNow = saved!.single;
+    expect(lessonNow.steps.length, own.steps.length + 1);
+    expect(lessonNow.steps[1].title, own.steps[1].title, reason: 'der gefragte Schritt bleibt');
+    expect(lessonNow.steps[2].text, 'Im Raum sieht das so aus.');
+    expect(lessonNow.steps[2].show.scene3d, isNotNull);
+    expect(lessonNow.steps[2].show.plot, ['sek']);
+    expect(lessonNow.functions.map((f) => f.key), contains('sek'));
+    expect(lessonNow.steps[3].title, own.steps[2].title);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+  });
+
   testWidgets('Übung: falsche Antwort simulieren (zweites Auto) und erklären lassen', (tester) async {
     VisualLessonScreen.aiFactory = replying(
       (_) => {'text': 'Du hast den Exponenten nicht als Faktor nach vorn gezogen – dein Auto wäre viel zu langsam.'},

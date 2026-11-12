@@ -262,15 +262,22 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
     bool drawScenes = true,
   }) async {
     final repo = context.read<VisualLessonRepository>();
+    final settings = context.read<SettingsRepository?>()?.settings;
+    // Räumliche Szenen der zweiten Stufe zeichnet das (automatische) 3D-Modell.
+    final spatial = scene3dAutoModelOf(context);
     final raws = await ai.generateVisualLessons(
       topic: topic,
       material: material,
       images: images,
       detail: _detail,
       socratic: _style == VisualStyle.socratic,
-      staged: context.read<SettingsRepository?>()?.settings.stagedLessons ?? true,
+      staged: settings?.stagedLessons ?? true,
       // false: Die Lektion öffnet sich gleich – ihr Bildschirm zeichnet die Szenen.
       drawScenes: drawScenes,
+      spatialAi: drawScenes && settings != null && settings.hasApiKey && spatial != null
+          ? (VisualLearnScreen.aiFactory?.call(settings.openRouterApiKey!, spatial) ??
+                AiService(apiKey: settings.openRouterApiKey!, model: spatial))
+          : null,
     );
     final lesson = [
       for (final raw in raws)

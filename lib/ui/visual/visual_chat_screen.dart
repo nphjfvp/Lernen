@@ -154,7 +154,65 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
     }
   }
 
-  /// Aus dem Gespräch eine richtige Lektion (Schritte, Übung) machen.
+  /// „Als Lektion speichern“: Normalerweise genau das, was im Chat zu sehen
+  /// war – ohne neue Anfrage. Auf Wunsch baut die KI daraus eine Lektion mit
+  /// Übung (kostet eine weitere Anfrage, die Darstellungen entstehen neu).
+  Future<void> _saveAsLesson() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const ValueKey('visual-chat-save'),
+        title: const Text('Als Lektion speichern'),
+        content: const Text(
+          'So speichern: Jede Antwort wird ein Schritt – mit genau dem Text und der Darstellung, die du hier '
+          'siehst. Das kostet nichts.\n\n'
+          'Von der KI ausbauen: Sie schreibt aus dem Gespräch eine neue Lektion mit Übung. Das kostet eine '
+          'weitere Anfrage, und die Darstellungen werden neu erzeugt.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+          TextButton(
+            key: const ValueKey('visual-chat-save-ai'),
+            onPressed: () => Navigator.of(ctx).pop('ai'),
+            child: const Text('Von der KI ausbauen'),
+          ),
+          FilledButton(
+            key: const ValueKey('visual-chat-save-direct'),
+            onPressed: () => Navigator.of(ctx).pop('direct'),
+            child: const Text('So speichern'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'ai') return _toLesson();
+    final repo = context.read<VisualLessonRepository>();
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final lessons = _chat
+        .toLessons(newId: () => const Uuid().v4())
+        .map(VisualMath.sanitize)
+        .where((l) => l.isUsable)
+        .toList();
+    if (lessons.isEmpty) {
+      setState(() => _error = 'Hier gibt es noch keine Antwort, die sich speichern lässt.');
+      return;
+    }
+    await repo.saveAll(lessons);
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          lessons.length == 1
+              ? 'Als Lektion gespeichert – ohne neue Anfrage.'
+              : 'Als ${lessons.length} Lektionen gespeichert – ohne neue Anfrage.',
+        ),
+      ),
+    );
+    await navigator.push(MaterialPageRoute<void>(builder: (_) => VisualLessonScreen(lesson: lessons.first)));
+  }
+
+  /// Aus dem Gespräch von der KI eine richtige Lektion (Schritte, Übung) machen.
   Future<void> _toLesson() async {
     final ai = _ai();
     if (ai == null) return;
@@ -220,7 +278,7 @@ class _VisualChatScreenState extends State<VisualChatScreen> {
           IconButton(
             key: const ValueKey('visual-chat-lesson'),
             tooltip: 'Als Lektion speichern',
-            onPressed: hasAnswer && !_busy ? _toLesson : null,
+            onPressed: hasAnswer && !_busy ? _saveAsLesson : null,
             icon: const Icon(Icons.school_outlined),
           ),
           if (!_chat.learn)

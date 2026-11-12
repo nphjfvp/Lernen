@@ -87,7 +87,7 @@ http.Response _chat(Object json) => http.Response(
 );
 
 void main() {
-  late List<({String system, String user})> requests;
+  late List<({String system, String user, String model})> requests;
 
   setUpAll(() {
     final dir = Directory.systemTemp.createTempSync('lernen_visual_staged_test_');
@@ -99,14 +99,14 @@ void main() {
 
   /// Stufe 1 liefert [stagedLessonJson]; Stufe 2 je Bauplan eine Szene, deren
   /// Text der Bauplan ist. [failing]: Baupläne, zu denen keine Szene kommt.
-  AiService ai({Set<String> failing = const {}}) => AiService(
+  AiService ai({Set<String> failing = const {}, String model = 'm'}) => AiService(
     apiKey: 'sk-test',
-    model: 'm',
+    model: model,
     client: MockClient((r) async {
       final body = jsonDecode(r.body) as Map<String, dynamic>;
       final system = (body['messages'] as List)[0]['content'] as String;
       final user = (body['messages'] as List)[1]['content'] as String;
-      requests.add((system: system, user: user));
+      requests.add((system: system, user: user, model: '${body['model']}'));
       if (!system.trimLeft().startsWith('Du zeichnest')) {
         return _chat({
           'lessons': [stagedLessonJson()],
@@ -209,6 +209,17 @@ void main() {
       isNot(contains('"elements"')),
       reason: 'fertige Szenen stehen nur in der Vorlage, nicht im Überblick',
     );
+  });
+
+  test('räumliche Szenen zeichnet das 3D-Modell, alles andere das Fragen-Modell', () async {
+    final raws = await ai().generateVisualLessons(
+      topic: 'Diffusion',
+      spatialAi: ai(model: '3d/modell'),
+    );
+    expect(VisualLesson.fromMap(raws.single)!.pendingScenes, isEmpty);
+    final spatial = requests.where((r) => r.model == '3d/modell').toList();
+    expect(spatial.single.user, contains('Bauplan: Block räumlich'));
+    expect(requests.where((r) => r.model == 'm'), hasLength(5), reason: 'Stufe 1 und die vier 2D-Szenen');
   });
 
   test('eine Szene scheitert: die Lektion kommt trotzdem, der Bauplan bleibt zum Nachholen', () async {

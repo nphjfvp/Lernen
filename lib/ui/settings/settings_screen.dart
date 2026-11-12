@@ -22,6 +22,7 @@ import '../../services/claude_inbox.dart';
 import '../../services/pdf_cloud_store.dart';
 import '../../services/pdf_cloud_sync_service.dart';
 import '../../services/reminder_service.dart';
+import '../../services/scene3d_model.dart';
 import '../../services/sync_codes.dart';
 import '../../services/sync_diagnostics.dart';
 import '../../services/sync_service.dart';
@@ -905,15 +906,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             key: const ValueKey('model-scene3d'),
                             label: '3D-Modelle',
                             sublabel: settings.scene3dModelId == null
-                                ? '„3D-Modell erzeugen“ in einer Lektion – zurzeit wie Fragenerstellen'
+                                ? 'Räumliche Szenen und „3D-Modell erzeugen“ – automatisch gewählt: ein günstiges '
+                                      'Modell, das 3D gut kann (sonst wie Fragenerstellen)'
                                 : '„3D-Modell erzeugen“ in einer Lektion – die App fragt vor jeder Nutzung nach',
-                            selectedId: settings.scene3dModelId ?? settings.questionModelId,
+                            selectedId:
+                                settings.scene3dModelId ??
+                                Scene3dModel.auto(questionModelId: settings.questionModelId, info: catalog.byId),
                             catalog: catalog,
                             trailing: settings.scene3dModelId == null
                                 ? null
                                 : IconButton(
                                     key: const ValueKey('model-scene3d-reset'),
-                                    tooltip: 'Wie Fragenerstellen',
+                                    tooltip: 'Wieder automatisch wählen',
                                     icon: Icon(Icons.undo, size: 18, color: c.inkMuted),
                                     onPressed: () => context
                                         .read<SettingsRepository>()
@@ -923,7 +927,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               role: 'scene3d',
                               title: 'Modell für 3D-Modelle',
                               models: catalog.models,
-                              selectedId: settings.scene3dModelId ?? settings.questionModelId,
+                              selectedId:
+                                  settings.scene3dModelId ??
+                                  Scene3dModel.auto(questionModelId: settings.questionModelId, info: catalog.byId),
                             ),
                           ),
                         ],

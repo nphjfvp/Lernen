@@ -285,8 +285,16 @@ const appGuideChapters = <GuideChapter>[
       ),
       GuideItem(
         'Frei fragen',
-        'Ohne PDF einfach fragen – die KI erklärt mit Bildern im Chat.',
+        'Ohne PDF einfach fragen – die KI erklärt mit Bildern im Chat. „Als Lektion speichern“ übernimmt genau '
+            'die Antworten und Darstellungen, die du siehst – ohne neue Anfrage.',
         where: 'Visuell lernen → Frag einfach',
+      ),
+      GuideItem(
+        'Antworten behalten',
+        'Eine Antwort auf „Frage zu diesem Schritt“ ist mit dem Schließen weg. „Als Schritt behalten“ legt sie '
+            'samt Darstellung als eigenen Schritt in die Lektion – dann musst du sie nicht noch einmal (bezahlt) '
+            'erfragen.',
+        where: 'Lektion → Frage zu diesem Schritt',
       ),
     ],
   ),
@@ -365,7 +373,8 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Modelle',
         'Getrennt wählbar für Fragenerstellen, Erklärungen, Vision (gescannte Folien), Crosscheck und '
-            '3D-Modelle. Favoriten markieren; Claude, GPT, Gemini usw. sind alle über OpenRouter verfügbar.',
+            '3D-Modelle. Für 3D wählt die App ohne deine Angabe selbst ein günstiges Modell, das Räumliches gut '
+            'kann. Favoriten markieren; Claude, GPT, Gemini usw. sind alle über OpenRouter verfügbar.',
         where: 'Einstellungen → Modelle',
       ),
       GuideItem(

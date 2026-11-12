@@ -1516,3 +1516,23 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     159 ließ sich auf dem Gerät nicht als Update installieren, die APK im Release war aber in Ordnung
     (vollständig, versionCode 159, Zertifikat = `android/app/debug.keystore`). Tests:
     `update_installer_test` („abgebrochener Download …“, „vollständige APK …“).
+114. Bezahlte Antworten behalten: `VisualAskSheet.onKeep` + Knopf `visual-answer-keep` („Als Schritt
+    behalten“) → `VisualLesson.withStepAfter(after, step, functions:)` fügt die Antwort (Titel = Frage, Text,
+    `show` + `transform`, neue Funktionen) hinter dem gefragten Schritt ein (Ergebnis/Übung: ans Ende), über
+    `_applyRevision` gespeichert und rückgängig zu machen. Visueller Chat: `VisualChat.toLessons(newId:, now:)`
+    baut ohne KI Lektion(en) – je Antwort ein Schritt; Antworten mit anderer Variable/anderem Bereich kommen
+    in eine eigene Lektion („… (Teil 2)“), gleich benannte Funktionen mit anderem Term werden umbenannt
+    (`f_2`) samt Bezügen in `car`/`plot`/`tangent`/`area`. `VisualChatScreen._saveAsLesson`: Dialog
+    `visual-chat-save` mit `visual-chat-save-direct` (kostenlos) und `visual-chat-save-ai` (wie bisher
+    `_toLesson`). 3D-Standard: `Scene3dModel.auto` (`lib/services/scene3d_model.dart`, `candidates` =
+    `google/gemini-3.8-flash`, `-3.7-flash`, `-3.6-flash`, `deepseek/deepseek-v4-pro`, `-0813`): erstes Modell,
+    das der Katalog kennt; Fragen-Modell bleibt, wenn es kostenlos oder teurer ist oder nichts bekannt ist.
+    `scene3dAutoModelOf(context)`; genutzt in `_make3d` (ohne eigene Wahl und als „Standard-Modell“ der
+    Rückfrage), in `drawPendingScenes(spatial:)` für Baupläne mit `kind: scene3d`
+    (`generateVisualLessons(spatialAi:)`, Lernpfad, mehrere Lektionen) und in der Anzeige der Einstellungen.
+    Grundlage der Rangfolge: Vergleiche für 3D/CAD-Erzeugung (P3D-Bench, CAD-Blogs, Stand 11/2026) – ein
+    Gemini-Flash-Modell lag bei kleinem Budget vorn; Kimi K3 kostet etwa das Vierfache. Nicht gegen echte
+    Modelle getestet. Tests: `scene3d_model_test`, `visual_staged_test` („räumliche Szenen zeichnet das
+    3D-Modell …“), `visual_chat_test`, `visual_learn_test` („Rückfrage behalten …“). Design-Vorschlag
+    (nicht eingebaut): Artifact „Lernen – Design-Vorschlag“ – Start mit „Weiter lernen“, Fach mit drei
+    Reitern, Lektion mit einer KI-Leiste.

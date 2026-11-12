@@ -423,7 +423,14 @@ class _VisualCourseScreenState extends State<VisualCourseScreen> {
       return null;
     }
     final repo = context.read<VisualLessonRepository>();
-    final staged = context.read<SettingsRepository?>()?.settings.stagedLessons ?? true;
+    final settings = context.read<SettingsRepository?>()?.settings;
+    final staged = settings?.stagedLessons ?? true;
+    // Räumliche Szenen der zweiten Stufe zeichnet das (automatische) 3D-Modell.
+    final spatial = scene3dAutoModelOf(context);
+    final spatialAi = drawScenes && settings != null && settings.hasApiKey && spatial != null
+        ? (VisualCourseCreateScreen.aiFactory?.call(settings.openRouterApiKey!, spatial) ??
+              AiService(apiKey: settings.openRouterApiKey!, model: spatial))
+        : null;
     setState(() {
       _busyIndex = i;
       _error = null;
@@ -435,6 +442,7 @@ class _VisualCourseScreenState extends State<VisualCourseScreen> {
         _lessons,
         staged: staged,
         drawScenes: drawScenes,
+        spatialAi: spatialAi,
       );
       await repo.save(lesson);
       if (!mounted) return lesson;

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lernen/models/app_settings.dart';
 import 'package:lernen/models/visual_chat.dart';
+import 'package:lernen/models/visual_lesson.dart';
 import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/repositories/visual_chat_repository.dart';
 import 'package:lernen/repositories/visual_lesson_repository.dart';
@@ -75,6 +76,90 @@ void main() {
     }
     expect(long.messages.length, VisualChat.maxMessages);
     expect(long.messages.first.text, '5');
+  });
+
+  test('Gespräch als Lektion ohne neue Anfrage: je Antwort ein Schritt, Darstellungen bleiben, Namen entwirrt', () {
+    final now = DateTime(2026, 11, 12);
+    VisualChatMessage q(String text) => VisualChatMessage(user: true, text: text, createdAt: now);
+    VisualChatMessage a(String text, Map<String, dynamic>? visual) =>
+        VisualChatMessage(user: false, text: text, visual: visual, createdAt: now);
+    var chat = VisualChat(id: 'c', moduleId: 'm', title: 'Sattelfläche', createdAt: now);
+    for (final m in [
+      q('Zeig mir einen Sattelpunkt.'),
+      a('Hier ist die Fläche.', {
+        'show': {
+          'scene3d': {
+            'objects': [
+              {'type': 'surface', 'expr': 'x^2 - y^2'},
+            ],
+          },
+        },
+      }),
+      q('Und der Schnitt bei y = 0?'),
+      a('Eine Parabel.', {
+        'variable': 'x',
+        'domain': [-2, 2],
+        'functions': [
+          {'key': 'f', 'label': 'Schnitt', 'expr': 'x^2'},
+        ],
+        'show': {'plot': ['f']},
+      }),
+      q('Und bei x = 0?'),
+      // Gleicher Name, anderer Term: wird umbenannt, der Graph zeigt weiter das Richtige.
+      a('Nach unten geöffnet.', {
+        'variable': 'x',
+        'domain': [-2, 2],
+        'functions': [
+          {'key': 'f', 'label': 'Schnitt', 'expr': '-x^2'},
+        ],
+        'show': {'plot': ['f'], 'tangent': 'f'},
+      }),
+      a('Nur Text.', null),
+      q('Wie fällt ein Stein?'),
+      // Andere Variable: eigene Lektion, damit der Graph bleibt, wie er war.
+      a('So.', {
+        'variable': 't',
+        'domain': [0, 3],
+        'functions': [
+          {'key': 's', 'label': 'Weg', 'expr': '5*t^2'},
+        ],
+        'show': {'plot': ['s']},
+      }),
+    ]) {
+      chat = chat.withMessage(m);
+    }
+    var n = 0;
+    final lessons = chat.toLessons(newId: () => 'l${++n}', now: now);
+    expect(lessons.map((l) => l.title), ['Sattelfläche (Teil 1)', 'Sattelfläche (Teil 2)']);
+    expect(lessons.map((l) => l.id), ['l1', 'l2']);
+    final first = lessons.first;
+    expect(first.moduleId, 'm');
+    expect(first.source, 'Visueller Chat: Sattelfläche');
+    expect(first.intro, 'Zeig mir einen Sattelpunkt.');
+    expect(first.steps.map((s) => s.title), [
+      'Zeig mir einen Sattelpunkt.',
+      'Und der Schnitt bei y = 0?',
+      'Und bei x = 0?',
+      'Antwort 4',
+    ]);
+    // Die 3D-Szene (als Baustein) ist da und übersteht Speichern und Lesen.
+    expect(first.steps[0].show.scene3d!.blocks.single['expr'], 'x^2 - y^2');
+    expect(VisualLesson.fromMap(first.toMap())!.steps[0].show.scene3d, isNotNull);
+    expect(first.steps[0].text, 'Hier ist die Fläche.');
+    expect(first.variable, 'x');
+    expect((first.domainMin, first.domainMax), (-2.0, 2.0));
+    expect(first.functions.map((f) => (f.key, f.expr)), [('f', 'x^2'), ('f_2', '-x^2')]);
+    expect(first.steps[1].show.plot, ['f']);
+    expect(first.steps[2].show.plot, ['f_2']);
+    expect(first.steps[2].show.tangent, 'f_2');
+    expect(first.steps[2].show.broken, isEmpty);
+    expect(first.steps[3].text, 'Nur Text.');
+    final second = lessons.last;
+    expect(second.variable, 't');
+    expect(second.functions.single.expr, '5*t^2');
+    expect(second.steps.single.title, 'Wie fällt ein Stein?');
+    // Ohne Antwort: nichts zu speichern.
+    expect(VisualChat(id: 'e', moduleId: 'm', createdAt: now).withMessage(q('?')).toLessons(newId: () => 'x'), isEmpty);
   });
 
   test('Abgleich: das längere Gespräch gewinnt', () {
@@ -209,13 +294,34 @@ void main() {
     final saved = await tester.runAsync(() => VisualChatRepository().forModule('mc'));
     expect(saved!.single.messages, hasLength(4));
 
-    // Als Lektion speichern.
+    // Als Lektion speichern: genau das Gezeigte – ohne neue Anfrage.
+    final before = requests.length;
     await tapReal(find.byKey(const ValueKey('visual-chat-lesson')));
+    expect(find.byKey(const ValueKey('visual-chat-save')), findsOneWidget);
+    await tapReal(find.byKey(const ValueKey('visual-chat-save-direct')));
+    expect(requests.length, before, reason: 'Speichern kostet keine Anfrage');
+    expect(find.byType(VisualLessonScreen), findsOneWidget);
+    var lessons = await tester.runAsync(() => VisualLessonRepository().forModule('mc'));
+    expect(lessons!.single.source, 'Visueller Chat: Hebelgesetz');
+    expect(lessons.single.steps.map((s) => s.title), [
+      'Wie funktioniert ein Hebel?',
+      'Und wie schnell steigt eine Rakete?',
+    ]);
+    expect(lessons.single.steps[0].show.scene, isNotNull, reason: 'die Szene aus dem Chat');
+    expect(lessons.single.steps[1].show.car, 's');
+    expect(lessons.single.steps[1].show.vehicle, 'rocket');
+    await tester.pageBack();
+    await settle();
+
+    // Auf Wunsch baut die KI daraus eine Lektion mit Übung – das ist eine neue Anfrage.
+    await tapReal(find.byKey(const ValueKey('visual-chat-lesson')));
+    await tapReal(find.byKey(const ValueKey('visual-chat-save-ai')));
+    expect(requests.length, before + 1);
     expect(requests.last, contains('Frage: Wie funktioniert ein Hebel?'));
     expect(requests.last, contains('Antwort: So schnell wird die Rakete.'));
     expect(find.byType(VisualLessonScreen), findsOneWidget);
-    final lessons = await tester.runAsync(() => VisualLessonRepository().forModule('mc'));
-    expect(lessons!.single.source, 'Visueller Chat: Hebelgesetz');
+    lessons = await tester.runAsync(() => VisualLessonRepository().forModule('mc'));
+    expect(lessons, hasLength(2));
 
     // Zurück zur Liste: Gespräch fortsetzen.
     await tester.pageBack();
@@ -223,7 +329,8 @@ void main() {
     await tester.pageBack();
     await settle();
     expect(find.byKey(const ValueKey('visual-chat-0')), findsOneWidget);
-    expect(find.text('Hebelgesetz'), findsOneWidget);
+    // Das Gespräch und die daraus direkt gespeicherte Lektion heißen gleich.
+    expect(find.text('Hebelgesetz'), findsNWidgets(2));
     await tapReal(find.byKey(const ValueKey('visual-chat-0')));
     expect(find.byKey(const ValueKey('visual-chat-msg-3')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());

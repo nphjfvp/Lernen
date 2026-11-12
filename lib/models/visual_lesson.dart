@@ -503,6 +503,43 @@ class VisualLesson {
     }, stepIndex: stepIndex);
   }
 
+  /// Die Lektion mit einem zusätzlichen Schritt hinter Schritt [after] (null
+  /// oder außerhalb = hinter dem letzten) – z.B. eine Antwort der KI auf eine
+  /// Rückfrage, die man behalten will. [functions]: neue bzw. geänderte
+  /// Funktionen des Schritts. null, wenn der Schritt unbrauchbar ist.
+  VisualLesson? withStepAfter(int? after, Map<String, dynamic> step, {Object? functions}) {
+    if (VisualStep.fromMap(step) == null) return null;
+    final map = toMap();
+    final all = [...(map['steps'] as List)];
+    final at = after == null || after < 0 || after >= all.length ? all.length : after + 1;
+    all.insert(at, step);
+    map['steps'] = all;
+    if (functions is List) {
+      final merged = [...(map['functions'] as List)];
+      for (final f in functions) {
+        if (f is! Map) continue;
+        final i = merged.indexWhere((g) => g is Map && g['key'] == f['key']);
+        if (i >= 0) {
+          merged[i] = f;
+        } else {
+          merged.add(f);
+        }
+      }
+      map['functions'] = merged;
+    }
+    return VisualLesson.fromMap(
+      map,
+      id: id,
+      moduleId: moduleId,
+      createdAt: createdAt,
+      source: source,
+      detail: detail,
+      style: style,
+      cardId: cardId,
+      courseId: courseId,
+    );
+  }
+
   /// Dieselbe Lektion mit genau diesen Funktionen ([extra] ergänzt bzw.
   /// ersetzt gleichnamige); Bezüge auf fehlende Funktionen fallen weg.
   VisualLesson withFunctions(List<VisualFunction> functions, {List<VisualFunction> extra = const []}) {

@@ -1,8 +1,31 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6y) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6z) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6z. Bezahlte 3D-Antworten bleiben erhalten, besseres Standard-Modell für 3D
+
+- **Fehler behoben – „Als Lektion speichern“ im visuellen Chat** speicherte
+  nicht, was zu sehen war: Die KI schrieb aus dem Gesprächstext eine neue
+  Lektion, die Darstellungen (auch 3D) entstanden neu und kosteten noch
+  einmal. Jetzt wird **genau das Gezeigte gespeichert, ohne neue Anfrage**:
+  je Antwort ein Schritt mit ihrem Text und ihrer Darstellung, Titel = die
+  Frage davor. Wer stattdessen eine ausgebaute Lektion mit Übung will, wählt
+  im selben Fenster „Von der KI ausbauen“ (das kostet eine Anfrage).
+- **„Frage zu diesem Schritt“ in einer Lektion:** Die Antwort war mit dem
+  Schließen weg. Neu: **„Als Schritt behalten“** – die Antwort samt
+  Darstellung wird ein eigener Schritt direkt hinter dem gefragten und ist
+  gespeichert (mit „Rückgängig“).
+- **Standard-Modell für 3D:** Ohne eigene Wahl zeichnete das Fragen-Modell
+  die räumlichen Szenen. Jetzt wählt die App dafür automatisch ein günstiges
+  Modell, das 3D deutlich besser kann – in dieser Rangfolge das erste, das
+  dein Modell-Katalog kennt: Gemini 3.8 Flash, 3.7 Flash, 3.6 Flash,
+  DeepSeek V4 Pro. Es gilt für „3D-Modell erzeugen“ und für räumliche Szenen
+  der zweiten Stufe. Es bleibt beim Fragen-Modell, wenn dieses kostenlos ist,
+  wenn es selbst teurer (also vermutlich stärker) ist oder wenn der Katalog
+  keines der Modelle kennt. Ein selbst gewähltes 3D-Modell hat weiter Vorrang
+  – mit Rückfrage vor jeder Nutzung.
 
 ### 6y. Update aus der App: abgebrochene Downloads werden erkannt
 

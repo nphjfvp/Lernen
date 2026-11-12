@@ -564,6 +564,12 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   zu drei gleichzeitig). Eine einzelne Lektion öffnet sich nach Stufe 1; ihr
   Bildschirm zeichnet nach, speichert jede fertige Szene und bietet für
   gescheiterte „Jetzt zeichnen“. Abschaltbar (`AppSettings.stagedLessons`).
+- **Antworten behalten** – „Frage zu diesem Schritt“ → „Als Schritt behalten“
+  (`VisualLesson.withStepAfter`) und visueller Chat → „Als Lektion speichern“
+  (`VisualChat.toLessons`) übernehmen genau das Gezeigte, ohne neue Anfrage.
+- **Automatisches 3D-Modell** (`lib/services/scene3d_model.dart`) – ohne
+  eigene Wahl zeichnet räumliche Szenen das erste Modell einer Rangfolge, das
+  der Katalog kennt (Gemini Flash, dann DeepSeek V4 Pro).
 - **3D-Bausteine** (`lib/models/visual_scene3d_blocks.dart`) – in einer
   räumlichen Szene liefert die KI für zwei Fälle nur Parameter, die App rechnet
   und baut die Formen: `surface` (Fläche z = f(x, y) mit Punkten,

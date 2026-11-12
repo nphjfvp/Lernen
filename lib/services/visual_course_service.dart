@@ -215,6 +215,7 @@ class VisualCourseService {
     Map<String, VisualLesson> lessons, {
     bool staged = true,
     bool drawScenes = true,
+    AiService? spatialAi,
   }) async {
     final unit = course.units[index];
     final raws = await ai.generateVisualLessons(
@@ -229,6 +230,7 @@ class VisualCourseService {
       courseContext: contextFor(course, index, lessons),
       staged: staged,
       drawScenes: drawScenes,
+      spatialAi: spatialAi,
     );
     final lesson = [
       for (final raw in raws)
