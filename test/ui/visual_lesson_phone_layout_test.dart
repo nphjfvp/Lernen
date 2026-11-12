@@ -43,6 +43,33 @@ void main() {
     await tester.ensureVisible(find.byKey(const ValueKey('visual-short-full')));
     await tester.tap(find.byKey(const ValueKey('visual-short-full')));
     await tester.pump();
+    // Die KI-Leiste unten: drei Arten, je eigene Vorschläge – und einklappbar.
+    VisualAiBar.mode = VisualAiMode.ask;
+    VisualAiBar.collapsed = false;
+    await tester.pump();
+    expect(find.byKey(const ValueKey('visual-ai')), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-step-count')), findsOneWidget);
+    expect(find.text('Schritt 1 von ${lesson.steps.length}'), findsOneWidget);
+    for (final (mode, chip) in const [
+      ('change', 'visual-live-chip-0'),
+      ('learn', 'visual-learn'),
+      ('ask', 'visual-deepen'),
+    ]) {
+      await tester.tap(find.byKey(ValueKey('visual-ai-mode-$mode')));
+      await tester.pump();
+      expect(find.byKey(ValueKey(chip)), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'KI-Leiste ($mode) in Handybreite');
+    }
+    final open = tester.getSize(find.byKey(const ValueKey('visual-ai'))).height;
+    await tester.tap(find.byKey(const ValueKey('visual-ai-collapse')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('visual-ask-input')), findsNothing);
+    expect(tester.getSize(find.byKey(const ValueKey('visual-ai'))).height, lessThan(open / 2));
+    await tester.tap(find.byKey(const ValueKey('visual-ai-collapse')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('visual-ask-input')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
     // Bis zur letzten Seite blättern: dort steht der lange Abschluss-Knopf.
     for (var i = 0; i < 8 && find.byKey(const ValueKey('visual-finish')).evaluate().isEmpty; i++) {
       await tester.tap(find.byKey(const ValueKey('visual-next')));

@@ -111,7 +111,7 @@ void main() {
         ],
         child: MaterialApp(
           theme: AppTheme.light,
-          home: const ModuleDetailScreen(moduleId: 'ph'),
+          home: const ModuleDetailScreen(moduleId: 'ph', initialTab: ModuleTab.material),
         ),
       ),
     );
@@ -125,6 +125,38 @@ void main() {
     expect(find.text('12 Aufgaben der Reihe nach'), findsOneWidget);
     // Der Name bekommt die Breite der Zeile (früher blieben ~100 px).
     expect(tester.getSize(find.text(longName)).width, greaterThan(220));
+
+    // Drei Reiter: „Lernen“ zeigt Üben und den Lernstand, „Verstehen“ die
+    // Erklär-Wege, „Material“ die Dateien – jeweils nur das, ohne Überlauf.
+    Future<void> openTab(String name) async {
+      await tester.tap(find.byKey(ValueKey('module-tab-$name')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.takeException(), isNull, reason: 'Reiter $name in Handybreite');
+    }
+
+    await openTab('learn');
+    expect(find.byKey(const ValueKey('module-practice')), findsOneWidget);
+    expect(find.byKey(const ValueKey('module-progress')), findsOneWidget);
+    expect(find.text('Probeklausur'), findsOneWidget);
+    expect(find.text(longName), findsNothing);
+    // „Der Reihe nach“: Einheit oder PDF wählen.
+    await tester.tap(find.byKey(const ValueKey('module-practice-sequence')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('module-sequence-sheet')), findsOneWidget);
+    expect(find.byKey(const ValueKey('module-sequence-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('module-sequence-1')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    await openTab('understand');
+    expect(find.byKey(const ValueKey('module-visual-learn')), findsOneWidget);
+    expect(find.text('Vorbereiten'), findsOneWidget);
+    expect(find.byKey(const ValueKey('module-practice')), findsNothing);
+
+    await openTab('material');
+    expect(find.text(longName), findsOneWidget);
 
     // Löschen steht im Menü (mit Rückfrage), nicht mehr neben der Checkbox.
     await tester.ensureVisible(find.byTooltip('Weitere Aktionen'));

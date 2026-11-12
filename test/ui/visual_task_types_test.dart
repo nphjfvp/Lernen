@@ -68,6 +68,12 @@ void main() {
     PathProviderPlatform.instance = _FakePathProviderPlatform(dir.path);
   });
 
+  setUp(() {
+    // Die KI-Leiste merkt sich ihre Art – jeder Test beginnt bei „Fragen“.
+    VisualAiBar.mode = VisualAiMode.ask;
+    VisualAiBar.collapsed = false;
+  });
+
   tearDown(() {
     VisualTaskTypesScreen.aiFactory = null;
     VisualChatScreen.aiFactory = null;
@@ -363,7 +369,8 @@ void main() {
       ),
     );
     await settle(4);
-    expect(find.byKey(const ValueKey('visual-learn-card')), findsOneWidget);
+    // „Erst verstehen“ ist eine Art der KI-Leiste (und die Glühbirne oben).
+    expect(find.byKey(const ValueKey('visual-ai-mode-learn')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('visual-next')));
     await tester.pump();
     await tapReal(find.byKey(const ValueKey('visual-learn-action')));
@@ -383,9 +390,11 @@ void main() {
     await tapReal(find.byKey(const ValueKey('visual-chat-solve')));
     expect(find.byType(VisualChatScreen), findsNothing);
     expect(find.text('Los geht’s – Schritt für Schritt.'), findsOneWidget);
-    expect(find.byKey(const ValueKey('visual-learn-card')), findsOneWidget, reason: 'zurück beim ersten Schritt');
+    expect(find.byKey(const ValueKey('visual-intro')), findsOneWidget, reason: 'zurück beim ersten Schritt');
 
-    // Wieder öffnen: dasselbe Gespräch.
+    // Wieder öffnen – diesmal über die KI-Leiste: dasselbe Gespräch.
+    await tester.tap(find.byKey(const ValueKey('visual-ai-mode-learn')));
+    await tester.pump();
     await tapReal(find.byKey(const ValueKey('visual-learn')));
     expect(find.textContaining('zurückgelegte Strecke'), findsOneWidget);
     final saved = await tester.runAsync(() => VisualChatRepository().forModule('m-learn'));

@@ -9,7 +9,10 @@ import '../../models/flashcard.dart';
 import '../../models/module.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lab_experiment_repository.dart';
+import '../../repositories/lecture_unit_repository.dart';
+import '../../repositories/material_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../services/continue_learning.dart';
 import '../../services/database_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/module_export_service.dart';
@@ -17,12 +20,19 @@ import '../../services/task_folder_service.dart';
 import '../../theme/app_colors.dart';
 import '../modules/module_detail_screen.dart';
 import '../modules/module_form_screen.dart';
+import '../practice/practice_screen.dart';
+import '../practice/study_sequence_screen.dart';
+import '../stats/weakness_screen.dart';
+import '../widgets/continue_learning_card.dart';
 import '../lab/lab_widgets.dart';
 import '../widgets/exam_countdown_badge.dart';
 import '../widgets/mastery_bar.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.isActive = true});
+  const HomeScreen({super.key, this.isActive = true, this.onOpenDailyQuiz});
+
+  /// Schnellzugriff „Daily Quiz“ (wechselt den Tab, siehe RootShell).
+  final VoidCallback? onOpenDailyQuiz;
 
   /// Sichtbarer Tab (siehe RootShell) – beim Zurückwechseln wird die Ampel
   /// je Fach neu geladen, seither Gelerntes soll sofort sichtbar sein.
@@ -39,6 +49,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Anzahl Aufgaben im Aufgaben-Ordner je Fach (siehe TaskFolderService).
   Map<String, int> _taskCountByModule = const {};
   FlashcardRepository? _flashcards;
+
+  /// Womit es weitergeht (Karte „Weiter lernen“) – null, solange nichts da ist.
+  ContinueTarget? _continue;
 
   /// Karten haben sich geändert, während die Startseite verdeckt war – beim
   /// nächsten Sichtbarwerden neu laden statt nach jeder einzelnen Antwort.
@@ -89,6 +102,29 @@ class _HomeScreenState extends State<HomeScreen> {
         for (final entry in byModule.entries) entry.key: TaskFolderService.tasksOf(entry.value).length,
       };
     });
+    final target = await loadContinueTarget(
+      modules: context.read<ModuleRepository>().modules,
+      cardsByModule: byModule,
+      units: context.read<LectureUnitRepository?>(),
+      materials: context.read<MaterialRepository?>(),
+    );
+    if (mounted) setState(() => _continue = target);
+  }
+
+  /// „Weitermachen“: die angefangene Reihe bzw. Üben im Fach öffnen – danach
+  /// neu bestimmen, womit es weitergeht.
+  Future<void> _continueLearning(ContinueTarget target) async {
+    final source = target.source;
+    if (source != null) {
+      await openStudySequence(context, target.moduleId, source);
+    } else {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PracticeScreen(moduleId: target.moduleId, moduleName: target.moduleName),
+        ),
+      );
+    }
+    if (mounted) await _loadAmpel();
   }
 
   /// Importiert ein zuvor über ModuleDetailScreen exportiertes Fach (siehe
@@ -183,19 +219,68 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: modules.isEmpty
                   ? _EmptyState(onCreate: () => _createModule(context))
-                  : ListView.separated(
+                  : ListView(
                       padding: const EdgeInsets.fromLTRB(24, 14, 24, 160),
-                      itemCount: modules.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (context, i) => _ModuleTile(
-                        module: modules[i],
-                        ampel: _ampelByModule == null ? null : (_ampelByModule![modules[i].id] ?? const {}),
-                        taskFolderWarning: TaskFolderService.isWarning(
-                          taskCount: _taskCountByModule[modules[i].id] ?? 0,
-                          examDate: modules[i].examDate,
+                      children: [
+                        // „Weiter lernen“: dort weitermachen, wo man aufgehört hat.
+                        if (_continue case final target? when modules.any((m) => m.id == target.moduleId)) ...[
+                          ContinueLearningCard(
+                            key: const ValueKey('home-continue'),
+                            target: target,
+                            onContinue: () => _continueLearning(target),
+                            onOther: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => ModuleDetailScreen(moduleId: target.moduleId)),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _QuickAction(
+                                key: const ValueKey('home-daily'),
+                                icon: Icons.style_outlined,
+                                label: 'Daily Quiz',
+                                onTap: widget.onOpenDailyQuiz,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _QuickAction(
+                                key: const ValueKey('home-weakness'),
+                                icon: Icons.track_changes_outlined,
+                                label: 'Schwachstellen',
+                                onTap: () => Navigator.of(
+                                  context,
+                                ).push(MaterialPageRoute<void>(builder: (_) => const WeaknessScreen())),
+                              ),
+                            ),
+                          ],
                         ),
-                        labHint: labHomeHint(labs?.forModule(modules[i].id) ?? const [], DateTime.now()),
-                      ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'ALLE FÄCHER',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                            color: c.inkMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        for (final (i, module) in modules.indexed) ...[
+                          if (i > 0) const SizedBox(height: 12),
+                          _ModuleTile(
+                            module: module,
+                            ampel: _ampelByModule == null ? null : (_ampelByModule![module.id] ?? const {}),
+                            taskFolderWarning: TaskFolderService.isWarning(
+                              taskCount: _taskCountByModule[module.id] ?? 0,
+                              examDate: module.examDate,
+                            ),
+                            labHint: labHomeHint(labs?.forModule(module.id) ?? const [], DateTime.now()),
+                          ),
+                        ],
+                      ],
                     ),
             ),
           ],
@@ -207,6 +292,48 @@ class _HomeScreenState extends State<HomeScreen> {
   void _createModule(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ModuleFormScreen()),
+    );
+  }
+}
+
+/// Schnellzugriff unter „Weiter lernen“.
+class _QuickAction extends StatelessWidget {
+  const _QuickAction({super.key, required this.icon, required this.label, this.onTap});
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      color: c.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: c.border),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+          child: Row(
+            children: [
+              Icon(icon, size: 22, color: c.accentOnSoft),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

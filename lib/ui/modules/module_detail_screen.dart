@@ -37,6 +37,7 @@ import '../../services/pdf_cloud_store.dart';
 import '../../services/pdf_cloud_sync_service.dart';
 import '../../services/pdf_ocr_service.dart';
 import '../../services/pdf_service.dart';
+import '../../services/continue_learning.dart';
 import '../../services/task_folder_service.dart';
 import '../../services/unit_schedule_service.dart';
 import '../../theme/app_colors.dart';
@@ -52,6 +53,7 @@ import '../prepare/prepare_screen.dart';
 import '../prepare/summary_detail_screen.dart';
 import '../review/review_screen.dart';
 import '../widgets/confirm_delete_dialog.dart';
+import '../widgets/continue_learning_card.dart';
 import '../widgets/edit_text_dialog.dart';
 import '../widgets/mastery_dot.dart';
 import '../widgets/ocr_notice.dart';
@@ -61,10 +63,24 @@ import '../flags/flagged_questions_screen.dart';
 import '../visual/visual_learn_screen.dart';
 import '../visual/visual_task_types_screen.dart';
 
+/// Die drei Reiter der Fach-Seite.
+enum ModuleTab {
+  learn('Lernen'),
+  understand('Verstehen'),
+  material('Material');
+
+  const ModuleTab(this.label);
+  final String label;
+}
+
 class ModuleDetailScreen extends StatefulWidget {
-  const ModuleDetailScreen({super.key, required this.moduleId});
+  const ModuleDetailScreen({super.key, required this.moduleId, this.initialTab});
 
   final String moduleId;
+
+  /// Mit diesem Reiter öffnen; null = der zuletzt in diesem Fach gewählte
+  /// (beim ersten Mal „Lernen“).
+  final ModuleTab? initialTab;
 
   @override
   State<ModuleDetailScreen> createState() => _ModuleDetailScreenState();
@@ -72,6 +88,14 @@ class ModuleDetailScreen extends StatefulWidget {
 
 class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
   bool _isDragOver = false;
+
+  /// Zuletzt gewählter Reiter je Fach (solange die App läuft).
+  static final _lastTab = <String, ModuleTab>{};
+
+  late ModuleTab _tab = widget.initialTab ?? _lastTab[widget.moduleId] ?? ModuleTab.learn;
+
+  /// Die zuletzt benutzte, noch offene Reihe dieses Fachs („Zuletzt: …“).
+  ContinueTarget? _continue;
 
   @override
   void initState() {
@@ -89,6 +113,90 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     await context.read<FlashcardRepository>().loadForModule(widget.moduleId);
     if (!mounted) return;
     await context.read<LectureUnitRepository>().loadForModule(widget.moduleId);
+    if (!mounted) return;
+    await _loadContinue();
+  }
+
+  /// „Zuletzt“ im Reiter „Lernen“: die angefangene Reihe dieses Fachs.
+  Future<void> _loadContinue() async {
+    final module = context.read<ModuleRepository>().byId(widget.moduleId);
+    if (module == null) return;
+    final target = await loadContinueTarget(
+      modules: [module],
+      cardsByModule: {widget.moduleId: context.read<FlashcardRepository>().forModule(widget.moduleId)},
+      units: context.read<LectureUnitRepository>(),
+      materials: context.read<MaterialRepository>(),
+      onlyModule: widget.moduleId,
+    );
+    if (mounted) setState(() => _continue = target);
+  }
+
+  void _selectTab(ModuleTab tab) {
+    _lastTab[widget.moduleId] = tab;
+    setState(() => _tab = tab);
+  }
+
+  /// „Der Reihe nach“: Einheit oder PDF wählen (gibt es nur eine, gleich öffnen).
+  Future<void> _pickSequence(
+    Module module,
+    List<LectureUnit> units,
+    List<MaterialItem> materials,
+    List<Flashcard> flashcards,
+  ) async {
+    final sources = studySequenceSources(units: units, materials: materials, cards: flashcards);
+    if (sources.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Dafür braucht es Aufgaben aus einer PDF oder Einheit – im Reiter „Material“ hochladen und '
+            'importieren.',
+          ),
+        ),
+      );
+      return;
+    }
+    final source = sources.length == 1
+        ? sources.single.source
+        : await showModalBottomSheet<StudySequenceSource>(
+            context: context,
+            showDragHandle: true,
+            isScrollControlled: true,
+            builder: (ctx) => SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.75),
+                child: ListView(
+                  key: const ValueKey('module-sequence-sheet'),
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  children: [
+                    Text('Der Reihe nach', style: Theme.of(ctx).textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Aufgaben einer Einheit oder PDF von vorne nach hinten. Dein Stand bleibt gespeichert.',
+                      style: TextStyle(fontSize: 13, color: ctx.colors.inkMuted, height: 1.4),
+                    ),
+                    const SizedBox(height: 10),
+                    for (final (i, s) in sources.indexed)
+                      ListTile(
+                        key: ValueKey('module-sequence-$i'),
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          s.source.kind == StudySequenceKind.unit
+                              ? Icons.folder_outlined
+                              : Icons.picture_as_pdf_outlined,
+                        ),
+                        title: Text(s.source.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        trailing: Text('${s.count}', style: TextStyle(color: ctx.colors.inkMuted)),
+                        onTap: () => Navigator.of(ctx).pop(s.source),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+    if (source == null || !mounted) return;
+    await openStudySequence(context, module.id, source);
+    if (mounted) await _loadContinue();
   }
 
   /// Knopf zum Aufgaben-Ordner (nur wenn es Aufgaben zum Verstehen gibt) –
@@ -151,11 +259,31 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         _RoundIconButton(icon: Icons.chevron_left_rounded, onTap: () => Navigator.of(context).pop()),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
-                            module.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                module.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                              ),
+                              if (days != null)
+                                Text(
+                                  days < 0
+                                      ? 'Klausur vorbei'
+                                      : days == 0
+                                      ? 'Klausur heute'
+                                      : 'Klausur in $days ${days == 1 ? 'Tag' : 'Tagen'}',
+                                  key: const ValueKey('module-exam-days'),
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: days >= 0 && days <= 14 ? c.warn : c.good,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ],
@@ -184,52 +312,77 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 4),
+              child: Container(
+                key: const ValueKey('module-tabs'),
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(16)),
+                child: Row(
+                  children: [
+                    for (final tab in ModuleTab.values)
+                      Expanded(
+                        child: Semantics(
+                          selected: _tab == tab,
+                          button: true,
+                          child: Material(
+                            color: _tab == tab ? c.surface : Colors.transparent,
+                            elevation: _tab == tab ? 1 : 0,
+                            shadowColor: Colors.black26,
+                            borderRadius: BorderRadius.circular(12),
+                            child: InkWell(
+                              key: ValueKey('module-tab-${tab.name}'),
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => _selectTab(tab),
+                              child: Container(
+                                height: 44,
+                                alignment: Alignment.center,
+                                child: Text(
+                                  tab.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: _tab == tab ? c.ink : c.inkMuted,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _reload,
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
+                  // Eigener Schlüssel je Reiter: Jeder beginnt oben.
+                  key: ValueKey('module-list-${_tab.name}'),
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 40),
                   children: [
-                    if (days != null) ...[
-                      Text(
-                        'Klausur in',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.06,
-                          color: c.inkMuted,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text(
-                            '$days',
-                            style: const TextStyle(fontSize: 56, fontWeight: FontWeight.w700, letterSpacing: -0.5, height: 1),
-                          ),
-                          const SizedBox(width: 9),
-                          Text('Tagen', style: TextStyle(fontSize: 16, color: c.inkMuted)),
-                        ],
-                      ),
-                      const SizedBox(height: 26),
-                    ],
-                    // Drei Gruppen statt einer langen Liste: erst, was man täglich
-                    // braucht (Lernen), dann Verstehen, dann Material.
-                    const _GroupHeader('Lernen', key: ValueKey('module-group-learn')),
-                    _SoftRow(
-                      key: const ValueKey('module-practice'),
-                      icon: Icons.style_outlined,
-                      title: 'Üben (Lernmodus)',
-                      subtitle: 'Frei oder der Reihe nach – zählt für den Lernstand',
-                      onTap: () => Navigator.of(context).push(
+                    // Drei Reiter statt einer langen Liste: was man täglich braucht
+                    // (Lernen), Verstehen, Material.
+                    if (_tab == ModuleTab.learn) ...[
+                    _PracticeHero(
+                      target: _continue,
+                      onSequence: () => _pickSequence(module, units, materials, flashcards),
+                      onMixed: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PracticeScreen(moduleId: module.id, moduleName: module.name),
                         ),
                       ),
+                      onContinue: _continue?.source == null
+                          ? null
+                          : () async {
+                              await openStudySequence(context, module.id, _continue!.source!);
+                              if (mounted) await _loadContinue();
+                            },
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     _SoftRow(
                       icon: Icons.assignment_outlined,
                       title: 'Probeklausur',
@@ -264,8 +417,65 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         );
                       },
                     ),
-                    const SizedBox(height: 24),
-                    const _GroupHeader('Verstehen', key: ValueKey('module-group-understand')),
+                    if (flashcards.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      // Lernstand des Fachs auf einen Blick.
+                      Container(
+                        key: const ValueKey('module-progress'),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: c.surface,
+                          border: Border.all(color: c.border),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'LERNSTAND',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8,
+                                color: c.inkMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _StatPill(
+                                    value: flashcards.where((card) => card.reps == 0 && !card.isMuted).length,
+                                    label: 'neu',
+                                    fg: c.accentOnSoft,
+                                    bg: c.accentSoft,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _StatPill(
+                                    value: flashcards.where((card) => card.reps > 0 && !card.isMuted).length,
+                                    label: 'in Wiederholung',
+                                    fg: c.good,
+                                    bg: c.goodSoft,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            _AmpelRow(breakdown: MasteryService().breakdown(flashcards)),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    if (module.showsLab(
+                        hasExperiments: context.watch<LabExperimentRepository?>()?.forModule(module.id).isNotEmpty ?? false)) ...[
+                      LabExperimentsSection(moduleId: module.id, moduleName: module.name),
+                      const SizedBox(height: 20),
+                    ],
+                    ],
+                    if (_tab == ModuleTab.understand) ...[
                     // Gleich hohe Karten, auch wenn ein Untertitel länger umbricht.
                     IntrinsicHeight(
                       child: Row(
@@ -330,8 +540,63 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    const _GroupHeader('Material', key: ValueKey('module-group-material')),
+                    ],
+                    if (_tab == ModuleTab.material) ...[
+                    _SectionHeader(title: 'Materialien', count: materials.length),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _uploadMaterials,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Material hochladen'),
+                        ),
+                        if (materials.any((m) => m.kind == MaterialKind.slide))
+                          OutlinedButton.icon(
+                            key: const ValueKey('module-condense'),
+                            onPressed: _condense,
+                            icon: const Icon(Icons.content_cut),
+                            label: const Text('Vorlesung kürzen'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (materials.isEmpty)
+                      const _HintText(
+                          'Noch keine Dateien hochgeladen. Du kannst hier auch schon den ganzen '
+                          'Semesterinhalt ablegen und vorarbeiten – ohne dass dafür KI-Anfragen anfallen.')
+                    else ...[
+                      for (final unit in units)
+                        if (materials.any((m) => m.unitId == unit.id)) ...[
+                          _MaterialGroupLabel(
+                            unit.title,
+                            sequenceKey: ValueKey('unit-sequence-${unit.id}'),
+                            sequenceCount: context
+                                    .watch<FlashcardRepository?>()
+                                    ?.forModule(widget.moduleId)
+                                    .where((c) => c.unitId == unit.id)
+                                    .length ??
+                                0,
+                            onSequence: () => openStudySequence(
+                              context,
+                              widget.moduleId,
+                              StudySequenceSource(kind: StudySequenceKind.unit, id: unit.id, title: unit.title),
+                            ),
+                          ),
+                          ...materials.where((m) => m.unitId == unit.id).map(_materialRow),
+                          const SizedBox(height: 6),
+                        ],
+                      // Auch Materialien, deren Einheit nicht (mehr) existiert
+                      // (z.B. vor dem Lösch-Kaskaden-Fix gelöscht), hier statt
+                      // unsichtbar.
+                      if (materials.any((m) => !units.any((u) => u.id == m.unitId))) ...[
+                        if (units.isNotEmpty) const _MaterialGroupLabel('Ohne Einheit'),
+                        ...materials.where((m) => !units.any((u) => u.id == m.unitId)).map(_materialRow),
+                      ],
+                    ],
+                    const SizedBox(height: 20),
                     _SoftRow(
                       icon: Icons.manage_search,
                       title: 'Fragen aus PDF importieren',
@@ -430,39 +695,15 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     if (flashcards.isEmpty)
                       const _HintText('Noch keine Karteikarten – entstehen automatisch im Nachbereiten-Modus.')
                     else ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _StatPill(
-                              value: flashcards.where((card) => card.reps == 0 && !card.isMuted).length,
-                              label: 'neu',
-                              fg: c.accentOnSoft,
-                              bg: c.accentSoft,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _StatPill(
-                              value: flashcards.where((card) => card.reps > 0 && !card.isMuted).length,
-                              label: 'in Wiederholung',
-                              fg: c.good,
-                              bg: c.goodSoft,
-                            ),
-                          ),
-                        ],
-                      ),
                       if (flashcards.any((card) => card.isMuted)) ...[
-                        const SizedBox(height: 6),
                         Text(
                           '${flashcards.where((card) => card.isMuted).length} stummgeschaltet (Gewichtung 0) – '
-                          'kommen nie dran und zählen hier nicht mit.',
+                          'kommen nie dran und zählen nicht mit.',
                           key: const ValueKey('module-muted-count'),
                           style: TextStyle(fontSize: 12, color: c.inkMuted),
                         ),
+                        const SizedBox(height: 10),
                       ],
-                      const SizedBox(height: 10),
-                      _AmpelRow(breakdown: MasteryService().breakdown(flashcards)),
-                      const SizedBox(height: 10),
                       OutlinedButton.icon(
                         onPressed: () => Navigator.of(context).push(
                           MaterialPageRoute(
@@ -528,64 +769,6 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
-                    if (module.showsLab(
-                        hasExperiments: context.watch<LabExperimentRepository?>()?.forModule(module.id).isNotEmpty ?? false)) ...[
-                      LabExperimentsSection(moduleId: module.id, moduleName: module.name),
-                      const SizedBox(height: 20),
-                    ],
-                    _SectionHeader(title: 'Materialien', count: materials.length),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _uploadMaterials,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Material hochladen'),
-                        ),
-                        if (materials.any((m) => m.kind == MaterialKind.slide))
-                          OutlinedButton.icon(
-                            key: const ValueKey('module-condense'),
-                            onPressed: _condense,
-                            icon: const Icon(Icons.content_cut),
-                            label: const Text('Vorlesung kürzen'),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    if (materials.isEmpty)
-                      const _HintText(
-                          'Noch keine Dateien hochgeladen. Du kannst hier auch schon den ganzen '
-                          'Semesterinhalt ablegen und vorarbeiten – ohne dass dafür KI-Anfragen anfallen.')
-                    else ...[
-                      for (final unit in units)
-                        if (materials.any((m) => m.unitId == unit.id)) ...[
-                          _MaterialGroupLabel(
-                            unit.title,
-                            sequenceKey: ValueKey('unit-sequence-${unit.id}'),
-                            sequenceCount: context
-                                    .watch<FlashcardRepository?>()
-                                    ?.forModule(widget.moduleId)
-                                    .where((c) => c.unitId == unit.id)
-                                    .length ??
-                                0,
-                            onSequence: () => openStudySequence(
-                              context,
-                              widget.moduleId,
-                              StudySequenceSource(kind: StudySequenceKind.unit, id: unit.id, title: unit.title),
-                            ),
-                          ),
-                          ...materials.where((m) => m.unitId == unit.id).map(_materialRow),
-                          const SizedBox(height: 6),
-                        ],
-                      // Auch Materialien, deren Einheit nicht (mehr) existiert
-                      // (z.B. vor dem Lösch-Kaskaden-Fix gelöscht), hier statt
-                      // unsichtbar.
-                      if (materials.any((m) => !units.any((u) => u.id == m.unitId))) ...[
-                        if (units.isNotEmpty) const _MaterialGroupLabel('Ohne Einheit'),
-                        ...materials.where((m) => !units.any((u) => u.id == m.unitId)).map(_materialRow),
-                      ],
                     ],
                   ],
                 ),
@@ -1962,18 +2145,85 @@ class _StatPill extends StatelessWidget {
 }
 
 /// Überschrift einer Gruppe von Einstiegen (Lernen / Verstehen / Material).
-class _GroupHeader extends StatelessWidget {
-  const _GroupHeader(this.title, {super.key});
-  final String title;
+/// Üben im Reiter „Lernen“: der Reihe nach oder gemischt – und wo es zuletzt
+/// aufgehört hat.
+class _PracticeHero extends StatelessWidget {
+  const _PracticeHero({required this.target, required this.onSequence, required this.onMixed, this.onContinue});
+
+  /// Die angefangene Reihe dieses Fachs (null oder ohne Reihe = nichts offen).
+  final ContinueTarget? target;
+  final VoidCallback onSequence;
+  final VoidCallback onMixed;
+  final VoidCallback? onContinue;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10, left: 2),
-    child: Text(
-      title,
-      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: context.colors.ink),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final source = target?.source;
+    return Container(
+      key: const ValueKey('module-practice'),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(22)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Üben', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: c.ink)),
+          const SizedBox(height: 3),
+          Text('Zählt für deinen Lernstand.', style: TextStyle(fontSize: 14, color: c.accentOnSoft)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              FilledButton(
+                key: const ValueKey('module-practice-sequence'),
+                onPressed: onSequence,
+                style: FilledButton.styleFrom(
+                  backgroundColor: c.accentSolid,
+                  foregroundColor: c.accentInk,
+                  minimumSize: const Size(0, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                ),
+                child: const Text('Der Reihe nach'),
+              ),
+              OutlinedButton(
+                key: const ValueKey('module-practice-mixed'),
+                onPressed: onMixed,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: c.accentOnSoft,
+                  side: BorderSide(color: c.accentSolid, width: 1.5),
+                  minimumSize: const Size(0, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                ),
+                child: const Text('Gemischt'),
+              ),
+            ],
+          ),
+          if (source != null && onContinue != null) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const ValueKey('module-practice-continue'),
+                onPressed: onContinue,
+                style: TextButton.styleFrom(
+                  foregroundColor: c.accentOnSoft,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size(0, 44),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                label: Text(
+                  'Zuletzt: ${source.title} · ${target!.detail.replaceFirst('Der Reihe nach · ', '')}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _SectionHeader extends StatelessWidget {

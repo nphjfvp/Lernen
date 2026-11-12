@@ -73,7 +73,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => FlashcardRepository()),
         ChangeNotifierProvider(create: (_) => LectureUnitRepository()),
       ],
-      child: MaterialApp(theme: AppTheme.light, home: ModuleDetailScreen(moduleId: moduleId)),
+      child: MaterialApp(theme: AppTheme.light, home: ModuleDetailScreen(moduleId: moduleId, initialTab: ModuleTab.material)),
     ));
     for (var i = 0; i < 40 && find.text('Materialien').evaluate().isEmpty; i++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));

@@ -73,7 +73,12 @@ void main() {
     PathProviderPlatform.instance = _FakePathProviderPlatform(dir.path);
   });
 
-  setUp(() => requests = []);
+  setUp(() {
+    requests = [];
+    // Die KI-Leiste merkt sich ihre Art – jeder Test beginnt bei „Fragen“.
+    VisualAiBar.mode = VisualAiMode.ask;
+    VisualAiBar.collapsed = false;
+  });
 
   tearDown(() {
     VisualLessonScreen.aiFactory = null;
@@ -336,6 +341,8 @@ void main() {
     await pumpApp(tester, VisualLessonScreen(lesson: own));
     expect(textOf(tester, 'visual-car'), contains('Auto: Weg'));
 
+    // „Ändern“ in der KI-Leiste → „Ausführlich …“ öffnet das Fenster.
+    await tap(tester, 'visual-ai-mode-change');
     // In echter Zeit: das Speichern nach dem Ändern braucht sie.
     await tester.ensureVisible(find.byKey(const ValueKey('visual-revise')));
     await tester.pump();
@@ -436,8 +443,13 @@ void main() {
     final own = VisualLesson.fromMap(carLessonJson(), id: 'l-live', moduleId: 'm-live', createdAt: DateTime(2026))!;
     final n = own.steps.length;
     await pumpApp(tester, VisualLessonScreen(lesson: own));
-    expect(find.byKey(const ValueKey('visual-live')), findsOneWidget);
+    // Eine Leiste für alles: „Fragen“ ist vorgewählt, die Vorschläge zum Umbauen stehen unter „Ändern“.
+    expect(find.byKey(const ValueKey('visual-ai')), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-live-chip-1')), findsNothing);
+    expect(find.byKey(const ValueKey('visual-deepen')), findsOneWidget);
+    await tap(tester, 'visual-ai-mode-change');
     expect(find.byKey(const ValueKey('visual-live-chip-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('visual-deepen')), findsNothing);
 
     await tester.ensureVisible(find.byKey(const ValueKey('visual-live-chip-1')));
     await tester.pump();
@@ -509,6 +521,7 @@ void main() {
     }
 
     // Kein eigenes 3D-Modell: sofort mit dem Fragen-Modell, ohne Rückfrage.
+    VisualAiBar.mode = VisualAiMode.change;
     await pumpApp(tester, VisualLessonScreen(lesson: own));
     await tapReal('visual-live-3d');
     expect(find.byKey(const ValueKey('scene3d-confirm')), findsNothing);

@@ -332,7 +332,23 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
-        title: Text(_l.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_l.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            if (!_short)
+              Text(
+                switch (page.kind) {
+                  _PageKind.step => 'Schritt ${_page + 1} von ${_l.steps.length}',
+                  _PageKind.result => 'Ergebnis',
+                  _PageKind.exercise => 'Übung',
+                },
+                key: const ValueKey('visual-step-count'),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.inkMuted),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             key: const ValueKey('visual-learn-action'),
@@ -384,6 +400,19 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                             ),
                           ),
                       ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        key: const ValueKey('visual-progress'),
+                        value: (_page + 1) / pages.length,
+                        minHeight: 5,
+                        backgroundColor: c.surfaceAlt,
+                        color: c.accentSolid,
+                      ),
                     ),
                   ),
                   Padding(
@@ -447,8 +476,6 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                                   ),
                                   child: MathText(_l.intro, style: const TextStyle(fontSize: 14.5, height: 1.45)),
                                 ),
-                                const SizedBox(height: 10),
-                                _learnCard(c),
                                 const SizedBox(height: 14),
                               ],
                               if (_style == VisualStyle.socratic && page.kind == _PageKind.step) ...[
@@ -464,6 +491,23 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                           ),
                   ),
                   _nav(c, pages.length),
+                  // Eine KI-Leiste für alles – nicht in der Übung und nicht, solange
+                  // ein sokratischer Schritt noch verschlossen ist.
+                  if (page.kind != _PageKind.exercise &&
+                      !(_style == VisualStyle.socratic &&
+                          page.kind == _PageKind.step &&
+                          !_socraticFor(_page).unlocked))
+                    VisualAiBar(
+                      key: ValueKey('visual-live-bar-$_page'),
+                      split: page.kind == _PageKind.step,
+                      isResult: page.kind == _PageKind.result,
+                      onAsk: (question) => _ask(step: page.step, question: question),
+                      onDeepen: () => _deepen(page.step!),
+                      onChange: (request) => _liveRevise(page.kind == _PageKind.result ? -1 : _page, request),
+                      onScene3d: () => _make3d(page.kind == _PageKind.result ? -1 : _page),
+                      onReviseSheet: () => _revise(page.kind == _PageKind.result ? -1 : _page),
+                      onLearn: _learn,
+                    ),
                 ],
               ],
             ),
@@ -542,69 +586,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     ],
     if (step.show.isPending) _pendingScene(c, step.show),
     if (step.show.broken.isNotEmpty) _brokenNote(c, step.show, isResult ? -1 : _page),
-    const SizedBox(height: 14),
-    VisualLiveEditBar(
-      key: ValueKey('visual-live-bar-$_page'),
-      split: !isResult,
-      onSend: (request) => _liveRevise(isResult ? -1 : _page, request),
-      onScene3d: () => _make3d(isResult ? -1 : _page),
-    ),
-    const SizedBox(height: 10),
-    Wrap(
-      spacing: 8,
-      runSpacing: 6,
-      children: [
-        OutlinedButton.icon(
-          key: const ValueKey('visual-ask'),
-          onPressed: () => _ask(step: step),
-          icon: const Icon(Icons.help_outline, size: 18),
-          label: Text(isResult ? 'Frage zum Ergebnis' : 'Frage zu diesem Schritt'),
-        ),
-        TextButton.icon(
-          key: const ValueKey('visual-revise'),
-          onPressed: () => _revise(isResult ? -1 : _page),
-          icon: const Icon(Icons.auto_fix_high, size: 18),
-          label: const Text('Darstellung ändern'),
-        ),
-        TextButton.icon(
-          key: const ValueKey('visual-deepen'),
-          onPressed: () => _deepen(step),
-          icon: const Icon(Icons.forum_outlined, size: 18),
-          label: const Text('Im Gespräch vertiefen'),
-        ),
-      ],
-    ),
   ];
-
-  /// „Lernen“ unter der Aufgabe: erst darüber sprechen, dann lösen.
-  Widget _learnCard(AppColors c) => Container(
-    key: const ValueKey('visual-learn-card'),
-    padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
-    decoration: BoxDecoration(
-      color: c.surface,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: c.border),
-    ),
-    child: Row(
-      children: [
-        Icon(Icons.lightbulb_outline, color: c.accent),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            'Begriffe noch unklar? Erst in Ruhe darüber sprechen und es dir zeigen lassen – gelöst wird danach.',
-            style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.35),
-          ),
-        ),
-        const SizedBox(width: 8),
-        FilledButton.icon(
-          key: const ValueKey('visual-learn'),
-          onPressed: _learn,
-          icon: const Icon(Icons.school_outlined, size: 18),
-          label: const Text('Lernen'),
-        ),
-      ],
-    ),
-  );
 
   /// Lern-Chat zu dieser Aufgabe (je Lektion einer, er bleibt erhalten): die KI
   /// kennt nur die Aufgabe, nicht den Lösungsweg, und erklärt die Konzepte.
@@ -1282,7 +1264,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     );
   }
 
-  Future<void> _ask({VisualStep? step, ({StepField field, String input})? wrong}) {
+  Future<void> _ask({VisualStep? step, ({StepField field, String input})? wrong, String question = ''}) {
     // Wo ein behaltener Schritt hinkommt: hinter den gefragten Schritt, sonst
     // (Ergebnis, Übung) ans Ende der Schritte.
     final asked = step == null ? -1 : _l.steps.indexOf(step);
@@ -1297,6 +1279,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
         step: step,
         wrong: wrong,
         ai: visualAi(context),
+        initialQuestion: question,
         onKeep: (answer, functions) {
           final before = _l;
           final revised = before.withStepAfter(asked < 0 ? null : asked, answer, functions: functions);
@@ -1322,7 +1305,18 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
 /// Rückfrage zu einem Schritt bzw. „Warum ist meine Antwort falsch?“ – der
 /// Nutzer wählt visuell, schriftlich oder beides.
 class VisualAskSheet extends StatefulWidget {
-  const VisualAskSheet({super.key, required this.lesson, this.step, this.wrong, this.ai, this.onKeep});
+  const VisualAskSheet({
+    super.key,
+    required this.lesson,
+    this.step,
+    this.wrong,
+    this.ai,
+    this.onKeep,
+    this.initialQuestion = '',
+  });
+
+  /// Schon getippte Frage (aus der KI-Leiste) – wird gleich abgeschickt.
+  final String initialQuestion;
 
   final VisualLesson lesson;
   final VisualStep? step;
@@ -1339,7 +1333,18 @@ class VisualAskSheet extends StatefulWidget {
 }
 
 class _VisualAskSheetState extends State<VisualAskSheet> {
-  final _question = TextEditingController();
+  late final _question = TextEditingController(text: widget.initialQuestion);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialQuestion.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _send();
+      });
+    }
+  }
+
   String _mode = 'both';
   bool _busy = false;
   String? _error;
@@ -1717,23 +1722,56 @@ class _VisualReviseSheetState extends State<VisualReviseSheet> {
   }
 }
 
-/// „Live ändern“ unter jedem Schritt: sagen, wie es aussehen soll („zeig das
-/// als Graph“, „noch ein Zwischenschritt“) – die KI baut den Schritt sofort um.
-class VisualLiveEditBar extends StatefulWidget {
-  const VisualLiveEditBar({super.key, required this.onSend, this.onScene3d, this.split = true});
+/// Was die KI-Leiste einer Lektion gerade tut.
+enum VisualAiMode {
+  ask('Fragen', 'Die Antwort kannst du als Schritt in der Lektion behalten.'),
+  change('Ändern', 'Der Schritt wird sofort umgebaut – mit Rückgängig.'),
+  learn('Erst verstehen', 'Begriffe von Grund auf – die Lösung wird nicht verraten.');
+
+  const VisualAiMode(this.label, this.hint);
+  final String label;
+  final String hint;
+}
+
+/// Die eine KI-Leiste unten in der Lektion – statt fünf einzelner Knöpfe:
+/// **Fragen** (Rückfrage zum Schritt, Antwort lässt sich behalten; oder im
+/// Gespräch vertiefen), **Ändern** (den Schritt live umbauen: frei, per
+/// Vorschlag, als 3D-Modell oder über das ausführliche Fenster) und **Erst
+/// verstehen** (Lern-Chat, der die Lösung nicht verrät).
+class VisualAiBar extends StatefulWidget {
+  const VisualAiBar({
+    super.key,
+    required this.onAsk,
+    required this.onDeepen,
+    required this.onChange,
+    required this.onReviseSheet,
+    required this.onLearn,
+    this.onScene3d,
+    this.split = true,
+    this.isResult = false,
+  });
+
+  /// „Fragen“: öffnet die Rückfrage mit [question] (leer = erst dort tippen).
+  final void Function(String question) onAsk;
+  final VoidCallback onDeepen;
+
+  /// „Ändern“: schickt den Wunsch; Ergebnis = Fehlermeldung oder null.
+  final Future<String?> Function(String request) onChange;
 
   /// „3D-Modell erzeugen“ (eigener Knopf, weil dafür ein eigenes Modell
   /// eingestellt sein kann, nach dem vorher gefragt wird); Ergebnis wie bei
-  /// [onSend].
+  /// [onChange].
   final Future<String?> Function()? onScene3d;
 
-  /// Schickt den Wunsch; Ergebnis = Fehlermeldung oder null.
-  final Future<String?> Function(String request) onSend;
+  /// Das ausführliche Fenster „Darstellung ändern“ (auch für die ganze Lektion).
+  final VoidCallback onReviseSheet;
+  final VoidCallback onLearn;
 
   /// Darf der Schritt in mehrere aufgeteilt werden (nicht beim Ergebnis)?
   final bool split;
+  final bool isResult;
 
-  /// Vorschläge: Beschriftung, Wunsch an die KI, nur bei [split].
+  /// Vorschläge für „Ändern“: Beschriftung, Wunsch an die KI, nur bei [split].
   static const suggestions = <({String label, String request, bool split})>[
     (
       label: 'Anders visualisieren',
@@ -1769,14 +1807,21 @@ class VisualLiveEditBar extends StatefulWidget {
     (label: 'Einfacher erklären', request: 'Erklär diesen Schritt einfacher, mit einem Alltagsbezug.', split: false),
   ];
 
+  /// Gewählte Art und ob die Leiste eingeklappt ist – bleiben über Schritte und
+  /// Lektionen hinweg (solange die App läuft).
+  static VisualAiMode mode = VisualAiMode.ask;
+  static bool collapsed = false;
+
   @override
-  State<VisualLiveEditBar> createState() => _VisualLiveEditBarState();
+  State<VisualAiBar> createState() => _VisualAiBarState();
 }
 
-class _VisualLiveEditBarState extends State<VisualLiveEditBar> {
+class _VisualAiBarState extends State<VisualAiBar> {
   final _input = TextEditingController();
   bool _busy = false;
   String? _error;
+
+  VisualAiMode get _mode => VisualAiBar.mode;
 
   @override
   void dispose() {
@@ -1784,122 +1829,241 @@ class _VisualLiveEditBarState extends State<VisualLiveEditBar> {
     super.dispose();
   }
 
-  Future<void> _make3d() async {
+  Future<void> _run(Future<String?> Function() action, {bool clear = false}) async {
     if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
     });
-    final error = await widget.onScene3d!();
+    final error = await action();
     if (!mounted) return;
     setState(() {
       _busy = false;
       _error = error;
+      if (error == null && clear) _input.clear();
     });
   }
 
-  Future<void> _send(String request) async {
-    final r = request.trim();
-    if (r.isEmpty || _busy) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final error = await widget.onSend(r);
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _error = error;
-      if (error == null) _input.clear();
-    });
+  /// Senden-Knopf bzw. Enter: je nach Art.
+  void _submit() {
+    final text = _input.text.trim();
+    switch (_mode) {
+      case VisualAiMode.ask:
+        widget.onAsk(text);
+        _input.clear();
+      case VisualAiMode.change:
+        if (text.isEmpty) {
+          widget.onReviseSheet();
+        } else {
+          _run(() => widget.onChange(text), clear: true);
+        }
+      case VisualAiMode.learn:
+        widget.onLearn();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final chips = [
-      for (final (i, s) in VisualLiveEditBar.suggestions.indexed)
+    final collapsed = VisualAiBar.collapsed;
+    final changeChips = [
+      for (final (i, s) in VisualAiBar.suggestions.indexed)
         if (widget.split || !s.split) (i: i, s: s),
     ];
-    return Container(
-      key: const ValueKey('visual-live'),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: c.surfaceAlt,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.border),
+    Widget chip({required Key key, required String label, IconData? icon, required VoidCallback? onTap}) => Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: ActionChip(
+        key: key,
+        avatar: icon == null ? null : Icon(icon, size: 16),
+        label: Text(label),
+        onPressed: onTap,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.auto_fix_high, size: 18, color: c.accent),
-              const SizedBox(width: 6),
-              Text(
-                'Live ändern',
-                style: TextStyle(fontWeight: FontWeight.w600, color: c.ink),
-              ),
-            ],
+    );
+    final chips = switch (_mode) {
+      VisualAiMode.ask => [
+        chip(
+          key: const ValueKey('visual-deepen'),
+          label: 'Im Gespräch vertiefen',
+          icon: Icons.forum_outlined,
+          onTap: widget.onDeepen,
+        ),
+      ],
+      VisualAiMode.change => [
+        for (final e in changeChips)
+          chip(
+            key: ValueKey('visual-live-chip-${e.i}'),
+            label: e.s.label,
+            onTap: _busy ? null : () => _run(() => widget.onChange(e.s.request)),
           ),
-          const SizedBox(height: 8),
-          TextField(
-            key: const ValueKey('visual-live-input'),
-            controller: _input,
-            enabled: !_busy,
-            minLines: 1,
-            maxLines: 3,
-            textInputAction: TextInputAction.send,
-            onSubmitted: _send,
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: widget.split
-                  ? 'z.B. „zeig das als Graph“ oder „noch ein Zwischenschritt beim Integrieren“'
-                  : 'z.B. „zeig das als Graph“ oder „markier die Einheiten“',
-              border: const OutlineInputBorder(),
-              suffixIcon: IconButton(
-                key: const ValueKey('visual-live-send'),
-                tooltip: 'Ändern',
-                onPressed: _busy ? null : () => _send(_input.text),
-                icon: const Icon(Icons.send_rounded),
-              ),
-            ),
+        if (widget.onScene3d != null)
+          chip(
+            key: const ValueKey('visual-live-3d'),
+            label: '3D-Modell erzeugen',
+            icon: Icons.view_in_ar_outlined,
+            onTap: _busy ? null : () => _run(widget.onScene3d!),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final e in chips)
-                ActionChip(
-                  key: ValueKey('visual-live-chip-${e.i}'),
-                  label: Text(e.s.label),
-                  onPressed: _busy ? null : () => _send(e.s.request),
+        chip(
+          key: const ValueKey('visual-revise'),
+          label: 'Ausführlich …',
+          icon: Icons.auto_fix_high,
+          onTap: _busy ? null : widget.onReviseSheet,
+        ),
+      ],
+      VisualAiMode.learn => [
+        chip(
+          key: const ValueKey('visual-learn'),
+          label: 'Lern-Chat öffnen',
+          icon: Icons.school_outlined,
+          onTap: widget.onLearn,
+        ),
+      ],
+    };
+    final (hintText, inputKey, sendKey, sendTip) = switch (_mode) {
+      VisualAiMode.ask => (
+        widget.isResult ? 'Frag etwas zum Ergebnis …' : 'Frag etwas zu diesem Schritt …',
+        'visual-ask-input',
+        'visual-ask',
+        'Fragen',
+      ),
+      VisualAiMode.change => ('Wie soll es aussehen?', 'visual-live-input', 'visual-live-send', 'Ändern'),
+      VisualAiMode.learn => ('Welchen Begriff willst du klären?', 'visual-learn-input', 'visual-learn-send', 'Öffnen'),
+    };
+    return Material(
+      key: const ValueKey('visual-ai'),
+      color: c.surface,
+      elevation: 8,
+      shadowColor: Colors.black26,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        side: BorderSide(color: c.border),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(14, 10, 14, collapsed ? 10 : 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(14)),
+                    child: Row(
+                      children: [
+                        for (final m in VisualAiMode.values)
+                          Expanded(
+                            child: Material(
+                              color: m == _mode && !collapsed ? c.surface : Colors.transparent,
+                              elevation: m == _mode && !collapsed ? 1 : 0,
+                              shadowColor: Colors.black26,
+                              borderRadius: BorderRadius.circular(11),
+                              child: InkWell(
+                                key: ValueKey('visual-ai-mode-${m.name}'),
+                                borderRadius: BorderRadius.circular(11),
+                                onTap: () => setState(() {
+                                  VisualAiBar.mode = m;
+                                  VisualAiBar.collapsed = false;
+                                  _error = null;
+                                }),
+                                child: Container(
+                                  height: 40,
+                                  alignment: Alignment.center,
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: Text(
+                                    m.label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: m == _mode && !collapsed ? c.ink : c.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              if (widget.onScene3d != null)
-                ActionChip(
-                  key: const ValueKey('visual-live-3d'),
-                  avatar: const Icon(Icons.view_in_ar_outlined, size: 16),
-                  label: const Text('3D-Modell erzeugen'),
-                  onPressed: _busy ? null : _make3d,
+                IconButton(
+                  key: const ValueKey('visual-ai-collapse'),
+                  tooltip: collapsed ? 'KI-Leiste aufklappen' : 'KI-Leiste einklappen',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() => VisualAiBar.collapsed = !collapsed),
+                  icon: Icon(collapsed ? Icons.expand_less : Icons.expand_more, color: c.inkMuted),
                 ),
-            ],
-          ),
-          if (_busy) ...[
-            const SizedBox(height: 10),
-            const LinearProgressIndicator(key: ValueKey('visual-live-busy')),
-            const SizedBox(height: 4),
-            Text('Die KI baut den Schritt um …', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _error!,
-              key: const ValueKey('visual-live-error'),
-              style: TextStyle(color: c.danger),
+              ],
             ),
+            if (!collapsed) ...[
+              const SizedBox(height: 6),
+              Text(_mode.hint, style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.3)),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 40,
+                // Nicht träge aufgebaut: Alle Vorschläge sind da und lassen sich
+                // seitlich erreichen.
+                child: SingleChildScrollView(
+                  key: const ValueKey('visual-ai-chips'),
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: chips),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: ValueKey(inputKey),
+                      controller: _input,
+                      enabled: !_busy,
+                      minLines: 1,
+                      maxLines: 3,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _submit(),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: hintText,
+                        filled: true,
+                        fillColor: c.surfaceAlt,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    key: ValueKey(sendKey),
+                    tooltip: sendTip,
+                    onPressed: _busy ? null : _submit,
+                    style: IconButton.styleFrom(
+                      backgroundColor: c.accentSolid,
+                      foregroundColor: c.accentInk,
+                      minimumSize: const Size(46, 46),
+                    ),
+                    icon: Icon(_mode == VisualAiMode.learn ? Icons.school_outlined : Icons.arrow_forward_rounded),
+                  ),
+                ],
+              ),
+              if (_busy) ...[
+                const SizedBox(height: 8),
+                const LinearProgressIndicator(key: ValueKey('visual-live-busy')),
+                const SizedBox(height: 4),
+                Text('Die KI baut den Schritt um …', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  _error!,
+                  key: const ValueKey('visual-live-error'),
+                  style: TextStyle(color: c.danger),
+                ),
+              ],
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
