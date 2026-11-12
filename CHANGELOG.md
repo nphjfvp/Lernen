@@ -1,8 +1,20 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6x) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6y) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 6y. Update aus der App: abgebrochene Downloads werden erkannt
+
+- **Fehler behoben:** Brach der Download eines Updates ab (Verbindung weg, App
+  im Hintergrund), blieb die halbe APK liegen – und wurde beim nächsten
+  Versuch **wiederverwendet**, weil nur der Dateianfang geprüft wurde. Android
+  lehnte sie dann jedes Mal mit „App kann nicht installiert werden – Es liegt
+  ein Problem mit der App-Datei vor“ ab, bis man die App neu installierte.
+- Jetzt gilt ein Download nur als fertig, wenn die angekündigte Länge ankam
+  und die APK vollständig ist (ZIP-Ende am Dateiende). Geladen wird in eine
+  Zwischendatei; scheitert etwas, bleibt nichts zurück und der nächste Versuch
+  lädt neu. Dasselbe gilt für das Windows-Setup (Länge).
 
 ### 6x. KI-Kosten, Lektionen in zwei Stufen, 3D-Bausteine, Handy-Layout
 

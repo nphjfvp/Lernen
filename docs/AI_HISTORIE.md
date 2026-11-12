@@ -1507,3 +1507,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Repo): alle `physicalSize` in den Tests vorübergehend auf 412 px, Roboto über `flutter_test_config`
     laden (mit der Test-Schrift Ahem melden sich viele Schein-Überläufe), Tests mit `devicePixelRatio = 3`
     ausnehmen.
+113. Update aus der App: `downloadUpdateFile` lädt in `<name>.part`, prüft `received == contentLength`
+    (sonst `HttpException`), `magic` und optional `validate`, benennt erst dann um und löscht bei jedem
+    Fehler die Zwischendatei. `isCompleteApk` (ZIP-Abschluss „PK\x05\x06“ + Kommentarlänge genau am
+    Dateiende, liest nur die letzten 64 KB) ersetzt bei der Wiederverwendung der geladenen APK
+    (`Lernen-<Build>.apk` im Cache) die Prüfung nur auf den „PK“-Anfang – eine abgeschnittene Datei wurde
+    vorher bei jedem Versuch erneut an den Installer gegeben („Problem mit der App-Datei“). Anlass: Build
+    159 ließ sich auf dem Gerät nicht als Update installieren, die APK im Release war aber in Ordnung
+    (vollständig, versionCode 159, Zertifikat = `android/app/debug.keystore`). Tests:
+    `update_installer_test` („abgebrochener Download …“, „vollständige APK …“).

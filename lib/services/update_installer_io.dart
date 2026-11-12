@@ -49,17 +49,19 @@ Future<UpdateInstallResult> installUpdate(
     try {
       // Im Cache-Ordner (siehe android/app/src/main/res/xml/update_paths.xml);
       // derselbe Build wird nicht doppelt geladen, z.B. wenn erst noch die
-      // Erlaubnis zum Installieren fehlte.
+      // Erlaubnis zum Installieren fehlte – aber nur, wenn die Datei
+      // VOLLSTÄNDIG ist: Eine abgebrochene würde Android bei jedem Versuch
+      // mit „Problem mit der App-Datei“ ablehnen.
       final dir = Directory('${(await getTemporaryDirectory()).path}/updates');
       final name = 'Lernen-${buildNumber ?? 'neu'}.apk';
       final existing = File('${dir.path}/$name');
-      final apk = buildNumber != null && await hasMagic(existing, apkMagic)
+      final apk = buildNumber != null && await isCompleteApk(existing)
           ? existing
           : await () async {
               if (await dir.exists()) await dir.delete(recursive: true);
               await dir.create(recursive: true);
               return downloadUpdateFile(url, dir,
-                  fileName: name, magic: apkMagic, client: client, onProgress: onProgress);
+                  fileName: name, magic: apkMagic, validate: isCompleteApk, client: client, onProgress: onProgress);
             }();
       final status = await _androidChannel.invokeMethod<String>('installApk', {'path': apk.path});
       return switch (status) {
@@ -84,13 +86,37 @@ Future<bool> hasMagic(File file, List<int> magic) async {
   return head.length == magic.length && [for (var i = 0; i < magic.length; i++) head[i] == magic[i]].every((b) => b);
 }
 
-/// Lädt [url] als [fileName] nach [dir] und prüft über die ersten Bytes
-/// ([magic]), dass wirklich die erwartete Datei ankam und keine Fehlerseite.
+/// Ist [file] eine vollständige APK? Eine APK ist ein ZIP – dessen
+/// Inhaltsverzeichnis endet mit dem Abschluss-Eintrag („PK\x05\x06“, 22 Bytes
+/// plus Kommentar) genau am Dateiende. Fehlt er, ist die Datei abgeschnitten
+/// (abgebrochener Download).
+Future<bool> isCompleteApk(File file) async {
+  if (!await hasMagic(file, apkMagic)) return false;
+  const record = 22, maxComment = 65535;
+  final length = await file.length();
+  if (length < record) return false;
+  final start = length > record + maxComment ? length - record - maxComment : 0;
+  final tail = await file.openRead(start, length).expand((b) => b).toList();
+  for (var i = tail.length - record; i >= 0; i--) {
+    if (tail[i] == 0x50 && tail[i + 1] == 0x4B && tail[i + 2] == 0x05 && tail[i + 3] == 0x06) {
+      final comment = tail[i + 20] | (tail[i + 21] << 8);
+      if (i + record + comment == tail.length) return true;
+    }
+  }
+  return false;
+}
+
+/// Lädt [url] als [fileName] nach [dir] und prüft, dass wirklich die
+/// erwartete Datei VOLLSTÄNDIG ankam: die ersten Bytes ([magic], keine
+/// Fehlerseite), die angekündigte Länge und – falls angegeben – [validate].
+/// Geladen wird in eine „.part“-Datei; unter [fileName] liegt nie etwas
+/// Halbes. Scheitert etwas, bleibt nichts zurück.
 Future<File> downloadUpdateFile(
   String url,
   Directory dir, {
   required String fileName,
   required List<int> magic,
+  Future<bool> Function(File file)? validate,
   http.Client? client,
   void Function(double progress)? onProgress,
 }) async {
@@ -100,21 +126,33 @@ Future<File> downloadUpdateFile(
     throw HttpException('Download fehlgeschlagen (${response.statusCode})', uri: Uri.parse(url));
   }
   final file = File('${dir.path}${Platform.pathSeparator}$fileName');
-  final sink = file.openWrite();
+  final part = File('${file.path}.part');
   final total = response.contentLength ?? 0;
   var received = 0;
   try {
-    await for (final chunk in response.stream) {
-      sink.add(chunk);
-      received += chunk.length;
-      if (total > 0) onProgress?.call(received / total);
+    final sink = part.openWrite();
+    try {
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) onProgress?.call(received / total);
+      }
+    } finally {
+      await sink.close();
     }
-  } finally {
-    await sink.close();
+    if (total > 0 && received != total) {
+      throw HttpException('Download unvollständig ($received von $total Bytes)', uri: Uri.parse(url));
+    }
+    if (!await hasMagic(part, magic)) {
+      throw const FormatException('Die heruntergeladene Datei ist nicht das erwartete Update.');
+    }
+    if (validate != null && !await validate(part)) {
+      throw const FormatException('Die heruntergeladene Datei ist unvollständig oder beschädigt.');
+    }
+    if (await file.exists()) await file.delete();
+    return await part.rename(file.path);
+  } catch (_) {
+    if (await part.exists()) await part.delete();
+    rethrow;
   }
-  if (!await hasMagic(file, magic)) {
-    await file.delete();
-    throw const FormatException('Die heruntergeladene Datei ist nicht das erwartete Update.');
-  }
-  return file;
 }
