@@ -49,7 +49,8 @@ class WorkRule {
 }
 
 /// Taschenrechner-Einsatz in einem Schritt: Tastenfolge (Namen siehe
-/// CalcKeys), was im Display steht und was herauskommt.
+/// CalcKeys, gerechnet von PocketCalculator), was im Display steht und was
+/// herauskommt.
 class WorkCalc {
   const WorkCalc({required this.keys, this.input = '', this.expr = '', this.result = '', this.note = ''});
 

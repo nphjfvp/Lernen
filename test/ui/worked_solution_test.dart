@@ -101,28 +101,11 @@ void main() {
   });
 
   group('Taschenrechner', () {
-    test('Display nach den Tasten', () {
-      final keys = ['AC', 'SHIFT', 'LN', '5', 'RIGHT', 'EQ'];
-      expect(CalcDisplay.after(keys, 2).shift, isTrue);
-      expect(CalcDisplay.after(keys, 3).input, 'e^');
-      expect(CalcDisplay.after(keys, 4).input, 'e^5');
-      expect(CalcDisplay.after(keys, 6).done, isTrue);
-      expect(CalcDisplay.after(['LN', '1', '0', 'RPAR', 'DEL', 'MUL', '2'], 7).input, 'ln(10×2');
-      expect(CalcDisplay.after(['ALPHA', 'EXP10'], 2).input, 'e');
+    test('Tastennamen der KI', () {
       expect(CalcKeys.normalize('×'), 'MUL');
       expect(CalcKeys.normalize('ln'), 'LN');
-    });
-
-    test('Ergebnis: die App rechnet nach', () {
-      final ok = CalcOutcome.of(const WorkCalc(keys: ['EQ'], expr: 'e^5', result: '148.4131591'));
-      expect(ok.mismatch, isFalse);
-      expect(ok.result, '148.4131591');
-      final wrong = CalcOutcome.of(const WorkCalc(keys: ['EQ'], expr: '2*ln(102)', result: '9.5'));
-      expect(wrong.mismatch, isTrue);
-      expect(wrong.result, startsWith('9,24'));
-      final fraction = CalcOutcome.of(const WorkCalc(keys: ['EQ'], expr: '3/4', result: r'\frac{3}{4}'));
-      expect(fraction.mismatch, isFalse);
-      expect(fraction.decimal, '0,75');
+      expect(CalcKeys.normalize('shift'), 'SHIFT');
+      expect(CalcKeys.byId['FRAC']?.label, 'a/b');
     });
   });
 

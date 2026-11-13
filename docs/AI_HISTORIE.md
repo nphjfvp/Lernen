@@ -1666,3 +1666,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (`worked-calc-toggle`). Einstiege: VisualLearnScreen `visual-worked-open`; StepTaskView `step-worked`
     (vor dem Lösen `_watched` → zählt als aufgedeckt) und `step-worked-finished`; zur Karte gespeicherte Lösung
     wird wieder geöffnet. Tests: `worked_solution_test`.
+121. Taschenrechner rechnet wirklich. services/pocket_calculator.dart `PocketCalculator`: `press(id)` mit SHIFT/ALPHA,
+    Token-Liste mit Cursor, Vorlagen `fracOpen/fracMid/fracClose`, `powOpen/powClose`, `sqrtOpen/sqrtClose` (Zahl vor
+    FRAC wird Zähler, DOWN/UP zwischen Zähler und Nenner, DEL löst Vorlagen auf), `functionTokens` (sin( … d/dx(,
+    mit „)“ geschlossen, offene Klammern schließt „=“). `toInput` → MathExpression (Grad: sin((pi/180)*(…)),
+    asin → (180/pi)*asin, Ans/Fakultät als Zahl, ∫(f,a,b) und d/dx(f,a) vorab numerisch über den Rechenweg-Modus).
+    Nach einem Ergebnis: Rechenzeichen rechnen mit Ans weiter, sonst neue Rechnung. SOLVE (`SHIFT CALC`: Newton,
+    sonst Vorzeichenwechsel + Bisektion), CALC fragt x ab (`askingX`), M+/M−, ENG, S⇔D, SHIFT MENU = Grad/Bogenmaß.
+    Anzeige `inputLatex` (Lücken \square, Cursor \vert), `resultLatex` (`exactLatex`: ganz, Kettenbruch-Bruch,
+    a√k/b, aπ/b; sonst `formatDecimal`), `resultInput` zum Übernehmen. ui/visual/calculator_sim.dart neu gestaltet
+    (Gehäuse, Solarzelle, LCD mit S/A/M/D-R, runde Wippe, `_Pressable`, gezeichnete Aufdrucke für a/b, √□, x□, x²,
+    x⁻¹, ×10ˣ, S⇔D, sin⁻¹ …), `CalculatorSim(calc:, onUseResult:)`: vorführen und selbst tippen, PC-Tastatur
+    (`CalcKeys.fromKeyboard`), Keys `calc-use`, `calc-error`, `calc-note`, `calc-input`. StepTaskView
+    `_calculatorPanel` (`step-calc`, `step-calc-toggle`, Zustand `_StepTaskViewState.calculatorOpen`) in „Selbst
+    rechnen“ (breit: unter dem Rechenblatt) und „Nur Ergebnis“; `_useCalcResult` → Zeile bzw. Ergebnisfeld. Prompt
+    `_workedSystemPrompt` mit Komma/∫/d/dx/SOLVE-Tastenfolgen. Tests: `pocket_calculator_test`, `calculator_sim_test`.

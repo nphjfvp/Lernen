@@ -3326,7 +3326,7 @@ Jeder Schritt ist ein Objekt in "steps":
 - "calc" (nur wenn erlaubt und sinnvoll): {"keys": [...], "input": "Eingabe wie im Display (LaTeX)", "expr": "dieselbe Rechnung in Eingabe-Schreibweise, z.B. 2*ln(102)", "result": "Ergebnis wie im Display (LaTeX, Bruch oder Dezimalzahl)", "note": "kurzer Hinweis zur Bedienung"}.
   Tastennamen (fx-991DE X, GENAU diese): SHIFT ALPHA MENU ON OPTN CALC INT X UP DOWN LEFT RIGHT FRAC SQRT SQ POW LOG LN NEG DMS INV SIN COS TAN STO ENG LPAR RPAR SD MPLUS 0 1 2 3 4 5 6 7 8 9 DOT DEL AC MUL DIV ADD SUB EXP10 ANS EQ.
   Zweitfunktionen: SHIFT davor (SHIFT LN = e^▫, SHIFT LOG = 10^▫, SHIFT SQRT = ∛, SHIFT SQ = x³, SHIFT POW = ▫√▫, SHIFT INV = x!, SHIFT SIN = sin⁻¹, SHIFT EXP10 = π, SHIFT CALC = SOLVE, SHIFT INT = d/dx, SHIFT EQ = Dezimalergebnis); ALPHA EXP10 = e, ALPHA CALC = Gleichheitszeichen in einer Gleichung, ALPHA RPAR = X.
-  Vorlagen: Bruch FRAC Zähler DOWN Nenner RIGHT; Potenz POW Exponent RIGHT; Wurzel SQRT Inhalt RIGHT; ln/log/sin öffnen eine Klammer (LN 1 0 2 RPAR). Mit AC beginnen.
+  Vorlagen: Bruch FRAC Zähler DOWN Nenner RIGHT; Potenz POW Exponent RIGHT; Wurzel SQRT Inhalt RIGHT; ln/log/sin öffnen eine Klammer (LN 1 0 2 RPAR). Komma = SHIFT RPAR. Integral: INT f SHIFT RPAR a SHIFT RPAR b RPAR; Ableitung an einer Stelle: SHIFT INT f SHIFT RPAR x0 RPAR; Gleichung lösen: Gleichung mit X und ALPHA CALC eingeben, dann SHIFT CALC. Winkel sind in Grad. Mit AC beginnen. Die App rechnet die Tastenfolge wirklich aus – sie muss genau stimmen.
 
 Regeln:
 - Mathematisch korrekt rechnen. Bei Gleichungen jede Umformung auf BEIDEN Seiten sichtbar machen.

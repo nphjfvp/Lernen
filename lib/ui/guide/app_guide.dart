@@ -230,6 +230,16 @@ const appGuideChapters = <GuideChapter>[
             'Abgeben. Steht im Aufgabenbild doch eine Lösung: Stift-Symbol am Bild → abdecken oder wegschneiden.',
       ),
       GuideItem(
+        'Taschenrechner',
+        'Bei „Selbst rechnen“ und „Nur Ergebnis“ klappst du unter den Zeilen (am PC neben dem Rechenblatt) einen '
+            'Taschenrechner mit den Tasten des fx-991DE X auf, der wirklich rechnet – ohne KI, offline: Bruch-Vorlage '
+            '(Zähler, ▼, Nenner, ▶), Wurzel, Potenzen, ln/log/eˣ, sin/cos/tan in Grad (SHIFT MENU stellt auf '
+            'Bogenmaß), Ans, ∫ (∫ f , a , b) und d/dx (Komma = SHIFT „)“), Gleichungen mit SHIFT CALC (SOLVE), '
+            'CALC setzt x ein. Ergebnisse exakt wie auf dem Rechner (Bruch, Wurzel, π), S⇔D wechselt zur Dezimalzahl. '
+            'Am PC geht auch die Tastatur. „Ergebnis übernehmen“ schreibt das Ergebnis in die Zeile.',
+        where: 'Rechenweg → Selbst rechnen → Taschenrechner',
+      ),
+      GuideItem(
         'Rechenweg: Nebenrechnungen und mit Stift',
         '„Nebenrechnung“ unter den Zeilen hängt eine Rechnung an die zuletzt benutzte Zeile – z.B. die Substitution '
             'u = 2x + 1, du = 2 dx oder neue Grenzen u(0) = 1. Die App setzt sie beim Nachrechnen ein: Integrale '

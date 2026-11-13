@@ -1,8 +1,27 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7e) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7f) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7f. Taschenrechner, der wirklich rechnet
+
+- **Echt funktionsfähig** (ohne KI, offline, sofort): Tasten wie beim
+  fx-991DE X – Bruch-Vorlage (Zähler ▼ Nenner ▶), Wurzel, x², xⁿ, x⁻¹, x!,
+  log, ln, eˣ, 10ˣ, sin/cos/tan und Umkehrungen (Grad, SHIFT MENU =
+  Bogenmaß), π, e, Ans, ×10ˣ, DEL, AC, Cursor ◀ ▶ ▲ ▼, M+, ENG, ∫ und d/dx
+  (Komma = SHIFT „)“), SOLVE (Gleichung mit x lösen) und CALC (x einsetzen).
+- **Anzeige wie auf dem Rechner**: Eingabe in natürlicher Darstellung mit
+  Cursor und Lücken; Ergebnis exakt als Bruch, Wurzel oder Vielfaches von π,
+  S⇔D wechselt zur Dezimalzahl; „Syntax ERROR“ / „Math ERROR“.
+- **Neues Design**: Gehäuse mit Solarzelle, Display mit Statusanzeigen
+  (S, A, M, D/R), runde Cursor-Wippe, Tasten mit Druck-Effekt, Zweit-
+  belegungen gelb/rot.
+- **Beim Selberrechnen ein- und ausklappbar** („Selbst rechnen“ und „Nur
+  Ergebnis“; am PC neben dem Rechenblatt), PC-Tastatur geht auch;
+  „Ergebnis übernehmen“ schreibt es in die zuletzt benutzte Zeile.
+- Beim Vorrechnen führt die App die Tastenfolge auf diesem Rechner vor –
+  danach kannst du selbst weiterrechnen.
 
 ### 7e. Vorrechnen lassen – an der Tafel, mit Taschenrechner
 

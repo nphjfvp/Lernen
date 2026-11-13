@@ -421,7 +421,12 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   grün, wegfallend rot durchgestrichen, bearbeitet blau, Regeln mit Formel;
   Fragen, Herleitung und „genauer“ je Schritt; simulierter Taschenrechner mit
   Tastenbelegung wie fx-991DE X (`calculator_sim.dart`), die App drückt die
-  Tasten und rechnet das Ergebnis nach. Gespeichert lokal.
+  Tasten vor, danach rechnet man selbst weiter. Gespeichert lokal.
+- **Taschenrechner** (`lib/services/pocket_calculator.dart`, Anzeige
+  `calculator_sim.dart`) – rechnet wirklich (ohne KI): Bruch-Vorlage, Wurzel,
+  Potenzen, log/ln/eˣ, Trigonometrie in Grad/Bogenmaß, Ans, ∫, d/dx, SOLVE,
+  CALC; Ergebnis exakt (Bruch, Wurzel, π) oder dezimal (S⇔D). In „Selbst
+  rechnen“ und „Nur Ergebnis“ ein- und ausklappbar, „Ergebnis übernehmen“.
 - **Rechenweg lösen** (`lib/ui/tasks/step_task_view.dart`) – „Schritt für
   Schritt“ (geführt mit Tipps), „Selbst rechnen“ (eigene Zeilen in beliebiger
   Zahl, jede Zeile einzeln prüfbar – App oder KI –, Tasten passend zur

@@ -25,6 +25,7 @@ import 'ink_sheet.dart';
 import 'math_input_field.dart';
 import 'paper_check_screen.dart';
 import 'step_line_chat.dart';
+import '../visual/calculator_sim.dart';
 import '../visual/worked_solution_screen.dart';
 
 /// Fortschritt eines Schritts.
@@ -875,7 +876,13 @@ class _StepTaskViewState extends State<StepTaskView> {
             Expanded(child: list),
             SizedBox(
               width: (box.maxWidth * 0.45).clamp(320.0, 520.0),
-              child: SingleChildScrollView(padding: const EdgeInsets.fromLTRB(0, 8, 20, 24), child: _sheet()),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(0, 8, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [_sheet(), const SizedBox(height: 12), _calculatorPanel(context.colors)],
+                ),
+              ),
             ),
           ],
         );
@@ -1043,8 +1050,12 @@ class _StepTaskViewState extends State<StepTaskView> {
             if (!widget.examMode) ...[_inputToggle(), const SizedBox(height: 10)],
             if (inlineSheet) ...[_sheet(), const SizedBox(height: 10)],
             ..._buildWrite(c),
+            if (inlineSheet && !widget.examMode) ...[const SizedBox(height: 10), _calculatorPanel(c)],
           ],
-          _Mode.result => _buildResult(c),
+          _Mode.result => [
+            ..._buildResult(c),
+            if (!widget.examMode) ...[const SizedBox(height: 10), _calculatorPanel(c)],
+          ],
         },
         if (_finished) ..._buildFinish(c),
         if (!_finished && !widget.examMode) ..._buildFooter(c),
@@ -1632,6 +1643,93 @@ class _StepTaskViewState extends State<StepTaskView> {
           child: ProbeCard(report: _writeProbe!, title: 'Probe deines Ergebnisses – rechnet die App'),
         ),
     ];
+  }
+
+  /// Taschenrechner auf/zu – bleibt für die Sitzung so, wie zuletzt gewählt.
+  static bool calculatorOpen = false;
+
+  /// Ergebnis vom Taschenrechner in die zuletzt benutzte Zeile bzw. ins
+  /// Ergebnisfeld.
+  void _useCalcResult(String value) {
+    if (value.isEmpty) return;
+    if (_mode == _Mode.result) {
+      final c = _resultController;
+      c.value = TextEditingValue(
+        text: c.text + value,
+        selection: TextSelection.collapsed(offset: c.text.length + value.length),
+      );
+      setState(() {});
+      return;
+    }
+    _insertInLine(value);
+  }
+
+  /// Ein- und ausklappbarer Taschenrechner (Tasten wie fx-991DE X), der
+  /// wirklich rechnet.
+  Widget _calculatorPanel(AppColors c) {
+    final open = _StepTaskViewState.calculatorOpen;
+    return Container(
+      key: const ValueKey('step-calc'),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            key: const ValueKey('step-calc-toggle'),
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => setState(() => _StepTaskViewState.calculatorOpen = !open),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+              child: Row(
+                children: [
+                  Icon(Icons.calculate_outlined, color: c.accent),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Taschenrechner', style: TextStyle(fontWeight: FontWeight.w600)),
+                        Text(
+                          open
+                              ? 'Tasten wie fx-991DE X – tippen oder PC-Tastatur'
+                              : 'Aufklappen zum Nachrechnen (Tasten wie fx-991DE X)',
+                          style: TextStyle(fontSize: 12, color: c.inkMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(Icons.expand_more, color: c.inkMuted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: open
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 400),
+                        child: CalculatorSim(onUseResult: _useCalcResult),
+                      ),
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Tippen oder mit Stift schreiben.
