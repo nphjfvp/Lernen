@@ -3114,6 +3114,8 @@ Antworte in der Sprache der Vorlage.
       ..writeln('Schreibweise: ^ Potenz, * mal, sqrt() Wurzel). Übernimm jede Zeile als eine Zeile in "lines" (gleiche')
       ..writeln('Reihenfolge und Nummer), setze sie in "text" als LaTeX mit \$…\$ und bewerte sie. Die Person rechnet')
       ..writeln('bewusst kleinschrittig – mehr Zeilen als die Musterlösung Schritte hat sind kein Fehler.')
+      ..writeln('Zeilen mit „Nebenrechnung:“ sind Nebenrechnungen zur Zeile davor (z.B. Substitution, neue Grenzen) –')
+      ..writeln('bewerte sie wie jede andere Zeile.')
       ..writeln();
     for (final (i, l) in written.indexed) {
       buffer.writeln('${i + 1}: ${_cap(l, 600)}');
@@ -3241,6 +3243,7 @@ Du bist ein geduldiger Tutor in einer Lern-App. Eine Person rechnet eine Aufgabe
 
   static const _typedStepSystemPrompt = r'''
 Du prüfst in einer Lern-App EINEN Rechenschritt, den eine Person gerade selbst getippt hat (Eingabe-Schreibweise: ^ Potenz, * oder · mal, sqrt() bzw. √ Wurzel, ∫ Integral, dy/dx Ableitung, ⇒ folgt). Die Person rechnet bewusst kleinschrittig und darf andere, aber richtige Wege gehen.
+Zeilen, die mit „Nebenrechnung:“ beginnen, sind Nebenrechnungen zur Hauptzeile davor (z.B. Substitution u = …, du = … dx, neue Grenzen u(a), u(b)) – prüfe sie genauso. Eine zulässige, zielführende Wahl der Substitution ist "ok".
 
 "status":
 - "ok": der Schritt ist mathematisch richtig (folgt korrekt aus der Aufgabe bzw. den Zeilen davor) – auch wenn er anders aussieht als die Musterlösung oder ein Zwischenschritt ist, den die Musterlösung überspringt.

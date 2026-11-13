@@ -419,10 +419,15 @@ class HandwrittenSheet extends StatelessWidget {
     this.resultLine,
     this.onExpand,
     this.fontSize = 22,
+    this.sideLines = const {},
   });
 
   final List<String> lines;
   final String title;
+
+  /// Zeilenindizes, die Nebenrechnungen sind – eingerückt, kleiner, am Rand
+  /// markiert, ohne eigene Nummer.
+  final Set<int> sideLines;
 
   /// Prüfergebnis je Zeilenindex.
   final Map<int, PaperLineStatus> statuses;
@@ -492,16 +497,22 @@ class HandwrittenSheet extends StatelessWidget {
               style: TextStyle(fontFamily: handwritingFont, fontSize: fontSize * 0.75, color: c.inkMuted),
             ),
           for (final w in written)
-            Padding(
+            Container(
               key: ValueKey('hand-line-${w.i}'),
-              padding: EdgeInsets.only(bottom: fontSize * 0.45),
+              margin: EdgeInsets.only(bottom: fontSize * 0.45, left: sideLines.contains(w.i) ? fontSize * 1.1 : 0),
+              padding: sideLines.contains(w.i) ? EdgeInsets.only(left: fontSize * 0.4) : null,
+              decoration: sideLines.contains(w.i)
+                  ? BoxDecoration(border: Border(left: BorderSide(color: ink.withAlpha(110), width: 1.4)))
+                  : null,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   SizedBox(
-                    width: fontSize * 1.1,
+                    width: fontSize * (sideLines.contains(w.i) ? 1.6 : 1.1),
                     child: Text(
-                      '${w.i + 1})',
+                      sideLines.contains(w.i)
+                          ? 'NR'
+                          : '${[for (var k = 0; k <= w.i; k++) if (!sideLines.contains(k)) k].length})',
                       style: TextStyle(fontFamily: handwritingFont, fontSize: fontSize * 0.6, color: c.inkMuted),
                     ),
                   ),
@@ -522,7 +533,7 @@ class HandwrittenSheet extends StatelessWidget {
                                 child: HandMath(w.text, fontSize: fontSize, color: ink),
                               ),
                             )
-                          : HandMath(w.text, fontSize: fontSize, color: ink),
+                          : HandMath(w.text, fontSize: sideLines.contains(w.i) ? fontSize * 0.82 : fontSize, color: ink),
                     ),
                   ),
                   if (statuses[w.i] case final s?)
@@ -556,6 +567,7 @@ Future<void> showHandwrittenSheet(
   required List<String> lines,
   Map<int, PaperLineStatus> statuses = const {},
   int? resultLine,
+  Set<int> sideLines = const {},
 }) => Navigator.of(context).push(
   MaterialPageRoute<void>(
     fullscreenDialog: true,
@@ -569,7 +581,13 @@ Future<void> showHandwrittenSheet(
           width: math.max(MediaQuery.sizeOf(ctx).width, 700),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: HandwrittenSheet(lines: lines, statuses: statuses, resultLine: resultLine, fontSize: 28),
+            child: HandwrittenSheet(
+              lines: lines,
+              statuses: statuses,
+              resultLine: resultLine,
+              sideLines: sideLines,
+              fontSize: 28,
+            ),
           ),
         ),
       ),

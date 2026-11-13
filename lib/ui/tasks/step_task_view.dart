@@ -11,6 +11,7 @@ import '../../models/step_task.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/fsrs_service.dart';
+import '../../services/line_chain.dart';
 import '../../services/math_keys.dart';
 import '../../services/step_checker.dart';
 import '../../theme/app_colors.dart';
@@ -116,6 +117,14 @@ class _StepTaskViewState extends State<StepTaskView> {
   // Selbst rechnen: eigene Zeilen, geprüft erst beim Abgeben.
   final List<TextEditingController> _lines = [TextEditingController()];
   final List<FocusNode> _lineFocus = [FocusNode()];
+
+  /// Zeilen, die Nebenrechnungen sind (gehören zur Hauptzeile davor).
+  final Set<TextEditingController> _sideLines = {};
+
+  /// Nach dem Abgeben: Zeilen, deren Umformung die App selbst nachgerechnet
+  /// hat (LineChain) – stimmt.
+  Set<TextEditingController> _chainOk = const {};
+  int _chainChecked = 0;
   int _focusedLine = 0;
   final _writeResult = TextEditingController();
   FieldVerdict? _writeVerdict;
@@ -136,7 +145,6 @@ class _StepTaskViewState extends State<StepTaskView> {
   final Map<TextEditingController, List<({bool user, String text})>> _lineChats = {};
   bool _writeSolved = false;
   bool _writeRevealed = false;
-
 
   /// Ergebnis einer Foto-Prüfung, falls der Nutzer von dort bewertet hat.
   Grade? _paperGrade;
@@ -202,9 +210,7 @@ class _StepTaskViewState extends State<StepTaskView> {
         if (v.isCorrect) _complete(p);
         return;
       }
-      final verdicts = [
-        for (final (i, f) in step.fields.indexed) StepChecker.check(f, p.controllers[i].text),
-      ];
+      final verdicts = [for (final (i, f) in step.fields.indexed) StepChecker.check(f, p.controllers[i].text)];
       p.verdicts = verdicts;
       for (final (i, v) in verdicts.indexed) {
         if (v.isAttempt && !v.isCorrect) widget.onWrongAnswer?.call(step.fields[i], p.controllers[i].text);
@@ -290,13 +296,47 @@ class _StepTaskViewState extends State<StepTaskView> {
       if (l.text.trim().isNotEmpty) l.text.trim(),
   ];
 
+  /// Die Zeilen für die KI – Nebenrechnungen gekennzeichnet.
+  List<String> _aiLines(Iterable<TextEditingController> lines) => [
+    for (final l in lines)
+      if (l.text.trim().isNotEmpty) _aiLine(l),
+  ];
+
+  String _aiLine(TextEditingController l) => _sideLines.contains(l) ? 'Nebenrechnung: ${l.text.trim()}' : l.text.trim();
+
   /// Was als Ergebnis zählt: das Ergebnisfeld, sonst die rechte Seite der
-  /// letzten Zeile.
+  /// letzten Hauptzeile.
   String get _writtenResult {
     final r = _writeResult.text.trim();
     if (r.isNotEmpty) return r;
-    final last = _writtenLines.lastOrNull ?? '';
+    final last = _lines
+        .lastWhere(
+          (l) => !_sideLines.contains(l) && l.text.trim().isNotEmpty,
+          orElse: () => _lines.lastWhere((l) => l.text.trim().isNotEmpty, orElse: () => _writeResult),
+        )
+        .text
+        .trim();
     return _plainMath(last.split('=').last);
+  }
+
+  /// Rechnet den Rechenweg Zeile für Zeile selbst nach (ohne KI).
+  List<ChainVerdict> _chainVerdicts() {
+    final names = <String>{}, constants = <String>{};
+    for (final s in widget.task.steps) {
+      for (final f in s.fields) {
+        names.addAll(f.variables.where((v) => v.length > 1));
+        constants.addAll(f.constants);
+      }
+    }
+    try {
+      return LineChain.check(
+        [for (final l in _lines) ChainLine(l.text, side: _sideLines.contains(l))],
+        names: names,
+        constants: constants,
+      );
+    } catch (_) {
+      return [for (final _ in _lines) ChainVerdict.unknown];
+    }
   }
 
   /// Eingabe geändert: alte Rückmeldung weg (die nächste kommt erst beim
@@ -306,6 +346,8 @@ class _StepTaskViewState extends State<StepTaskView> {
       _writeVerdict = null;
       _writeProbe = null;
       _lineMatches = const [];
+      _chainOk = const {};
+      _chainChecked = 0;
     });
   }
 
@@ -319,6 +361,26 @@ class _StepTaskViewState extends State<StepTaskView> {
     if (focus) WidgetsBinding.instance.addPostFrameCallback((_) => node.requestFocus());
   }
 
+  /// Nebenrechnung zur zuletzt benutzten Zeile – hinter deren übrige
+  /// Nebenrechnungen.
+  void _addSideLine({int? after}) {
+    final node = FocusNode();
+    final ctrl = TextEditingController();
+    setState(() {
+      var at = (after ?? _focusedLine).clamp(0, _lines.length - 1) + 1;
+      while (at < _lines.length && _sideLines.contains(_lines[at])) {
+        at++;
+      }
+      _lines.insert(at, ctrl);
+      _lineFocus.insert(at, node);
+      _sideLines.add(ctrl);
+      _focusedLine = at;
+      _lineMatches = const [];
+      _chainOk = const {};
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => node.requestFocus());
+  }
+
   void _removeLine(int i) {
     if (_lines.length <= 1) return;
     final c = _lines.removeAt(i);
@@ -326,6 +388,7 @@ class _StepTaskViewState extends State<StepTaskView> {
     _lineEdited(c);
     _lineBusy.remove(c);
     _lineChats.remove(c);
+    _sideLines.remove(c);
     setState(() {
       _focusedLine = _focusedLine.clamp(0, _lines.length - 1);
       _lineMatches = const [];
@@ -393,14 +456,31 @@ class _StepTaskViewState extends State<StepTaskView> {
     final text = ctrl.text.trim();
     if (text.isEmpty || _lineBusy.contains(ctrl)) return;
     final match = _matchLine(text);
+    final chain = _chainVerdicts()[i];
     if (match != null) {
+      final note = chain.status == ChainStatus.wrong
+          ? ' Aus der Zeile davor folgt sie aber nicht – prüf, ob dort etwas schiefging: ${chain.message}'
+          : '';
       setState(
         () => _lineChecks[ctrl] = PaperLine(
           n: i + 1,
           text: text,
-          comment: 'Stimmt – das ist Schritt ${match + 1} der Musterlösung („${widget.task.steps[match].title}“).',
+          comment: 'Stimmt – das ist Schritt ${match + 1} der Musterlösung („${widget.task.steps[match].title}“).$note',
         ),
       );
+      return;
+    }
+    // Die App rechnet die Umformung selbst nach (Zeile davor, Substitution …).
+    if (chain.status == ChainStatus.ok || chain.status == ChainStatus.wrong) {
+      setState(() {
+        _lineChecks[ctrl] = PaperLine(
+          n: i + 1,
+          text: text,
+          status: chain.status == ChainStatus.ok ? PaperLineStatus.ok : PaperLineStatus.error,
+          comment: '${chain.message} (von der App nachgerechnet)',
+        );
+        if (chain.status == ChainStatus.wrong) _writeWrong++;
+      });
       return;
     }
     final ai = _stepAi();
@@ -410,9 +490,10 @@ class _StepTaskViewState extends State<StepTaskView> {
           n: i + 1,
           text: text,
           status: PaperLineStatus.unclear,
-          comment:
-              'Diesen Zwischenschritt kann die App nicht selbst nachrechnen – mit deinem OpenRouter-Key '
-              '(Einstellungen) prüft ihn die KI.',
+          comment: chain.status == ChainStatus.definition
+              ? '${chain.message} Ob die Wahl sinnvoll ist, beurteilt mit deinem OpenRouter-Key (Einstellungen) die KI.'
+              : 'Diesen Zwischenschritt kann die App nicht selbst nachrechnen – mit deinem OpenRouter-Key '
+                    '(Einstellungen) prüft ihn die KI.',
         ),
       );
       return;
@@ -424,11 +505,8 @@ class _StepTaskViewState extends State<StepTaskView> {
         task: widget.card.front,
         solution: widget.task,
         solutionText: widget.card.back,
-        previous: [
-          for (final l in _lines.take(i))
-            if (l.text.trim().isNotEmpty) l.text.trim(),
-        ],
-        line: text,
+        previous: _aiLines(_lines.take(i)),
+        line: _aiLine(ctrl),
       );
     } on AiServiceException catch (e) {
       result = PaperLine(n: i + 1, text: text, status: PaperLineStatus.unclear, comment: e.message);
@@ -468,8 +546,33 @@ class _StepTaskViewState extends State<StepTaskView> {
     final field = _finalField;
     final answer = _writtenResult;
     if (answer.isEmpty && _writtenLines.isEmpty) return;
+    final chain = _chainVerdicts();
     setState(() {
       _lineMatches = [for (final l in _lines) l.text.trim().isEmpty ? null : _matchLine(l.text)];
+      // Umformungen, die die App selbst nachrechnen kann: richtige bekommen
+      // einen Haken, falsche die Erklärung (sofern noch nicht geprüft).
+      final ok = <TextEditingController>{};
+      var checked = 0;
+      for (final (i, v) in chain.indexed) {
+        if (i >= _lines.length) break;
+        final l = _lines[i];
+        if (v.status == ChainStatus.ok) {
+          ok.add(l);
+          checked++;
+        } else if (v.status == ChainStatus.wrong) {
+          checked++;
+          if (_lineChecks[l] == null && (i >= _lineMatches.length || _lineMatches[i] == null)) {
+            _lineChecks[l] = PaperLine(
+              n: i + 1,
+              text: l.text.trim(),
+              status: PaperLineStatus.error,
+              comment: '${v.message} (von der App nachgerechnet)',
+            );
+          }
+        }
+      }
+      _chainOk = ok;
+      _chainChecked = checked;
       if (field == null) {
         _writeVerdict = const FieldVerdict(FieldVerdictKind.uncheckable, 'Diese Aufgabe hat kein Ergebnisfeld.');
         return;
@@ -540,10 +643,7 @@ class _StepTaskViewState extends State<StepTaskView> {
             Expanded(child: list),
             SizedBox(
               width: (box.maxWidth * 0.45).clamp(320.0, 520.0),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(0, 8, 20, 24),
-                child: _sheet(),
-              ),
+              child: SingleChildScrollView(padding: const EdgeInsets.fromLTRB(0, 8, 20, 24), child: _sheet()),
             ),
           ],
         );
@@ -552,7 +652,7 @@ class _StepTaskViewState extends State<StepTaskView> {
   }
 
   /// Getippte Zeilen fürs Rechenblatt – das Ergebnisfeld als letzte Zeile.
-  ({List<String> lines, Map<int, PaperLineStatus> statuses, int? result}) get _sheetData {
+  ({List<String> lines, Map<int, PaperLineStatus> statuses, int? result, Set<int> sides}) get _sheetData {
     final lines = [for (final l in _lines) l.text];
     final statuses = <int, PaperLineStatus>{
       for (final (i, l) in _lines.indexed)
@@ -567,9 +667,13 @@ class _StepTaskViewState extends State<StepTaskView> {
       lines.add('⇒ ${plain.isEmpty ? '' : (plain.endsWith('=') ? '$plain ' : '$plain = ')}$result');
       if (_writeSolved) resultLine = lines.length - 1;
     } else if (_writeSolved) {
-      resultLine = _lines.lastIndexWhere((l) => l.text.trim().isNotEmpty);
+      resultLine = _lines.lastIndexWhere((l) => !_sideLines.contains(l) && l.text.trim().isNotEmpty);
     }
-    return (lines: lines, statuses: statuses, result: resultLine);
+    final sides = {
+      for (final (i, l) in _lines.indexed)
+        if (_sideLines.contains(l)) i,
+    };
+    return (lines: lines, statuses: statuses, result: resultLine, sides: sides);
   }
 
   Widget _sheet() {
@@ -578,8 +682,14 @@ class _StepTaskViewState extends State<StepTaskView> {
       lines: data.lines,
       statuses: data.statuses,
       resultLine: data.result,
-      onExpand: () =>
-          showHandwrittenSheet(context, lines: data.lines, statuses: data.statuses, resultLine: data.result),
+      sideLines: data.sides,
+      onExpand: () => showHandwrittenSheet(
+        context,
+        lines: data.lines,
+        statuses: data.statuses,
+        resultLine: data.result,
+        sideLines: data.sides,
+      ),
     );
   }
 
@@ -594,11 +704,8 @@ class _StepTaskViewState extends State<StepTaskView> {
       builder: (_) => StepLineChat(
         card: widget.card,
         task: widget.task,
-        previous: [
-          for (final l in _lines.take(i))
-            if (l.text.trim().isNotEmpty) l.text.trim(),
-        ],
-        line: line.text,
+        previous: _aiLines(_lines.take(i)),
+        line: _sideLines.contains(line) && line.text.trim().isNotEmpty ? _aiLine(line) : line.text,
         lineNumber: i + 1,
         check: _lineChecks[line],
         history: history,
@@ -621,20 +728,29 @@ class _StepTaskViewState extends State<StepTaskView> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
               decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(20)),
-              child: Text('NEU', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.warn)),
+              child: Text(
+                'NEU',
+                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.warn),
+              ),
             ),
           ),
         Container(
           padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(color: c.surface, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(20)),
+          decoration: BoxDecoration(
+            color: c.surface,
+            border: Border.all(color: c.border),
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                 decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(20)),
-                child: Text(QuestionType.steps.label,
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.accentOnSoft)),
+                child: Text(
+                  QuestionType.steps.label,
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c.accentOnSoft),
+                ),
               ),
               const SizedBox(height: 12),
               if (card.imageBase64 != null) _image(card.imageBase64!),
@@ -658,7 +774,10 @@ class _StepTaskViewState extends State<StepTaskView> {
                       value: _Mode.write,
                       label: Text('Selbst rechnen', key: ValueKey('step-mode-write'), textAlign: TextAlign.center),
                     ),
-                    ButtonSegment(value: _Mode.result, label: Text('Nur Ergebnis', textAlign: TextAlign.center)),
+                    ButtonSegment(
+                      value: _Mode.result,
+                      label: Text('Nur Ergebnis', textAlign: TextAlign.center),
+                    ),
                   ],
                   selected: {_mode},
                   showSelectedIcon: false,
@@ -669,7 +788,10 @@ class _StepTaskViewState extends State<StepTaskView> {
           ),
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Align(alignment: Alignment.centerLeft, child: SourceLinkButton(card: card)),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SourceLinkButton(card: card),
+            ),
           ),
         ],
         const SizedBox(height: 8),
@@ -758,8 +880,10 @@ class _StepTaskViewState extends State<StepTaskView> {
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           children: [
-            Text('Schritt ${(_current + 1).clamp(1, steps.length)} von ${steps.length}',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.inkMuted)),
+            Text(
+              'Schritt ${(_current + 1).clamp(1, steps.length)} von ${steps.length}',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.inkMuted),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: ClipRRect(
@@ -775,12 +899,7 @@ class _StepTaskViewState extends State<StepTaskView> {
         ),
       ),
       for (var i = 0; i < steps.length; i++)
-        if (i < _current)
-          _doneStep(c, i)
-        else if (i == _current)
-          _activeStep(c, i)
-        else
-          _lockedStep(c, i),
+        if (i < _current) _doneStep(c, i) else if (i == _current) _activeStep(c, i) else _lockedStep(c, i),
     ];
   }
 
@@ -790,13 +909,17 @@ class _StepTaskViewState extends State<StepTaskView> {
     final (icon, color, note) = p.revealed
         ? (Icons.visibility_outlined, c.warn, 'aufgedeckt')
         : p.onPaper
-            ? (Icons.edit_note, c.good, 'auf Papier gelöst')
-            : (Icons.check_circle, c.good, p.wrong > 0 ? '${p.wrong}× daneben' : '');
+        ? (Icons.edit_note, c.good, 'auf Papier gelöst')
+        : (Icons.check_circle, c.good, p.wrong > 0 ? '${p.wrong}× daneben' : '');
     return Container(
       key: ValueKey('step-done-$i'),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: c.surface, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -806,8 +929,10 @@ class _StepTaskViewState extends State<StepTaskView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${i + 1}. ${step.title}${note.isEmpty ? '' : ' · $note'}',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.inkMuted)),
+                Text(
+                  '${i + 1}. ${step.title}${note.isEmpty ? '' : ' · $note'}',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.inkMuted),
+                ),
                 const SizedBox(height: 4),
                 MathText(step.resultText, style: const TextStyle(fontSize: 15.5)),
                 if ((p.revealed || _finished) && step.explanation.trim().isNotEmpty)
@@ -832,8 +957,10 @@ class _StepTaskViewState extends State<StepTaskView> {
           Icon(Icons.radio_button_unchecked, size: 18, color: c.border),
           const SizedBox(width: 10),
           Expanded(
-            child: Text('${i + 1}. ${widget.task.steps[i].title}',
-                style: TextStyle(fontSize: 13, color: c.inkMuted.withValues(alpha: 0.75))),
+            child: Text(
+              '${i + 1}. ${widget.task.steps[i].title}',
+              style: TextStyle(fontSize: 13, color: c.inkMuted.withValues(alpha: 0.75)),
+            ),
           ),
         ],
       ),
@@ -884,8 +1011,11 @@ class _StepTaskViewState extends State<StepTaskView> {
                     ),
                     child: Row(
                       children: [
-                        Icon(p.picked == k ? Icons.radio_button_checked : Icons.radio_button_off,
-                            size: 18, color: p.picked == k ? c.accent : c.inkMuted),
+                        Icon(
+                          p.picked == k ? Icons.radio_button_checked : Icons.radio_button_off,
+                          size: 18,
+                          color: p.picked == k ? c.accent : c.inkMuted,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(child: MathText(o.text, style: const TextStyle(fontSize: 14.5))),
                       ],
@@ -989,12 +1119,18 @@ class _StepTaskViewState extends State<StepTaskView> {
     return [
       Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: c.surface, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(16)),
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border.all(color: c.border),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.examMode ? 'Dein Ergebnis' : 'Rechne auf Papier und gib nur das Ergebnis ein.',
-                style: TextStyle(fontSize: 13, color: c.inkMuted)),
+            Text(
+              widget.examMode ? 'Dein Ergebnis' : 'Rechne auf Papier und gib nur das Ergebnis ein.',
+              style: TextStyle(fontSize: 13, color: c.inkMuted),
+            ),
             const SizedBox(height: 10),
             MathInputField(
               key: const ValueKey('step-result-field'),
@@ -1010,7 +1146,10 @@ class _StepTaskViewState extends State<StepTaskView> {
               onSubmitted: solved ? null : _checkResult,
             ),
             if (!widget.examMode && _resultVerdict != null)
-              Padding(padding: const EdgeInsets.only(top: 8), child: VerdictBox(verdict: _resultVerdict!)),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: VerdictBox(verdict: _resultVerdict!),
+              ),
             if (_resultRevealed)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -1078,110 +1217,35 @@ class _StepTaskViewState extends State<StepTaskView> {
             ),
             const SizedBox(height: 10),
             for (final (i, line) in _lines.indexed) ...[
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 26,
-                      child: Text(
-                        '${i + 1}.',
-                        style: TextStyle(fontWeight: FontWeight.w600, color: c.inkMuted),
-                      ),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        key: ValueKey('step-line-$i'),
-                        controller: line,
-                        focusNode: _lineFocus[i],
-                        enabled: !done,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        style: const TextStyle(fontSize: 15.5),
-                        // Lange Zeilen brechen um (am Handy ist das Feld schmal) –
-                        // Enter springt trotzdem zur nächsten Zeile.
-                        keyboardType: TextInputType.text,
-                        minLines: 1,
-                        maxLines: 3,
-                        textInputAction: TextInputAction.next,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          hintText: i == 0 ? 'z.B. v(t) = ∫ a(t) dt = 2t + C' : 'nächster Schritt',
-                          filled: true,
-                          fillColor: c.surfaceAlt,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        ),
-                        onTap: () => _focusedLine = i,
-                        onChanged: (_) {
-                          _focusedLine = i;
-                          _lineEdited(line);
-                          _writeChanged();
-                        },
-                        onSubmitted: (_) {
-                          if (i == _lines.length - 1 && line.text.trim().isNotEmpty) {
-                            _addLine();
-                          } else if (i + 1 < _lines.length) {
-                            _lineFocus[i + 1].requestFocus();
-                          }
-                        },
-                      ),
-                    ),
-                    if (!done)
-                      _lineBusy.contains(line)
-                          ? const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 12),
-                              child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                            )
-                          : IconButton(
-                              key: ValueKey('step-line-check-$i'),
-                              tooltip: 'Diesen Schritt prüfen',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: line.text.trim().isEmpty ? null : () => _checkLine(i),
-                              icon: Icon(Icons.task_alt, size: 20, color: c.accent),
-                            ),
-                    IconButton(
-                      key: ValueKey('step-line-chat-$i'),
-                      tooltip: 'Diesen Schritt mit der KI besprechen',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => _openLineChat(i),
-                      icon: Badge(
-                        isLabelVisible: (_lineChats[line]?.isNotEmpty ?? false),
-                        smallSize: 7,
-                        child: Icon(Icons.forum_outlined, size: 20, color: c.inkMuted),
-                      ),
-                    ),
-                    if (i < _lineMatches.length && _lineMatches[i] != null && _lineChecks[line] == null)
-                      Tooltip(
-                        message: 'Entspricht Schritt ${_lineMatches[i]! + 1} der Musterlösung',
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 6),
-                          child: Icon(Icons.check_circle, key: ValueKey('step-line-ok-$i'), color: c.good, size: 20),
-                        ),
-                      ),
-                    if (_lines.length > 1 && !done)
-                      IconButton(
-                        key: ValueKey('step-line-remove-$i'),
-                        tooltip: 'Zeile entfernen',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _removeLine(i),
-                        icon: Icon(Icons.close, size: 18, color: c.inkMuted),
-                      ),
-                  ],
+              _lineRow(c, i, line, done),
+              if (_lineChecks[line] case final check?)
+                Padding(
+                  padding: EdgeInsets.only(left: _sideLines.contains(line) ? 22 : 0),
+                  child: _lineCheckBox(c, i, line, check),
                 ),
-              ),
-              if (_lineChecks[line] case final check?) _lineCheckBox(c, i, line, check),
             ],
             if (!done) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  key: const ValueKey('step-line-add'),
-                  onPressed: _addLine,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Weiterer Schritt'),
-                ),
+              Wrap(
+                spacing: 4,
+                children: [
+                  TextButton.icon(
+                    key: const ValueKey('step-line-add'),
+                    onPressed: _addLine,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Weiterer Schritt'),
+                  ),
+                  Tooltip(
+                    message:
+                        'Nebenrechnung zur zuletzt benutzten Zeile, z.B. die Substitution u = …, du = … dx '
+                        'oder neue Grenzen – die App setzt sie beim Nachrechnen ein.',
+                    child: TextButton.icon(
+                      key: const ValueKey('step-line-add-side'),
+                      onPressed: _lines.any((l) => l.text.trim().isNotEmpty) ? () => _addSideLine() : null,
+                      icon: const Icon(Icons.subdirectory_arrow_right, size: 18),
+                      label: const Text('Nebenrechnung'),
+                    ),
+                  ),
+                ],
               ),
               Wrap(
                 spacing: 6,
@@ -1219,6 +1283,19 @@ class _StepTaskViewState extends State<StepTaskView> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: VerdictBox(verdict: _writeVerdict!),
+              ),
+            if (_chainChecked > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _chainOk.length == _chainChecked
+                      ? 'Die App hat $_chainChecked Umformung${_chainChecked == 1 ? '' : 'en'} selbst nachgerechnet – '
+                            '${_chainChecked == 1 ? 'sie stimmt' : 'alle stimmen'}.'
+                      : 'Die App hat $_chainChecked Umformung${_chainChecked == 1 ? '' : 'en'} selbst nachgerechnet – '
+                            '${_chainChecked - _chainOk.length} davon ${_chainChecked - _chainOk.length == 1 ? 'stimmt' : 'stimmen'} nicht (siehe Zeilen).',
+                  key: const ValueKey('step-write-chain'),
+                  style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.35),
+                ),
               ),
             if (_lineMatches.isNotEmpty && _writtenLines.length > 1)
               Padding(
@@ -1273,7 +1350,7 @@ class _StepTaskViewState extends State<StepTaskView> {
           padding: const EdgeInsets.only(top: 10),
           child: OutlinedButton.icon(
             key: const ValueKey('step-write-ai'),
-            onPressed: () => _openPaperCheck(typedLines: _writtenLines),
+            onPressed: () => _openPaperCheck(typedLines: _aiLines(_lines)),
             icon: const Icon(Icons.fact_check_outlined, size: 18),
             label: const Text('Rechenweg Zeile für Zeile von der KI prüfen lassen'),
           ),
@@ -1284,6 +1361,132 @@ class _StepTaskViewState extends State<StepTaskView> {
           child: ProbeCard(report: _writeProbe!, title: 'Probe deines Ergebnisses – rechnet die App'),
         ),
     ];
+  }
+
+  /// Nummer der Hauptzeile (Nebenrechnungen zählen nicht mit).
+  int _mainNumber(int i) => _lines.take(i + 1).where((l) => !_sideLines.contains(l)).length;
+
+  Widget _lineRow(AppColors c, int i, TextEditingController line, bool done) {
+    final side = _sideLines.contains(line);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (side) const SizedBox(width: 22),
+          SizedBox(
+            width: 26,
+            child: side
+                ? Tooltip(
+                    message: 'Nebenrechnung',
+                    child: Icon(Icons.subdirectory_arrow_right, size: 18, color: c.accent),
+                  )
+                : Text(
+                    '${_mainNumber(i)}.',
+                    style: TextStyle(fontWeight: FontWeight.w600, color: c.inkMuted),
+                  ),
+          ),
+          Expanded(
+            child: TextField(
+              key: ValueKey('step-line-$i'),
+              controller: line,
+              focusNode: _lineFocus[i],
+              enabled: !done,
+              autocorrect: false,
+              enableSuggestions: false,
+              style: const TextStyle(fontSize: 15.5),
+              // Lange Zeilen brechen um (am Handy ist das Feld schmal) –
+              // Enter springt trotzdem zur nächsten Zeile.
+              keyboardType: TextInputType.text,
+              minLines: 1,
+              maxLines: 3,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: side
+                    ? 'Nebenrechnung, z.B. u = 2x + 1'
+                    : (i == 0 ? 'z.B. v(t) = ∫ a(t) dt = 2t + C' : 'nächster Schritt'),
+                filled: true,
+                fillColor: side ? c.accentSoft.withAlpha(110) : c.surfaceAlt,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              ),
+              onTap: () => _focusedLine = i,
+              onChanged: (_) {
+                _focusedLine = i;
+                _lineEdited(line);
+                _writeChanged();
+              },
+              onSubmitted: (_) {
+                final lastOfGroup = i == _lines.length - 1 || !_sideLines.contains(_lines[i + 1]);
+                if (side && lastOfGroup && line.text.trim().isNotEmpty) {
+                  _addSideLine(after: i);
+                } else if (i == _lines.length - 1 && line.text.trim().isNotEmpty) {
+                  _addLine();
+                } else if (i + 1 < _lines.length) {
+                  _lineFocus[i + 1].requestFocus();
+                }
+              },
+            ),
+          ),
+          if (!done)
+            _lineBusy.contains(line)
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                : IconButton(
+                    key: ValueKey('step-line-check-$i'),
+                    tooltip: 'Diesen Schritt prüfen',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: line.text.trim().isEmpty ? null : () => _checkLine(i),
+                    icon: Icon(Icons.task_alt, size: 20, color: c.accent),
+                  ),
+          IconButton(
+            key: ValueKey('step-line-chat-$i'),
+            tooltip: 'Diesen Schritt mit der KI besprechen',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _openLineChat(i),
+            icon: Badge(
+              isLabelVisible: (_lineChats[line]?.isNotEmpty ?? false),
+              smallSize: 7,
+              child: Icon(Icons.forum_outlined, size: 20, color: c.inkMuted),
+            ),
+          ),
+          if (_chainOk.contains(line) &&
+              _lineChecks[line] == null &&
+              !(i < _lineMatches.length && _lineMatches[i] != null))
+            Tooltip(
+              message: 'Von der App nachgerechnet: die Umformung stimmt',
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Icon(
+                  Icons.check_circle_outline,
+                  key: ValueKey('step-line-chain-ok-$i'),
+                  color: c.good,
+                  size: 20,
+                ),
+              ),
+            ),
+          if (i < _lineMatches.length && _lineMatches[i] != null && _lineChecks[line] == null)
+            Tooltip(
+              message: 'Entspricht Schritt ${_lineMatches[i]! + 1} der Musterlösung',
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Icon(Icons.check_circle, key: ValueKey('step-line-ok-$i'), color: c.good, size: 20),
+              ),
+            ),
+          if (_lines.length > 1 && !done)
+            IconButton(
+              key: ValueKey('step-line-remove-$i'),
+              tooltip: 'Zeile entfernen',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _removeLine(i),
+              icon: Icon(Icons.close, size: 18, color: c.inkMuted),
+            ),
+        ],
+      ),
+    );
   }
 
   /// Ergebnis von „Prüfen“ unter einer Zeile; die Korrektur erst auf Wunsch.
@@ -1361,11 +1564,7 @@ class _StepTaskViewState extends State<StepTaskView> {
                 child: const Text('Überspringen'),
               ),
             if (widget.canGiveUp)
-              TextButton(
-                key: const ValueKey('question-give-up'),
-                onPressed: _giveUp,
-                child: const Text('Auflösen'),
-              ),
+              TextButton(key: const ValueKey('question-give-up'), onPressed: _giveUp, child: const Text('Auflösen')),
           ],
         ),
     ];
@@ -1378,8 +1577,8 @@ class _StepTaskViewState extends State<StepTaskView> {
     final title = _gaveUp
         ? 'Aufgelöst – zählt als nicht gewusst'
         : _anyRevealed
-            ? 'Mit aufgedecktem Schritt gelöst'
-            : (_hintsUsed == 0 && _wrongTotal == 0 ? 'Gelöst – ohne Hilfe' : 'Gelöst – mit Hilfe');
+        ? 'Mit aufgedecktem Schritt gelöst'
+        : (_hintsUsed == 0 && _wrongTotal == 0 ? 'Gelöst – ohne Hilfe' : 'Gelöst – mit Hilfe');
     final good = !_anyRevealed && _hintsUsed == 0 && _wrongTotal == 0;
     return [
       const SizedBox(height: 10),
@@ -1420,7 +1619,10 @@ class _StepTaskViewState extends State<StepTaskView> {
         ),
       ),
       if (probe != null && probe.rows.isNotEmpty)
-        Padding(padding: const EdgeInsets.only(top: 10), child: ProbeCard(report: probe)),
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: ProbeCard(report: probe),
+        ),
       if (!widget.examMode && _aiAvailable)
         ExplainChat(
           question: widget.card.promptText,
@@ -1428,11 +1630,7 @@ class _StepTaskViewState extends State<StepTaskView> {
           wasCorrect: !_anyRevealed,
         ),
       const SizedBox(height: 14),
-      FilledButton(
-        key: const ValueKey('step-next'),
-        onPressed: _finishAndSubmit,
-        child: const Text('Weiter'),
-      ),
+      FilledButton(key: const ValueKey('step-next'), onPressed: _finishAndSubmit, child: const Text('Weiter')),
     ];
   }
 }

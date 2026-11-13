@@ -202,12 +202,21 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('step-mode-write')));
     await tester.pump();
+    // Diesen Fehler findet die App selbst – ohne KI.
     await tester.enterText(find.byKey(const ValueKey('step-line-0')), 'y = ∫ 2x dx = 2x^2 + C');
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('step-line-check-0')));
     await tester.pumpAndSettle();
+    expect(sent, isEmpty);
+    expect(find.textContaining('von der App nachgerechnet'), findsOneWidget);
+
+    // Was sie nicht selbst nachrechnen kann, prüft die KI.
+    await tester.enterText(find.byKey(const ValueKey('step-line-0')), 'y = 2 ∫ x dx, Faktor vorziehen');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('step-line-check-0')));
+    await tester.pumpAndSettle();
     expect(sent.single, contains('EINEN Rechenschritt'));
-    expect(sent.single, contains('Zu prüfen – Zeile 1: y = ∫ 2x dx = 2x^2 + C'));
+    expect(sent.single, contains('Zu prüfen – Zeile 1: y = 2 ∫ x dx, Faktor vorziehen'));
     expect(find.byKey(const ValueKey('step-line-result-0')), findsOneWidget);
     expect(find.textContaining('Vorfaktor'), findsOneWidget);
     expect(find.textContaining('Richtig wäre'), findsNothing);

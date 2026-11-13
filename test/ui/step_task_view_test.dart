@@ -366,14 +366,48 @@ void main() {
     await tap(tester, 'step-line-check-1');
     expect(find.textContaining('Stimmt – das ist Schritt 3'), findsOneWidget);
 
+    // Ableitung nach der Definition y = x² + C rechnet die App selbst nach.
     await tap(tester, 'step-line-add');
     await enter(tester, 'step-line-2', 'dy/dx = 2x');
+    await tap(tester, 'step-line-check-2');
+    expect(find.textContaining('von der App nachgerechnet'), findsOneWidget);
+    await enter(tester, 'step-line-2', 'Probe durch Ableiten');
     await tap(tester, 'step-line-check-2');
     expect(find.textContaining('nicht selbst nachrechnen'), findsOneWidget);
     // Ändern löscht die Prüfung dieser Zeile.
     await enter(tester, 'step-line-2', 'dy/dx = 2*x');
     expect(find.byKey(const ValueKey('step-line-result-2')), findsNothing);
     expect(find.byKey(const ValueKey('step-line-result-0')), findsOneWidget);
+  });
+
+  testWidgets('Selbst rechnen: Nebenrechnung mit Substitution, Abgeben rechnet die Umformungen nach', (tester) async {
+    tester.view.physicalSize = const Size(700, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    await enter(tester, 'step-line-0', 'y = ∫ 2x (x²+1)³ dx');
+    await tester.tap(find.byKey(const ValueKey('step-line-0')));
+    await tap(tester, 'step-line-add-side');
+    await enter(tester, 'step-line-1', 'u = x² + 1');
+    await tap(tester, 'step-line-add-side');
+    await enter(tester, 'step-line-2', 'du = 2x dx');
+    await tap(tester, 'step-line-add');
+    await enter(tester, 'step-line-3', '= ∫ u³ du');
+    await tap(tester, 'step-line-add');
+    await enter(tester, 'step-line-4', '= u⁴/3 + C');
+    // Die Nebenrechnung zählt nicht als Hauptzeile.
+    expect(find.text('2.'), findsOneWidget);
+    expect(find.text('3.'), findsOneWidget);
+    expect(find.text('4.'), findsNothing);
+
+    await tap(tester, 'step-line-check-2');
+    expect(find.textContaining('von der App nachgerechnet'), findsOneWidget);
+    await tap(tester, 'step-write-submit');
+    expect(find.byKey(const ValueKey('step-line-chain-ok-3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('step-line-result-4')), findsOneWidget, reason: 'falsche Stammfunktion');
+    expect(find.byKey(const ValueKey('step-write-chain')), findsOneWidget);
   });
 
   testWidgets('Selbst rechnen: Rechenblatt zeigt die Zeilen live, Besprechen ohne Key gibt Hinweis', (tester) async {
