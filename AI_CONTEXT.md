@@ -472,7 +472,8 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 
 ## 7. Aktueller Stand (Oktober 2026)
 
-Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
+Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48` (App-Branch – fertige Änderungen
+immer direkt dorthin pushen, auch aus anderen Sitzungs-Branches; siehe CLAUDE.md). `flutter analyze`
 sauber, 1761 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
