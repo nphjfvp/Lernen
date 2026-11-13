@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lernen/models/app_settings.dart';
+import 'package:lernen/models/flashcard.dart';
+import 'package:lernen/repositories/flashcard_repository.dart';
 import 'package:lernen/models/worked_solution.dart';
 import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/services/ai_service.dart';
@@ -13,6 +15,41 @@ import 'package:lernen/ui/visual/calculator_sim.dart';
 import 'package:lernen/ui/visual/worked_board.dart';
 import 'package:lernen/ui/visual/worked_solution_screen.dart';
 import 'package:provider/provider.dart';
+
+class _Cards extends FlashcardRepository {
+  @override
+  Future<List<Flashcard>> loadModuleCards(String moduleId) async => [
+    Flashcard(
+      id: 'k1',
+      moduleId: moduleId,
+      front: 'Was ist ein Integral?',
+      back: 'Fläche',
+      createdAt: DateTime(2026, 1, 1),
+      due: DateTime(2026, 1, 1),
+    ),
+    Flashcard(
+      id: 'k2',
+      moduleId: moduleId,
+      front: r'Löse $\ln\left((48x+6)^2\right) = 10$.',
+      back: r'$x = \frac{e^5-6}{48}$',
+      createdAt: DateTime(2026, 1, 2),
+      due: DateTime(2026, 1, 2),
+      type: QuestionType.steps,
+      taskData: {
+        'kind': 'steps',
+        'steps': [
+          {
+            'title': 'Log-Gesetz',
+            'prompt': 'Wende es an.',
+            'fields': [
+              {'label': 'x =', 'answer': '(e^5-6)/48'},
+            ],
+          },
+        ],
+      },
+    ),
+  ];
+}
 
 class _SettingsWithKey extends SettingsRepository {
   @override
@@ -221,8 +258,66 @@ void main() {
       MaterialApp(theme: AppTheme.light, home: const WorkedSolutionScreen(moduleId: 'm1', problem: '2x = 4')),
     );
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('worked-start')),
+      150,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.byKey(const ValueKey('worked-start')));
     await tester.pump();
     expect(find.byKey(const ValueKey('worked-error')), findsOneWidget);
+  });
+
+  testWidgets('Vorrechnen: vorhandene Aufgabe aus dem Fach wählen', (tester) async {
+    tester.view.physicalSize = const Size(900, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final sent = <String>[];
+    WorkedSolutionScreen.aiFactory = (key, model) => AiService(
+      apiKey: key,
+      model: model,
+      client: MockClient((r) async {
+        sent.add('${((jsonDecode(r.body) as Map)['messages'] as List)[1]['content']}');
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {'content': jsonEncode(_aiSolution)},
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsRepository>.value(value: _SettingsWithKey()),
+          ChangeNotifierProvider<FlashcardRepository>.value(value: _Cards()),
+        ],
+        child: MaterialApp(theme: AppTheme.light, home: const WorkedSolutionScreen(moduleId: 'm1')),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('worked-pick')));
+    await tester.pumpAndSettle();
+    // Nur Rechenwege – die Karteikarte erst ohne Filter.
+    expect(find.byKey(const ValueKey('worked-pick-1')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('worked-pick-only-steps')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('worked-pick-1')), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('worked-pick-search')), 'löse');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('worked-pick-0')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('worked-picked')), findsOneWidget);
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('worked-problem'))).controller!.text, contains('48x+6'));
+    await tester.tap(find.byKey(const ValueKey('worked-start')));
+    await tester.pumpAndSettle();
+    expect(sent.single, contains('Vorhandene Musterlösung'));
+    expect(sent.single, contains('1. Log-Gesetz'));
+    expect(find.byKey(const ValueKey('work-board')), findsOneWidget);
   });
 }

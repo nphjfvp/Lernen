@@ -1,8 +1,17 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7f) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7g) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7g. Vorrechnen: vorhandene Aufgaben wählen
+
+- Im Vorrechnen-Bildschirm „Vorhandene Aufgabe wählen“: alle Aufgaben des
+  Fachs (Rechenwege zuerst, mit Suche, auf Wunsch auch alle anderen Karten).
+  Aufgabentext, Aufgabenbild und Musterlösung gehen an die KI; wurde die
+  Aufgabe schon vorgerechnet, öffnet sie sich gleich (ohne neue Anfrage).
+- „Neu vorrechnen“ öffnet jetzt wirklich die Auswahl des Detailgrads, statt
+  die gespeicherte Lösung wieder zu zeigen.
 
 ### 7f. Taschenrechner, der wirklich rechnet
 

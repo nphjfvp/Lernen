@@ -1681,3 +1681,8 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `_calculatorPanel` (`step-calc`, `step-calc-toggle`, Zustand `_StepTaskViewState.calculatorOpen`) in „Selbst
     rechnen“ (breit: unter dem Rechenblatt) und „Nur Ergebnis“; `_useCalcResult` → Zeile bzw. Ergebnisfeld. Prompt
     `_workedSystemPrompt` mit Komma/∫/d/dx/SOLVE-Tastenfolgen. Tests: `pocket_calculator_test`, `calculator_sim_test`.
+122. Vorrechnen aus vorhandenen Aufgaben: `WorkedSolutionScreen` Knopf `worked-pick` → `_TaskPicker` (Karten aus
+    `FlashcardRepository.loadModuleCards`, Rechenwege zuerst, `worked-pick-search`, `worked-pick-only-steps`,
+    `worked-pick-i`, `worked-pick-empty`), übernimmt Text, Bild (`imageOf`), Musterlösung (`referenceFor`: Rückseite +
+    Schritte) und `cardId` (Chip `worked-picked`, abwählbar); schon vorgerechnet → `forCard` öffnet direkt.
+    `_load(openExisting: false)` beim „Neu vorrechnen“. Test: `worked_solution_test`.

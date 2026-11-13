@@ -349,7 +349,8 @@ const appGuideChapters = <GuideChapter>[
             'Mit „Weiter“ gehst du Takt für Takt, ▶ spielt automatisch ab. Zu jedem Schritt: Frage stellen, '
             'Herleitung, „Diesen Schritt genauer“. Daneben (am Handy darunter) drückt die App die Tasten eines '
             'Taschenrechners mit der Tastenbelegung des fx-991DE X, und das Display zeigt mit. Auch aus jeder '
-            'Rechenweg-Aufgabe heraus – vor dem Lösen zählt das als aufgedeckt. Vorgerechnetes bleibt gespeichert.',
+            'Rechenweg-Aufgabe heraus – vor dem Lösen zählt das als aufgedeckt. „Vorhandene Aufgabe wählen“ '
+            'holt eine Aufgabe des Fachs samt Musterlösung. Vorgerechnetes bleibt gespeichert.',
         where: 'Visuell lernen → Aufgabe vorrechnen lassen',
       ),
       GuideItem(

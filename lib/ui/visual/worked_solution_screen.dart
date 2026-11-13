@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,7 +7,10 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/flashcard.dart';
+import '../../models/step_task.dart';
 import '../../models/worked_solution.dart';
+import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/worked_solution_repository.dart';
 import '../../services/ai_service.dart';
@@ -50,6 +54,27 @@ class WorkedSolutionScreen extends StatefulWidget {
   /// Test-Hook statt OpenRouter.
   static AiService? Function(String apiKey, String model)? aiFactory;
 
+  /// Musterlösung einer Karte für die KI: Rückseite und Schritte.
+  static String referenceFor(Flashcard card) {
+    final task = card.type == QuestionType.steps ? StepTask.fromMap(card.taskData) : null;
+    final steps = [
+      for (final (i, s) in (task?.steps ?? const <TaskStep>[]).indexed)
+        '${i + 1}. ${s.title}${s.resultText.isEmpty ? '' : ': ${s.resultText}'}',
+    ].join('\n');
+    return [if (card.back.trim().isNotEmpty) card.back.trim(), if (steps.isNotEmpty) steps].join('\n\n');
+  }
+
+  /// Aufgabenbild einer Karte.
+  static Uint8List? imageOf(Flashcard card) {
+    final b64 = card.imageBase64;
+    if (b64 == null || b64.isEmpty) return null;
+    try {
+      return base64Decode(b64);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Takt bei „Automatisch“.
   static Duration autoDelay = const Duration(milliseconds: 2800);
 
@@ -59,6 +84,12 @@ class WorkedSolutionScreen extends StatefulWidget {
 
 class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSetState<WorkedSolutionScreen> {
   late final _problem = TextEditingController(text: widget.problem);
+
+  // Aufgabe aus einer vorhandenen Karte (vorbelegt oder gewählt).
+  late String _reference = widget.reference;
+  late Uint8List? _image = widget.image;
+  late String? _cardId = widget.cardId;
+  Flashcard? _pickedCard;
   WorkDetail _detail = WorkDetail.normal;
   bool _calculator = true;
   bool _busy = false;
@@ -92,11 +123,11 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
 
   WorkedSolutionRepository? get _repo => context.read<WorkedSolutionRepository?>();
 
-  Future<void> _load() async {
+  Future<void> _load({bool openExisting = true}) async {
     final repo = _repo;
     if (repo == null) return;
-    if (_solution == null && widget.cardId != null) {
-      final existing = await repo.forCard(widget.cardId!);
+    if (openExisting && _solution == null && _cardId != null) {
+      final existing = await repo.forCard(_cardId!);
       if (existing != null) {
         setState(() {
           _solution = existing;
@@ -124,7 +155,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   // ---------------------------------------------------------------------------
 
   Future<void> _start() async {
-    final ai = _ai(vision: widget.image != null);
+    final ai = _ai(vision: _image != null);
     if (ai == null) {
       setState(() => _error = 'Zum Vorrechnen braucht die App deinen OpenRouter-Key (Einstellungen).');
       return;
@@ -138,9 +169,9 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
       final json = await ai.solveWorked(
         problem: _problem.text,
         detail: _detail,
-        reference: widget.reference,
+        reference: _reference,
         calculator: _calculator,
-        image: widget.image,
+        image: _image,
       );
       final solution = WorkedSolution.fromAi(
         json,
@@ -149,7 +180,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
         problem: _problem.text.trim(),
         detail: _detail,
         now: DateTime.now(),
-        cardId: widget.cardId,
+        cardId: _cardId,
         withCalculator: _calculator,
       );
       if (solution.steps.isEmpty) {
@@ -326,8 +357,49 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
       _t = 0;
       _chats.clear();
     });
-    await _load();
+    await _load(openExisting: false);
   }
+
+  /// „Vorhandene Aufgabe wählen“: eine Karte des Fachs übernehmen – schon
+  /// vorgerechnet? Dann gleich öffnen.
+  Future<void> _pickTask() async {
+    final repo = context.read<FlashcardRepository?>();
+    final cards = repo == null ? const <Flashcard>[] : await repo.loadModuleCards(widget.moduleId);
+    if (!mounted) return;
+    final card = await showModalBottomSheet<Flashcard>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _TaskPicker(cards: cards),
+    );
+    if (card == null || !mounted) return;
+    setState(() {
+      _pickedCard = card;
+      _problem.text = card.front;
+      _reference = WorkedSolutionScreen.referenceFor(card);
+      _image = WorkedSolutionScreen.imageOf(card);
+      _cardId = card.id;
+      _error = null;
+    });
+    final existing = await _repo?.forCard(card.id);
+    if (existing != null && mounted) {
+      setState(() {
+        _solution = existing;
+        _detail = existing.detail;
+        _calculator = existing.withCalculator;
+        _t = 0;
+        _chats.clear();
+      });
+    }
+  }
+
+  void _clearPicked() => setState(() {
+    _pickedCard = null;
+    _problem.clear();
+    _reference = widget.reference;
+    _image = widget.image;
+    _cardId = widget.cardId;
+  });
 
   // ---------------------------------------------------------------------------
   // Anzeige
@@ -370,10 +442,40 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
             style: TextStyle(color: c.inkMuted, height: 1.4),
           ),
           const SizedBox(height: 16),
-          if (widget.image != null) ...[
+          if (widget.cardId == null) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                FilledButton.tonalIcon(
+                  key: const ValueKey('worked-pick'),
+                  onPressed: _busy ? null : _pickTask,
+                  icon: const Icon(Icons.library_books_outlined),
+                  label: const Text('Vorhandene Aufgabe wählen'),
+                ),
+                if (_pickedCard != null)
+                  InputChip(
+                    key: const ValueKey('worked-picked'),
+                    avatar: const Icon(Icons.task_alt, size: 18),
+                    label: Text('Aus deinen Aufgaben (${_pickedCard!.type.label})'),
+                    onDeleted: _busy ? null : _clearPicked,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _pickedCard == null
+                  ? 'Oder unten selbst eine Aufgabe eintippen.'
+                  : 'Die Musterlösung der Aufgabe bekommt die KI mit – sie rechnet danach vor.',
+              style: TextStyle(fontSize: 12.5, color: c.inkMuted),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (_image != null) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.memory(widget.image!, height: 160, fit: BoxFit.contain),
+              child: Image.memory(_image!, height: 160, fit: BoxFit.contain),
             ),
             const SizedBox(height: 10),
           ],
@@ -389,9 +491,9 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
               border: OutlineInputBorder(),
             ),
           ),
-          if (widget.problem.contains(r'$')) ...[
+          if (_problem.text.contains(r'$')) ...[
             const SizedBox(height: 8),
-            MathText(widget.problem, style: TextStyle(color: c.inkMuted)),
+            MathText(_problem.text, style: TextStyle(color: c.inkMuted)),
           ],
           const SizedBox(height: 16),
           Text('Wie genau?', style: Theme.of(context).textTheme.titleSmall),
@@ -423,7 +525,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
           const SizedBox(height: 8),
           FilledButton.icon(
             key: const ValueKey('worked-start'),
-            onPressed: _busy || (_problem.text.trim().isEmpty && widget.image == null) ? null : _start,
+            onPressed: _busy || (_problem.text.trim().isEmpty && _image == null) ? null : _start,
             icon: _busy
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.play_lesson_outlined),
@@ -954,6 +1056,117 @@ class _StepChatState extends State<_StepChat> with SafeSetState<_StepChat> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Auswahl einer vorhandenen Aufgabe des Fachs – Rechenwege zuerst, mit Suche.
+class _TaskPicker extends StatefulWidget {
+  const _TaskPicker({required this.cards});
+
+  final List<Flashcard> cards;
+
+  @override
+  State<_TaskPicker> createState() => _TaskPickerState();
+}
+
+class _TaskPickerState extends State<_TaskPicker> {
+  final _search = TextEditingController();
+  late bool _onlySteps = widget.cards.any((c) => c.type == QuestionType.steps);
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final query = _search.text.trim().toLowerCase();
+    final cards =
+        [
+          for (final card in widget.cards)
+            if ((!_onlySteps || card.type == QuestionType.steps) &&
+                card.front.trim().isNotEmpty &&
+                (query.isEmpty || card.front.toLowerCase().contains(query) || card.back.toLowerCase().contains(query)))
+              card,
+        ]..sort((a, b) {
+          final sa = a.type == QuestionType.steps ? 0 : 1, sb = b.type == QuestionType.steps ? 0 : 1;
+          if (sa != sb) return sa.compareTo(sb);
+          return b.createdAt.compareTo(a.createdAt);
+        });
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.8,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text('Aufgabe zum Vorrechnen wählen', style: Theme.of(context).textTheme.titleMedium),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: TextField(
+              key: const ValueKey('worked-pick-search'),
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Suchen …',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: CheckboxListTile(
+              key: const ValueKey('worked-pick-only-steps'),
+              value: _onlySteps,
+              onChanged: (v) => setState(() => _onlySteps = v ?? false),
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('Nur Rechenweg-Aufgaben'),
+            ),
+          ),
+          Expanded(
+            child: cards.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        widget.cards.isEmpty
+                            ? 'In diesem Fach gibt es noch keine Aufgaben.'
+                            : 'Keine passende Aufgabe gefunden.',
+                        key: const ValueKey('worked-pick-empty'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: c.inkMuted),
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                    itemCount: cards.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final card = cards[i];
+                      return ListTile(
+                        key: ValueKey('worked-pick-$i'),
+                        leading: Icon(
+                          card.type == QuestionType.steps ? Icons.functions : Icons.style_outlined,
+                          color: c.accent,
+                        ),
+                        title: MathText(card.front, maxLines: 3, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(card.type.label, style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                        trailing: card.imageBase64 == null ? null : const Icon(Icons.image_outlined, size: 18),
+                        onTap: () => Navigator.of(context).pop(card),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
