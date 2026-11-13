@@ -4,7 +4,9 @@ import '../models/ai_model_info.dart';
 import '../models/ai_usage.dart';
 import '../models/app_settings.dart' show ChunkGranularity;
 import '../models/model_test_result.dart';
+import '../models/visual_scene3d.dart';
 import 'ai_service.dart';
+import 'scene3d_check.dart';
 
 /// Womit ein Modell-Test arbeitet: eine Seite bzw. ein Text, eine Frage oder
 /// eine Beschreibung.
@@ -43,6 +45,11 @@ class ModelTestInput {
 /// Fehler des Modells ist auch ein Ergebnis (steht dann in
 /// [ModelTestResult.error]) – beim Vergleichen will man ihn sehen.
 class ModelTestRunner {
+  /// Nur 3D-Modell: [plan] = bestätigter Bauplan der Vorab-Klärung (statt der
+  /// Beschreibung), [mechBlocks] = Mechanik-Bausteine anbieten (null = wie
+  /// eingestellt), [repairRounds] = so oft darf das Modell nachbessern (0 =
+  /// nur prüfen).
+  ///
   /// [ai] arbeitet mit dem zu testenden Modell. [generated]: die Fragen, die
   /// der Gegenprüf-Test prüfen soll. [staged]: Lektion in zwei Stufen, wie in
   /// den Einstellungen. [modelInfo]: Listenpreis, falls OpenRouter keine
@@ -54,6 +61,9 @@ class ModelTestRunner {
     required ModelTestInput input,
     Map<String, dynamic>? generated,
     bool staged = true,
+    String plan = '',
+    bool? mechBlocks,
+    int repairRounds = 0,
     AiModelInfo? Function(String model)? modelInfo,
     DateTime Function()? clock,
   }) async {
@@ -66,7 +76,16 @@ class ModelTestRunner {
     Map<String, dynamic> output = const {};
     String? error;
     try {
-      output = await _call(kind, ai, input, generated: generated, staged: staged);
+      output = await _call(
+        kind,
+        ai,
+        input,
+        generated: generated,
+        staged: staged,
+        plan: plan,
+        mechBlocks: mechBlocks,
+        repairRounds: repairRounds,
+      );
     } on AiServiceException catch (e) {
       error = e.message;
     } catch (e) {
@@ -117,6 +136,9 @@ class ModelTestRunner {
     ModelTestInput input, {
     Map<String, dynamic>? generated,
     required bool staged,
+    String plan = '',
+    bool? mechBlocks,
+    int repairRounds = 0,
   }) async {
     switch (kind) {
       case ModelTestKind.questions:
@@ -153,8 +175,10 @@ class ModelTestRunner {
         );
         return {'generated': generated, 'check': check};
       case ModelTestKind.scene3d:
-        final description = input.text.trim();
-        final title = description.length > 60 ? '${description.substring(0, 60)}…' : description;
+        final wish = input.text.trim();
+        final description = plan.trim().isEmpty ? wish : plan.trim();
+        final title = wish.length > 60 ? '${wish.substring(0, 60)}…' : wish;
+        if (mechBlocks != null) ai.mechBlocks = mechBlocks;
         final drawn = await ai.drawVisualScene(
           lesson: {
             'title': title,
@@ -172,7 +196,20 @@ class ModelTestRunner {
         if (show['scene3d'] is! Map) {
           throw AiServiceException('Das Modell hat eine flache Zeichnung statt eines 3D-Modells geliefert.');
         }
-        return {'scene3d': show['scene3d']};
+        final scene = Map<String, dynamic>.from(show['scene3d'] as Map);
+        // Die App prüft das Modell – und lässt es auf Wunsch nachbessern.
+        if (repairRounds > 0) {
+          final result = await Scene3DRepair.run(ai: ai, scene: scene, wish: description, maxRounds: repairRounds);
+          return {
+            'scene3d': result.scene,
+            'issues': result.after,
+            'issuesBefore': result.before.length,
+            'repairs': result.rounds,
+            if (result.improved) 'original': scene,
+          };
+        }
+        final parsed = VisualScene3D.fromMap(scene);
+        return {'scene3d': scene, 'issues': parsed == null ? const <String>[] : Scene3DCheck.issues(parsed, max: 50)};
     }
   }
 

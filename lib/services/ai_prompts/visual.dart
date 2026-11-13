@@ -76,3 +76,43 @@ Du ordnest die Aufgaben und Fragen eines Studienfachs in typische AUFGABENTYPEN 
 - Wichtige, häufige Typen zuerst. Nur Typen, die im Material wirklich vorkommen – nichts dazuerfinden.
 
 Antworte NUR mit JSON: {"types": [{"title": "…", "description": "…", "cardIds": ["…"]}]}''';
+
+/// Stelle in [_visualToolsSpec], hinter der [_visualMechBlocksSpec] eingefügt
+/// wird (siehe AiService._withMechBlocks).
+const _visualMechBlocksAnchor = 'Dann KEIN "box" angeben.';
+
+/// Zusatz zu den Bausteinen: Körper mit Kräften. Nur für Modelle, bei denen
+/// die 3D-Hilfen gelten (günstige Modelle bzw. Einstellung) – starke Modelle
+/// zeichnen solche Körper frei meist schöner.
+const _visualMechBlocksSpec = r'''
+     {"type": "body", "body": "car", "size": [4.2, 1.8, 1.4], "cut": true, "forces": [{"at": "cg", "dir": "down", "text": "F_G"}, {"at": "front", "dir": "normal", "text": "F_N,v"}, {"at": "rear", "dir": "normal", "text": "F_N,h"}], "measures": [{"from": "rear", "to": "front", "text": "l = 2,5 m"}]}
+       ← KÖRPER MIT KRÄFTEN (Freischnitt, Statik, Dynamik): Die App baut den Körper und setzt jede Kraft maßstäblich an ihren Angriffspunkt – nimm das statt selbst gesetzter Quader und Pfeile. "body": "car" (Auto, vorn = +x; optional "wheelbase", "cg": [Abstand vom Heck, Höhe]), "block" (Klotz), "ball" (Kugel), "roller" (Walze/Rad) oder "beam" (Balken auf Lagern). "size": [Länge, Breite, Höhe] in den Maßen der Aufgabe. "slope": Neigung der Unterlage in Grad (schiefe Ebene – Keil und Winkel zeichnet die App). "cut": true = freigeschnitten (Unterlage nur gestrichelt angedeutet). "forces": "at" = Angriffspunkt – "cg" (Schwerpunkt), "bottom" (Aufstandspunkt), "top", "front", "rear" (beim Auto die Radaufstandspunkte vorn/hinten, dazu "front_axle"/"rear_axle"), eine Zahl (Abstand vom hinteren bzw. linken Ende entlang der Länge) oder [Anteil Länge, Anteil Breite, Anteil Höhe] je 0…1; "dir": "down" (Gewicht), "up", "normal" (senkrecht von der Unterlage weg), "uphill"/"forward", "downhill"/"back", ein Vektor [x, y, z] oder stattdessen "angle": Grad gegen die Waagrechte; "len": relative Pfeillänge (1 = normal – so zeigst du Größenverhältnisse); "text": Beschriftung. Nur beim Balken: "supports": [{"at": 0, "kind": "fixed" | "roller" | "clamp", "text": "A"}], "loads": [{"from": 2, "to": 5, "text": "q = 3 kN/m"}] (Streckenlast), "moments": [{"at": 3, "dir": "cw" | "ccw", "text": "M"}]; "at" = Abstand vom linken Ende, Kräfte greifen oben an ("side": "bottom" = unten). "measures": Maßlinien zwischen zwei Angriffspunkten. Dann KEIN "box" angeben; eigene Objekte daneben nur, wenn der Baustein etwas nicht kann.''';
+
+const _scene3dClarifySystemPrompt = r'''
+Du bereitest in einer Lern-App für Studierende ein 3D-Modell vor. Der Nutzer beschreibt in eigenen Worten, was er sehen will – oft knapp und ungenau. Ein ANDERES Modell zeichnet danach. Deine Aufgabe: aus dem Wunsch einen KONKRETEN Bauplan machen und dem Nutzer kurz zeigen, wie du ihn verstanden hast.
+
+So gehst du vor:
+- Bleib beim Wunsch: nichts weglassen, nichts Fachfremdes dazuerfinden. Ergänze nur, was zum Zeichnen fehlt und fachlich feststeht (z.B. im Stillstand auf ebener Fahrbahn: Gewichtskraft im Schwerpunkt und je eine Normalkraft an Vorder- und Hinterachse, keine Reibung).
+- "points": 3 bis 6 kurze Stichpunkte in du-Form, was zu sehen sein wird – Körper und Lage, Ansicht, Kräfte/Pfeile mit Angriffspunkt und Richtung, Beschriftungen, was sich bewegt. Jeder höchstens eine Zeile.
+- "plan": der vollständige Bauplan als Fließtext für das Zeichenmodell (4 bis 10 Sätze): welche Teile mit welchen ungefähren Maßen, wie sie im Raum liegen (x nach rechts/vorn, z nach oben), welche Pfeile wo angreifen und wohin zeigen, welche Beschriftungen, welche Farben wofür, ob etwas animiert wird. So genau, dass niemand nachfragen muss. Formeln in $…$.
+- "question": höchstens EINE kurze Rückfrage, wenn etwas Wesentliches offen ist und du raten müsstest (z.B. „Steht das Auto auf ebener Fahrbahn oder am Hang?“). Sonst "".
+- "better2d": true NUR, wenn eine flache Zeichnung das Gewünschte eindeutig klarer zeigt als ein räumliches Modell (alles liegt in EINER Ebene, z.B. ein Freikörperbild von der Seite, ein Verlauf, ein Diagramm). Der Nutzer hat 3D verlangt – das ist nur ein Vorschlag, er entscheidet. "reason2d": ein Satz, warum; sonst "".
+- Kommt ein bisheriger Bauplan mit einer Antwort oder Änderung des Nutzers: arbeite sie ein und liefere den vollständigen neuen Bauplan.
+
+Antworte NUR mit JSON: {"summary": "ein Satz: so habe ich dich verstanden", "points": ["…"], "plan": "…", "question": "", "better2d": false, "reason2d": ""}''';
+
+const _scene3dRepairSystemPrompt =
+    r'''
+Du korrigierst in einer Lern-App eine räumliche Szene ("scene3d"). Die App hat sie geometrisch geprüft und Auffälligkeiten gefunden – typisch sind Teile, die nicht zusammenpassen: ein Rad neben dem Wagen, ein Pfeil in der Luft, ein Teil außerhalb des Raums.
+''' +
+    _visualToolsSpec +
+    r'''
+
+Regeln:
+- Behebe GENAU die genannten Auffälligkeiten, indem du Koordinaten und Maße richtigstellst (rechne nach: Quader liegen mit "at" an ihrer Ecke und reichen um "dims" weiter; Zylinder gehen von "from" nach "to"). Die Objekt-Nummern zählen die Einträge von "objects" ab 0.
+- Alles andere bleibt, wie es ist: Inhalt, Reihenfolge und Anzahl der Objekte, Beschriftungen, Farben, Animation ("keys"), Bausteine.
+- Ist ein Abstand offensichtlich gewollt (zwei getrennte Körper, Explosionsdarstellung), lass ihn.
+- Kein Umbau, keine neue Idee.
+
+Antworte NUR mit JSON: {"scene3d": {… die vollständige korrigierte Szene im selben Format …}}''';
+

@@ -4,7 +4,7 @@ import '../../models/visual_lesson.dart';
 import '../../services/visual_math.dart';
 import 'visual_diagram_view.dart';
 import 'visual_scene.dart';
-import 'visual_scene3d_view.dart';
+import 'scene3d_live_view.dart';
 
 /// Alles, was eine [VisualShow] zeigt, untereinander: Umformung, 2D-Szene,
 /// 3D-Szene und Fahrzeug/Graph (mit [math] gerechnet).
@@ -22,7 +22,7 @@ class VisualShowView extends StatelessWidget {
     final parts = <Widget>[
       if (show.transform.isNotEmpty) EquationTransformView(states: show.transform, autoplay: true),
       if (show.scene != null) VisualDiagramView(diagram: show.scene!),
-      if (show.scene3d != null) VisualScene3DView(scene: show.scene3d!),
+      if (show.scene3d != null) Scene3DLiveView(scene: show.scene3d!),
       if (VisualSceneView.hasScene(show)) VisualSceneView(math: math, show: show),
     ];
     return Column(

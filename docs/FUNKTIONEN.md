@@ -596,6 +596,21 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Fragen gegenprüfen, 3D-Modell aus einer Beschreibung. Ergebnisse bleiben 30
   Minuten oder mit „Behalten“ dauerhaft, nur auf dem Gerät und nur zum
   Vergleichen; „Dieses Modell nehmen“ stellt es ein.
+- **Hilfen für 3D-Modelle** (Einstellungen → Modelle) – damit auch günstige
+  Modelle brauchbare 3D-Modelle liefern: **Vorab-Klärung** (aus dem Wunsch
+  wird ein Bauplan mit Rückfrage, den man bestätigt, ändert oder überspringt;
+  2D wird nur vorgeschlagen, `lib/ui/visual/scene3d_plan_sheet.dart`),
+  **Mechanik-Bausteine** (Körper mit Kräften – Auto, Klotz, Kugel, Walze,
+  Balken, auch auf schiefer Ebene; die App baut, `Scene3DBlocks`) und **Prüfen
+  und nachbessern** (`lib/services/scene3d_check.dart`: schwebende Teile,
+  Pfeile in der Luft …; Korrektur nur übernehmen, wenn besser, Original
+  abrufbar). „Automatisch“ gilt nur für günstige Modelle.
+- **Ausprobieren** (`lib/services/scene3d_live.dart`,
+  `lib/ui/visual/scene3d_live_view.dart`) – an 3D-Modellen aus
+  Mechanik-Bausteinen: beim Auto Räder anheben, Schwerpunkt verschieben, an den
+  Hang stellen (Radlasten, Kippen), beim Klotz Neigung und Reibung (haftet oder
+  rutscht), beim Balken die Kraft verschieben (Lagerkräfte). Die App rechnet
+  die Statik selbst, ohne Anfrage.
 - **BYOK** – die KI läuft über [OpenRouter](https://openrouter.ai) mit einem
   selbst mitgebrachten API-Key. Es gibt keinen App-eigenen Server; Anfragen
   gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von

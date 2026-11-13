@@ -31,12 +31,13 @@ class _FakePathProviderPlatform extends PathProviderPlatform with MockPlatformIn
 
 class _SettingsWithKey extends SettingsRepository {
   @override
-  AppSettings get settings => const AppSettings(openRouterApiKey: 'sk-test');
+  AppSettings get settings => const AppSettings(openRouterApiKey: 'sk-test', clarifyScene3d: false);
 }
 
 class _SettingsWith3d extends SettingsRepository {
   @override
-  AppSettings get settings => const AppSettings(openRouterApiKey: 'sk-test', scene3dModelId: 'stark/modell');
+  AppSettings get settings =>
+      const AppSettings(openRouterApiKey: 'sk-test', scene3dModelId: 'stark/modell', clarifyScene3d: false);
 }
 
 http.Response _chat(Object json) => http.Response(

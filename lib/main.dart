@@ -24,6 +24,7 @@ import 'repositories/visual_course_repository.dart';
 import 'repositories/visual_lesson_repository.dart';
 import 'repositories/summary_repository.dart';
 import 'repositories/unsupported_task_repository.dart';
+import 'services/scene3d_model.dart';
 import 'services/auto_sync_service.dart';
 import 'services/background_transport.dart';
 import 'services/database_service.dart';
@@ -154,6 +155,10 @@ class LernenApp extends StatelessWidget {
             final catalog = ModelCatalogRepository();
             // Ausgabe-Limit des gewählten Modells je Anfrage mitschicken.
             AiService.outputLimitOf = (model) => catalog.byId(model)?.requestMaxTokens;
+            // Mechanik-Bausteine für 3D nur dort anbieten, wo sie helfen
+            // (Einstellung; automatisch bei günstigen Modellen).
+            AiService.mechBlocksFor = (model) =>
+                Scene3dModel.helps(settingsRepository.settings.scene3dBlocks, catalog.byId(model));
             unawaited(catalog.loadCached());
             return catalog;
           },

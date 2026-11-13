@@ -57,7 +57,11 @@ Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführu
   rechnet die App selbst aus Formel bzw. Maßen.
 - **KI-Kosten im Blick**: was jede Anfrage gekostet hat – heute, im Monat, je
   Modell. **Modelle testen**: dieselbe Eingabe an mehrere Modelle schicken und
-  Ergebnis, Dauer und Kosten vergleichen, bevor man sich festlegt.
+  Ergebnis, Dauer und Kosten vergleichen, bevor man sich festlegt. **Hilfen
+  für günstige 3D-Modelle**: Bauplan mit Rückfrage vorab, Mechanik-Bausteine,
+  Prüfen und Nachbessern.
+- **3D-Modelle ausprobieren**: Rad anheben, Schwerpunkt oder Kraft verschieben,
+  Ebene neigen – die App rechnet Radlasten, Reibung und Lagerkräfte neu.
 - **Weiter lernen**: Die Startseite weiß, wo du zuletzt warst; jedes Fach hat
   die Reiter Lernen, Verstehen und Material.
 - **Labor**: Vorbereitung, Durchführung mit Fotos, Berichtsentwurf.

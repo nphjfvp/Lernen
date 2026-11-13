@@ -298,6 +298,24 @@ const appGuideChapters = <GuideChapter>[
         where: 'Lektion → Leiste unten',
       ),
       GuideItem(
+        'Günstige Modelle für 3D',
+        'Damit auch günstige Modelle brauchbare 3D-Modelle liefern, gibt es drei Hilfen. Vorab-Klärung: Aus '
+            'deinem Wunsch wird erst ein Bauplan, den du bestätigst, änderst oder überspringst – hält die App 2D für '
+            'klarer, schlägt sie das nur vor. Mechanik-Bausteine: Bei Auto, Klotz, schiefer Ebene und Balken nennt '
+            'das Modell nur Maße und Kräfte, die App baut. Prüfen und nachbessern: Die App findet schwebende Teile '
+            'und Pfeile in der Luft und lässt das Modell korrigieren; übernommen wird nur, was besser ist, das '
+            'Original bleibt abrufbar. „Automatisch“ gilt nur für günstige Modelle.',
+        where: 'Einstellungen → Modelle → Hilfen für 3D-Modelle',
+      ),
+      GuideItem(
+        'Ausprobieren',
+        'Unter einem 3D-Modell aus Mechanik-Bausteinen: Schalter „Ausprobieren“. Beim Auto ein Rad anheben, den '
+            'Schwerpunkt verschieben, an den Hang stellen – beim Klotz Neigung und Reibung ändern – beim Balken die '
+            'Kraft verschieben. Die App rechnet die Kräfte selbst neu (Statik, starrer Körper) und sagt, ob etwas '
+            'kippt, rutscht oder abhebt. Das kostet keine Anfrage.',
+        where: 'Lektion → 3D-Modell → Ausprobieren',
+      ),
+      GuideItem(
         'Lernpfad',
         'Mehrere Vorlesungen oder ein ganzes Semester als Folge von Lektionen mit Rückblick und Kurzfassung.',
         where: 'Visuell lernen → Lernpfad erstellen',
@@ -401,7 +419,8 @@ const appGuideChapters = <GuideChapter>[
         'Neben jeder Modellauswahl steht „Test“: Schick dieselbe Eingabe an bis zu vier Modelle und vergleiche '
             'die Ergebnisse – mit Dauer und Kosten. Fragen erstellen und visuelle Lektion aus einer kleinen PDF, '
             'einer Seite deines Materials oder eigenem Text; Erklärung zu einer Frage; Seite abschreiben (Vision); '
-            'Fragen gegenprüfen; 3D-Modell aus deiner Beschreibung. Die Ergebnisse dienen nur dem Vergleich: sie '
+            'Fragen gegenprüfen; 3D-Modell aus deiner Beschreibung – auch mit und ohne die Hilfen für 3D, um zu '
+            'sehen, ob ein günstiges Modell damit mithält. Die Ergebnisse dienen nur dem Vergleich: sie '
             'bleiben 30 Minuten, mit „Behalten“ dauerhaft – im Lernstoff landet nichts. „Dieses Modell nehmen“ '
             'stellt es ein. Jeder Test kostet wie eine normale Anfrage.',
         where: 'Einstellungen → Modelle → Test',

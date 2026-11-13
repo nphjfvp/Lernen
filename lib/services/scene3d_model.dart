@@ -41,4 +41,27 @@ class Scene3dModel {
     }
     return questionModelId;
   }
+
+  /// Bis zu diesem Ausgabepreis (US-Dollar je Million Tokens) gilt ein Modell
+  /// als günstig – für solche sind die 3D-Hilfen gedacht (Bausteine,
+  /// Nachbessern). Teure Modelle zeichnen frei meist besser; an ihnen ändert
+  /// „Automatisch“ deshalb nichts.
+  static const budgetOutputPrice = 5.0;
+
+  /// Günstiges (oder kostenloses) Modell? Ohne Katalog-Eintrag: nein – dann
+  /// bleibt alles wie bisher.
+  static bool isBudget(AiModelInfo? info) {
+    if (info == null) return false;
+    if (info.isFree) return true;
+    final price = info.completionPricePerMillion;
+    return price != null && price <= budgetOutputPrice;
+  }
+
+  /// Gilt eine 3D-Hilfe mit der Einstellung [mode] ('auto' | 'on' | 'off')
+  /// für das Modell [info]?
+  static bool helps(String mode, AiModelInfo? info) => switch (mode) {
+    'on' => true,
+    'off' => false,
+    _ => isBudget(info),
+  };
 }

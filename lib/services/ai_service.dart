@@ -165,6 +165,23 @@ class AiService {
   /// damit ein Modell-Test seine eigenen Kosten kennt.
   void Function(AiUsage usage)? usageListener;
 
+  /// Gelten für [model] die Mechanik-Bausteine (Körper mit Kräften, siehe
+  /// Scene3DBlocks)? In main.dart aus Einstellung und Modellpreis gesetzt –
+  /// ohne Hook bleibt der Prompt wie bisher.
+  static bool Function(String model)? mechBlocksFor;
+
+  /// Mechanik-Bausteine für diese Instanz erzwingen (true/false) statt
+  /// [mechBlocksFor] zu fragen – für den Modell-Test.
+  bool? mechBlocks;
+
+  /// Hängt für Modelle mit 3D-Hilfen den Baustein „Körper mit Kräften“ an die
+  /// Werkzeugbeschreibung an.
+  String _withMechBlocks(String systemPrompt) {
+    if (!(mechBlocks ?? mechBlocksFor?.call(model) ?? false)) return systemPrompt;
+    if (!systemPrompt.contains(_visualMechBlocksAnchor)) return systemPrompt;
+    return systemPrompt.replaceFirst(_visualMechBlocksAnchor, '$_visualMechBlocksAnchor\n$_visualMechBlocksSpec');
+  }
+
   /// `max_tokens` für ein Modell (aus dem OpenRouter-Katalog, siehe
   /// AiModelInfo.requestMaxTokens); null = nichts mitschicken (Voreinstellung
   /// des Anbieters). Lehnt ein Anbieter den Wert ab (400/404/422), wiederholt
@@ -295,6 +312,7 @@ Hier ist der Dokumenttext:
       throw AiServiceException(
           'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
     }
+    systemPrompt = _withMechBlocks(systemPrompt);
 
     final url = Uri.parse(_endpoint);
     final headers = {
@@ -3408,6 +3426,92 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
     }
 
     await Future.wait([for (var i = 0; i < parallel && i < queue.length; i++) worker()]);
+  }
+
+  /// Vorab-Klärung für ein 3D-Modell: macht aus dem [wish] des Nutzers einen
+  /// konkreten Bauplan und sagt, wie er verstanden wurde. [context]: worum es
+  /// geht (z.B. Titel und Text des Schritts). Mit [previousPlan] + [answer]
+  /// (Antwort auf die Rückfrage oder eine Änderung) wird der Plan angepasst.
+  /// Antwort: `summary`, `points` (Stichpunkte), `plan`, `question` (höchstens
+  /// eine Rückfrage, sonst leer), `better2d` + `reason2d` (nur ein Vorschlag).
+  Future<Map<String, dynamic>> clarifyScene3d({
+    required String wish,
+    String context = '',
+    String previousPlan = '',
+    String answer = '',
+  }) async {
+    if (wish.trim().isEmpty && context.trim().isEmpty) {
+      throw AiServiceException('Beschreibe, was das 3D-Modell zeigen soll.');
+    }
+    final buffer = StringBuffer();
+    if (wish.trim().isNotEmpty) buffer.writeln('Wunsch des Nutzers: ${_cap(wish.trim(), 3000)}');
+    if (context.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(wish.trim().isEmpty
+            ? 'Der Nutzer will diesen Schritt einer Lektion als 3D-Modell sehen (kein eigener Wunsch):'
+            : 'Zusammenhang – der Schritt der Lektion, zu dem das Modell gehört:')
+        ..writeln(_cap(context.trim(), 4000));
+    }
+    if (previousPlan.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Bisheriger Bauplan:')
+        ..writeln(_cap(previousPlan.trim(), 4000))
+        ..writeln()
+        ..writeln('Antwort bzw. Änderung des Nutzers: ${_cap(answer.trim(), 2000)}');
+    }
+    final raw = await _complete(_scene3dClarifySystemPrompt, buffer.toString(), temperature: 0.2);
+    final json = await _json(raw);
+    final plan = '${json['plan'] ?? json['bauplan'] ?? ''}'.trim();
+    if (plan.isEmpty) {
+      throw AiServiceException('Die KI hat keinen Bauplan geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    final points = json['points'] ?? json['punkte'];
+    return {
+      'summary': '${json['summary'] ?? ''}'.trim(),
+      'points': [
+        if (points is List)
+          for (final p in points)
+            if ('$p'.trim().isNotEmpty) '$p'.trim(),
+      ],
+      'plan': plan,
+      'question': '${json['question'] ?? ''}'.trim(),
+      'better2d': json['better2d'] == true || '${json['better2d']}'.toLowerCase() == 'true',
+      'reason2d': '${json['reason2d'] ?? ''}'.trim(),
+    };
+  }
+
+  /// Lässt eine räumliche Szene nachbessern: [scene] ist das "scene3d"-JSON,
+  /// [issues] sind die Auffälligkeiten aus Scene3DCheck. Antwort: die
+  /// korrigierte Szene (JSON). Ob sie besser ist, prüft der Aufrufer (siehe
+  /// Scene3DRepair).
+  Future<Map<String, dynamic>> repairScene3d({
+    required Map<String, dynamic> scene,
+    required List<String> issues,
+    String wish = '',
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Szene (JSON):')
+      ..writeln(_cap(jsonEncode(scene), 40000))
+      ..writeln()
+      ..writeln('Auffälligkeiten:');
+    for (final issue in issues) {
+      buffer.writeln('- $issue');
+    }
+    if (wish.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Was die Szene zeigen soll: ${_cap(wish.trim(), 3000)}');
+    }
+    final raw = await _complete(_scene3dRepairSystemPrompt, buffer.toString(), temperature: 0.1);
+    final json = await _json(raw);
+    final show = json['show'];
+    final fixed = json['scene3d'] ?? (show is Map ? show['scene3d'] : null) ?? (json['objects'] is List ? json : null);
+    if (fixed is! Map) {
+      throw AiServiceException('Die KI hat keine korrigierte Szene geliefert.', rawResponse: raw);
+    }
+    return Map<String, dynamic>.from(fixed);
   }
 
   /// Zeichnet EINE Szene nach ihrem Bauplan (Stufe 2, siehe

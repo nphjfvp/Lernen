@@ -40,6 +40,8 @@ class _Settings extends SettingsRepository {
     questionModelId: 'a/eins',
     visionModelId: 'a/eins',
     crosscheckModelId: 'b/zwei',
+    // Die Vorab-Klärung hat ihren eigenen Test.
+    clarifyScene3d: false,
   );
 
   @override
@@ -534,6 +536,92 @@ void main() {
     expect(key('model-test-page'), findsNothing);
     await tapReal(tester, 'model-test-run');
     expect(requests.single.user, contains('Skripttext zur Kinematik'));
+  });
+
+  testWidgets('3D mit Hilfen: Bauplan für alle Modelle, Bausteine abschaltbar, nachgebessertes Modell mit Original', (
+    tester,
+  ) async {
+    phone(tester);
+    Map<String, dynamic> car({double gap = 0}) => {
+      'box': [5, 2, 2],
+      'objects': [
+        {
+          'type': 'box',
+          'at': [0.5, 0.2, 0.4],
+          'dims': [4, 1.6, 1],
+        },
+        {
+          'type': 'cylinder',
+          'from': [1.2, 0.0 - gap, 0.4],
+          'to': [1.2, 0.2 - gap, 0.4],
+          'r': 0.4,
+          'text': 'Rad',
+        },
+      ],
+    };
+    answerWith((r) {
+      if (r.system.trimLeft().startsWith('Du bereitest in einer Lern-App')) {
+        return _chat({
+          'summary': 'Ein Auto, freigeschnitten.',
+          'points': ['Auto von der Seite'],
+          'plan': 'BAUPLAN-AUTO',
+          'question': '',
+          'better2d': true,
+          'reason2d': 'Liegt in einer Ebene.',
+        });
+      }
+      if (r.system.trimLeft().startsWith('Du korrigierst in einer Lern-App eine räumliche Szene')) {
+        return _chat({'scene3d': car()});
+      }
+      return _chat({
+        'show': {'scene3d': car(gap: 0.7)},
+      });
+    });
+    await open(tester, 'scene3d');
+
+    // Vorgaben aus den Einstellungen: Klärung aus (siehe _Settings), Bausteine und Nachbessern an.
+    expect(tester.widget<FilterChip>(key('model-test-opt-clarify')).selected, isFalse);
+    expect(tester.widget<FilterChip>(key('model-test-opt-blocks')).selected, isTrue);
+    expect(tester.widget<FilterChip>(key('model-test-opt-repair')).selected, isTrue);
+
+    await tap(tester, 'model-test-example-0');
+    await tap(tester, 'model-test-opt-clarify');
+    await tapReal(tester, 'model-test-run');
+    // Erst der Bauplan – im Test ohne 2D-Angebot (hier geht es um 3D).
+    expect(key('scene-plan'), findsOneWidget);
+    expect(key('scene-plan-2d'), findsNothing);
+    expect(requests, hasLength(1));
+    await tapReal(tester, 'scene-plan-ok');
+
+    // Zeichnen (mit Bauplan und Bausteinen im Prompt) + eine Korrekturrunde.
+    expect(requests, hasLength(3));
+    expect(requests[1].user, contains('Bauplan: BAUPLAN-AUTO'));
+    expect(requests[1].system, contains('"type": "body"'));
+    expect(requests[2].user, contains('berührt kein anderes Teil'));
+    final result = (await stored(tester, ModelTestKind.scene3d)).single;
+    expect(result.inputLabel, endsWith('· mit Bauplan, Bausteine, nachgebessert'));
+    expect(result.calls, 0, reason: 'die Probe-Antworten melden keinen Verbrauch');
+    expect(
+      textOf(tester, 'model-test-scene-check-${result.id}'),
+      'Geprüft: 1 Auffälligkeit, nach 1 Korrekturrunde noch 0.',
+    );
+    // Das Modell vor dem Nachbessern bleibt zum Vergleich.
+    expect(result.output['original'], isNotNull);
+    await tap(tester, 'model-test-more-${result.id}');
+    expect(find.text('Nachgebessertes zeigen'), findsOneWidget);
+
+    // Ohne Hilfen: eine Anfrage, kein Baustein im Prompt, nur der Prüfhinweis.
+    requests.clear();
+    await tap(tester, 'model-test-opt-clarify');
+    await tap(tester, 'model-test-opt-blocks');
+    await tap(tester, 'model-test-opt-repair');
+    await tapReal(tester, 'model-test-run');
+    expect(requests, hasLength(1));
+    expect(requests.single.system, isNot(contains('"type": "body"')));
+    final plain = (await stored(tester, ModelTestKind.scene3d)).firstWhere((r) => r.id != result.id);
+    expect(plain.inputLabel, endsWith('· ohne Hilfen'));
+    expect(textOf(tester, 'model-test-scene-check-${plain.id}'), 'Geprüft: 1 Auffälligkeit.');
+    expect(plain.output['original'], isNull);
   });
 
   testWidgets('Vision: braucht eine PDF-Seite, eigener Text wird nicht angeboten', (tester) async {

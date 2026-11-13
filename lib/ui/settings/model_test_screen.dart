@@ -23,10 +23,11 @@ import '../../services/pdf_service.dart';
 import '../../services/question_parsing.dart';
 import '../../services/visual_math.dart';
 import '../../theme/app_colors.dart';
-import '../visual/visual_scene3d_view.dart';
+import '../visual/scene3d_live_view.dart';
 import '../visual/visual_show_view.dart';
 import '../widgets/math_text.dart';
 import '../widgets/safe_set_state.dart';
+import '../visual/scene3d_plan_sheet.dart';
 import 'model_picker_sheet.dart';
 import 'model_roles.dart';
 
@@ -87,6 +88,12 @@ class _ModelTestScreenState extends State<ModelTestScreen> with SafeSetState<Mod
   final _answer = TextEditingController();
   final _description = TextEditingController();
 
+  // Hilfen für 3D (zum Vergleichen mit und ohne): Vorab-Klärung,
+  // Mechanik-Bausteine, Prüfen und nachbessern.
+  late bool _optClarify;
+  late bool _optBlocks;
+  late bool _optRepair;
+
   static const _sceneExamples = [
     'Welle mit zwei Lagern und einer Kraft in der Mitte',
     'Sattelfläche z = x² − y² mit Tangentialebene',
@@ -99,6 +106,9 @@ class _ModelTestScreenState extends State<ModelTestScreen> with SafeSetState<Mod
     final settings = context.read<SettingsRepository>().settings;
     final catalog = context.read<ModelCatalogRepository?>();
     _models.add(modelForRole(settings, widget.role, info: catalog?.byId));
+    _optClarify = settings.clarifyScene3d;
+    _optBlocks = settings.scene3dBlocks != 'off';
+    _optRepair = settings.scene3dRepair != 'off';
     _load();
     // Restzeiten nachführen und Abgelaufenes ausblenden.
     _tick = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -363,11 +373,36 @@ class _ModelTestScreenState extends State<ModelTestScreen> with SafeSetState<Mod
       return;
     }
     setState(() => _error = null);
-    final input = _input();
-    if (input == null) return;
+    final base = _input();
+    if (base == null) return;
     final key = settings.openRouterApiKey!;
     final kind = _kind;
     final models = List.of(_models);
+
+    // 3D: erst der Bauplan (einmal, für alle Modelle derselbe).
+    var plan = '';
+    var input = base;
+    if (kind == ModelTestKind.scene3d) {
+      if (_optClarify) {
+        final choice = await showScene3dPlanSheet(
+          context,
+          ai: _ai(key, settings.effectiveHelpModelId),
+          wish: base.text,
+          offer2d: false,
+        );
+        if (choice == null || !mounted) return;
+        if (choice.isPlan) plan = choice.plan;
+      }
+      final options = [
+        if (plan.isNotEmpty) 'mit Bauplan',
+        if (_optBlocks) 'Bausteine',
+        if (_optRepair) 'nachgebessert',
+      ];
+      input = ModelTestInput(
+        label: options.isEmpty ? '${base.label} · ohne Hilfen' : '${base.label} · ${options.join(', ')}',
+        text: base.text,
+      );
+    }
     setState(() => _running.addAll(models));
 
     Map<String, dynamic>? generated;
@@ -389,6 +424,9 @@ class _ModelTestScreenState extends State<ModelTestScreen> with SafeSetState<Mod
             input: input,
             generated: generated,
             staged: settings.stagedLessons,
+            plan: plan,
+            mechBlocks: kind == ModelTestKind.scene3d ? _optBlocks : null,
+            repairRounds: kind == ModelTestKind.scene3d && _optRepair ? 2 : 0,
             modelInfo: catalog?.byId,
           );
           // Ein Ergebnis, das sich nicht speichern lässt, wird trotzdem gezeigt.
@@ -658,6 +696,39 @@ class _ModelTestScreenState extends State<ModelTestScreen> with SafeSetState<Mod
                     }),
                   ),
               ],
+            ),
+            const SizedBox(height: 12),
+            const Text('Hilfen – zum Vergleichen an- und abschalten', style: title),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilterChip(
+                  key: const ValueKey('model-test-opt-clarify'),
+                  label: const Text('Vorab-Klärung'),
+                  selected: _optClarify,
+                  onSelected: (v) => setState(() => _optClarify = v),
+                ),
+                FilterChip(
+                  key: const ValueKey('model-test-opt-blocks'),
+                  label: const Text('Mechanik-Bausteine'),
+                  selected: _optBlocks,
+                  onSelected: (v) => setState(() => _optBlocks = v),
+                ),
+                FilterChip(
+                  key: const ValueKey('model-test-opt-repair'),
+                  label: const Text('Prüfen und nachbessern'),
+                  selected: _optRepair,
+                  onSelected: (v) => setState(() => _optRepair = v),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Hier gelten die Hilfen für jedes Modell, das du testest – so siehst du, ob ein günstiges Modell damit '
+              'an ein teures herankommt. Nachbessern kostet bis zu zwei Anfragen mehr.',
+              style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.35),
             ),
           ],
         );
@@ -1001,23 +1072,57 @@ class _ResultCardState extends State<_ResultCard> {
       case ModelTestKind.crosscheck:
         return _crosscheck(c);
       case ModelTestKind.scene3d:
-        final scene = VisualScene3D.fromMap(r.output['scene3d']);
+        final original = r.output['original'];
+        final scene = VisualScene3D.fromMap(_showAll && original is Map ? original : r.output['scene3d']);
         if (scene == null) {
           return Text(
             'Die Antwort lässt sich nicht als 3D-Modell darstellen.',
             style: TextStyle(fontSize: 13, color: c.danger),
           );
         }
+        final issues = [
+          if (r.output['issues'] is List)
+            for (final i in r.output['issues'] as List) '$i',
+        ];
+        final before = r.output['issuesBefore'] is num ? (r.output['issuesBefore'] as num).toInt() : issues.length;
+        final repairs = r.output['repairs'] is num ? (r.output['repairs'] as num).toInt() : 0;
+        final blocks = scene.blocks.length;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${scene.objects.length} Bauteil${scene.objects.length == 1 ? '' : 'e'}',
+              '${scene.objects.length} Bauteil${scene.objects.length == 1 ? '' : 'e'}'
+              '${blocks == 0 ? '' : ' · $blocks Baustein${blocks == 1 ? '' : 'e'} (von der App gerechnet)'}',
               key: ValueKey('model-test-scene-count-${r.id}'),
               style: TextStyle(fontSize: 12, color: c.inkMuted),
             ),
+            const SizedBox(height: 2),
+            Text(
+              before == 0
+                  ? 'Geprüft: keine Auffälligkeiten.'
+                  : repairs == 0
+                  ? 'Geprüft: $before Auffälligkeit${before == 1 ? '' : 'en'}.'
+                  : 'Geprüft: $before Auffälligkeit${before == 1 ? '' : 'en'}, nach $repairs '
+                        'Korrekturrunde${repairs == 1 ? '' : 'n'} noch ${issues.length}.',
+              key: ValueKey('model-test-scene-check-${r.id}'),
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: issues.isEmpty ? c.good : c.warn),
+            ),
+            if (issues.isNotEmpty)
+              Text(
+                issues.first + (issues.length > 1 ? ' (+${issues.length - 1} weitere)' : ''),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.3),
+              ),
             const SizedBox(height: 6),
-            VisualScene3DView(scene: scene, autoplay: false, height: 260, title: widget.modelName),
+            Scene3DLiveView(
+              key: ValueKey('model-test-scene-${r.id}-$_showAll'),
+              scene: scene,
+              autoplay: false,
+              height: 260,
+              title: widget.modelName,
+            ),
+            if (original is Map) _moreButton('Vor dem Nachbessern zeigen'),
           ],
         );
     }
@@ -1028,7 +1133,7 @@ class _ResultCardState extends State<_ResultCard> {
     child: TextButton(
       key: ValueKey('model-test-more-${r.id}'),
       onPressed: () => setState(() => _showAll = !_showAll),
-      child: Text(_showAll ? 'Weniger zeigen' : label),
+      child: Text(_showAll ? (r.kind == ModelTestKind.scene3d ? 'Nachgebessertes zeigen' : 'Weniger zeigen') : label),
     ),
   );
 

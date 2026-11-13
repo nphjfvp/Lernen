@@ -269,3 +269,15 @@ wählt, ist ungetestet – ich konnte von hier kein Modell aufrufen.
 - **Kosten, zwei Stufen, Handy-Layout** (deine Punkte 1, 2, 7): umgesetzt.
 - **Bausteine** (dein Punkt 3): als Ergänzung gebaut, die freie Erzeugung
   bleibt unverändert (siehe 4).
+- **Teure gegen günstige 3D-Modelle** (deine Rückmeldung: teure Modelle sind
+  klar besser, kosten aber etwa 15 bis 40 Cent je Modell): drei abschaltbare
+  Hilfen für günstige Modelle – Vorab-Klärung mit Rückfrage (2D nur als
+  Vorschlag), Mechanik-Bausteine (Körper mit Kräften, die App baut) und Prüfen
+  mit Nachbessern (nur übernehmen, wenn besser; Original abrufbar).
+  „Automatisch“ lässt teure Modelle unberührt. Ob DeepSeek & Co. damit
+  mithalten, zeigt der Modell-Test mit und ohne Hilfen – das kann nur mit
+  deinem Key ausprobiert werden.
+- **3D zum Ausprobieren:** An Modellen aus Mechanik-Bausteinen lässt sich ein
+  Rad anheben, der Schwerpunkt oder eine Kraft verschieben oder die Ebene
+  neigen; die App rechnet Radlasten, Haften/Rutschen und Lagerkräfte selbst
+  (starrer Körper, Statik). Federn, Dämpfer und Dynamik rechnet sie nicht.

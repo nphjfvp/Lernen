@@ -127,6 +127,19 @@ class AppSettings {
   /// Aus = wie früher alles in einer Anfrage.
   final bool stagedLessons;
 
+  /// Vor einem 3D-Modell aus dem Wunsch einen konkreten Bauplan machen und
+  /// nachfragen, ob er so gemeint ist (siehe AiService.clarifyScene3d).
+  final bool clarifyScene3d;
+
+  /// Mechanik-Bausteine (Körper mit Kräften – die App rechnet die Geometrie)
+  /// im Prompt anbieten: 'auto' (nur bei günstigen Modellen, siehe
+  /// Scene3dModel.isBudget), 'on' oder 'off'.
+  final String scene3dBlocks;
+
+  /// 3D-Szenen selbst prüfen und beim selben Modell nachbessern lassen:
+  /// 'auto' (nur bei günstigen Modellen), 'on' oder 'off'.
+  final String scene3dRepair;
+
   /// Das tatsächlich genutzte Modell für Erklärungen und Hilfe.
   String get effectiveHelpModelId {
     final id = helpModelId?.trim();
@@ -168,6 +181,9 @@ class AppSettings {
     this.scene3dModelId,
     this.includeCalcTasks = true,
     this.stagedLessons = true,
+    this.clarifyScene3d = true,
+    this.scene3dBlocks = 'auto',
+    this.scene3dRepair = 'auto',
   });
 
   bool get hasApiKey =>
@@ -217,6 +233,9 @@ class AppSettings {
     bool clearScene3dModel = false,
     bool? includeCalcTasks,
     bool? stagedLessons,
+    bool? clarifyScene3d,
+    String? scene3dBlocks,
+    String? scene3dRepair,
   }) {
     return AppSettings(
       openRouterApiKey: openRouterApiKey ?? this.openRouterApiKey,
@@ -246,6 +265,9 @@ class AppSettings {
       scene3dModelId: clearScene3dModel ? null : (scene3dModelId ?? this.scene3dModelId),
       includeCalcTasks: includeCalcTasks ?? this.includeCalcTasks,
       stagedLessons: stagedLessons ?? this.stagedLessons,
+      clarifyScene3d: clarifyScene3d ?? this.clarifyScene3d,
+      scene3dBlocks: scene3dBlocks ?? this.scene3dBlocks,
+      scene3dRepair: scene3dRepair ?? this.scene3dRepair,
     );
   }
 
@@ -276,7 +298,13 @@ class AppSettings {
         'scene3dModelId': scene3dModelId,
         'includeCalcTasks': includeCalcTasks,
         'stagedLessons': stagedLessons,
+        'clarifyScene3d': clarifyScene3d,
+        'scene3dBlocks': scene3dBlocks,
+        'scene3dRepair': scene3dRepair,
       };
+
+  /// 'auto' | 'on' | 'off' – alles andere gilt als 'auto'.
+  static String _mode(Object? raw) => raw == 'on' || raw == 'off' ? raw as String : 'auto';
 
   factory AppSettings.fromMap(Map<String, dynamic> map) => AppSettings(
         openRouterApiKey: map['openRouterApiKey'] as String?,
@@ -316,6 +344,9 @@ class AppSettings {
             : map['scene3dModelId'] as String,
         includeCalcTasks: map['includeCalcTasks'] as bool? ?? true,
         stagedLessons: map['stagedLessons'] as bool? ?? true,
+        clarifyScene3d: map['clarifyScene3d'] as bool? ?? true,
+        scene3dBlocks: _mode(map['scene3dBlocks']),
+        scene3dRepair: _mode(map['scene3dRepair']),
       );
 
   bool isFavoriteModel(String id) => favoriteModelIds.contains(id);

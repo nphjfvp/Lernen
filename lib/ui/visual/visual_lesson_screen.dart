@@ -17,10 +17,14 @@ import '../../repositories/visual_chat_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/visual_lesson_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/scene3d_check.dart';
 import '../../services/visual_math.dart';
 import '../../theme/app_colors.dart';
 import '../tasks/step_task_view.dart';
 import '../widgets/math_text.dart';
+import '../settings/model_picker_sheet.dart';
+import 'scene3d_plan_sheet.dart';
+import 'scene3d_live_view.dart';
 import 'visual_chat_screen.dart';
 import 'visual_diagram_view.dart';
 import 'visual_scene3d_view.dart';
@@ -62,6 +66,10 @@ class VisualLessonScreen extends StatefulWidget {
 
   /// Test-Hook statt OpenRouter.
   static AiService? Function(String apiKey, String model)? aiFactory;
+
+  /// Der feste Auftrag für „3D-Modell erzeugen“ (für Tests).
+  @visibleForTesting
+  static String get scene3dRequestForTest => _VisualLessonScreenState.scene3dRequest;
 
   @override
   State<VisualLessonScreen> createState() => _VisualLessonScreenState();
@@ -491,6 +499,8 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                           ),
                   ),
                   _nav(c, pages.length),
+                  if (_notice3d != null && _notice3d!.step == (page.kind == _PageKind.result ? -1 : _page))
+                    _scene3dNotice(c, _notice3d!),
                   // Eine KI-Leiste für alles – nicht in der Übung und nicht, solange
                   // ein sokratischer Schritt noch verschlossen ist.
                   if (page.kind != _PageKind.exercise &&
@@ -504,7 +514,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                       onAsk: (question) => _ask(step: page.step, question: question),
                       onDeepen: () => _deepen(page.step!),
                       onChange: (request) => _liveRevise(page.kind == _PageKind.result ? -1 : _page, request),
-                      onScene3d: () => _make3d(page.kind == _PageKind.result ? -1 : _page),
+                      onScene3d: (wish) => _make3d(page.kind == _PageKind.result ? -1 : _page, wish: wish),
                       onReviseSheet: () => _revise(page.kind == _PageKind.result ? -1 : _page),
                       onLearn: _learn,
                     ),
@@ -578,7 +588,7 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     ],
     if (step.show.scene3d != null) ...[
       const SizedBox(height: 12),
-      VisualScene3DView(key: ValueKey('visual-scene3d-$_page'), scene: step.show.scene3d!, title: step.title),
+      Scene3DLiveView(key: ValueKey('visual-scene3d-$_page'), scene: step.show.scene3d!, title: step.title),
     ],
     if (VisualSceneView.hasScene(step.show)) ...[
       const SizedBox(height: 12),
@@ -714,13 +724,39 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
 
   /// „3D-Modell erzeugen“: mit dem eigenen 3D-Modell (Einstellungen), falls
   /// eines gewählt ist – dann fragt die App vor JEDER Nutzung nach, weil
-  /// solche Modelle teuer sind –, sonst mit dem Fragen-Modell.
-  Future<String?> _make3d(int stepIndex) async {
+  /// solche Modelle teuer sind –, sonst mit dem automatisch gewählten.
+  ///
+  /// Davor (abschaltbar) die Vorab-Klärung: Aus [wish] bzw. dem Schritt wird
+  /// ein konkreter Bauplan, den man bestätigt, ändert oder überspringt. Danach
+  /// prüft die App das Modell und lässt es – je nach Einstellung – nachbessern.
+  Future<String?> _make3d(int stepIndex, {String wish = ''}) async {
     final settings = context.read<SettingsRepository?>()?.settings;
+    var plan = wish.trim();
+    if (settings != null && settings.clarifyScene3d && settings.hasApiKey) {
+      final step = _l.stepAt(stepIndex);
+      final choice = await showScene3dPlanSheet(
+        context,
+        ai: _reviseAi(context, model: settings.effectiveHelpModelId),
+        wish: wish,
+        contextText: step == null ? '' : [step.title, step.text, step.formula].where((t) => t.isNotEmpty).join('\n'),
+      );
+      if (choice == null || !mounted) return null;
+      if (choice.isFlat) {
+        // Vorschlag angenommen: flach zeichnen (mit dem Fragen-Modell).
+        return _liveRevise(
+          stepIndex,
+          'Zeig diesen Schritt als flache 2D-Zeichnung ("scene", NICHT "scene3d") nach diesem Bauplan: ${choice.plan}',
+        );
+      }
+      if (choice.isPlan) plan = choice.plan;
+    }
+    final request = plan.isEmpty ? scene3dRequest : '$scene3dRequest\nBauplan – genau so umsetzen: $plan';
+    if (!mounted) return null;
+
     final own = settings?.scene3dModelId;
     // Ohne eigene Wahl: das automatisch gewählte günstige 3D-Modell.
     final auto = scene3dAutoModelOf(context);
-    if (settings == null || own == null) return _liveRevise(stepIndex, scene3dRequest, model: auto);
+    if (settings == null || own == null) return _build3d(stepIndex, request, model: auto, wish: plan);
     final catalog = context.read<ModelCatalogRepository?>();
     final info = catalog?.byId(own);
     // Grobe Schätzung: Lektion + Werkzeugbeschreibung rein, eine Szene raus.
@@ -760,9 +796,9 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       ),
     );
     if (choice == null || !mounted) return null;
-    if (choice != 'own') return _liveRevise(stepIndex, scene3dRequest, model: auto);
+    if (choice != 'own') return _build3d(stepIndex, request, model: auto, wish: plan);
     final before = usage?.last;
-    final result = await _liveRevise(stepIndex, scene3dRequest, model: own);
+    final result = await _build3d(stepIndex, request, model: own, wish: plan);
     // Nach der teuren Anfrage gleich sagen, was sie gekostet hat.
     await usage?.settled;
     final spent = usage?.last;
@@ -775,6 +811,227 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
       );
     }
     return result;
+  }
+
+  /// Hinweis zum zuletzt erzeugten 3D-Modell: was die Prüfung fand, ob
+  /// nachgebessert wurde – mit dem Original zum Zurückholen.
+  ({
+    int step,
+    List<String> issues,
+    int fixed,
+    Map<String, dynamic>? original,
+    String request,
+    String wish,
+    String? model,
+  })?
+  _notice3d;
+  bool _notice3dBusy = false;
+
+  /// Schritt (ab [stepIndex]), der nach dem Umbau die räumliche Szene trägt.
+  int? _stepWith3d(int stepIndex) {
+    if (stepIndex < 0) return _l.stepAt(stepIndex)?.show.scene3d == null ? null : stepIndex;
+    for (var i = stepIndex; i < _l.steps.length && i <= stepIndex + 5; i++) {
+      if (_l.steps[i].show.scene3d != null) return i;
+    }
+    return null;
+  }
+
+  /// Erzeugt das 3D-Modell und prüft es danach geometrisch (Scene3DCheck).
+  /// Gilt „Nachbessern“ für [model] (Einstellung; automatisch nur bei
+  /// günstigen Modellen), läuft die Korrektur sofort – sonst bietet der
+  /// Hinweis sie an.
+  Future<String?> _build3d(int stepIndex, String request, {String? model, String wish = ''}) async {
+    setState(() => _notice3d = null);
+    final error = await _liveRevise(stepIndex, request, model: model);
+    if (error != null || !mounted) return error;
+    final at = _stepWith3d(stepIndex);
+    final scene = at == null ? null : _l.stepAt(at)?.show.scene3d;
+    if (at == null || scene == null) return null;
+    final issues = Scene3DCheck.issues(scene);
+    if (issues.isEmpty) return null;
+    final settings = context.read<SettingsRepository?>()?.settings;
+    final used = model ?? settings?.questionModelId;
+    final info = used == null ? null : context.read<ModelCatalogRepository?>()?.byId(used);
+    setState(
+      () => _notice3d = (step: at, issues: issues, fixed: 0, original: null, request: request, wish: wish, model: model),
+    );
+    if (settings != null && Scene3dModel.helps(settings.scene3dRepair, info)) await _repair3d();
+    return null;
+  }
+
+  /// Lässt das Modell des Hinweises nachbessern. Übernommen wird nur, was
+  /// weniger Auffälligkeiten hat; das Original bleibt zum Zurückholen.
+  Future<void> _repair3d() async {
+    final notice = _notice3d;
+    if (notice == null || _notice3dBusy) return;
+    final ai = _reviseAi(context, model: notice.model);
+    final scene = _l.stepAt(notice.step)?.show.scene3d;
+    if (ai == null || scene == null) return;
+    setState(() => _notice3dBusy = true);
+    final original = scene.toMap();
+    final result = await Scene3DRepair.run(ai: ai, scene: original, wish: notice.wish);
+    if (!mounted) return;
+    setState(() => _notice3dBusy = false);
+    if (!identical(_notice3d, notice)) return;
+    if (!result.improved) {
+      setState(() => _notice3d = (
+        step: notice.step,
+        issues: result.before,
+        fixed: -1,
+        original: notice.original,
+        request: notice.request,
+        wish: notice.wish,
+        model: notice.model,
+      ));
+      return;
+    }
+    final before = _l;
+    final fixed = before.withScene(notice.step, {
+      'show': {'scene3d': result.scene},
+    });
+    if (fixed == null) return;
+    _applyRevision(before, VisualMath.sanitize(fixed), 'Das 3D-Modell wurde nachgebessert.', page: _page);
+    setState(() => _notice3d = (
+      step: notice.step,
+      issues: result.after,
+      fixed: result.before.length - result.after.length,
+      original: notice.original ?? original,
+      request: notice.request,
+      wish: notice.wish,
+      model: notice.model,
+    ));
+  }
+
+  /// Holt das Modell von vor dem Nachbessern zurück.
+  void _restore3d() {
+    final notice = _notice3d;
+    final original = notice?.original;
+    if (notice == null || original == null) return;
+    final before = _l;
+    final restored = before.withScene(notice.step, {
+      'show': {'scene3d': original},
+    });
+    if (restored == null) return;
+    _applyRevision(before, VisualMath.sanitize(restored), 'Das ursprüngliche 3D-Modell ist zurück.', page: _page);
+    setState(() => _notice3d = null);
+  }
+
+  /// Dasselbe Modell noch einmal mit einem anderen KI-Modell erzeugen.
+  Future<void> _retry3dWithOtherModel() async {
+    final notice = _notice3d;
+    final catalog = context.read<ModelCatalogRepository?>();
+    if (notice == null || catalog == null) return;
+    final picked = await showModelPickerSheet(
+      context,
+      title: '3D-Modell neu erzeugen mit …',
+      models: catalog.models,
+      selectedId: notice.model,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _notice3dBusy = true);
+    final error = await _build3d(notice.step, notice.request, model: picked, wish: notice.wish);
+    if (!mounted) return;
+    setState(() => _notice3dBusy = false);
+    if (error != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+  }
+
+  Widget _scene3dNotice(
+    AppColors c,
+    ({
+      int step,
+      List<String> issues,
+      int fixed,
+      Map<String, dynamic>? original,
+      String request,
+      String wish,
+      String? model,
+    })
+    n,
+  ) {
+    final left = n.issues.length;
+    final headline = n.fixed > 0
+        ? (left == 0
+              ? 'Geprüft und nachgebessert: ${n.fixed} Auffälligkeit${n.fixed == 1 ? '' : 'en'} behoben.'
+              : 'Nachgebessert: ${n.fixed} behoben, $left noch offen.')
+        : n.fixed < 0
+        ? 'Das Nachbessern hat nichts verbessert – $left Auffälligkeit${left == 1 ? '' : 'en'} bleib${left == 1 ? 't' : 'en'}.'
+        : 'Die App hat das 3D-Modell geprüft: $left Auffälligkeit${left == 1 ? '' : 'en'}.';
+    return Container(
+      key: const ValueKey('scene3d-notice'),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+      decoration: BoxDecoration(
+        color: left == 0 ? c.goodSoft : c.warnSoft,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    headline,
+                    key: const ValueKey('scene3d-notice-text'),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.3),
+                  ),
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('scene3d-notice-close'),
+                tooltip: 'Hinweis schließen',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setState(() => _notice3d = null),
+                icon: const Icon(Icons.close, size: 18),
+              ),
+            ],
+          ),
+          if (left > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8, bottom: 2),
+              child: Text(
+                n.issues.first + (left > 1 ? ' (+${left - 1} weitere)' : ''),
+                key: const ValueKey('scene3d-notice-first'),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.3),
+              ),
+            ),
+          Wrap(
+            spacing: 4,
+            children: [
+              if (_notice3dBusy)
+                const Padding(
+                  key: ValueKey('scene3d-notice-busy'),
+                  padding: EdgeInsets.all(10),
+                  child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+              if (left > 0 && !_notice3dBusy)
+                TextButton(
+                  key: const ValueKey('scene3d-notice-repair'),
+                  onPressed: _repair3d,
+                  child: Text(n.fixed == 0 ? 'Nachbessern' : 'Noch einmal nachbessern'),
+                ),
+              if (n.original != null && !_notice3dBusy)
+                TextButton(
+                  key: const ValueKey('scene3d-notice-original'),
+                  onPressed: _restore3d,
+                  child: const Text('Original zeigen'),
+                ),
+              if (left > 0 && !_notice3dBusy)
+                TextButton(
+                  key: const ValueKey('scene3d-notice-model'),
+                  onPressed: _retry3dWithOtherModel,
+                  child: const Text('Anderes Modell'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Future<String?> _liveRevise(int stepIndex, String request, {String? model}) async {
@@ -1515,7 +1772,7 @@ class _VisualAskSheetState extends State<VisualAskSheet> {
           ],
           if (_show.scene3d != null) ...[
             const SizedBox(height: 12),
-            VisualScene3DView(key: const ValueKey('visual-answer-scene3d'), scene: _show.scene3d!),
+            Scene3DLiveView(key: const ValueKey('visual-answer-scene3d'), scene: _show.scene3d!),
           ],
           if (math != null && VisualSceneView.hasScene(_show)) ...[
             const SizedBox(height: 12),
@@ -1761,7 +2018,8 @@ class VisualAiBar extends StatefulWidget {
   /// „3D-Modell erzeugen“ (eigener Knopf, weil dafür ein eigenes Modell
   /// eingestellt sein kann, nach dem vorher gefragt wird); Ergebnis wie bei
   /// [onChange].
-  final Future<String?> Function()? onScene3d;
+  /// „3D-Modell erzeugen“ – mit dem Text des Eingabefelds als Wunsch (darf leer sein).
+  final Future<String?> Function(String wish)? onScene3d;
 
   /// Das ausführliche Fenster „Darstellung ändern“ (auch für die ganze Lektion).
   final VoidCallback onReviseSheet;
@@ -1900,7 +2158,7 @@ class _VisualAiBarState extends State<VisualAiBar> {
             key: const ValueKey('visual-live-3d'),
             label: '3D-Modell erzeugen',
             icon: Icons.view_in_ar_outlined,
-            onTap: _busy ? null : () => _run(widget.onScene3d!),
+            onTap: _busy ? null : () => _run(() => widget.onScene3d!(_input.text.trim()), clear: true),
           ),
         chip(
           key: const ValueKey('visual-revise'),

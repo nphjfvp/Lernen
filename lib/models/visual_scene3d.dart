@@ -444,20 +444,21 @@ class VisualScene3D {
     if (objects.isEmpty) return null;
     var box = givenBox ?? const [1.0, 1.0, 1.0];
     var bare = false;
-    if (givenBox == null && blocks.any((b) => b['segments'] is List)) {
-      // Welle ohne Raumangabe: Der Raum ist so groß wie das Bauteil, ohne
-      // Rahmen und Achsen (die würden nur stören).
+    if (blocks.any(Scene3DBlocks.sizesItself) && (givenBox == null || blocks.any(Scene3DBlocks.isBody))) {
+      // Welle oder Körper mit eigenen Maßen: Der Raum ist so groß wie das
+      // Bauteil (ein angegebener Raum wächst höchstens mit), ohne Rahmen und
+      // Achsen (die würden nur stören).
       final hi = [0.0, 0.0, 0.0];
       for (final o in objects) {
-        final r = o.numbers['r'] ?? 0;
-        for (final v in [o.vectors['at'], o.vectors['from'], o.vectors['to']]) {
+        final r = o.shape == Scene3DShape.sphere || o.shape == Scene3DShape.cylinder ? (o.numbers['r'] ?? 0) : 0.0;
+        for (final v in [o.vectors['at'], o.vectors['from'], o.vectors['to'], ...o.points]) {
           if (v == null) continue;
           for (var q = 0; q < 3; q++) {
             hi[q] = math.max(hi[q], v[q] + r);
           }
         }
       }
-      box = hi;
+      box = [for (var q = 0; q < 3; q++) math.max(hi[q], givenBox == null ? 0.0 : givenBox[q])];
       bare = true;
     }
     final rawCaptions = raw['captions'];

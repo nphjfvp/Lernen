@@ -77,6 +77,9 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'helpModelId': settings.helpModelId ?? '',
       'scene3dModelId': settings.scene3dModelId ?? '',
       'stagedLessons': settings.stagedLessons,
+      'clarifyScene3d': settings.clarifyScene3d,
+      'scene3dBlocks': settings.scene3dBlocks,
+      'scene3dRepair': settings.scene3dRepair,
     };
 
 /// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
@@ -127,6 +130,9 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
         : null,
     clearScene3dModel: synced['scene3dModelId'] is String && (synced['scene3dModelId'] as String).trim().isEmpty,
     stagedLessons: synced['stagedLessons'] as bool?,
+    clarifyScene3d: synced['clarifyScene3d'] as bool?,
+    scene3dBlocks: synced['scene3dBlocks'] as String?,
+    scene3dRepair: synced['scene3dRepair'] as String?,
   );
 }
 

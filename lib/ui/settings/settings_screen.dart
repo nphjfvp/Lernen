@@ -935,6 +935,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 12),
+                  const _Scene3dHelpSection(),
                   const SizedBox(height: 4),
                   SwitchListTile(
                     key: const ValueKey('staged-lessons'),
@@ -1642,6 +1644,115 @@ class _AccountSectionState extends State<_AccountSection> {
           child: const Text('Anmelden'),
         ),
       ],
+    );
+  }
+}
+
+/// Hilfen, mit denen auch günstige Modelle brauchbare 3D-Modelle liefern:
+/// Vorab-Klärung, Mechanik-Bausteine, Prüfen und Nachbessern. „Automatisch“
+/// lässt teure Modelle unberührt.
+class _Scene3dHelpSection extends StatelessWidget {
+  const _Scene3dHelpSection();
+
+  static const _modes = [('auto', 'Automatisch'), ('on', 'Immer'), ('off', 'Nie')];
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final repo = context.watch<SettingsRepository>();
+    final settings = repo.settings;
+
+    Widget mode({
+      required String keyName,
+      required String title,
+      required String text,
+      required String value,
+      required AppSettings Function(String mode) apply,
+    }) => Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          Text(text, style: TextStyle(fontSize: 11.5, color: c.inkMuted, height: 1.35)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final (id, label) in _modes)
+                ChoiceChip(
+                  key: ValueKey('$keyName-$id'),
+                  label: Text(label),
+                  selected: value == id,
+                  onSelected: (_) => repo.update(apply(id)),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    return Container(
+      key: const ValueKey('scene3d-help'),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Hilfen für 3D-Modelle', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 2),
+          Text(
+            'Damit auch günstige Modelle brauchbare 3D-Modelle liefern. „Automatisch“ gilt nur für günstige Modelle '
+            '(bis ${Scene3dModel.budgetOutputPrice.toStringAsFixed(0)} \$ je Million Ausgabe-Tokens oder kostenlos) – '
+            'an teuren ändert sich dann nichts.',
+            style: TextStyle(fontSize: 11.5, color: c.inkMuted, height: 1.35),
+          ),
+          // Eigenes Material: sonst verdeckt der farbige Kasten die Tipp-Wellen.
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile(
+              key: const ValueKey('scene3d-clarify'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: settings.clarifyScene3d,
+              activeThumbColor: c.accent,
+              onChanged: (v) => repo.update(settings.copyWith(clarifyScene3d: v)),
+              title: const Text('Vor dem Bauen nachfragen', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                'Das Modell für „Erklärungen & Hilfe“ macht aus deinem Wunsch einen Bauplan und zeigt ihn dir. Du '
+                'bestätigst, änderst oder überspringst ihn. Hält es 2D für klarer, schlägt es das nur vor.',
+                style: TextStyle(fontSize: 11.5, color: c.inkMuted, height: 1.35),
+              ),
+            ),
+          ),
+          mode(
+            keyName: 'scene3d-blocks',
+            title: 'Mechanik-Bausteine',
+            text:
+                'Auto, Klotz, Kugel, schiefe Ebene, Balken mit Lagern und Kräften: Das Modell nennt nur Maße und '
+                'Angriffspunkte, die App baut und rechnet. Nur so gebaute Modelle lassen sich „ausprobieren“ (Rad '
+                'anheben, Kraft verschieben …). Starke Modelle zeichnen frei oft schöner – wer bei ihnen '
+                'ausprobieren will, stellt „Immer“ ein.',
+            value: settings.scene3dBlocks,
+            apply: (m) => settings.copyWith(scene3dBlocks: m),
+          ),
+          mode(
+            keyName: 'scene3d-repair',
+            title: 'Prüfen und nachbessern',
+            text:
+                'Die App prüft jedes neue 3D-Modell (schwebende Teile, Pfeile in der Luft …) und lässt es bis zu '
+                'zweimal vom selben Modell korrigieren – jede Runde ist eine Anfrage. Übernommen wird nur, was '
+                'besser ist; das Original bleibt abrufbar. Bei „Nie“ zeigt die App nur den Hinweis.',
+            value: settings.scene3dRepair,
+            apply: (m) => settings.copyWith(scene3dRepair: m),
+          ),
+        ],
+      ),
     );
   }
 }

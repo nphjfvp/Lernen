@@ -1,8 +1,54 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7b) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7c) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7c. Günstige Modelle für 3D – und Modelle zum Ausprobieren
+
+Ziel: Günstige Modelle sollen brauchbare 3D-Modelle liefern, ohne dass sich
+bei teuren etwas verschlechtert. Alle drei Hilfen sind abschaltbar
+(Einstellungen → Modelle → **Hilfen für 3D-Modelle**). „Automatisch“ gilt nur
+für günstige Modelle (bis 5 $ je Million Ausgabe-Tokens oder kostenlos) und
+für Modelle, deren Preis die App kennt – sonst bleibt alles wie bisher.
+
+- **Vorab-Klärung (Rückfrage vor dem Bauen):** Bevor ein 3D-Modell entsteht,
+  macht das Modell für „Erklärungen & Hilfe“ aus deinem Wunsch (Text in der
+  KI-Leiste, sonst der Schritt) einen konkreten Bauplan und zeigt ihn in
+  Stichpunkten, oft mit einer Rückfrage („Steht das Auto eben oder am
+  Hang?“). Du bestätigst, antwortest bzw. änderst oder baust **ohne Bauplan**
+  wie bisher. Gezeichnet wird dann genau nach dem Plan. Hält die App eine
+  flache Zeichnung für klarer, **schlägt sie 2D nur vor** – ohne deine Wahl
+  bleibt es bei 3D. Standard: an.
+- **Mechanik-Bausteine:** Neuer Baustein „Körper mit Kräften“ – Auto, Klotz,
+  Kugel, Walze, Balken auf Lagern, auch auf schiefer Ebene und freigeschnitten.
+  Das Modell nennt nur Maße und Angriffspunkte („Schwerpunkt“, „Vorderrad“,
+  „2 m vom linken Lager“), die App baut den Körper und setzt die Pfeile
+  maßstäblich (auch Streckenlasten, Momente, Maßlinien). Die Beschreibung
+  steht nur im Prompt der Modelle, für die die Hilfe gilt. Standard:
+  automatisch.
+- **Prüfen und nachbessern:** Die App prüft jedes neue 3D-Modell ohne KI auf
+  schwebende Teile, Pfeile in der Luft, Teile weit außerhalb, deckungsgleiche
+  Körper und Beschriftungen aufeinander (vorsichtig: Kristallgitter, Raster und
+  bewegte Teile gelten nie als schwebend). Gilt die Hilfe, korrigiert dasselbe
+  Modell bis zu zweimal; übernommen wird nur, was **weniger** Auffälligkeiten
+  hat, und das **Original lässt sich zurückholen**. Sonst zeigt ein Hinweis
+  die Auffälligkeit mit „Nachbessern“ und „Anderes Modell“. Standard:
+  automatisch.
+- **Ausprobieren:** Unter 3D-Modellen aus Mechanik-Bausteinen gibt es den
+  Schalter „Ausprobieren“. Beim **Auto** ein Rad anheben, den Schwerpunkt
+  verschieben oder an den Hang stellen – die App rechnet die vier Radlasten
+  neu (starrer Körper; Pfeillänge = Last) und sagt, welches Rad entlastet wird
+  oder ob das Auto kippt. Beim **Klotz auf schiefer Ebene** Neigung und
+  Reibungszahl ändern – haftet oder rutscht er? Beim **Balken auf zwei Lagern**
+  die Kraft verschieben – die Lagerkräfte wandern mit. Steht in der
+  Beschriftung eine Zahl mit Einheit („F_G = 12 kN“), rechnet die App in dieser
+  Einheit, sonst in Prozent. Kostet keine Anfrage.
+- **Modell-Test für 3D:** Die drei Hilfen lassen sich dort einzeln an- und
+  abschalten. So siehst du direkt, ob ein günstiges Modell mit Hilfen an ein
+  teures herankommt. Das Ergebnis zeigt, was die Prüfung fand, und auf Wunsch
+  das Modell vor dem Nachbessern.
+- Nicht gegen echte Modelle getestet – von hier ist kein Aufruf möglich.
 
 ### 7b. Modelle testen, bevor man sich festlegt
 

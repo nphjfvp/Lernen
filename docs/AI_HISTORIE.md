@@ -1576,3 +1576,46 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Lektion über `ModelTestLessonPreview`. `QuestionParsing.answerPreview` neu. Nicht gegen echte Modelle
     getestet. Tests: `model_test_runner_test`, `model_test_screen_test`,
     `settings_screen_theme_skin_test` („Neben jeder Modellauswahl …“).
+117. 3D-Hilfen für günstige Modelle. Einstellungen `AppSettings.clarifyScene3d` (bool, Standard true),
+    `scene3dBlocks` und `scene3dRepair` ('auto' | 'on' | 'off', Standard 'auto', unbekannt → 'auto';
+    synchronisiert über `syncedSettingsOf`/`mergeAiSettings`). `Scene3dModel.isBudget(info)`
+    (`budgetOutputPrice` = 5 $/Mio. Ausgabe-Tokens oder kostenlos; ohne Katalog-Eintrag false) und
+    `Scene3dModel.helps(mode, info)`. Oberfläche `_Scene3dHelpSection` in `settings_screen.dart` (Keys
+    `scene3d-help`, `scene3d-clarify` – in eigenem `Material`, sonst beanstandet Flutter den ListTile im
+    farbigen Kasten –, `scene3d-blocks-<mode>`, `scene3d-repair-<mode>`). Vorab-Klärung:
+    `AiService.clarifyScene3d(wish:, context:, previousPlan:, answer:)` mit `_scene3dClarifySystemPrompt`
+    (Antwort `summary`, `points`, `plan`, `question`, `better2d`, `reason2d`); Fenster `showScene3dPlanSheet`
+    (`lib/ui/visual/scene3d_plan_sheet.dart`, Keys `scene-plan`, `scene-plan-point-<i>`, `scene-plan-question`,
+    `scene-plan-answer`, `scene-plan-refine`, `scene-plan-ok`, `scene-plan-skip`, `scene-plan-2d-hint`,
+    `scene-plan-2d`; Ergebnis `Scene3dPlanChoice` build/skip/flat). `_make3d(stepIndex, wish:)` in
+    `visual_lesson_screen.dart` nutzt das Hilfe-Modell (`effectiveHelpModelId`), hängt den Plan als „Bauplan –
+    genau so umsetzen:“ an `scene3dRequest`; „2D“ geht als flache Zeichnung an `_liveRevise`. Die KI-Leiste gibt
+    den Text des Eingabefelds als Wunsch mit (`onScene3d(String wish)`). Mechanik-Bausteine: `type: body`
+    (`Scene3DBlocks._body`, Arten car/block/ball/roller/beam, `size`, `slope`, `cut`, `forces` mit `at`
+    (Name, Zahl, Anteile) und `dir`/`angle`/`len`, Balken `supports`/`loads`/`moments`, `measures`; Auto
+    zusätzlich `lifted`) mit `bodyKindOf`, `carGeometry`, `beamGeometry`, `isBody`, `sizesItself` (Raum
+    richtet sich nach dem Körper; ein angegebener Raum wächst nur). Prompt: `_visualMechBlocksSpec` wird über
+    `AiService._withMechBlocks` in `_complete` hinter `_visualMechBlocksAnchor` eingefügt – nur wenn
+    `AiService.mechBlocksFor(model)` (main.dart: Einstellung + Katalog) oder `ai.mechBlocks` (Instanz, für den
+    Modell-Test) es sagt. Prüfung: `Scene3DCheck.issues(scene, max:)` (`lib/services/scene3d_check.dart`),
+    Nachbessern `Scene3DRepair.run(ai:, scene:, wish:, maxRounds: 2)` mit `AiService.repairScene3d`
+    (`_scene3dRepairSystemPrompt`), übernimmt nur weniger Auffälligkeiten. Lektion: `_build3d` → Hinweis
+    `scene3d-notice` (`-text`, `-first`, `-repair`, `-original`, `-model`, `-close`, `-busy`), `_repair3d`,
+    `_restore3d`, `_retry3dWithOtherModel`. Modell-Test: Filter `model-test-opt-clarify/-blocks/-repair`,
+    `ModelTestRunner.run(plan:, mechBlocks:, repairRounds:)`, Ergebnis mit `issues`, `issuesBefore`,
+    `repairs`, `original` (Anzeige `model-test-scene-check-<id>`). Tests: `scene3d_help_test`,
+    `scene3d_help_ui_test`, `model_test_screen_test` („3D mit Hilfen …“); `visual_learn_test` schaltet die
+    Klärung in seinen Einstellungen ab.
+118. Ausprobieren: `Scene3DLive` (`lib/services/scene3d_live.dart`) rechnet ohne KI an einem Körper-Baustein –
+    `blockOf`, `kindOf` (car, block, beam; Balken nur mit genau zwei Lagern, ohne Einspannung, Streckenlast
+    oder Moment), `initial`, `apply(scene, Scene3DLiveState)` → `Scene3DLiveResult(scene, status, warn)`.
+    Auto: `wheelLoads(wheels, at)` verteilt die Last auf die aufliegenden Räder wie auf gleiche Federn
+    (ebene Verteilung, Gleichgewicht der Kräfte und Momente); müsste ein Rad ziehen, wird es entlastet;
+    drei Räder sind eindeutig, sonst kippt das Auto (null). Neigung versetzt den Lastpunkt um
+    `cgz · tan(Neigung)`. Klotz: Normalkraft `cos`, Hangabtrieb `sin`, haftet bis `μ · cos`, sonst rutscht er
+    (Beschleunigung `g(sin − μ cos)`). Balken: Lagerkräfte aus Momentengleichgewicht, auch mehrere Kräfte.
+    Zahl und Einheit aus der Beschriftung (`quantityIn`, z.B. „F_G = 12 kN“), sonst Prozent. Ansicht
+    `Scene3DLiveView` (`lib/ui/visual/scene3d_live_view.dart`) ersetzt `VisualScene3DView` in Lektion,
+    Rückfrage-Antwort, `VisualShowView` und Modell-Test; ohne Baustein bzw. ausgeschaltet genau die alte
+    Ansicht (Keys `scene3d-live`, `-toggle`, `-reset`, `-wheel-<fl|fr|rl|rr>`, `-cg`, `-slope`, `-mu`,
+    `-force`, `-status`). Tests: `scene3d_live_test`.
