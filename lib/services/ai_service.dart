@@ -161,6 +161,10 @@ class AiService {
   /// sie meldet) – für die Kostenanzeige.
   static void Function(AiUsage usage)? onUsage;
 
+  /// Verbrauch der Anfragen NUR DIESES Service, zusätzlich zu [onUsage] –
+  /// damit ein Modell-Test seine eigenen Kosten kennt.
+  void Function(AiUsage usage)? usageListener;
+
   /// `max_tokens` für ein Modell (aus dem OpenRouter-Katalog, siehe
   /// AiModelInfo.requestMaxTokens); null = nichts mitschicken (Voreinstellung
   /// des Anbieters). Lehnt ein Anbieter den Wert ab (400/404/422), wiederholt
@@ -422,10 +426,13 @@ Hier ist der Dokumenttext:
   /// kostet – deshalb vor der Prüfung des Inhalts. Darf nie eine Antwort kosten.
   void _reportUsage(Object? decoded, String systemPrompt) {
     final report = onUsage;
-    if (report == null || decoded is! Map) return;
+    final own = usageListener;
+    if ((report == null && own == null) || decoded is! Map) return;
     try {
       final usage = AiUsage.fromResponse(decoded['usage'], model: model, label: _labelOf(systemPrompt));
-      if (usage != null) report(usage);
+      if (usage == null) return;
+      own?.call(usage);
+      report?.call(usage);
     } catch (_) {
       // Kostenanzeige ist Nebensache.
     }

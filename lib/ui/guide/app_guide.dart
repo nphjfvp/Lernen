@@ -35,22 +35,29 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         '2. Material hochladen',
         'Folien und Übungsblätter als PDF, Word oder PowerPoint.',
-        where: 'Fächer → Fach → Material hochladen',
+        where: 'Fächer → Fach → Material → Material hochladen',
       ),
       GuideItem(
         '3. Vorbereiten',
         'Vor der Vorlesung: die KI fasst die Folien zusammen, damit du weißt, was kommt.',
-        where: 'Fächer → Fach → Vorbereiten',
+        where: 'Fächer → Fach → Verstehen → Vorbereiten',
       ),
       GuideItem(
         '4. Nachbereiten',
         'Nach der Vorlesung: Konzepte und Karteikarten aus Folien und Übungen – von der KI oder selbst.',
-        where: 'Fächer → Fach → Nachbereiten',
+        where: 'Fächer → Fach → Verstehen → Nachbereiten',
       ),
       GuideItem(
         '5. Daily Quiz',
         'Jeden Tag die fälligen Karten, über alle Fächer, so verteilt, dass bis zur Klausur alles sitzt.',
         where: 'Leiste unten → Daily Quiz',
+      ),
+      GuideItem(
+        'Weiter lernen',
+        'Die Karte ganz oben auf der Startseite weiß, wo du zuletzt warst: Sie setzt die angefangene Reihe an '
+            'der nächsten offenen Aufgabe fort – sonst schlägt sie Üben in dem Fach vor, dessen Klausur am '
+            'nächsten liegt. Darunter: Daily Quiz und Schwachstellen mit einem Tipp.',
+        where: 'Leiste unten → Fächer (ganz oben)',
       ),
       GuideItem(
         'Ohne KI geht es auch',
@@ -64,6 +71,14 @@ const appGuideChapters = <GuideChapter>[
     intro: 'Jedes Fach sammelt seine Unterlagen, Einheiten und Karten an einem Ort.',
     items: [
       GuideItem(
+        'Drei Reiter je Fach',
+        '„Lernen“: Üben (auch der Reihe nach), Probeklausur, markierte Fragen und dein Lernstand. „Verstehen“: '
+            'Vorbereiten, Nachbereiten, Visuell lernen, Aufgaben visuell lösen, Fragen stellen. „Material“: '
+            'Dateien, Import, Zusammenfassungen, Konzepte, Karten und Einheiten. Der zuletzt gewählte Reiter '
+            'bleibt je Fach.',
+        where: 'Fächer → Fach',
+      ),
+      GuideItem(
         'Fach einstellen',
         'Klausurdatum (steuert, wie viel das Daily Quiz täglich bringt), Farbe, Vorlesungstermine und der '
             'Schalter „Laborfach“ für Fächer mit Versuchen.',
@@ -72,23 +87,23 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'PDF ansehen und markieren',
         'Folien öffnen, Stellen rot/gelb/grün markieren, Notizen zu Seiten, Fragen zur aktuellen Seite stellen.',
-        where: 'Fach → Materialien → PDF antippen',
+        where: 'Fach → Material → PDF antippen',
       ),
       GuideItem(
         'Gescannte PDFs',
         'Ohne Textebene liest die Texterkennung die Seiten – automatisch oder über das Menü am Material.',
-        where: 'Fach → Materialien → ⋮ → Texterkennung',
+        where: 'Fach → Material → ⋮ → Texterkennung',
       ),
       GuideItem(
         'Einheiten',
         'Vorlesungen als Einheiten ordnen – selbst anlegen, von der KI vorschlagen lassen oder aus den '
             'Terminen im Stundenplan erzeugen.',
-        where: 'Fach → Einheiten',
+        where: 'Fach → Material → Einheiten',
       ),
       GuideItem(
         'Vorlesung kürzen',
         'Nur behalten, was für die Übungsaufgaben wirklich gebraucht wird – Grob, Mittel oder Fein.',
-        where: 'Fach → Materialien → Vorlesung kürzen',
+        where: 'Fach → Material → Vorlesung kürzen',
       ),
       GuideItem(
         'Fach teilen oder sichern',
@@ -105,30 +120,30 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Zusammenfassung und Formelsammlung',
         'Ein KI-Überblick der Folien; auf Wunsch eine Formelsammlung in Grob, Mittel oder Fein.',
-        where: 'Fach → Vorbereiten',
+        where: 'Fach → Verstehen → Vorbereiten',
       ),
       GuideItem(
         'Lernmodus in der PDF',
         'Folien Seite für Seite durchgehen: alle paar Seiten ein kurzer Zwischen-Check (Abstand unter '
             'Einstellungen → Lernmodus), zu jeder Seite eine Frage stellen oder eine Karte daraus machen.',
-        where: 'Fach → Materialien → PDF öffnen',
+        where: 'Fach → Material → PDF öffnen',
       ),
       GuideItem(
         'Karten erstellen',
         'Die KI erzeugt Konzepte und Karten, je Fakt in den Stufen Leicht, Mittel und Schwer. Den Fragetyp '
             'je Stufe kannst du vorgeben oder der KI überlassen.',
-        where: 'Fach → Nachbereiten',
+        where: 'Fach → Verstehen → Nachbereiten',
       ),
       GuideItem(
         'Fragen aus PDF importieren',
         'Die KI liest ganze Übungsblätter oder Altklausuren und übernimmt jede vorhandene Frage und Aufgabe.',
-        where: 'Fach → Fragen aus PDF importieren',
+        where: 'Fach → Material → Fragen aus PDF importieren',
       ),
       GuideItem(
         'Aufgaben interaktiv machen',
         'Rechenaufgaben, Terminierungen, Stücklisten usw. werden zu Aufgaben, die die App Schritt für Schritt '
             'prüft. Vor dem Speichern kann eine zweite KI die Lösung kontrollieren.',
-        where: 'Fach → Materialien → ⋮ → Interaktive Aufgaben daraus erstellen',
+        where: 'Fach → Material → ⋮ → Interaktive Aufgaben daraus erstellen',
       ),
       GuideItem(
         'Andere KI nutzen',
@@ -154,7 +169,7 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Ampel',
         'Jede Karte ist rot, gelb oder grün. Grün gibt es erst, wenn etwas über mehrere Tage sicher sitzt.',
-        where: 'Fach · Fortschritt',
+        where: 'Fach → Lernen (Lernstand) · Fortschritt',
       ),
       GuideItem(
         'Stufen',
@@ -164,12 +179,12 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Fragen markieren',
         'Unsichere Fragen markieren und später gesammelt ansehen oder visuell erklären lassen.',
-        where: 'Beim Lernen: Lesezeichen-Symbol · Fach → Markierte Fragen',
+        where: 'Beim Lernen: Lesezeichen-Symbol · Fach → Lernen → Markierte Fragen',
       ),
       GuideItem(
         'Üben und Probeklausur',
         'Frei üben unabhängig vom Plan, oder eine Probeklausur mit Zeitlimit und Note.',
-        where: 'Fach → Üben (Lernmodus) · Probeklausur',
+        where: 'Fach → Lernen → Üben · Probeklausur',
       ),
       GuideItem(
         'Der Reihe nach',
@@ -178,7 +193,7 @@ const appGuideChapters = <GuideChapter>[
             'wird übersprungen. „Kann ich schon“ überspringt eine Aufgabe; tippe in der Übersicht eine Aufgabe an, '
             'um dort neu zu starten, oder starte ganz von vorn. Die Reihenfolge lässt sich umschalten: wie im '
             'Dokument oder von leicht nach schwer. Zufällig üben geht weiterhin.',
-        where: 'Fach → Üben → Der Reihe nach · bei einer PDF „… Aufgaben der Reihe nach“ · im PDF oben',
+        where: 'Fach → Lernen → Üben → Der Reihe nach · bei einer PDF „… Aufgaben der Reihe nach“ · im PDF oben',
       ),
       GuideItem(
         'Schwachstellen',
@@ -218,7 +233,7 @@ const appGuideChapters = <GuideChapter>[
         'Aufgaben-Ordner',
         'Aufgaben zum Verstehen, die sich nicht als Quiz abfragen lassen. 20 Tage vor der Klausur wird der '
             'Ordner rot.',
-        where: 'Fach → Aufgaben-Ordner',
+        where: 'Fach → Material → Aufgaben-Ordner',
       ),
       GuideItem(
         'Noch nicht interaktiv',
@@ -237,7 +252,7 @@ const appGuideChapters = <GuideChapter>[
         'Lektion aus Thema oder PDF',
         'Eine Seite, einen Bereich oder die ganze PDF wählen, ausführlich oder kurz, erklärend oder sokratisch '
             '(die KI fragt, du denkst mit).',
-        where: 'Fach → Visuell lernen',
+        where: 'Fach → Verstehen → Visuell lernen',
       ),
       GuideItem(
         'Erst der Text, dann die Bilder',
@@ -251,17 +266,17 @@ const appGuideChapters = <GuideChapter>[
         'Aufgaben visuell lösen',
         'Die KI ordnet die Aufgaben deines Fachs in Typen. Typ antippen, Leicht, Mittel oder Schwer wählen – sie '
             'stellt eine neue Aufgabe und löst sie Schritt für Schritt; gleiche Größen haben überall dieselbe Farbe. '
-            '„Im Gespräch vertiefen“ in jedem Schritt: z.B. „Markier alles mit dem Weg grün und alles mit der Zeit '
-            'rot“ oder „Lass uns das an einem Beispiel durchgehen“.',
-        where: 'Fach → Aufgaben visuell lösen',
+            'Fragen und Wünsche gehen in die KI-Leiste unten (siehe „Die KI-Leiste“): z.B. „Markier alles mit dem '
+            'Weg grün und alles mit der Zeit rot“ oder „Lass uns das an einem Beispiel durchgehen“.',
+        where: 'Fach → Verstehen → Aufgaben visuell lösen',
       ),
       GuideItem(
         'Lernen – erst verstehen, dann lösen',
-        'Kennst du einen Begriff aus der Aufgabe noch gar nicht, tippe in der Aufgabe auf „Lernen“ (oder oben auf '
-            'die Glühbirne). Im Lern-Chat fragst du alles, lässt es dir zeigen und an eigenen Beispielen erklären – '
+        'Kennst du einen Begriff aus der Aufgabe noch gar nicht, wähle in der KI-Leiste „Erst verstehen“ (oder '
+            'tippe oben auf die Glühbirne). Im Lern-Chat fragst du alles, lässt es dir zeigen und an eigenen Beispielen erklären – '
             'die KI verrät die Lösung nicht und drängt nicht. Wenn du bereit bist: „Jetzt lösen“. Das Gespräch '
             'bleibt für später erhalten.',
-        where: 'Aufgabe → Lernen',
+        where: 'Aufgabe → KI-Leiste → Erst verstehen',
       ),
       GuideItem(
         'Animationen und 3D',
@@ -271,12 +286,16 @@ const appGuideChapters = <GuideChapter>[
             'selbst aus der Formel bzw. den Maßen. „In 3D ansehen“ öffnet echtes 3D mit Licht, Schatten und Zoom.',
       ),
       GuideItem(
-        'Live ändern',
-        'Unter jedem Schritt: sag, wie es aussehen soll – „zeig das als Graph“, „noch ein Zwischenschritt beim '
-            'Integrieren“, „markier die Zeit rot“. Der Schritt wird sofort umgebaut, auch in mehrere Schritte; '
-            '„Rückgängig“ holt den alten zurück. „3D-Modell erzeugen“ baut den Schritt als drehbares Modell; ist '
-            'dafür in den Einstellungen ein eigenes (teureres) Modell gewählt, fragt die App vor jeder Nutzung '
-            'nach. Für die ganze Lektion: „Darstellung ändern“. Lädt eine Darstellung nicht, „Neu erzeugen“.',
+        'Die KI-Leiste',
+        'Unten in jeder Lektion sitzt eine Leiste mit drei Arten. „Fragen“: stell eine Frage zum Schritt – die '
+            'Antwort kannst du als eigenen Schritt behalten. „Ändern“: sag, wie es aussehen soll – „zeig das als '
+            'Graph“, „noch ein Zwischenschritt beim Integrieren“, „markier die Zeit rot“; der Schritt wird sofort '
+            'umgebaut, auch in mehrere Schritte, „Rückgängig“ holt den alten zurück. „Als 3D-Modell“ baut ihn als '
+            'drehbares Modell; ist dafür ein eigenes (teureres) Modell gewählt, fragt die App vor jeder Nutzung '
+            'nach. „Ausführlich …“ ändert auch die ganze Lektion. „Erst verstehen“: Begriffe von Grund auf, ohne '
+            'dass die Lösung verraten wird. Der Pfeil klappt die Leiste ein. Oben stehen „Schritt x von n“ und '
+            'ein Fortschrittsbalken. Lädt eine Darstellung nicht: „Neu erzeugen“.',
+        where: 'Lektion → Leiste unten',
       ),
       GuideItem(
         'Lernpfad',
@@ -291,10 +310,10 @@ const appGuideChapters = <GuideChapter>[
       ),
       GuideItem(
         'Antworten behalten',
-        'Eine Antwort auf „Frage zu diesem Schritt“ ist mit dem Schließen weg. „Als Schritt behalten“ legt sie '
+        'Eine Antwort auf deine Frage zum Schritt ist mit dem Schließen weg. „Als Schritt behalten“ legt sie '
             'samt Darstellung als eigenen Schritt in die Lektion – dann musst du sie nicht noch einmal (bezahlt) '
             'erfragen.',
-        where: 'Lektion → Frage zu diesem Schritt',
+        where: 'Lektion → KI-Leiste → Fragen',
       ),
     ],
   ),
@@ -352,7 +371,7 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Versuch anlegen',
         'Aus der Versuchsanleitung: Vorbereitungsfragen, Ablauf und Messungen.',
-        where: 'Fach → Laborversuche',
+        where: 'Fach → Lernen → Laborversuche',
       ),
       GuideItem('Durchführung', 'Messwerte eintragen, Fotos aufnehmen, mit KI rechnen lassen.'),
       GuideItem('Bericht', 'Ein Berichtsentwurf aus deinen Daten, den du anpasst; die KI gibt Rückmeldung.'),
@@ -376,6 +395,16 @@ const appGuideChapters = <GuideChapter>[
             '3D-Modelle. Für 3D wählt die App ohne deine Angabe selbst ein günstiges Modell, das Räumliches gut '
             'kann. Favoriten markieren; Claude, GPT, Gemini usw. sind alle über OpenRouter verfügbar.',
         where: 'Einstellungen → Modelle',
+      ),
+      GuideItem(
+        'Modelle testen',
+        'Neben jeder Modellauswahl steht „Test“: Schick dieselbe Eingabe an bis zu vier Modelle und vergleiche '
+            'die Ergebnisse – mit Dauer und Kosten. Fragen erstellen und visuelle Lektion aus einer kleinen PDF, '
+            'einer Seite deines Materials oder eigenem Text; Erklärung zu einer Frage; Seite abschreiben (Vision); '
+            'Fragen gegenprüfen; 3D-Modell aus deiner Beschreibung. Die Ergebnisse dienen nur dem Vergleich: sie '
+            'bleiben 30 Minuten, mit „Behalten“ dauerhaft – im Lernstoff landet nichts. „Dieses Modell nehmen“ '
+            'stellt es ein. Jeder Test kostet wie eine normale Anfrage.',
+        where: 'Einstellungen → Modelle → Test',
       ),
       GuideItem(
         'Was es kostet',

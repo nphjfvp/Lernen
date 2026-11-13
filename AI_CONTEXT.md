@@ -473,10 +473,10 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 ## 7. Aktueller Stand (Oktober 2026)
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48`. `flutter analyze`
-sauber, 1684 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1703 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
-Umgesetzt sind 114 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
+Umgesetzt sind 116 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
 [docs/AI_HISTORIE.md](docs/AI_HISTORIE.md) (dort per Suche nachschlagen, bevor
 ein Bereich geändert wird). Zuletzt: Web-App über GitHub Pages fürs iPad
 (85–89), Releases nur vom App-Branch (90), KI-Wiederholung bei 429/5xx und
@@ -496,7 +496,9 @@ Befunde und offene Punkte in PROJEKTBERICHT.md,
 Fach-Seite in drei Gruppen, Reihenfolge-Umschalter, eigenes 3D-Modell mit Rückfrage (111),
 KI-Kosten, Lektionen in zwei Stufen, 3D-Bausteine (Fläche, Welle), Handy-Layout geprüft (112),
 Update-Download wird auf Vollständigkeit geprüft (113),
-Antworten behalten statt neu erzeugen, automatisches 3D-Modell (114).
+Antworten behalten statt neu erzeugen, automatisches 3D-Modell (114),
+Design eingebaut: „Weiter lernen“, Fach in drei Reitern, KI-Leiste in der Lektion (115),
+Modell-Tests neben der Modellauswahl (116).
 
 **Aufgaben für den Nutzer bauen** („ins Postfach“, Übungsblatt schicken):
 Skill `.claude/skills/postfach/SKILL.md` befolgen – Postfach-Code nie ins

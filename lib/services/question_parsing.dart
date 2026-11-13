@@ -819,6 +819,10 @@ class QuestionParsing {
     return conceptIdByTitle[normalized];
   }
 
+  /// Die Lösung einer rohen KI-Frage als kurzer Text (für Vorschauen), egal
+  /// welcher Fragetyp; null, wenn keine erkennbar ist.
+  static String? answerPreview(Map<String, dynamic> raw) => _bestAvailableAnswer(canonicalize(raw));
+
   static String? _bestAvailableAnswer(Map<String, dynamic> raw) {
     final back = (raw['back'] ?? '').toString().trim();
     if (back.isNotEmpty) return back;

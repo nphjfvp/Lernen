@@ -10,6 +10,7 @@ import 'package:lernen/repositories/module_repository.dart';
 import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/services/auto_sync_service.dart';
 import 'package:lernen/theme/app_theme.dart';
+import 'package:lernen/ui/settings/model_test_screen.dart';
 import 'package:lernen/ui/settings/settings_screen.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -164,6 +165,45 @@ void main() {
     await tester.tap(find.text('KI entscheidet').last);
     await waitFor(() => settings.settings.pageQuestionTierTypes.isEmpty);
     expect(settings.settings.pageQuestionTierTypes, isEmpty);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Neben jeder Modellauswahl steht „Test“ und öffnet den Modell-Test der Rolle', (tester) async {
+    tester.view.physicalSize = const Size(900, 9000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final settings = SettingsRepository();
+    final auth = AuthRepository();
+    await tester.runAsync(() => settings.update(const AppSettings()));
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: settings),
+        ChangeNotifierProvider.value(value: auth),
+        ChangeNotifierProvider(create: (_) => ModelCatalogRepository()),
+        ChangeNotifierProvider(create: (_) => ModuleRepository()),
+        ChangeNotifierProvider(create: (_) => AutoSyncService(settings: settings, auth: auth)),
+      ],
+      child: MaterialApp(theme: AppTheme.light, home: const Scaffold(body: SettingsScreen())),
+    ));
+    await tester.pump();
+
+    for (final role in ['question', 'help', 'vision', 'crosscheck', 'scene3d']) {
+      expect(find.byKey(ValueKey('model-test-$role')), findsOneWidget, reason: role);
+    }
+
+    // Der Bildschirm liest gespeicherte Ergebnisse – echte Wartezeit nötig.
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('model-test-scene3d')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(ModelTestScreen), findsOneWidget);
+    expect(find.text('Modell testen · 3D-Modelle'), findsOneWidget);
+    expect(find.byKey(const ValueKey('model-test-description')), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
   });

@@ -37,6 +37,8 @@ import '../widgets/question_type_dropdown.dart';
 import '../widgets/update_actions.dart';
 import 'ai_usage_screen.dart';
 import 'model_picker_sheet.dart';
+import 'model_roles.dart';
+import 'model_test_screen.dart';
 import 'sync_backups_dialog.dart';
 import 'sync_cloud_history_dialog.dart';
 import 'sync_code_hint.dart';
@@ -147,25 +149,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) async {
     final picked = await showModelPickerSheet(context, title: title, models: models, selectedId: selectedId);
     if (picked == null || !mounted) return;
-    final repo = context.read<SettingsRepository>();
-    switch (role) {
-      case 'question':
-        await repo.update(repo.settings.copyWith(questionModelId: picked));
-      case 'vision':
-        await repo.update(repo.settings.copyWith(visionModelId: picked));
-      case 'crosscheck':
-        await repo.update(repo.settings.copyWith(crosscheckModelId: picked));
-      case 'scene3d':
-        await repo.update(picked == repo.settings.questionModelId
-            ? repo.settings.copyWith(clearScene3dModel: true)
-            : repo.settings.copyWith(scene3dModelId: picked));
-      case 'help':
-        // Dasselbe wie das Fragen-Modell = "folgt ihm" (ändert sich dann mit).
-        await repo.update(picked == repo.settings.questionModelId
-            ? repo.settings.copyWith(clearHelpModel: true)
-            : repo.settings.copyWith(helpModelId: picked));
-    }
+    await setModelForRole(context.read<SettingsRepository>(), role, picked);
   }
+
+  void _openModelTest(String role) => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => ModelTestScreen(role: role)),
+      );
 
   String _formatRelative(DateTime dt) {
     final diff = DateTime.now().difference(dt);
@@ -842,6 +831,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             sublabel: 'Zusammenfassungen, Konzepte, Karteikarten',
                             selectedId: settings.questionModelId,
                             catalog: catalog,
+                            testKey: 'model-test-question',
+                            onTest: () => _openModelTest('question'),
                             onTap: () => _pickModel(
                               role: 'question',
                               title: 'Modell für Fragenerstellen',
@@ -868,6 +859,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         .read<SettingsRepository>()
                                         .update(settings.copyWith(clearHelpModel: true)),
                                   ),
+                            testKey: 'model-test-help',
+                            onTest: () => _openModelTest('help'),
                             onTap: () => _pickModel(
                               role: 'help',
                               title: 'Modell für Erklärungen & Hilfe',
@@ -881,6 +874,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             sublabel: 'Für gescannte Folien ohne Textebene',
                             selectedId: settings.visionModelId,
                             catalog: catalog,
+                            testKey: 'model-test-vision',
+                            onTest: () => _openModelTest('vision'),
                             onTap: () => _pickModel(
                               role: 'vision',
                               title: 'Vision-Modell',
@@ -894,6 +889,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             sublabel: 'Zweitmeinung zur Prüfung der Ergebnisse',
                             selectedId: settings.crosscheckModelId,
                             catalog: catalog,
+                            testKey: 'model-test-crosscheck',
+                            onTest: () => _openModelTest('crosscheck'),
                             onTap: () => _pickModel(
                               role: 'crosscheck',
                               title: 'Crosscheck-Modell',
@@ -923,6 +920,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         .read<SettingsRepository>()
                                         .update(settings.copyWith(clearScene3dModel: true)),
                                   ),
+                            testKey: 'model-test-scene3d',
+                            onTest: () => _openModelTest('scene3d'),
                             onTap: () => _pickModel(
                               role: 'scene3d',
                               title: 'Modell für 3D-Modelle',
@@ -1655,6 +1654,8 @@ class _ModelSelectorTile extends StatelessWidget {
     required this.selectedId,
     required this.catalog,
     required this.onTap,
+    required this.onTest,
+    required this.testKey,
     this.trailing,
   });
 
@@ -1663,6 +1664,10 @@ class _ModelSelectorTile extends StatelessWidget {
   final String selectedId;
   final ModelCatalogRepository catalog;
   final VoidCallback onTap;
+
+  /// Öffnet den Modell-Test dieser Rolle.
+  final VoidCallback onTest;
+  final String testKey;
   final Widget? trailing;
 
   @override
@@ -1700,6 +1705,16 @@ class _ModelSelectorTile extends StatelessWidget {
               ),
             ),
             ?trailing,
+            TextButton(
+              key: ValueKey(testKey),
+              onPressed: onTest,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                minimumSize: const Size(0, 36),
+              ),
+              child: const Text('Test'),
+            ),
             Icon(Icons.chevron_right_rounded, color: c.inkMuted, size: 18),
           ],
         ),

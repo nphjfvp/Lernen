@@ -1536,3 +1536,43 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     3D-Modell …“), `visual_chat_test`, `visual_learn_test` („Rückfrage behalten …“). Design-Vorschlag
     (nicht eingebaut): Artifact „Lernen – Design-Vorschlag“ – Start mit „Weiter lernen“, Fach mit drei
     Reitern, Lektion mit einer KI-Leiste.
+115. Design-Vorschlag eingebaut. Start: `ContinueLearning.pick` (`lib/services/continue_learning.dart`) wählt
+    das Ziel – jüngste `StudySequenceProgress` mit offenen Aufgaben (`StudySequenceRepository.all()`), sonst
+    Üben im Fach mit der nächsten Klausur; `loadContinueTarget` + `ContinueLearningCard`
+    (`lib/ui/widgets/continue_learning_card.dart`, Keys `continue-title/-detail/-go/-other`); `HomeScreen`
+    (`home-continue`, Schnellzugriffe `home-daily` → Tab Daily Quiz über `onOpenDailyQuiz`, `home-weakness`
+    → `WeaknessScreen`). Fach: `enum ModuleTab { learn, understand, material }`,
+    `ModuleDetailScreen(initialTab:)`, Reiter `module-tabs`/`module-tab-<name>`, Liste `module-list-<tab>`,
+    zuletzt gewählter Reiter je Fach in `_lastTab` (nur im Speicher); Lernen-Reiter mit `_PracticeHero`
+    (`module-practice`, `-sequence`, `-mixed`, `-continue`), `module-sequence-sheet`, Lernstand
+    `module-progress`; `_GroupHeader` entfällt. Lektion: `VisualAiBar` + `enum VisualAiMode { ask, change,
+    learn }` in `visual_lesson_screen.dart` ersetzt `VisualLiveEditBar`, die Knöpfe je Schritt und
+    `_learnCard`; Keys `visual-ai`, `visual-ai-mode-<name>`, `visual-ai-collapse`, `visual-ai-chips`
+    (bewusst `SingleChildScrollView` + `Row`, kein träges `ListView`), Fragen `visual-ask-input`/`visual-ask`/
+    `visual-deepen`, Ändern `visual-live-input`/`-send`/`-chip-<i>`/`visual-live-3d`/`visual-revise`, Erst
+    verstehen `visual-learn-input`/`-send`/`visual-learn`; Art und eingeklappt in `VisualAiBar.mode`/
+    `.collapsed` (static, Tests setzen sie in `setUp` zurück). `VisualAskSheet(initialQuestion:)` sendet eine
+    mitgegebene Frage sofort. Oben `visual-step-count`, `visual-progress`. Tests: `continue_learning_test`,
+    `module_detail_phone_layout_test`, `condense_entry_test` (`initialTab: ModuleTab.material`),
+    `visual_learn_test`, `visual_task_types_test`, `visual_lesson_phone_layout_test`.
+116. Modell-Tests: `ModelTestScreen(role:)` (`lib/ui/settings/model_test_screen.dart`), geöffnet über „Test“
+    in `_ModelSelectorTile` (Keys `model-test-<rolle>`; Rollen `question`, `help`, `vision`, `crosscheck`,
+    `scene3d`, gemeinsame Logik in `lib/ui/settings/model_roles.dart`: `modelForRole`, `setModelForRole`,
+    `modelRoleLabel`). `ModelTestKind` (`lib/models/model_test_result.dart`): `questions`, `lesson`
+    (Rolle question), `explain`, `vision`, `crosscheck`, `scene3d`. `ModelTestRunner.run`
+    (`lib/services/model_test_runner.dart`) ruft die echten Methoden (`generateConceptsAndFlashcards` ohne
+    Chunking, `generateVisualLessons(maxLessons: 1, staged: Einstellung)`, `explainAnswer`,
+    `transcribePdfPages`, `crosscheckConceptsAndFlashcards`, `drawVisualScene` mit Ein-Schritt-Lektion und
+    `kind: 3d`), misst Dauer und sammelt Verbrauch über das neue `AiService.usageListener` (je Instanz,
+    zusätzlich zu `onUsage`; ohne gemeldete Kosten Schätzung aus dem Listenpreis). Fehler werden zum Ergebnis
+    (`ModelTestResult.error`). Eingabe `ModelTestInput` (höchstens 12.000 Zeichen, `key` = Hash für „gleiche
+    Eingabe“): PDF hochladen (`pickFileHook` für Tests), Seite aus Material (PDF-Bytes über
+    `MaterialFileStore.load`, sonst `extractedText`), eigener Text; Seitenwahl, „Alle Seiten“ bis 6 Seiten;
+    Vision bekommt die Seite(n) als PDF (`PdfService.extractPages`). Gegenprüfen nimmt die jüngsten
+    „Fragen erstellen“-Ergebnisse mit gleichem `inputKey`, sonst erzeugt das Fragen-Modell sie zuerst.
+    Ablage `ModelTestRepository` (Store `model_tests`, lokal, nicht im Sync): `all(kind:)` löscht
+    Abgelaufenes (`ModelTestResult.keepFor` = 30 Min., `pinned` = dauerhaft), `setPinned`, `delete`,
+    `clear`. Ergebnis-Karte: Kennzahlen `model-test-stats-<id>`, `model-test-pin-/-delete-/-use-<id>`,
+    Lektion über `ModelTestLessonPreview`. `QuestionParsing.answerPreview` neu. Nicht gegen echte Modelle
+    getestet. Tests: `model_test_runner_test`, `model_test_screen_test`,
+    `settings_screen_theme_skin_test` („Neben jeder Modellauswahl …“).

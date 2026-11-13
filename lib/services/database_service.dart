@@ -64,4 +64,8 @@ class DatabaseService {
   /// einzeln und Summen je Tag und Modell. Nicht synchronisiert.
   static final aiUsage = stringMapStoreFactory.store('ai_usage');
   static final aiUsageTotals = stringMapStoreFactory.store('ai_usage_totals');
+
+  /// Ergebnisse der Modell-Tests (siehe ModelTestRepository) – nur zum
+  /// Vergleichen, nur auf diesem Gerät.
+  static final modelTests = stringMapStoreFactory.store('model_tests');
 }

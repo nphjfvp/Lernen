@@ -117,13 +117,14 @@ Schrift). Daran würde ich nichts Grundsätzliches ändern.
 
 1. **Kostenanzeige** – **umgesetzt** (Einstellungen → KI-Kosten: heute, Monat,
    gesamt, je Modell, letzte Anfragen einzeln).
-2. **Ein Einstieg „Weiter lernen“**, der selbst entscheidet: fällige Karten,
-   sonst die angefangene Reihe, sonst die nächste Einheit. Offen.
-3. **Ein gemeinsames KI-Fenster in der Lektion** statt fünf Knöpfen, mit den
-   Arten „Fragen“, „Ändern“, „Erst verstehen“. Offen.
+2. **Ein Einstieg „Weiter lernen“** – **umgesetzt**: die Karte oben auf der
+   Startseite setzt die angefangene Reihe fort, sonst schlägt sie Üben im
+   Fach mit der nächsten Klausur vor.
+3. **Ein gemeinsames KI-Fenster in der Lektion** – **umgesetzt** als
+   KI-Leiste mit den Arten „Fragen“, „Ändern“, „Erst verstehen“.
 4. **Lektionen in zwei Stufen** – **umgesetzt** (siehe 2.5).
 
-**Fach-Seite** (nach deinem Ja umgesetzt): drei Gruppen mit Überschrift –
+**Fach-Seite** (nach deinem Ja umgesetzt, inzwischen als drei Reiter): drei Gruppen –
 **Lernen** (Üben, Probeklausur, Markierte Fragen), **Verstehen** (Vorbereiten,
 Nachbereiten, Visuell lernen, Aufgaben visuell lösen, Fragen stellen),
 **Material** (Import, Zusammenfassungen, Konzepte, Karten, Einheiten, Dateien)
@@ -242,14 +243,16 @@ wählt, ist ungetestet – ich konnte von hier kein Modell aufrufen.
 
 ## 6. Reihenfolge, die ich empfehle
 
-1. **Mit deinem Key ausprobieren** – das kann nur du: eine Lektion in zwei
+1. **Mit deinem Key ausprobieren** – das kann nur du (am einfachsten über
+   Einstellungen → Modelle → **Test**, dort stehen Ergebnis, Dauer und Kosten
+   mehrerer Modelle nebeneinander): eine Lektion in zwei
    Stufen erzeugen (kommen die Szenen, passen sie zusammen?), dasselbe einmal
    mit ausgeschalteter Einstellung zum Vergleich, eine Aufgabe mit
    Tangentialebene (nimmt die KI die Fläche?) und ein Übungsblatt mit vielen
    Aufgaben (kommt der Abschneide-Hinweis?). Danach in „KI-Kosten“ nachsehen,
    was es gekostet hat.
 2. „Aufgaben visuell lösen“ absichern (KI-gerechnete Lösungen kennzeichnen).
-3. Einstieg „Weiter lernen“ und ein gemeinsames KI-Fenster in der Lektion.
+3. Einstieg „Weiter lernen“ und ein gemeinsames KI-Fenster in der Lektion – **erledigt**.
 4. Prüfsatz für Prompts – danach erst an Wortlaut und JSON-Modus gehen.
 
 ## 7. Entscheidungen – Stand nach deiner Rückmeldung

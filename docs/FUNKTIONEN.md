@@ -576,6 +576,26 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Tangentialebene, Gradient, Kurve auf der Fläche) und `shaft` (Welle/Achse aus
   Abschnitten mit Lagern, Kräften, markierten Querschnitten). Ergänzt die freie
   Szene, ersetzt sie nicht.
+- **Weiter lernen** (`lib/services/continue_learning.dart`,
+  `lib/ui/widgets/continue_learning_card.dart`) – die Karte oben auf der
+  Startseite setzt die zuletzt angefangene Reihe fort, sonst schlägt sie Üben
+  im Fach mit der nächsten Klausur vor; daneben Schnellzugriffe auf Daily Quiz
+  und Schwachstellen.
+- **Fach in drei Reitern** (`ModuleTab` in
+  `lib/ui/modules/module_detail_screen.dart`) – Lernen, Verstehen, Material;
+  der zuletzt gewählte Reiter bleibt je Fach.
+- **KI-Leiste in der Lektion** (`VisualAiBar` in
+  `lib/ui/visual/visual_lesson_screen.dart`) – ein Eingabefeld mit den Arten
+  Fragen, Ändern und Erst verstehen statt mehrerer Knöpfe je Schritt;
+  einklappbar, mit Vorschlägen je Art.
+- **Modelle testen** (`lib/ui/settings/model_test_screen.dart`,
+  `ModelTestRunner`, `ModelTestRepository`) – „Test“ neben jeder
+  Modellauswahl: dieselbe Eingabe an bis zu vier Modelle, Ergebnisse mit
+  Dauer und Kosten untereinander. Fragen erstellen und visuelle Lektion (aus
+  kleiner PDF, einer Materialseite oder Text), Erklärung, Seite abschreiben,
+  Fragen gegenprüfen, 3D-Modell aus einer Beschreibung. Ergebnisse bleiben 30
+  Minuten oder mit „Behalten“ dauerhaft, nur auf dem Gerät und nur zum
+  Vergleichen; „Dieses Modell nehmen“ stellt es ein.
 - **BYOK** – die KI läuft über [OpenRouter](https://openrouter.ai) mit einem
   selbst mitgebrachten API-Key. Es gibt keinen App-eigenen Server; Anfragen
   gehen direkt vom Gerät an OpenRouter. Der Modell-Katalog wird live von

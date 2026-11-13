@@ -1,8 +1,58 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 6z) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7b) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7b. Modelle testen, bevor man sich festlegt
+
+- **„Test“ neben jeder Modellauswahl** (Einstellungen → Modelle): Dieselbe
+  Eingabe geht an bis zu vier Modelle gleichzeitig, die Ergebnisse stehen
+  untereinander – mit **Dauer, Kosten und Tokens** je Modell.
+- **Was sich testen lässt** (je Rolle):
+  - *Fragenerstellen* – **Fragen erstellen** und **Visuelle Lektion** aus
+    einer kleinen PDF (hochladen), einer Seite deines vorhandenen Materials
+    oder eigenem Text. Bei einer PDF wählst du die Seite; bis sechs Seiten
+    geht auch das ganze Dokument. Die Lektion lässt sich mit allen
+    Darstellungen durchsehen.
+  - *Erklärungen & Hilfe* – **Erklärung** zu einer Frage (mit „Beispiel
+    einsetzen“).
+  - *Vision* – **Seite abschreiben** (die Seite geht als PDF ans Modell).
+  - *Crosscheck* – **Fragen gegenprüfen**: geprüft werden die Fragen, die
+    zuletzt im Test „Fragen erstellen“ aus derselben Eingabe entstanden; gibt
+    es keine, erstellt sie zuerst das Fragen-Modell.
+  - *3D-Modelle* – **3D-Modell** aus deiner Beschreibung, drehbar.
+- **Nur zum Vergleichen:** Ein Ergebnis bleibt **30 Minuten**, mit
+  „Behalten“ dauerhaft; „Alle löschen“ räumt auf. Nichts davon landet bei
+  Karten, Lektionen oder im Sync. Auch ein gescheiterter Test bleibt als
+  Ergebnis sichtbar.
+- **„Dieses Modell nehmen“** stellt das Modell für die Rolle ein.
+- Jeder Test kostet wie eine normale Anfrage und zählt in „KI-Kosten“ mit.
+- Nicht gegen echte Modelle getestet – von hier ist kein Aufruf möglich.
+
+### 7a. Neues Design eingebaut: Weiter lernen, Fach in drei Reitern, eine KI-Leiste
+
+- **Startseite:** Ganz oben die Karte **„Weiter lernen“**. Sie setzt die
+  zuletzt angefangene Reihe („Der Reihe nach“) an der nächsten offenen
+  Aufgabe fort; gibt es keine, schlägt sie Üben im Fach mit der nächsten
+  Klausur vor. Darunter Schnellzugriffe auf **Daily Quiz** und
+  **Schwachstellen**, dann alle Fächer.
+- **Fach-Seite:** Drei Reiter statt einer langen Liste – **Lernen** (Üben
+  mit „Der Reihe nach“/„Gemischt“/„Weiter“, Probeklausur, markierte Fragen,
+  Lernstand, Labor), **Verstehen** (Vorbereiten, Nachbereiten, Visuell
+  lernen, Aufgaben visuell lösen, Fragen stellen), **Material** (Dateien,
+  Import, Zusammenfassungen, Konzepte, Karten, Einheiten). Der zuletzt
+  gewählte Reiter bleibt je Fach; unter dem Namen steht, in wie vielen Tagen
+  die Klausur ist.
+- **Lektion:** **Eine KI-Leiste** unten ersetzt die drei Knöpfe unter jedem
+  Schritt, die Zeile „Live ändern“ und die „Lernen“-Karte. Drei Arten:
+  **Fragen** (Antwort lässt sich als Schritt behalten), **Ändern** (Schritt
+  sofort umbauen, „Als 3D-Modell“, „Ausführlich …“ für die ganze Lektion),
+  **Erst verstehen** (Lern-Chat ohne Lösungsverrat). Die Leiste lässt sich
+  einklappen. Oben stehen „Schritt x von n“ und ein Fortschrittsbalken.
+- **Abweichungen vom Entwurf:** Die Seiten-Chips zum Springen zwischen den
+  Schritten sind geblieben (zusätzlich zu Zähler und Balken), und die
+  KI-Leiste ist einklappbar, damit die Darstellung mehr Platz bekommt.
 
 ### 6z. Bezahlte 3D-Antworten bleiben erhalten, besseres Standard-Modell für 3D
 

@@ -50,13 +50,16 @@ Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführu
   erklärend oder sokratisch, aus PDFs, Fragen oder frei im Chat; Lernpfad für
   ein ganzes Semester. **Aufgaben visuell lösen**: Aufgabentyp und Stufe
   wählen, die KI stellt eine neue Aufgabe und löst sie Schritt für Schritt –
-  Größen farbig markiert, in jedem Schritt im Gespräch nachfragen oder **live
-  ändern** („zeig das als Graph“, „noch ein Zwischenschritt“). Mit **„Lernen“**
-  erst in Ruhe über Begriffe und Konzepte chatten, dann lösen. Flächen
+  Größen farbig markiert. Eine **KI-Leiste** in jeder Lektion: **Fragen**,
+  **Ändern** („zeig das als Graph“, „noch ein Zwischenschritt“) oder **Erst
+  verstehen** (in Ruhe über Begriffe chatten, dann lösen). Flächen
   z = f(x, y) (Tangentialebene, Gradient, Extrema) und Wellen mit Absätzen
   rechnet die App selbst aus Formel bzw. Maßen.
 - **KI-Kosten im Blick**: was jede Anfrage gekostet hat – heute, im Monat, je
-  Modell.
+  Modell. **Modelle testen**: dieselbe Eingabe an mehrere Modelle schicken und
+  Ergebnis, Dauer und Kosten vergleichen, bevor man sich festlegt.
+- **Weiter lernen**: Die Startseite weiß, wo du zuletzt warst; jedes Fach hat
+  die Reiter Lernen, Verstehen und Material.
 - **Labor**: Vorbereitung, Durchführung mit Fotos, Berichtsentwurf.
 - **Geräte**: Cloud-Sync (Konto), eigener PDF-Speicher, Sicherungen, Export.
 - **Claude-Postfach**: Claude baut in einer Claude-Code-Sitzung Aufgaben aus
