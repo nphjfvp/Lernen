@@ -48,6 +48,8 @@ Eine Führung durch alles gibt es in der App unter **Einstellungen → Einführu
   Stücklisten und Skizzen.
 - **Visuell lernen**: Lektionen mit Animationen (2D und 3D, wo nötig – auch als
   echtes 3D zum Drehen und Zoomen),
+  **Vorrechnen lassen** an der Tafel (grob, regulär, fein – jede Umformung
+  farbig sichtbar, Regeln, Fragen je Schritt, simulierter Taschenrechner),
   erklärend oder sokratisch, aus PDFs, Fragen oder frei im Chat; Lernpfad für
   ein ganzes Semester. **Aufgaben visuell lösen**: Aufgabentyp und Stufe
   wählen, die KI stellt eine neue Aufgabe und löst sie Schritt für Schritt –

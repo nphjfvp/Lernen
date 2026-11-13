@@ -23,6 +23,7 @@ import '../models/step_task.dart';
 import '../models/step_task_review.dart';
 import '../models/task_verification.dart';
 import '../models/visual_lesson.dart';
+import '../models/worked_solution.dart';
 import '../models/visual_task_type.dart';
 import 'calc_engine.dart';
 import 'calc_plan.dart';
@@ -3173,6 +3174,166 @@ Antworte in der Sprache der Vorlage.
       fix: '${json['fix'] ?? ''}'.trim(),
     );
   }
+
+  /// Rechnet eine Aufgabe an der Tafel vor ([WorkedSolution]): jede
+  /// Umformung mit Markierungen (\add, \del, \focus), Regeln benannt, auf
+  /// Wunsch mit Tastenfolgen für den Taschenrechner. [detail] grob/regulär/
+  /// fein, [reference] eine vorhandene Musterlösung (Weg und Ergebnis daran
+  /// ausrichten), [image] ein Aufgabenbild (Vision-Modell nötig).
+  Future<Map<String, dynamic>> solveWorked({
+    required String problem,
+    required WorkDetail detail,
+    String reference = '',
+    bool calculator = true,
+    Uint8List? image,
+  }) async {
+    if (problem.trim().isEmpty && image == null) throw AiServiceException('Gib zuerst die Aufgabe ein.');
+    final text = StringBuffer()
+      ..writeln('Detailgrad: ${switch (detail) {
+        WorkDetail.coarse => 'grob – nur die Hauptschritte (etwa 3–8 Schritte), Zwischenrechnungen zusammengefasst',
+        WorkDetail.normal => 'regulär – jede Umformung ein eigener Schritt (etwa 6–15 Schritte)',
+        WorkDetail.fine =>
+          'fein – jede kleinste Operation ein eigener Schritt (auch 6·8 = 48, Klammer auflösen, Vorzeichen), jede Regel '
+              'benannt und mit Formel, Erklärungen ausführlicher (gern 12–35 Schritte)',
+      }}')
+      ..writeln(calculator
+          ? 'Taschenrechner: ja – gib "calc" an, wo man ihn in einer Prüfung benutzen würde (Zahlenwerte, Kontrolle).'
+          : 'Taschenrechner: nein – kein "calc".')
+      ..writeln()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(problem.trim().isEmpty ? '(siehe Bild)' : problem.trim(), 6000));
+    if (reference.trim().isNotEmpty) {
+      text
+        ..writeln()
+        ..writeln('Vorhandene Musterlösung (Weg und Ergebnis daran ausrichten, aber ausführlicher vorrechnen):')
+        ..writeln(_cap(reference.trim(), 6000));
+    }
+    final Object content = image == null
+        ? text.toString()
+        : [
+            {'type': 'text', 'text': '$text\nDas Aufgabenbild folgt.'},
+            {
+              'type': 'image_url',
+              'image_url': {'url': 'data:${_imageMime(image)};base64,${base64Encode(image)}'},
+            },
+          ];
+    final raw = await _complete(_workedSystemPrompt, content, temperature: 0.2);
+    final json = await _json(raw);
+    final steps = json['steps'] ?? json['schritte'];
+    if (steps is! List || steps.isEmpty) {
+      throw AiServiceException('Die KI hat keine Schritte geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return json;
+  }
+
+  /// Teilt EINEN vorgerechneten Schritt in feinere Teilschritte auf („Diesen
+  /// Schritt genauer“) – gleiche Form wie bei [solveWorked], Rückgabe die
+  /// rohen Schritt-Objekte. Der erste Teilschritt beginnt mit dem "from" bzw.
+  /// der vorigen Zeile, der letzte endet mit demselben "to".
+  Future<List<dynamic>> refineWorkedStep({
+    required String problem,
+    required String before,
+    required Map<String, dynamic> step,
+    bool calculator = true,
+  }) async {
+    final text = StringBuffer()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(problem.trim(), 4000))
+      ..writeln()
+      ..writeln('Zeile an der Tafel vor dem Schritt: ${_cap(before, 800)}')
+      ..writeln('Dieser Schritt soll feiner werden (JSON):')
+      ..writeln(_cap(jsonEncode(step), 4000))
+      ..writeln()
+      ..writeln('Zerlege GENAU diesen Schritt in 2–8 kleinere Schritte – jede einzelne Operation sichtbar, Regeln mit Formel. '
+          'Der letzte Teilschritt endet mit derselben Zeile wie "to" des Schritts.')
+      ..writeln(calculator ? 'Taschenrechner erlaubt.' : 'Kein "calc".')
+      ..writeln('Antworte NUR mit JSON: {"steps": [...]}');
+    final raw = await _complete(_workedSystemPrompt, text.toString(), temperature: 0.2);
+    final json = await _json(raw);
+    final steps = json['steps'] ?? json['schritte'];
+    if (steps is! List || steps.isEmpty) {
+      throw AiServiceException('Die KI hat den Schritt nicht aufgeteilt – bitte erneut versuchen.', rawResponse: raw);
+    }
+    return steps;
+  }
+
+  /// Frage zu einem vorgerechneten Schritt (oder „Herleitung“ einer Regel) –
+  /// Antwort als Text mit $…$.
+  Future<String> discussWorkedStep({
+    required String problem,
+    required List<String> boardSoFar,
+    required String stepTitle,
+    required String stepText,
+    String rule = '',
+    List<({bool user, String text})> history = const [],
+    required String question,
+  }) async {
+    if (question.trim().isEmpty) throw AiServiceException('Stell eine Frage zu diesem Schritt.');
+    final buffer = StringBuffer()
+      ..writeln('Aufgabe:')
+      ..writeln(_cap(problem.trim(), 4000))
+      ..writeln()
+      ..writeln('Bisher an der Tafel (LaTeX):');
+    for (final l in boardSoFar.length > 14 ? boardSoFar.sublist(boardSoFar.length - 14) : boardSoFar) {
+      buffer.writeln('  $l');
+    }
+    buffer
+      ..writeln()
+      ..writeln('Aktueller Schritt: $stepTitle')
+      ..writeln(_cap(stepText, 2000));
+    if (rule.isNotEmpty) buffer.writeln('Benutzte Regel: $rule');
+    if (history.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Bisheriges Gespräch:');
+      for (final m in history.length > 12 ? history.sublist(history.length - 12) : history) {
+        buffer.writeln('${m.user ? 'Person' : 'Du'}: ${_cap(m.text, 1500)}');
+      }
+    }
+    buffer
+      ..writeln()
+      ..writeln('Frage: ${_cap(question.trim(), 3000)}');
+    final raw = await _complete(_workedDiscussSystemPrompt, buffer.toString(), temperature: 0.3);
+    final out = raw.trim();
+    if (out.isEmpty) throw AiServiceException('Die KI hat nicht geantwortet – bitte erneut versuchen.');
+    return out;
+  }
+
+  static const _workedDiscussSystemPrompt = r"""
+Du bist ein geduldiger Mathe-Tutor in einer Lern-App. Eine Aufgabe wird gerade Schritt für Schritt an der Tafel vorgerechnet; die Person fragt zum aktuellen Schritt nach.
+- Beantworte genau die Frage, verständlich, Du-Form, Deutsch. Formeln in LaTeX mit $…$ (abgesetzt $$…$$).
+- Bei „Herleitung“: leite die Regel bzw. den Schritt Schritt für Schritt her (z.B. ln(a^b) = b·ln(a) aus e^{b·ln a} = (e^{ln a})^b = a^b), mit kurzer Begründung je Zeile, und zeig ein kleines Zahlenbeispiel.
+- Bei „Warum?“: erkläre die Idee dahinter, nicht nur die Rechnung.
+- Antworte als reiner Text (kein JSON).""";
+
+  static const _workedSystemPrompt = r"""
+Du rechnest in einer Lern-App eine Aufgabe Schritt für Schritt an der Tafel vor – so, dass man JEDE Veränderung sieht und versteht.
+
+Jeder Schritt ist ein Objekt in "steps":
+- "title": kurze Überschrift, z.B. „5x auf beiden Seiten abziehen“, „Logarithmusgesetz anwenden“.
+- "say": Erklärung (Du-Form, Deutsch, 1–3 Sätze, beim feinen Detailgrad ausführlicher): WAS passiert und WARUM. Formeln darin mit $…$.
+- "from": die vollständige Zeile VOR dem Schritt (LaTeX ohne $). Leer lassen, wenn sie genau das "to" des vorigen Schritts ist. Im ERSTEN Schritt immer angeben (die Ausgangsgleichung bzw. der Ausgangsterm).
+- "op": nur bei Äquivalenzumformungen einer Gleichung: die Operation, die man rechts daneben schreibt (ohne Strich), z.B. "-5x", "+3", ":2", "\cdot 4", "(\ldots)^2", "e^{(\ldots)}". Sonst weglassen.
+- "work": die Zeile WÄHREND des Schritts mit Markierungen (LaTeX):
+    \add{…}   = was neu dazukommt (wird grün), z.B. links das neu geschriebene -5x,
+    \del{…}   = was wegfällt oder sich aufhebt (wird rot durchgestrichen), z.B. rechts 5x und -5x,
+    \focus{…} = der Teil, an dem gerade gearbeitet wird (wird blau), z.B. \focus{\ln\left((48x+6)^2\right)}.
+  Beispiel: 3x + 2 = 5x - 4 mit "op": "-5x" → "work": "3x + 2 \add{- 5x} = \del{5x} - 4 \del{- 5x}" (links kommt -5x grün dazu, rechts heben sich 5x und -5x rot auf) → "to": "-2x + 2 = -4".
+  Beispiel Regel: "work": "\focus{\ln\left((48x+6)^2\right)} = 10", "to": "\focus{2\ln(48x+6)} = 10" mit "rule".
+  Weglassen, wenn es nichts zu markieren gibt.
+- "to": die vollständige Zeile NACH dem Schritt (LaTeX); das Neue darf mit \focus{…} markiert sein. Leer nur bei reinen Hinweis-Schritten ohne neue Zeile.
+- "rule" (wenn eine Regel benutzt wird): {"name": "Logarithmusgesetz", "formula": "\ln(a^b) = b \cdot \ln(a)"}.
+- "calc" (nur wenn erlaubt und sinnvoll): {"keys": [...], "input": "Eingabe wie im Display (LaTeX)", "expr": "dieselbe Rechnung in Eingabe-Schreibweise, z.B. 2*ln(102)", "result": "Ergebnis wie im Display (LaTeX, Bruch oder Dezimalzahl)", "note": "kurzer Hinweis zur Bedienung"}.
+  Tastennamen (fx-991DE X, GENAU diese): SHIFT ALPHA MENU ON OPTN CALC INT X UP DOWN LEFT RIGHT FRAC SQRT SQ POW LOG LN NEG DMS INV SIN COS TAN STO ENG LPAR RPAR SD MPLUS 0 1 2 3 4 5 6 7 8 9 DOT DEL AC MUL DIV ADD SUB EXP10 ANS EQ.
+  Zweitfunktionen: SHIFT davor (SHIFT LN = e^▫, SHIFT LOG = 10^▫, SHIFT SQRT = ∛, SHIFT SQ = x³, SHIFT POW = ▫√▫, SHIFT INV = x!, SHIFT SIN = sin⁻¹, SHIFT EXP10 = π, SHIFT CALC = SOLVE, SHIFT INT = d/dx, SHIFT EQ = Dezimalergebnis); ALPHA EXP10 = e, ALPHA CALC = Gleichheitszeichen in einer Gleichung, ALPHA RPAR = X.
+  Vorlagen: Bruch FRAC Zähler DOWN Nenner RIGHT; Potenz POW Exponent RIGHT; Wurzel SQRT Inhalt RIGHT; ln/log/sin öffnen eine Klammer (LN 1 0 2 RPAR). Mit AC beginnen.
+
+Regeln:
+- Mathematisch korrekt rechnen. Bei Gleichungen jede Umformung auf BEIDEN Seiten sichtbar machen.
+- Jede Zeile vollständig (ganze Gleichung bzw. ganzer Term). Zeilen, die eine Termumformung fortsetzen, beginnen mit "=" (z.B. "= 2\ln(48x+6)").
+- Keine ganzen Sätze in den Zeilen – Erklärungen gehören in "say".
+- Am Ende "answer": das Endergebnis (LaTeX) und "title": kurzer Titel der Aufgabe.
+Antworte NUR mit JSON (in JSON jeden Backslash verdoppeln): {"title": "...", "steps": [...], "answer": "..."}""";
 
   /// Liest EINE handgeschriebene Zeile vom Stift-Blatt („Selbst rechnen“
   /// mit Stift) und schreibt sie wörtlich in die Eingabe-Schreibweise der App

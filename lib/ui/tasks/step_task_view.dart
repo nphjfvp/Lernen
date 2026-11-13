@@ -25,6 +25,7 @@ import 'ink_sheet.dart';
 import 'math_input_field.dart';
 import 'paper_check_screen.dart';
 import 'step_line_chat.dart';
+import '../visual/worked_solution_screen.dart';
 
 /// Fortschritt eines Schritts.
 class _StepProgress {
@@ -162,6 +163,9 @@ class _StepTaskViewState extends State<StepTaskView> {
   bool _writeSolved = false;
   bool _writeRevealed = false;
 
+  /// Vor dem Lösen vorrechnen lassen – zählt wie eine aufgedeckte Lösung.
+  bool _watched = false;
+
   /// Ergebnis einer Foto-Prüfung, falls der Nutzer von dort bewertet hat.
   Grade? _paperGrade;
 
@@ -175,7 +179,7 @@ class _StepTaskViewState extends State<StepTaskView> {
         _Mode.result => _resultSolved || _resultRevealed,
       };
 
-  bool get _anyRevealed => _gaveUp || _resultRevealed || _writeRevealed || _progress.any((p) => p.revealed);
+  bool get _anyRevealed => _gaveUp || _watched || _resultRevealed || _writeRevealed || _progress.any((p) => p.revealed);
   int get _wrongTotal => _progress.fold(0, (n, p) => n + p.wrong) + _resultWrong + _writeWrong;
 
   StepField? get _finalField => widget.task.finalField;
@@ -469,7 +473,6 @@ class _StepTaskViewState extends State<StepTaskView> {
   // -------------------------------------------------------------------------
   // Selbst rechnen mit Stift
   // -------------------------------------------------------------------------
-
 
   InkCell? _cellOf(TextEditingController c) {
     for (final e in _inkLines.entries) {
@@ -791,6 +794,32 @@ class _StepTaskViewState extends State<StepTaskView> {
         widget.onWrongAnswer?.call(field, answer);
       }
     });
+  }
+
+  /// „Vorrechnen lassen“: die Aufgabe an der Tafel Schritt für Schritt –
+  /// vor dem Lösen zählt das wie eine aufgedeckte Lösung.
+  Future<void> _openWorked() async {
+    final before = _finished;
+    final image =
+        _editedImage ??
+        (_imageRemoved || widget.card.imageBase64 == null ? null : base64Decode(widget.card.imageBase64!));
+    final steps = [
+      for (final (i, s) in widget.task.steps.indexed)
+        '${i + 1}. ${s.title}${s.resultText.isEmpty ? '' : ': ${s.resultText}'}',
+    ].join('\n');
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WorkedSolutionScreen(
+          moduleId: widget.card.moduleId,
+          problem: widget.card.front,
+          reference: [if (widget.card.back.trim().isNotEmpty) widget.card.back.trim(), steps].join('\n\n'),
+          image: image,
+          cardId: widget.card.id,
+        ),
+      ),
+    );
+    if (!mounted || before) return;
+    setState(() => _watched = true);
   }
 
   Future<void> _openPaperCheck({List<String>? typedLines, List<Uint8List>? images}) async {
@@ -1829,6 +1858,16 @@ class _StepTaskViewState extends State<StepTaskView> {
           icon: const Icon(Icons.photo_camera_outlined, size: 18),
           label: const Text('Auf Papier gerechnet? Foto prüfen lassen'),
         ),
+      if (_aiAvailable && !widget.examMode)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: OutlinedButton.icon(
+            key: const ValueKey('step-worked'),
+            onPressed: _openWorked,
+            icon: const Icon(Icons.functions, size: 18),
+            label: const Text('Vorrechnen lassen (zählt als aufgedeckt)'),
+          ),
+        ),
       if (widget.onSkip != null || widget.canGiveUp)
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1902,6 +1941,16 @@ class _StepTaskViewState extends State<StepTaskView> {
         Padding(
           padding: const EdgeInsets.only(top: 10),
           child: ProbeCard(report: probe),
+        ),
+      if (!widget.examMode && _aiAvailable)
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: OutlinedButton.icon(
+            key: const ValueKey('step-worked-finished'),
+            onPressed: _openWorked,
+            icon: const Icon(Icons.functions, size: 18),
+            label: const Text('Schritt für Schritt vorrechnen lassen'),
+          ),
         ),
       if (!widget.examMode && _aiAvailable)
         ExplainChat(

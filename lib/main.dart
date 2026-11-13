@@ -20,6 +20,7 @@ import 'repositories/model_catalog_repository.dart';
 import 'repositories/module_repository.dart';
 import 'repositories/settings_repository.dart';
 import 'repositories/visual_chat_repository.dart';
+import 'repositories/worked_solution_repository.dart';
 import 'repositories/visual_course_repository.dart';
 import 'repositories/visual_lesson_repository.dart';
 import 'repositories/summary_repository.dart';
@@ -149,6 +150,7 @@ class LernenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CardFlagRepository()),
         ChangeNotifierProvider(create: (_) => VisualCourseRepository()),
         ChangeNotifierProvider(create: (_) => VisualChatRepository()),
+        ChangeNotifierProvider(create: (_) => WorkedSolutionRepository()),
         ChangeNotifierProvider.value(value: settingsRepository),
         ChangeNotifierProvider(
           create: (_) {

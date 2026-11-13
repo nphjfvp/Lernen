@@ -25,6 +25,7 @@ import '../widgets/safe_set_state.dart';
 import 'visual_chat_screen.dart';
 import 'visual_course_screen.dart';
 import 'visual_lesson_screen.dart';
+import 'worked_solution_screen.dart';
 
 /// Welcher Teil einer PDF erklärt wird.
 enum VisualScope { page, range, all }
@@ -528,6 +529,12 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
     if (mounted) await _load();
   }
 
+  Future<void> _openWorked() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => WorkedSolutionScreen(moduleId: widget.moduleId)));
+    if (mounted) await _load();
+  }
+
   Future<void> _openCourse(VisualCourse course) async {
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => VisualCourseScreen(course: course)));
     if (mounted) await _load();
@@ -673,6 +680,15 @@ class _VisualLearnScreenState extends State<VisualLearnScreen> with SafeSetState
                     ),
                   const SizedBox(height: 22),
                 ],
+                Text('Aufgabe vorrechnen lassen', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                FilledButton.tonalIcon(
+                  key: const ValueKey('visual-worked-open'),
+                  onPressed: _busy ? null : _openWorked,
+                  icon: const Icon(Icons.functions),
+                  label: const Text('Schritt für Schritt an der Tafel – grob, regulär oder fein, mit Taschenrechner'),
+                ),
+                const SizedBox(height: 22),
                 if (context.read<VisualCourseRepository?>() != null) ...[
                   Text('Lernpfade', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 6),

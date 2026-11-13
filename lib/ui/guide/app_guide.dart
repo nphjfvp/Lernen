@@ -332,6 +332,17 @@ const appGuideChapters = <GuideChapter>[
         where: 'Visuell lernen → Lernpfad erstellen',
       ),
       GuideItem(
+        'Vorrechnen lassen',
+        'Die KI rechnet eine Aufgabe an der Tafel vor – grob, regulär oder fein. Du siehst jede Umformung: rechts '
+            'neben der Gleichung, was auf beiden Seiten passiert („| −5x“), was dazukommt (grün), was wegfällt (rot '
+            'durchgestrichen), woran gerade gearbeitet wird (blau), und welche Regel gilt (z.B. ln(a²) = 2·ln a). '
+            'Mit „Weiter“ gehst du Takt für Takt, ▶ spielt automatisch ab. Zu jedem Schritt: Frage stellen, '
+            'Herleitung, „Diesen Schritt genauer“. Daneben (am Handy darunter) drückt die App die Tasten eines '
+            'Taschenrechners mit der Tastenbelegung des fx-991DE X, und das Display zeigt mit. Auch aus jeder '
+            'Rechenweg-Aufgabe heraus – vor dem Lösen zählt das als aufgedeckt. Vorgerechnetes bleibt gespeichert.',
+        where: 'Visuell lernen → Aufgabe vorrechnen lassen',
+      ),
+      GuideItem(
         'Frei fragen',
         'Ohne PDF einfach fragen – die KI erklärt mit Bildern im Chat. „Als Lektion speichern“ übernimmt genau '
             'die Antworten und Darstellungen, die du siehst – ohne neue Anfrage.',

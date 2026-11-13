@@ -1646,3 +1646,23 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Antworten per Version verworfen, `_inkUnsure` als helperText; Fehler/ohne Key `step-ink-error`.
     `PaperCheckScreen(initialImages:)` prüft das ganze Blatt sofort. Tests: `line_chain_test`, `step_ink_test`,
     `step_task_view_test`, `step_write_review_test`.
+120. Vorrechnen. models/worked_solution.dart (`WorkDetail` coarse/normal/fine, `WorkStep` title/say/from/op/work/to/
+    rule/calc, `WorkRule`, `WorkCalc` keys/input/expr/result/note, `WorkedSolution.fromAi`), Store
+    `DatabaseService.workedSolutions` (nur lokal, kein Sync) + `WorkedSolutionRepository` (forModule, forCard, save,
+    delete; Provider in main.dart). `AiService.solveWorked` (`_workedSystemPrompt`: Markierungen \add/\del/\focus,
+    Tastennamen), `refineWorkedStep` (ein Schritt → 2–8 Teilschritte, letzter endet mit demselben "to"),
+    `discussWorkedStep` (`_workedDiscussSystemPrompt`, Herleitung/Warum). ui/visual/worked_board.dart:
+    `WorkMarkup.toTex` (farbig: \textcolor, rot mit \cancel; schlicht), `WorkMarkup.split` (erstes =/⇔/≈ außerhalb
+    von Klammern), `WorkPlayback` (Takte je Schritt: 0 Ansatz + Umformung, 1 markiert, 2 neue Zeile; `board`,
+    `at`, `startOf`), `WorkBoard` mit eigenem Layout `_AlignedRows` (Table geht nicht: Math.tex liefert keine
+    Eigenbreite), Keys `work-board`, `board-<zeile>-<spalte>`. ui/visual/calculator_sim.dart: `CalcKeys`
+    (Tastenfeld vereinfacht nach fx-991DE X, `normalize`), `CalcDisplay.after(keys, n)`, `CalcOutcome.of` (rechnet
+    `expr` nach, `mismatch`), `CalculatorSim` (Keys `calc-sim`, `calc-display`, `calc-result`, `calc-key-<id>`,
+    `calc-seq-i`, `calc-play`, `calc-step`, `calc-restart`). ui/visual/worked_solution_screen.dart
+    `WorkedSolutionScreen(moduleId, problem, reference, image, cardId, solution)`: Start (`worked-problem`,
+    `worked-detail-<name>`, `worked-calculator`, `worked-start`, `worked-saved-i`), Abspielen (`worked-next`,
+    `worked-prev`, `worked-auto`, `worked-jump`, `worked-rule-i`, `worked-answer`, Pfeiltasten/Leertaste),
+    `worked-ask`/`worked-derive` → `_StepChat`, `worked-refine`; ab 980 px Rechner rechts, sonst darunter
+    (`worked-calc-toggle`). Einstiege: VisualLearnScreen `visual-worked-open`; StepTaskView `step-worked`
+    (vor dem Lösen `_watched` → zählt als aufgedeckt) und `step-worked-finished`; zur Karte gespeicherte Lösung
+    wird wieder geöffnet. Tests: `worked_solution_test`.

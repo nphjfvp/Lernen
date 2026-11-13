@@ -43,6 +43,9 @@ class DatabaseService {
   static final visualCourses = stringMapStoreFactory.store('visual_courses');
   static final visualChats = stringMapStoreFactory.store('visual_chats');
 
+  /// Vorgerechnete Aufgaben („Vorrechnen“, siehe WorkedSolution) – nur lokal.
+  static final workedSolutions = stringMapStoreFactory.store('worked_solutions');
+
   /// Aufgabentypen je Fach für „Aufgaben visuell lösen“ (nur lokal).
   static final visualTaskTypes = stringMapStoreFactory.store('visual_task_types');
 

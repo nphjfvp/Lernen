@@ -1,8 +1,29 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7d) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7e) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7e. Vorrechnen lassen – an der Tafel, mit Taschenrechner
+
+- **Aufgabe vorrechnen lassen** (Visuell lernen, und in jeder Rechenweg-Aufgabe
+  „Vorrechnen lassen“): Aufgabe eingeben, **Grob**, **Regulär** oder **Fein**
+  wählen – bei Fein ist jede kleinste Operation ein eigener Schritt.
+- **Jede Veränderung sichtbar**: Die Zeilen stehen untereinander, am
+  Gleichheitszeichen ausgerichtet. Rechts daneben die Umformung („| −5x“,
+  „| :2“); im nächsten Takt wird gefärbt – was dazukommt grün, was wegfällt
+  rot durchgestrichen, woran gearbeitet wird blau –, danach erscheint die
+  neue Zeile. Regeln stehen mit Formel dabei (z.B. Logarithmusgesetz
+  ln(aᵇ) = b·ln(a)).
+- **Weiter / Zurück / automatisch**, Sprung zu jedem Schritt; am PC auch mit
+  den Pfeiltasten und der Leertaste.
+- **Zwischendurch fragen**: „Frage stellen“, „Herleitung“ (warum gilt die
+  Regel?) und „Diesen Schritt genauer“ teilt einen Schritt in kleinere auf.
+- **Simulierter Taschenrechner** mit der Tastenbelegung des fx-991DE X: Die App
+  drückt die Tasten nacheinander (mit SHIFT/ALPHA), das Display zeigt
+  Eingabe und Ergebnis, darunter die Tastenfolge zum Mitlesen. Die App rechnet
+  das Ergebnis selbst nach.
+- Vorgerechnete Aufgaben bleiben gespeichert (kein neuer Abruf nötig).
 
 ### 7d. Mathe: Nebenrechnungen, App rechnet Umformungen nach, mit Stift schreiben
 

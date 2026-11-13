@@ -414,6 +414,14 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Trefferquote je Einheit (schwächste zuerst), Durchsicht aller Fragen mit
   Lösung und KI-Erklärung, "falsche üben" und ein lokaler Verlauf der
   bisherigen Noten. Beantwortete Fragen zählen normal für FSRS/Ampel.
+- **Vorrechnen lassen** (`lib/ui/visual/worked_solution_screen.dart`) – aus
+  „Visuell lernen“ oder einer Rechenweg-Aufgabe: die KI rechnet grob, regulär
+  oder fein vor; die Tafel (`worked_board.dart`) zeigt Zeilen am
+  Gleichheitszeichen ausgerichtet, Umformungen rechts („| −5x“), dazukommend
+  grün, wegfallend rot durchgestrichen, bearbeitet blau, Regeln mit Formel;
+  Fragen, Herleitung und „genauer“ je Schritt; simulierter Taschenrechner mit
+  Tastenbelegung wie fx-991DE X (`calculator_sim.dart`), die App drückt die
+  Tasten und rechnet das Ergebnis nach. Gespeichert lokal.
 - **Rechenweg lösen** (`lib/ui/tasks/step_task_view.dart`) – „Schritt für
   Schritt“ (geführt mit Tipps), „Selbst rechnen“ (eigene Zeilen in beliebiger
   Zahl, jede Zeile einzeln prüfbar – App oder KI –, Tasten passend zur
