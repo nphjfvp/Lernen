@@ -418,7 +418,13 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Schritt“ (geführt mit Tipps), „Selbst rechnen“ (eigene Zeilen in beliebiger
   Zahl, jede Zeile einzeln prüfbar – App oder KI –, Tasten passend zur
   Aufgabe wie dy/dx, ∫, lim; live gerendertes Rechenblatt in Handschrift
-  daneben; jeder Schritt mit der KI besprechbar, vor oder nach dem Prüfen;
+  daneben; Nebenrechnungen (Substitution, neue Grenzen) zu jeder Zeile; die
+  App rechnet Umformungen Zeile für Zeile selbst nach (`lib/services/line_chain.dart`:
+  Integrale, Ableitungen, Stammfunktionen, Substitution, äquivalente
+  Gleichungen); „Mit Stift“ schreibt auf ein liniertes Blatt mit Rand
+  (`lib/ui/tasks/ink_sheet.dart`), jede Zeile liest nach einer Pause das
+  Bild-Modell wörtlich ab, korrigierbar;
+  jeder Schritt mit der KI besprechbar, vor oder nach dem Prüfen;
   „Abgeben“ prüft das Ergebnis) oder „Nur Ergebnis“;
   Rückmeldungen nie schon beim Tippen. Aufgabenbilder zeigen nur die Aufgabe
   (Musterlösung weggeschnitten/abgedeckt, im Original erreichbar).

@@ -1,8 +1,31 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7c) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7d) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7d. Mathe: Nebenrechnungen, App rechnet Umformungen nach, mit Stift schreiben
+
+- **Nebenrechnungen**: Bei „Selbst rechnen“ hängt „Nebenrechnung“ eine
+  Rechnung an die zuletzt benutzte Zeile – eingerückt, ohne eigene Nummer, auf
+  dem Rechenblatt am Rand. Gedacht für Substitution (`u = 2x + 1`,
+  `du = 2 dx`, `dx = du/2`), neue Grenzen (`u(0) = 1`) und Ähnliches.
+- **Die App rechnet Zeile für Zeile selbst nach** – ohne KI, auch Wege, die
+  nicht in der Musterlösung stehen: Gleichheitsketten, Zeilen, die mit `=`
+  weitergehen, Integrale (`∫ … dx`, `∫_0^1 … dx`, `[F]_0^1`), Ableitungen
+  (`d/dx (…)`, `du/dx`), Stammfunktionen (bis auf die Konstante),
+  Substitutionen aus den Nebenrechnungen und äquivalent umgeformte
+  Gleichungen. Bei einem Fehler sagt sie, wo sich der Wert ändert (mit
+  Beispielwert). Was sie nicht sicher nachrechnen kann, prüft wie bisher die
+  KI. „Abgeben“ markiert alle nachgerechneten Umformungen.
+- **Mit Stift schreiben**: „Mit Stift“ statt „Tippen“ zeigt ein liniertes
+  Blatt mit Rand für Nebenrechnungen. Nach einer kurzen Schreibpause liest das
+  Bild-Modell die Zeile und schreibt sie wörtlich ab (auch Fehler) – das
+  Gelesene steht darunter, lässt sich korrigieren, unsicher Gelesenes ist
+  markiert. Danach gelten alle Prüfungen wie beim Tippen; Haken und Kreuze
+  erscheinen auf dem Blatt. Sobald ein Stift benutzt wird, malt nur noch der
+  Stift (die Hand scrollt), die Radierer-Seite radiert, „Rückgängig“ und
+  „Ganzes Blatt prüfen“ (an die Foto-Prüfung) sind dabei.
 
 ### 7c. Günstige Modelle für 3D – und Modelle zum Ausprobieren
 

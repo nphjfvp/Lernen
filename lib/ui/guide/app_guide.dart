@@ -230,6 +230,17 @@ const appGuideChapters = <GuideChapter>[
             'Abgeben. Steht im Aufgabenbild doch eine Lösung: Stift-Symbol am Bild → abdecken oder wegschneiden.',
       ),
       GuideItem(
+        'Rechenweg: Nebenrechnungen und mit Stift',
+        '„Nebenrechnung“ unter den Zeilen hängt eine Rechnung an die zuletzt benutzte Zeile – z.B. die Substitution '
+            'u = 2x + 1, du = 2 dx oder neue Grenzen u(0) = 1. Die App setzt sie beim Nachrechnen ein: Integrale '
+            '(∫ … dx, ∫_0^1 … dx, [F]_0^1), Ableitungen (d/dx, du/dx) und Umformungen prüft sie selbst, Zeile für '
+            'Zeile, und zeigt beim Abgeben, welche Umformungen stimmen. „Mit Stift“ statt „Tippen“: du schreibst auf '
+            'ein liniertes Blatt, Nebenrechnungen rechts an den Rand. Nach einer kurzen Pause liest ein Bild-Modell '
+            '(OpenRouter-Key) die Zeile; was es gelesen hat, steht darunter und lässt sich korrigieren – unsicher '
+            'Gelesenes ist markiert. Mit Stift malt die aufgelegte Hand nicht („Nur Stift zeichnet“), die '
+            'Radierer-Seite radiert; „Ganzes Blatt prüfen“ gibt das Blatt an die Foto-Prüfung.',
+      ),
+      GuideItem(
         'Aufgaben-Ordner',
         'Aufgaben zum Verstehen, die sich nicht als Quiz abfragen lassen. 20 Tage vor der Klausur wird der '
             'Ordner rot.',

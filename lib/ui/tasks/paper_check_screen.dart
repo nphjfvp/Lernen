@@ -34,7 +34,7 @@ class PaperCheckOutcome {
 /// liest jede Zeile und markiert Fehler und Folgefehler, die App prüft das
 /// Endergebnis selbst (Probe + Vergleich mit der Musterlösung).
 class PaperCheckScreen extends StatefulWidget {
-  const PaperCheckScreen({super.key, required this.card, required this.task, this.typedLines});
+  const PaperCheckScreen({super.key, required this.card, required this.task, this.typedLines, this.initialImages});
 
   final Flashcard card;
   final StepTask task;
@@ -42,6 +42,10 @@ class PaperCheckScreen extends StatefulWidget {
   /// In der App getippter Rechenweg („Selbst rechnen“) statt Fotos – dann
   /// prüft die KI ihn sofort beim Öffnen.
   final List<String>? typedLines;
+
+  /// Schon vorhandene Bilder (z.B. das Stift-Blatt aus „Selbst rechnen“) –
+  /// dann prüft die KI sie sofort beim Öffnen.
+  final List<Uint8List>? initialImages;
 
   static const maxPhotos = 4;
 
@@ -70,7 +74,9 @@ class _PaperCheckScreenState extends State<PaperCheckScreen> with SafeSetState<P
   @override
   void initState() {
     super.initState();
-    if (_typed) WidgetsBinding.instance.addPostFrameCallback((_) => _check());
+    final initial = widget.initialImages;
+    if (initial != null && initial.isNotEmpty) _images.addAll(initial.take(PaperCheckScreen.maxPhotos));
+    if (_typed || _images.isNotEmpty) WidgetsBinding.instance.addPostFrameCallback((_) => _check());
   }
 
   AiService? _ai() {

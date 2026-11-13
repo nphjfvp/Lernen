@@ -1619,3 +1619,30 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Rückfrage-Antwort, `VisualShowView` und Modell-Test; ohne Baustein bzw. ausgeschaltet genau die alte
     Ansicht (Keys `scene3d-live`, `-toggle`, `-reset`, `-wheel-<fl|fr|rl|rr>`, `-cg`, `-slope`, `-mu`,
     `-force`, `-status`). Tests: `scene3d_live_test`.
+119. Mathe im Rechenweg. services/math_input.dart: `MathExpression.parse(…, calculus: true, callables:)` liest
+    zusätzlich `MathIntegral` (∫ f dx, ∫_a^b, `\int`, ∫ dx/x; Grenzen per `_Lexer._bounds`), `MathDifferential`
+    (dx/du = „d“ + Buchstabe im selben Wort, `_Parser._differentialAt`), `MathDerivative` (d/dx, auch aus
+    `\frac{d}{dx}`), `MathBoundsEval` ([F]_a^b), `MathApply` (u(1) für Definitionen); ohne `calculus` bleibt ∫
+    ungültig. Auswerten über `evaluateIn(values, MathScope(definitions, differentialVariable, anchor,
+    constantNames))` – `_Evaluator`: Gauß-Legendre 5 Punkte, 48/96 Teile mit Genauigkeitsprobe (sonst NaN),
+    zentrale Differenzen; unbestimmtes Integral nur mit `anchor` (∫ vom Anker bis zum Wert). services/
+    line_chain.dart `LineChain.check(List<ChainLine(text, side:)>, names:, constants:)` → `ChainVerdict`
+    (`ok`/`wrong`/`definition`/`unknown`): Aussagen getrennt an ⇒ ; „, “ „und“, Seiten an = ≈; Definitionen
+    `u = …`/`F(x) = …`; Bezeichnungen links (A, F(x), y') ohne Vergleich; Haupt- und Nebenrechnungs-Kette
+    getrennt; Vergleich an 10 Stützstellen, mit unbestimmtem Integral oder Konstante über Ableitungen (Anker =
+    Stützstelle); zwei Seiten ohne Kalkül = Gleichung → Differenz der Seiten proportional zur vorigen =
+    äquivalent, sonst keine Aussage; „falsch“ nur bei Fortsetzung mit =, gleicher Bezeichnung, Kalkül, ≥3
+    Seiten oder reinen Zahlen. StepTaskView: `_sideLines` (Key `step-line-add-side`, eingerückt, `_mainNumber`),
+    `_checkLine` erst `_matchLine`, dann `_chainVerdicts`, dann KI (Nebenrechnungen als „Nebenrechnung: …“),
+    Abgeben setzt Fehler-Boxen und `step-line-chain-ok-i`, Zusammenfassung `step-write-chain`;
+    `HandwrittenSheet(sideLines:)`. Stift: `_inputToggle` (`step-input-type`/`step-input-ink`),
+    ui/tasks/ink_sheet.dart `InkSheetController` (Striche in px, Zelle (row, side) aus der Strichmitte,
+    `marginStart` 0,64, `rowHeight` 72, Versionen je Zelle, Rückgängig, Radieren, `penOnly` schaltet beim
+    ersten Stift von selbst ein), `InkSheet` (Listener + `EagerGestureRecognizer(supportedDevices:)`, Keys
+    `ink-sheet`, `ink-pen`, `ink-eraser`, `ink-undo`, `ink-clear`, `ink-pen-only`, `ink-check-sheet`; Marken
+    ✓/✗ je Zelle), `renderInkPng`/`renderInkSheetPng`. Nach `StepTaskView.inkPause` (1,2 s) bzw. beim Ansetzen
+    in einer anderen Zelle → `AiService.readInkLine` (Vision-Modell, `_inkLineSystemPrompt`: wörtlich, nichts
+    korrigieren, JSON text/unsure/note) → Zeile in `_lines` an der Stelle der Zelle (`_inkLine`), veraltete
+    Antworten per Version verworfen, `_inkUnsure` als helperText; Fehler/ohne Key `step-ink-error`.
+    `PaperCheckScreen(initialImages:)` prüft das ganze Blatt sofort. Tests: `line_chain_test`, `step_ink_test`,
+    `step_task_view_test`, `step_write_review_test`.

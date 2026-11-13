@@ -3174,6 +3174,65 @@ Antworte in der Sprache der Vorlage.
     );
   }
 
+  /// Liest EINE handgeschriebene Zeile vom Stift-Blatt („Selbst rechnen“
+  /// mit Stift) und schreibt sie wörtlich in die Eingabe-Schreibweise der App
+  /// um – ohne zu korrigieren, damit die App und die Prüfung den echten
+  /// Rechenweg sehen. [previous]: die schon erkannten Zeilen davor (helfen
+  /// beim Entziffern), [side]: Nebenrechnung am Rand. Vision-Modell nötig.
+  Future<InkReading> readInkLine({
+    required Uint8List image,
+    String task = '',
+    List<String> previous = const [],
+    bool side = false,
+  }) async {
+    final text = StringBuffer();
+    if (task.trim().isNotEmpty) {
+      text
+        ..writeln('Aufgabe (nur als Kontext):')
+        ..writeln(_cap(task.trim(), 2500))
+        ..writeln();
+    }
+    if (previous.isNotEmpty) {
+      text.writeln('Bisher erkannte Zeilen (nur als Kontext):');
+      for (final p in previous.length > 12 ? previous.sublist(previous.length - 12) : previous) {
+        text.writeln('- ${_cap(p, 300)}');
+      }
+      text.writeln();
+    }
+    text.writeln(side
+        ? 'Das Bild zeigt eine Nebenrechnung vom Rand des Blatts.'
+        : 'Das Bild zeigt die nächste Zeile des Rechenwegs.');
+    final content = [
+      {'type': 'text', 'text': text.toString()},
+      {
+        'type': 'image_url',
+        'image_url': {'url': 'data:image/png;base64,${base64Encode(image)}'},
+      },
+    ];
+    final raw = await _complete(_inkLineSystemPrompt, content, temperature: 0);
+    final json = await _json(raw);
+    final read = '${json['text'] ?? ''}'.trim();
+    final unsureRaw = json['unsure'];
+    return InkReading(
+      text: read,
+      unsure: unsureRaw == true || '$unsureRaw'.toLowerCase() == 'true',
+      note: '${json['note'] ?? ''}'.trim(),
+    );
+  }
+
+  static const _inkLineSystemPrompt = r"""
+Du liest in einer Lern-App EINE handgeschriebene Zeile Mathematik (Bild: dunkle Schrift auf Weiß) und schreibst sie in die Eingabe-Schreibweise der App.
+
+Schreibweise:
+- Potenz ^ (x^2, e^(2x)); mal * oder weglassen (2x); Bruch mit / und Klammern um mehrteilige Zähler oder Nenner ((x+1)/(2x)); Wurzel sqrt(…); Betrag |…|; Index _ (x_0).
+- Integral: ∫ f dx; bestimmt ∫_(a)^(b) f dx; Grenzen einsetzen [F]_(a)^(b); Ableitung d/dx (…), dy/dx, y'.
+- Funktionen sin, cos, tan, ln, log, exp, arcsin …; griechische Buchstaben als Zeichen (α, π, μ); ⇒, ≈, ≤, ≥, ≠ als Zeichen.
+- Dezimalkomma bleibt ein Komma (1,5). Mehrere Aussagen in einer Zeile mit „, “ trennen, wie geschrieben.
+
+WICHTIG: Schreib GENAU ab, was dasteht – nichts korrigieren, nichts ergänzen, nichts ausrechnen, nichts umformen. Auch offensichtliche Fehler bleiben genau so stehen. Durchgestrichenes weglassen. Ist ein Zeichen nicht sicher lesbar, nimm die wahrscheinlichste Lesart (Aufgabe und vorige Zeilen helfen dabei) und setze "unsure" auf true, mit einem kurzen Hinweis in "note" (z.B. „u oder μ?“). Steht dort Text statt Mathematik, übernimm den Text. Ist nichts lesbar, gib "text": "".
+
+Antworte NUR mit JSON: {"text": "...", "unsure": false, "note": ""}""";
+
   /// Gespräch über EINEN Schritt eines selbst gerechneten Rechenwegs – vor
   /// oder nach dem Prüfen ([check] null = noch nicht geprüft). Antwortet als
   /// Tutor auf [question], ohne ungefragt Lösung oder nächste Schritte zu
@@ -4332,4 +4391,16 @@ Antworte NUR mit JSON:
     return verification;
   }
 
+}
+
+/// Eine vom Stift-Blatt gelesene Zeile ([AiService.readInkLine]).
+class InkReading {
+  const InkReading({required this.text, this.unsure = false, this.note = ''});
+
+  /// In Eingabe-Schreibweise der App, wörtlich abgeschrieben.
+  final String text;
+
+  /// Ein Zeichen war nicht sicher lesbar – [note] sagt, welches.
+  final bool unsure;
+  final String note;
 }

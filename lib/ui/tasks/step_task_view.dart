@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -20,6 +21,7 @@ import '../study/study_aids.dart';
 import '../widgets/image_editor_screen.dart';
 import '../widgets/math_text.dart';
 import 'hand_math.dart';
+import 'ink_sheet.dart';
 import 'math_input_field.dart';
 import 'paper_check_screen.dart';
 import 'step_line_chat.dart';
@@ -77,6 +79,9 @@ class StepTaskView extends StatefulWidget {
   final Flashcard card;
   final StepTask task;
 
+  /// Mit Stift: so lange Schreibpause, bis eine Zeile gelesen wird.
+  static const inkPause = Duration(milliseconds: 1200);
+
   /// Test-Hook statt OpenRouter (Prüfen einer getippten Zeile).
   static AiService? Function(String apiKey, String model)? aiFactory;
 
@@ -125,6 +130,17 @@ class _StepTaskViewState extends State<StepTaskView> {
   /// hat (LineChain) – stimmt.
   Set<TextEditingController> _chainOk = const {};
   int _chainChecked = 0;
+
+  // Selbst rechnen mit Stift: jede Zeile (und jeder Rand) des Blatts wird nach
+  // einer Schreibpause von der Bild-KI gelesen und landet als Zeile in _lines.
+  bool _ink = false;
+  final _inkCtrl = InkSheetController();
+  final Map<InkCell, TextEditingController> _inkLines = {};
+  final Set<InkCell> _inkDirty = {};
+  final Map<InkCell, int> _inkReading = {};
+  final Map<TextEditingController, String> _inkUnsure = {};
+  Timer? _inkTimer;
+  String? _inkError;
   int _focusedLine = 0;
   final _writeResult = TextEditingController();
   FieldVerdict? _writeVerdict;
@@ -177,6 +193,8 @@ class _StepTaskViewState extends State<StepTaskView> {
       f.dispose();
     }
     _writeResult.dispose();
+    _inkTimer?.cancel();
+    _inkCtrl.dispose();
     super.dispose();
   }
 
@@ -389,6 +407,12 @@ class _StepTaskViewState extends State<StepTaskView> {
     _lineBusy.remove(c);
     _lineChats.remove(c);
     _sideLines.remove(c);
+    _inkUnsure.remove(c);
+    final cell = _cellOf(c);
+    if (cell != null) {
+      _inkLines.remove(cell);
+      _inkCtrl.clearCell(cell);
+    }
     setState(() {
       _focusedLine = _focusedLine.clamp(0, _lines.length - 1);
       _lineMatches = const [];
@@ -439,6 +463,184 @@ class _StepTaskViewState extends State<StepTaskView> {
   void _lineEdited(TextEditingController ctrl) {
     _lineChecks.remove(ctrl);
     _lineShowFix.remove(ctrl);
+    _inkUnsure.remove(ctrl);
+  }
+
+  // -------------------------------------------------------------------------
+  // Selbst rechnen mit Stift
+  // -------------------------------------------------------------------------
+
+
+  InkCell? _cellOf(TextEditingController c) {
+    for (final e in _inkLines.entries) {
+      if (e.value == c) return e.key;
+    }
+    return null;
+  }
+
+  AiService? _inkAi() {
+    final settings = context.read<SettingsRepository?>()?.settings;
+    if (settings == null || !settings.hasApiKey) return null;
+    return StepTaskView.aiFactory?.call(settings.openRouterApiKey!, settings.visionModelId) ??
+        AiService(apiKey: settings.openRouterApiKey!, model: settings.visionModelId);
+  }
+
+  void _inkCellsChanged(Set<InkCell> cells) {
+    _inkDirty.addAll(cells);
+    _inkTimer?.cancel();
+    _inkTimer = Timer(StepTaskView.inkPause, _flushInk);
+  }
+
+  /// Der Stift setzt woanders an: was in anderen Zellen wartet, gleich lesen.
+  void _inkStrokeStart(InkCell cell) {
+    _inkTimer?.cancel();
+    final others = {
+      for (final c in _inkDirty)
+        if (c != cell) c,
+    };
+    _inkDirty.removeAll(others);
+    for (final c in others) {
+      _readInkCell(c);
+    }
+    if (_inkDirty.isNotEmpty) _inkTimer = Timer(StepTaskView.inkPause, _flushInk);
+  }
+
+  void _flushInk() {
+    final cells = {..._inkDirty};
+    _inkDirty.clear();
+    for (final c in cells) {
+      _readInkCell(c);
+    }
+  }
+
+  static int _cellKey(InkCell c) => c.row * 2 + (c.side ? 1 : 0);
+
+  /// Die Zeile zu [cell] – neu angelegt an der Stelle, die zur Lage auf dem
+  /// Blatt passt (Nebenrechnung hinter ihrer Hauptzeile).
+  TextEditingController _inkLine(InkCell cell) {
+    final existing = _inkLines[cell];
+    if (existing != null) return existing;
+    final ctrl = TextEditingController();
+    final linked = _inkLines.values.toSet();
+    // Leere, getippte Zeilen (z.B. die erste) machen Platz.
+    for (var i = _lines.length - 1; i >= 0; i--) {
+      final l = _lines[i];
+      if (!linked.contains(l) && l.text.trim().isEmpty) {
+        _lines.removeAt(i);
+        final f = _lineFocus.removeAt(i);
+        _sideLines.remove(l);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          l.dispose();
+          f.dispose();
+        });
+      }
+    }
+    var at = _lines.length;
+    for (final (i, l) in _lines.indexed) {
+      final c = _cellOf(l);
+      if (c != null && _cellKey(c) > _cellKey(cell)) {
+        at = i;
+        break;
+      }
+    }
+    _lines.insert(at, ctrl);
+    _lineFocus.insert(at, FocusNode());
+    _inkLines[cell] = ctrl;
+    if (cell.side) _sideLines.add(ctrl);
+    return ctrl;
+  }
+
+  void _dropInkLine(InkCell cell) {
+    final ctrl = _inkLines[cell];
+    if (ctrl == null) return;
+    final i = _lines.indexOf(ctrl);
+    if (_lines.length > 1 && i >= 0) {
+      _removeLine(i);
+    } else {
+      _inkLines.remove(cell);
+      _sideLines.remove(ctrl);
+      ctrl.clear();
+      _lineEdited(ctrl);
+      _writeChanged();
+    }
+  }
+
+  Future<void> _readInkCell(InkCell cell) async {
+    final strokes = _inkCtrl.strokesIn(cell);
+    final version = _inkCtrl.version(cell);
+    if (strokes.isEmpty) {
+      _dropInkLine(cell);
+      return;
+    }
+    final ai = _inkAi();
+    if (ai == null) {
+      setState(
+        () => _inkError =
+            'Zum Lesen der Handschrift braucht die App deinen OpenRouter-Key (Einstellungen) – ein Bild-Modell '
+            'liest jede Zeile. Tippen geht ohne.',
+      );
+      return;
+    }
+    late final TextEditingController ctrl;
+    setState(() {
+      ctrl = _inkLine(cell);
+      _inkReading[cell] = (_inkReading[cell] ?? 0) + 1;
+    });
+    try {
+      final png = await renderInkPng(strokes);
+      if (png == null || !mounted) return;
+      final reading = await ai.readInkLine(
+        image: png,
+        task: widget.card.front,
+        previous: _aiLines(_lines.takeWhile((l) => l != ctrl)),
+        side: cell.side,
+      );
+      // Inzwischen weitergeschrieben oder gelöscht: gilt nicht mehr.
+      if (!mounted || _inkCtrl.version(cell) != version || _inkLines[cell] != ctrl) return;
+      setState(() {
+        ctrl.text = reading.text;
+        _lineEdited(ctrl);
+        if (reading.unsure) {
+          _inkUnsure[ctrl] = reading.note.isEmpty
+              ? 'Unsicher gelesen – bitte prüfen'
+              : 'Unsicher gelesen: ${reading.note}';
+        }
+        _inkError = null;
+      });
+      _writeChanged();
+    } on AiServiceException catch (e) {
+      if (mounted) setState(() => _inkError = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _inkError = 'Lesen fehlgeschlagen: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          final n = (_inkReading[cell] ?? 1) - 1;
+          if (n <= 0) {
+            _inkReading.remove(cell);
+          } else {
+            _inkReading[cell] = n;
+          }
+        });
+      }
+    }
+  }
+
+  /// Prüfergebnisse je Zelle fürs Blatt.
+  Map<InkCell, PaperLineStatus> get _inkMarks => {
+    for (final MapEntry(key: cell, value: l) in _inkLines.entries)
+      if (_lineChecks[l] case final check?)
+        cell: check.status
+      else if (_chainOk.contains(l) ||
+          (_lineMatches.length > _lines.indexOf(l) && _lines.contains(l) && _lineMatches[_lines.indexOf(l)] != null))
+        cell: PaperLineStatus.ok,
+  };
+
+  /// „Ganzes Blatt prüfen“: das Blatt als Bild an die Foto-Prüfung.
+  Future<void> _checkInkSheet() async {
+    final png = await renderInkSheetPng(_inkCtrl, _inkCtrl.lastWidth);
+    if (png == null || !mounted) return;
+    await _openPaperCheck(images: [png]);
   }
 
   AiService? _stepAi() {
@@ -591,10 +793,11 @@ class _StepTaskViewState extends State<StepTaskView> {
     });
   }
 
-  Future<void> _openPaperCheck({List<String>? typedLines}) async {
+  Future<void> _openPaperCheck({List<String>? typedLines, List<Uint8List>? images}) async {
     final outcome = await Navigator.of(context).push<PaperCheckOutcome>(
       MaterialPageRoute(
-        builder: (_) => PaperCheckScreen(card: widget.card, task: widget.task, typedLines: typedLines),
+        builder: (_) =>
+            PaperCheckScreen(card: widget.card, task: widget.task, typedLines: typedLines, initialImages: images),
       ),
     );
     if (outcome == null || !mounted) return;
@@ -677,6 +880,16 @@ class _StepTaskViewState extends State<StepTaskView> {
   }
 
   Widget _sheet() {
+    if (_ink) {
+      return InkSheet(
+        controller: _inkCtrl,
+        onCellsChanged: _inkCellsChanged,
+        onStrokeStart: _inkStrokeStart,
+        marks: _inkMarks,
+        busy: _inkReading.keys.toSet(),
+        onCheckSheet: _aiAvailable ? _checkInkSheet : null,
+      );
+    }
     final data = _sheetData;
     return HandwrittenSheet(
       lines: data.lines,
@@ -798,6 +1011,7 @@ class _StepTaskViewState extends State<StepTaskView> {
         ...switch (_mode) {
           _Mode.steps => _buildSteps(c),
           _Mode.write => [
+            if (!widget.examMode) ...[_inputToggle(), const SizedBox(height: 10)],
             if (inlineSheet) ...[_sheet(), const SizedBox(height: 10)],
             ..._buildWrite(c),
           ],
@@ -1211,42 +1425,70 @@ class _StepTaskViewState extends State<StepTaskView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Rechne selbst – eine Zeile je Rechenschritt, so viele du brauchst. Mit ✓ hinter einer Zeile prüfst du '
-              'genau diesen Schritt; „Abgeben“ prüft das Ergebnis.',
+              _ink
+                  ? 'Schreib auf das Blatt – eine Zeile je Rechenschritt, Nebenrechnungen rechts an den Rand. Nach '
+                        'einer kurzen Pause liest die App die Zeile; was sie gelesen hat, steht hier und lässt sich '
+                        'korrigieren. Mit ✓ prüfst du einen Schritt, „Abgeben“ prüft das Ergebnis.'
+                  : 'Rechne selbst – eine Zeile je Rechenschritt, so viele du brauchst. Mit ✓ hinter einer Zeile '
+                        'prüfst du genau diesen Schritt; „Abgeben“ prüft das Ergebnis.',
               style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.35),
             ),
-            const SizedBox(height: 10),
-            for (final (i, line) in _lines.indexed) ...[
-              _lineRow(c, i, line, done),
-              if (_lineChecks[line] case final check?)
-                Padding(
-                  padding: EdgeInsets.only(left: _sideLines.contains(line) ? 22 : 0),
-                  child: _lineCheckBox(c, i, line, check),
+            if (_ink && (_inkError != null || !_aiAvailable))
+              Container(
+                key: const ValueKey('step-ink-error'),
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(10)),
+                child: Text(
+                  _inkError ??
+                      'Zum Lesen der Handschrift braucht die App deinen OpenRouter-Key (Einstellungen) – ein '
+                          'Bild-Modell liest jede Zeile. Tippen geht ohne.',
+                  style: const TextStyle(fontSize: 13, height: 1.35),
                 ),
-            ],
-            if (!done) ...[
-              Wrap(
-                spacing: 4,
-                children: [
-                  TextButton.icon(
-                    key: const ValueKey('step-line-add'),
-                    onPressed: _addLine,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Weiterer Schritt'),
-                  ),
-                  Tooltip(
-                    message:
-                        'Nebenrechnung zur zuletzt benutzten Zeile, z.B. die Substitution u = …, du = … dx '
-                        'oder neue Grenzen – die App setzt sie beim Nachrechnen ein.',
-                    child: TextButton.icon(
-                      key: const ValueKey('step-line-add-side'),
-                      onPressed: _lines.any((l) => l.text.trim().isNotEmpty) ? () => _addSideLine() : null,
-                      icon: const Icon(Icons.subdirectory_arrow_right, size: 18),
-                      label: const Text('Nebenrechnung'),
-                    ),
-                  ),
-                ],
               ),
+            const SizedBox(height: 10),
+            if (_ink && _inkLines.isEmpty && _writtenLines.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Noch nichts gelesen.',
+                  key: const ValueKey('step-ink-empty'),
+                  style: TextStyle(fontSize: 13, color: c.inkMuted, fontStyle: FontStyle.italic),
+                ),
+              ),
+            for (final (i, line) in _lines.indexed)
+              if (!_ink || _cellOf(line) != null || line.text.trim().isNotEmpty) ...[
+                _lineRow(c, i, line, done),
+                if (_lineChecks[line] case final check?)
+                  Padding(
+                    padding: EdgeInsets.only(left: _sideLines.contains(line) ? 22 : 0),
+                    child: _lineCheckBox(c, i, line, check),
+                  ),
+              ],
+            if (!done) ...[
+              if (!_ink)
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    TextButton.icon(
+                      key: const ValueKey('step-line-add'),
+                      onPressed: _addLine,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Weiterer Schritt'),
+                    ),
+                    Tooltip(
+                      message:
+                          'Nebenrechnung zur zuletzt benutzten Zeile, z.B. die Substitution u = …, du = … dx '
+                          'oder neue Grenzen – die App setzt sie beim Nachrechnen ein.',
+                      child: TextButton.icon(
+                        key: const ValueKey('step-line-add-side'),
+                        onPressed: _lines.any((l) => l.text.trim().isNotEmpty) ? () => _addSideLine() : null,
+                        icon: const Icon(Icons.subdirectory_arrow_right, size: 18),
+                        label: const Text('Nebenrechnung'),
+                      ),
+                    ),
+                  ],
+                ),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -1363,11 +1605,34 @@ class _StepTaskViewState extends State<StepTaskView> {
     ];
   }
 
+  /// Tippen oder mit Stift schreiben.
+  Widget _inputToggle() => SegmentedButton<bool>(
+    key: const ValueKey('step-input'),
+    segments: const [
+      ButtonSegment(
+        value: false,
+        icon: Icon(Icons.keyboard_outlined, size: 18),
+        label: Text('Tippen', key: ValueKey('step-input-type')),
+      ),
+      ButtonSegment(
+        value: true,
+        icon: Icon(Icons.draw_outlined, size: 18),
+        label: Text('Mit Stift', key: ValueKey('step-input-ink')),
+      ),
+    ],
+    selected: {_ink},
+    showSelectedIcon: false,
+    onSelectionChanged: (s) => setState(() => _ink = s.first),
+  );
+
   /// Nummer der Hauptzeile (Nebenrechnungen zählen nicht mit).
   int _mainNumber(int i) => _lines.take(i + 1).where((l) => !_sideLines.contains(l)).length;
 
   Widget _lineRow(AppColors c, int i, TextEditingController line, bool done) {
     final side = _sideLines.contains(line);
+    final cell = _cellOf(line);
+    final reading = cell != null && _inkReading.containsKey(cell);
+    final unsure = _inkUnsure[line];
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -1376,7 +1641,17 @@ class _StepTaskViewState extends State<StepTaskView> {
           if (side) const SizedBox(width: 22),
           SizedBox(
             width: 26,
-            child: side
+            child: reading
+                ? Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      key: ValueKey('step-line-reading-$i'),
+                      width: 16,
+                      height: 16,
+                      child: const CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : side
                 ? Tooltip(
                     message: 'Nebenrechnung',
                     child: Icon(Icons.subdirectory_arrow_right, size: 18, color: c.accent),
@@ -1403,9 +1678,14 @@ class _StepTaskViewState extends State<StepTaskView> {
               textInputAction: TextInputAction.next,
               decoration: InputDecoration(
                 isDense: true,
-                hintText: side
+                hintText: reading && line.text.isEmpty
+                    ? 'wird gelesen …'
+                    : side
                     ? 'Nebenrechnung, z.B. u = 2x + 1'
                     : (i == 0 ? 'z.B. v(t) = ∫ a(t) dt = 2t + C' : 'nächster Schritt'),
+                helperText: unsure,
+                helperMaxLines: 2,
+                helperStyle: TextStyle(color: c.warn, fontSize: 12),
                 filled: true,
                 fillColor: side ? c.accentSoft.withAlpha(110) : c.surfaceAlt,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
