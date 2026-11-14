@@ -4,6 +4,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../../models/worked_solution.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/math_text.dart';
 
 /// Markierungen in Tafel-Zeilen (`\add{…}`, `\del{…}`, `\focus{…}`) → LaTeX.
 class WorkMarkup {
@@ -114,6 +115,226 @@ class WorkMarkup {
   }
 }
 
+/// Zerlegt eine Tafel-Zeile in antippbare Teile (sokratischer Modus):
+/// Zeichen wie =, +, − einzeln, sonst Bausteine samt Hochzahl/Index/Strich
+/// (`y'`, `y^2`, `\sin(x)`, `\frac{dy}{dx}`, Klammern als Ganzes).
+class LatexChunks {
+  LatexChunks._();
+
+  static const _functions = {
+    'sin',
+    'cos',
+    'tan',
+    'ln',
+    'log',
+    'exp',
+    'arcsin',
+    'arccos',
+    'arctan',
+    'sinh',
+    'cosh',
+    'tanh',
+    'lim',
+    'max',
+    'min',
+  };
+  static const _twoArgs = {'frac', 'dfrac', 'tfrac', 'binom'};
+  static const _oneArg = {'sqrt', 'vec', 'overline', 'bar', 'hat', 'mathrm', 'text', 'operatorname', 'mathbf'};
+  static const _operators = {
+    'cdot',
+    'times',
+    'div',
+    'pm',
+    'mp',
+    'le',
+    'leq',
+    'ge',
+    'geq',
+    'neq',
+    'approx',
+    'Rightarrow',
+    'Leftrightarrow',
+    'iff',
+    'to',
+    'quad',
+    'qquad',
+  };
+
+  static List<({String tex, bool op})> split(String line) {
+    final s = WorkMarkup.toTex(line, colored: false);
+    final out = <({String tex, bool op})>[];
+    var i = 0;
+
+    int group(int at, String open, String close) {
+      var depth = 0;
+      for (var j = at; j < s.length; j++) {
+        if (s[j] == r'\' && j + 1 < s.length) {
+          j++;
+          continue;
+        }
+        if (s[j] == open) depth++;
+        if (s[j] == close) {
+          depth--;
+          if (depth == 0) return j + 1;
+        }
+      }
+      return s.length;
+    }
+
+    int skipSpace(int at) {
+      var j = at;
+      while (j < s.length && s[j] == ' ') {
+        j++;
+      }
+      return j;
+    }
+
+    // Hochzahl, Index, Striche an einen Baustein hängen.
+    int scripts(int at) {
+      var j = at;
+      while (true) {
+        final k = skipSpace(j);
+        if (k >= s.length) return j;
+        if (s[k] == "'") {
+          j = k + 1;
+          continue;
+        }
+        if (s[k] == '^' || s[k] == '_') {
+          var m = skipSpace(k + 1);
+          if (m >= s.length) return s.length;
+          if (s[m] == '{') {
+            j = group(m, '{', '}');
+          } else if (s[m] == r'\') {
+            final cmd = RegExp(r'\\[A-Za-z]+').matchAsPrefix(s, m);
+            j = cmd?.end ?? m + 2;
+          } else {
+            j = m + 1;
+          }
+          continue;
+        }
+        return j;
+      }
+    }
+
+    void add(int from, int to, {bool op = false}) {
+      final t = s.substring(from, to).trim();
+      if (t.isNotEmpty) out.add((tex: t, op: op));
+    }
+
+    while (i < s.length) {
+      i = skipSpace(i);
+      if (i >= s.length) break;
+      final ch = s[i];
+      final start = i;
+      if (ch == '=' || ch == '+' || ch == '-' || ch == '<' || ch == '>' || ch == ',' || ch == '/' || ch == ':') {
+        add(i, i + 1, op: true);
+        i++;
+        continue;
+      }
+      if (ch == r'\') {
+        final m = RegExp(r'\\([A-Za-z]+)').matchAsPrefix(s, i);
+        if (m == null) {
+          // \, \; \! usw.
+          i += 2;
+          continue;
+        }
+        final name = m[1]!;
+        var j = m.end;
+        if (_operators.contains(name)) {
+          add(start, j, op: true);
+          i = j;
+          continue;
+        }
+        if (name == 'left') {
+          // bis zum passenden \right und dessen Zeichen
+          var depth = 0;
+          var k = i;
+          while (k < s.length) {
+            if (s.startsWith(r'\left', k)) depth++;
+            if (s.startsWith(r'\right', k)) {
+              depth--;
+              if (depth == 0) {
+                k += 6;
+                if (k < s.length && s[k] == r'\') {
+                  k = (RegExp(r'\\[A-Za-z]+|\\.').matchAsPrefix(s, k)?.end) ?? k + 1;
+                } else if (k < s.length) {
+                  k++;
+                }
+                break;
+              }
+            }
+            k++;
+          }
+          j = scripts(k);
+          add(start, j);
+          i = j;
+          continue;
+        }
+        if (_twoArgs.contains(name)) {
+          j = skipSpace(j);
+          if (j < s.length && s[j] == '{') j = group(j, '{', '}');
+          j = skipSpace(j);
+          if (j < s.length && s[j] == '{') j = group(j, '{', '}');
+        } else if (_oneArg.contains(name)) {
+          j = skipSpace(j);
+          if (j < s.length && s[j] == '[') j = group(j, '[', ']');
+          j = skipSpace(j);
+          if (j < s.length && s[j] == '{') j = group(j, '{', '}');
+        } else if (_functions.contains(name)) {
+          j = scripts(j);
+          // Funktion samt Argument in Klammern als ein Teil.
+          final k = skipSpace(j);
+          if (k < s.length && s[k] == '(') {
+            j = group(k, '(', ')');
+          } else if (s.startsWith(r'\left', k)) {
+            var depth = 0;
+            var m2 = k;
+            while (m2 < s.length) {
+              if (s.startsWith(r'\left', m2)) depth++;
+              if (s.startsWith(r'\right', m2)) {
+                depth--;
+                if (depth == 0) {
+                  m2 += 7;
+                  break;
+                }
+              }
+              m2++;
+            }
+            j = m2.clamp(0, s.length);
+          }
+        }
+        j = scripts(j);
+        add(start, j);
+        i = j;
+        continue;
+      }
+      if (ch == '(' || ch == '[' || ch == '{') {
+        final close = ch == '(' ? ')' : (ch == '[' ? ']' : '}');
+        final j = scripts(group(i, ch, close));
+        add(start, j);
+        i = j;
+        continue;
+      }
+      if (RegExp(r'[0-9]').hasMatch(ch)) {
+        var j = i;
+        while (j < s.length &&
+            RegExp(r'[0-9.,{}]').hasMatch(s[j]) &&
+            !(s[j] == ',' && (j + 1 >= s.length || !RegExp(r'[0-9}]').hasMatch(s[j + 1])))) {
+          j++;
+        }
+        j = scripts(j);
+        add(start, j);
+        i = j;
+        continue;
+      }
+      final j = scripts(i + 1);
+      add(start, j);
+      i = j;
+    }
+    return out;
+  }
+}
+
 /// Eine Zeile an der Tafel.
 class BoardLine {
   const BoardLine({required this.tex, this.op = '', this.colored = false, this.isNew = false, this.isCurrent = false});
@@ -133,18 +354,52 @@ class BoardLine {
   final bool isCurrent;
 }
 
+/// Ein Abschnitt der Tafel.
+sealed class BoardBlock {
+  const BoardBlock();
+}
+
+/// Rechenzeilen, am Gleichheitszeichen ausgerichtet.
+class MathBlock extends BoardBlock {
+  MathBlock(this.lines);
+  final List<BoardLine> lines;
+}
+
+/// Aufgabe verstehen: gegeben, gesucht, zu beachten.
+class FocusBlock extends BoardBlock {
+  const FocusBlock(this.marks, {this.isNew = false});
+  final List<WorkMark> marks;
+  final bool isNew;
+}
+
+/// Ein Stück der Antwort.
+class TextBlock extends BoardBlock {
+  const TextBlock(this.text, {this.title = '', this.isNew = false});
+  final String text;
+  final String title;
+  final bool isNew;
+}
+
+/// Tabelle (Stand nach dem letzten Tabellen-Schritt).
+class TableBlock extends BoardBlock {
+  const TableBlock(this.table, {this.isNew = false});
+  final WorkTable table;
+  final bool isNew;
+}
+
 /// Ablauf des Vorrechnens: Schritt [step], Phase [phase] (0 = Ansatz mit
-/// Umformung, 1 = markiert, 2 = Ergebnis). Baut daraus die Tafel.
+/// Umformung bzw. Erklärung, 1 = markiert, 2 = Ergebnis). Baut daraus die
+/// Tafel – Rechenzeilen, Aufgaben-Analyse, Antworttext und Tabellen.
 class WorkPlayback {
   const WorkPlayback(this.steps);
 
   final List<WorkStep> steps;
 
   /// Phasen, die Schritt [i] hat (immer 0; 1 bei Markierungen; 2 bei
-  /// eigener Ergebniszeile).
+  /// eigener Ergebniszeile bzw. neuem Inhalt).
   List<int> phasesOf(int i) {
     final s = steps[i];
-    return [0, if (s.work.trim().isNotEmpty) 1, if (s.hasLine) 2];
+    return [0, if (s.kind == WorkKind.math && s.work.trim().isNotEmpty) 1, if (s.hasLine) 2];
   }
 
   /// Gesamtzahl der Takte (für Fortschritt und „Weiter“).
@@ -173,28 +428,79 @@ class WorkPlayback {
 
   static String _plain(String s) => WorkMarkup.toTex(s, colored: false).replaceAll(RegExp(r'\s+'), ' ').trim();
 
+  /// Nur die Rechenzeilen der Tafel (für Fragen an die KI und Tests).
+  List<BoardLine> board(int step, int phase) => [
+    for (final b in blocks(step, phase))
+      if (b is MathBlock) ...b.lines,
+  ];
+
   /// Die Tafel bei Schritt [step], Phase [phase].
-  List<BoardLine> board(int step, int phase) {
-    final lines = <BoardLine>[];
-    void addHistory(int k) {
-      final s = steps[k];
-      if (s.from.trim().isNotEmpty && (lines.isEmpty || _plain(lines.last.tex) != _plain(s.from))) {
-        lines.add(BoardLine(tex: s.from));
+  List<BoardBlock> blocks(int step, int phase) {
+    final out = <BoardBlock>[];
+    BoardLine? lastLine() {
+      for (final b in out.reversed) {
+        if (b is MathBlock && b.lines.isNotEmpty) return b.lines.last;
       }
-      if (s.hasLine) lines.add(BoardLine(tex: s.to));
+      return null;
+    }
+
+    List<BoardLine> mathLines() {
+      if (out.isEmpty || out.last is! MathBlock) out.add(MathBlock([]));
+      return (out.last as MathBlock).lines;
+    }
+
+    void addOther(WorkStep s, {bool isNew = false}) {
+      switch (s.kind) {
+        case WorkKind.focus:
+          out.add(FocusBlock(s.marks, isNew: isNew));
+        case WorkKind.text:
+          out.add(TextBlock(s.content, title: s.title, isNew: isNew));
+        case WorkKind.table:
+          // Die Tabelle wächst an derselben Stelle.
+          if (out.isNotEmpty && out.last is TableBlock) out.removeLast();
+          out.add(TableBlock(s.table!, isNew: isNew));
+        case WorkKind.math:
+          break;
+      }
     }
 
     for (var k = 0; k < step && k < steps.length; k++) {
-      addHistory(k);
+      final s = steps[k];
+      if (s.kind != WorkKind.math) {
+        if (s.hasLine) addOther(s);
+        continue;
+      }
+      final last = lastLine();
+      if (s.from.trim().isNotEmpty && (last == null || _plain(last.tex) != _plain(s.from))) {
+        mathLines().add(BoardLine(tex: s.from));
+      }
+      if (s.hasLine) mathLines().add(BoardLine(tex: s.to));
     }
-    if (step >= steps.length) return lines;
+    if (step >= steps.length) return out;
     final s = steps[step];
+    if (s.kind != WorkKind.math) {
+      if (phase >= 2 && s.hasLine) addOther(s, isNew: true);
+      return out;
+    }
     // Ausgangszeile dieses Schritts: eigene oder die letzte der Tafel.
-    final fromNew = s.from.trim().isNotEmpty && (lines.isEmpty || _plain(lines.last.tex) != _plain(s.from));
-    final base = fromNew ? s.from : (lines.isEmpty ? '' : lines.removeLast().tex);
+    final last = lastLine();
+    final fromNew = s.from.trim().isNotEmpty && (last == null || _plain(last.tex) != _plain(s.from));
+    String base;
+    if (fromNew) {
+      base = s.from;
+    } else if (out.isNotEmpty && out.last is MathBlock && (out.last as MathBlock).lines.isNotEmpty) {
+      base = (out.last as MathBlock).lines.removeLast().tex;
+    } else {
+      base = last?.tex ?? '';
+    }
+    if (phase < 0) {
+      // Sokratisch: nur die Ausgangszeile, noch ohne Umformung.
+      if (base.isNotEmpty) mathLines().add(BoardLine(tex: base, isCurrent: true));
+      return out;
+    }
     if (base.isNotEmpty || s.work.trim().isNotEmpty) {
       final showWork = phase >= 1 && s.work.trim().isNotEmpty;
-      lines.add(
+      mathLines().add(
         BoardLine(
           tex: showWork ? s.work : base,
           op: s.op,
@@ -204,17 +510,22 @@ class WorkPlayback {
         ),
       );
     }
-    if (phase >= 2 && s.hasLine) lines.add(BoardLine(tex: s.to, colored: true, isNew: true, isCurrent: true));
-    return lines;
+    if (phase >= 2 && s.hasLine) mathLines().add(BoardLine(tex: s.to, colored: true, isNew: true, isCurrent: true));
+    return out;
   }
 }
 
-/// Die Tafel: Zeilen untereinander, am Gleichheitszeichen ausgerichtet,
-/// Umformungen rechts („| −5x“), neue Zeilen blenden ein.
+/// Die Tafel: Rechenzeilen untereinander, am Gleichheitszeichen
+/// ausgerichtet, Umformungen rechts („| −5x“), neue Zeilen blenden ein; dazu
+/// Aufgaben-Analyse, Antwort-Absätze und Tabellen.
 class WorkBoard extends StatefulWidget {
-  const WorkBoard({super.key, required this.lines, this.fontSize = 22});
+  const WorkBoard({super.key, required this.blocks, this.fontSize = 22});
 
-  final List<BoardLine> lines;
+  /// Nur Rechenzeilen (ein einziger Rechenblock).
+  WorkBoard.lines({Key? key, required List<BoardLine> lines, double fontSize = 22})
+    : this(key: key, blocks: [MathBlock(lines)], fontSize: fontSize);
+
+  final List<BoardBlock> blocks;
   final double fontSize;
 
   @override
@@ -224,10 +535,21 @@ class WorkBoard extends StatefulWidget {
 class _WorkBoardState extends State<WorkBoard> {
   final _scroll = ScrollController();
 
+  int _size(List<BoardBlock> blocks) => blocks.fold(
+    0,
+    (n, b) =>
+        n +
+        switch (b) {
+          MathBlock(:final lines) => lines.length,
+          TableBlock(:final table) => 1 + table.rows.length,
+          _ => 1,
+        },
+  );
+
   @override
   void didUpdateWidget(WorkBoard old) {
     super.didUpdateWidget(old);
-    if (widget.lines.length != old.lines.length) {
+    if (_size(widget.blocks) != _size(old.blocks)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scroll.hasClients) {
           _scroll.animateTo(
@@ -248,6 +570,174 @@ class _WorkBoardState extends State<WorkBoard> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final empty = widget.blocks.every((b) => b is MathBlock && b.lines.isEmpty);
+    return Container(
+      key: const ValueKey('work-board'),
+      decoration: BoxDecoration(
+        color: dark ? const Color(0xFF1E2A26) : const Color(0xFFFBFBF6),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.border),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: empty
+          ? Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text('Die Tafel ist noch leer.', style: TextStyle(color: c.inkMuted)),
+            )
+          : Scrollbar(
+              controller: _scroll,
+              child: SingleChildScrollView(
+                controller: _scroll,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final (i, b) in widget.blocks.indexed) ...[
+                      if (i > 0) const SizedBox(height: 12),
+                      _block(context, b, i),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  /// Neues blendet von unten ein.
+  static Widget _appear(Widget child, Object key, bool isNew) => !isNew
+      ? child
+      : TweenAnimationBuilder<double>(
+          key: ValueKey(key),
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 550),
+          curve: Curves.easeOut,
+          builder: (_, v, child) => Opacity(
+            opacity: v,
+            child: Transform.translate(offset: Offset(0, (1 - v) * 14), child: child),
+          ),
+          child: child,
+        );
+
+  Widget _block(BuildContext context, BoardBlock b, int index) {
+    final c = context.colors;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final newColor = dark ? const Color(0xFF81C784) : const Color(0xFF2E7D32);
+    switch (b) {
+      case MathBlock(:final lines):
+        return SingleChildScrollView(scrollDirection: Axis.horizontal, child: _mathLines(context, lines, index));
+      case FocusBlock(:final marks, :final isNew):
+        final groups = <String, List<WorkMark>>{};
+        for (final m in marks) {
+          groups.putIfAbsent(m.role, () => []).add(m);
+        }
+        (String, Color) style(String role) => switch (role) {
+          'gegeben' => ('Gegeben', dark ? const Color(0xFF82B1FF) : const Color(0xFF1565C0)),
+          'gesucht' => ('Gesucht', newColor),
+          _ => ('Zu beachten', dark ? const Color(0xFFFFCC80) : const Color(0xFF8D5A00)),
+        };
+        return _appear(
+          Column(
+            key: ValueKey('board-focus-$index'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final role in const ['gesucht', 'gegeben', 'hinweis'])
+                if (groups[role] case final list?)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '${style(role).$1}:',
+                          style: TextStyle(fontWeight: FontWeight.w700, color: style(role).$2, fontSize: 14),
+                        ),
+                        for (final m in list)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: style(role).$2.withAlpha(dark ? 50 : 28),
+                              border: Border.all(color: style(role).$2.withAlpha(120)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: MathText(m.text, style: const TextStyle(fontSize: 14.5, height: 1.3)),
+                          ),
+                      ],
+                    ),
+                  ),
+            ],
+          ),
+          'focus-$index-${marks.length}',
+          isNew,
+        );
+      case TextBlock(:final text, :final title, :final isNew):
+        return _appear(
+          Container(
+            key: ValueKey('board-text-$index'),
+            padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+            decoration: BoxDecoration(
+              color: isNew ? newColor.withAlpha(dark ? 40 : 22) : null,
+              border: Border(left: BorderSide(color: isNew ? newColor : c.border, width: 3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (title.isNotEmpty)
+                  Text(
+                    title,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted),
+                  ),
+                MathText(text, style: const TextStyle(fontSize: 16, height: 1.5)),
+              ],
+            ),
+          ),
+          'text-$index-$text',
+          isNew,
+        );
+      case TableBlock(:final table, :final isNew):
+        final cols = table.columns.isNotEmpty
+            ? table.columns.length
+            : table.rows.fold(0, (n, r) => r.length > n ? r.length : n);
+        final cells = <Widget>[];
+        final backgrounds = <Color?>[];
+        Widget cell(String t, {bool head = false}) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: MathText(
+            t,
+            style: TextStyle(fontSize: 14.5, fontWeight: head ? FontWeight.w700 : FontWeight.w400, height: 1.3),
+          ),
+        );
+        if (table.columns.isNotEmpty) {
+          for (var col = 0; col < cols; col++) {
+            cells.add(cell(col < table.columns.length ? table.columns[col] : '', head: true));
+            backgrounds.add(c.surfaceAlt);
+          }
+        }
+        for (final (r, row) in table.rows.indexed) {
+          for (var col = 0; col < cols; col++) {
+            cells.add(cell(col < row.length ? row[col] : ''));
+            backgrounds.add(isNew && table.fresh.contains((r, col)) ? newColor.withAlpha(dark ? 70 : 45) : null);
+          }
+        }
+        return SingleChildScrollView(
+          key: ValueKey('board-table-$index'),
+          scrollDirection: Axis.horizontal,
+          child: _GridRows(
+            columns: cols,
+            aligns: List.filled(cols, 0),
+            cellBackgrounds: backgrounds,
+            gridColor: c.border,
+            rowGap: 0,
+            maxCellWidth: 280,
+            children: cells,
+          ),
+        );
+    }
+  }
+
+  Widget _mathLines(BuildContext context, List<BoardLine> lines, int block) {
     final c = context.colors;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final chalk = dark ? const Color(0xFFE8EAF0) : const Color(0xFF1B2333);
@@ -276,9 +766,9 @@ class _WorkBoardState extends State<WorkBoard> {
 
     final cells = <Widget>[];
     final backgrounds = <Color?>[];
-    for (final (i, line) in widget.lines.indexed) {
+    for (final (i, line) in lines.indexed) {
       final (left, rel, right) = WorkMarkup.split(line.tex);
-      final dim = !line.isCurrent && i < widget.lines.length - 1;
+      final dim = !line.isCurrent && i < lines.length - 1;
       final content = '${line.tex}|${line.colored}';
       final row = <Widget>[
         fade(math(left, colored: line.colored), 'l$content'),
@@ -306,98 +796,92 @@ class _WorkBoardState extends State<WorkBoard> {
         Widget w = cell;
         // ältere Zeilen etwas zurücknehmen
         if (dim) w = Opacity(opacity: 0.62, child: w);
-        if (line.isNew) {
-          w = TweenAnimationBuilder<double>(
-            key: ValueKey('new-$i-$col-${line.tex}'),
-            tween: Tween(begin: 0, end: 1),
-            duration: const Duration(milliseconds: 550),
-            curve: Curves.easeOut,
-            builder: (_, v, child) => Opacity(
-              opacity: v,
-              child: Transform.translate(offset: Offset(0, (1 - v) * 14), child: child),
-            ),
-            child: w,
-          );
-        }
-        cells.add(KeyedSubtree(key: ValueKey('board-$i-$col'), child: w));
+        w = _appear(w, 'new-$block-$i-$col-${line.tex}', line.isNew);
+        final key = block == 0 ? 'board-$i-$col' : 'board-$block-$i-$col';
+        cells.add(KeyedSubtree(key: ValueKey(key), child: w));
       }
       backgrounds.add(line.isCurrent ? c.accentSoft.withAlpha(dark ? 60 : 110) : null);
     }
-
-    return Container(
-      key: const ValueKey('work-board'),
-      decoration: BoxDecoration(
-        color: dark ? const Color(0xFF1E2A26) : const Color(0xFFFBFBF6),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.border),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: widget.lines.isEmpty
-          ? Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text('Die Tafel ist noch leer.', style: TextStyle(color: c.inkMuted)),
-            )
-          : Scrollbar(
-              controller: _scroll,
-              child: SingleChildScrollView(
-                controller: _scroll,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: _AlignedRows(rowGap: widget.fontSize * 0.5, backgrounds: backgrounds, children: cells),
-                ),
-              ),
-            ),
+    return _GridRows(
+      columns: 4,
+      aligns: const [2, 1, 0, 0],
+      rowBackgrounds: backgrounds,
+      rowGap: widget.fontSize * 0.5,
+      children: cells,
     );
   }
 }
 
-/// Zeilen aus je vier Teilen (links, Zeichen, rechts, Umformung) – die
-/// Spalten so breit wie ihr breitester Teil, links rechtsbündig, so dass die
-/// Gleichheitszeichen untereinander stehen. (Eigenes Layout, weil Formeln
-/// keine Eigenbreite liefern, die eine Table bräuchte.)
-class _AlignedRows extends MultiChildRenderObjectWidget {
-  const _AlignedRows({required super.children, required this.backgrounds, this.rowGap = 10});
+/// Zeilen aus je [columns] Teilen – die Spalten so breit wie ihr breitester
+/// Teil; [aligns] je Spalte: 0 links, 1 Mitte, 2 rechts (bei Rechenzeilen
+/// links rechtsbündig, so dass die Gleichheitszeichen untereinander stehen).
+/// Eigenes Layout, weil Formeln keine Eigenbreite liefern, die eine Table
+/// bräuchte.
+class _GridRows extends MultiChildRenderObjectWidget {
+  const _GridRows({
+    required super.children,
+    required this.columns,
+    required this.aligns,
+    this.rowBackgrounds = const [],
+    this.cellBackgrounds = const [],
+    this.gridColor,
+    this.rowGap = 10,
+    this.maxCellWidth = double.infinity,
+  });
 
-  final List<Color?> backgrounds;
+  /// Breite Zellen brechen um (Tabellen).
+  final double maxCellWidth;
+  final int columns;
+  final List<int> aligns;
+  final List<Color?> rowBackgrounds;
+  final List<Color?> cellBackgrounds;
+  final Color? gridColor;
   final double rowGap;
 
   @override
-  RenderObject createRenderObject(BuildContext context) => _RenderAlignedRows(backgrounds, rowGap);
+  RenderObject createRenderObject(BuildContext context) => _RenderGridRows()..update(this);
 
   @override
-  void updateRenderObject(BuildContext context, _RenderAlignedRows renderObject) {
-    renderObject
-      ..backgrounds = backgrounds
-      ..rowGap = rowGap;
-  }
+  void updateRenderObject(BuildContext context, _RenderGridRows renderObject) => renderObject.update(this);
 }
 
-class _AlignedParentData extends ContainerBoxParentData<RenderBox> {}
+class _GridParentData extends ContainerBoxParentData<RenderBox> {}
 
-class _RenderAlignedRows extends RenderBox
+class _RenderGridRows extends RenderBox
     with
-        ContainerRenderObjectMixin<RenderBox, _AlignedParentData>,
-        RenderBoxContainerDefaultsMixin<RenderBox, _AlignedParentData> {
-  _RenderAlignedRows(this._backgrounds, this._rowGap);
+        ContainerRenderObjectMixin<RenderBox, _GridParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _GridParentData> {
+  int _columns = 1;
+  List<int> _aligns = const [];
+  List<Color?> _rowBackgrounds = const [];
+  List<Color?> _cellBackgrounds = const [];
+  Color? _gridColor;
+  double _rowGap = 10;
+  double _maxCellWidth = double.infinity;
 
-  List<Color?> _backgrounds;
-  set backgrounds(List<Color?> v) {
-    _backgrounds = v;
+  void update(_GridRows w) {
+    final relayout =
+        w.columns != _columns ||
+        w.rowGap != _rowGap ||
+        w.aligns.join() != _aligns.join() ||
+        w.maxCellWidth != _maxCellWidth;
+    _maxCellWidth = w.maxCellWidth;
+    _columns = w.columns < 1 ? 1 : w.columns;
+    _aligns = w.aligns;
+    _rowBackgrounds = w.rowBackgrounds;
+    _cellBackgrounds = w.cellBackgrounds;
+    _gridColor = w.gridColor;
+    _rowGap = w.rowGap;
+    if (relayout) markNeedsLayout();
     markNeedsPaint();
   }
 
-  double _rowGap;
-  set rowGap(double v) {
-    if (v == _rowGap) return;
-    _rowGap = v;
-    markNeedsLayout();
-  }
-
   final List<Rect> _rowRects = [];
+  final List<Rect> _cellRects = [];
 
   @override
   void setupParentData(RenderBox child) {
-    if (child.parentData is! _AlignedParentData) child.parentData = _AlignedParentData();
+    if (child.parentData is! _GridParentData) child.parentData = _GridParentData();
   }
 
   @override
@@ -408,35 +892,38 @@ class _RenderAlignedRows extends RenderBox
       children.add(child);
       child = childAfter(child);
     }
-    final widths = [0.0, 0.0, 0.0, 0.0];
-    final rows = (children.length / 4).ceil();
+    final widths = List.filled(_columns, 0.0);
+    final rows = (children.length / _columns).ceil();
     final heights = List.filled(rows, 0.0);
     for (final (i, ch) in children.indexed) {
-      ch.layout(const BoxConstraints(), parentUsesSize: true);
-      final col = i % 4;
+      ch.layout(BoxConstraints(maxWidth: _maxCellWidth), parentUsesSize: true);
+      final col = i % _columns;
       if (ch.size.width > widths[col]) widths[col] = ch.size.width;
-      if (ch.size.height > heights[i ~/ 4]) heights[i ~/ 4] = ch.size.height;
+      if (ch.size.height > heights[i ~/ _columns]) heights[i ~/ _columns] = ch.size.height;
     }
-    const padX = 8.0;
+    final padX = _gridColor == null ? 8.0 : 0.0;
     final total = widths.fold(0.0, (a, b) => a + b) + 2 * padX;
     _rowRects.clear();
+    _cellRects.clear();
     var y = 0.0;
     for (var r = 0; r < rows; r++) {
       final h = heights[r] + _rowGap;
       var x = padX;
-      for (var col = 0; col < 4; col++) {
-        final i = r * 4 + col;
+      for (var col = 0; col < _columns; col++) {
+        final i = r * _columns + col;
         if (i >= children.length) break;
         final ch = children[i];
-        final dx = switch (col) {
-          0 => x + widths[0] - ch.size.width,
-          1 => x + (widths[1] - ch.size.width) / 2,
+        final align = col < _aligns.length ? _aligns[col] : 0;
+        final dx = switch (align) {
+          2 => x + widths[col] - ch.size.width,
+          1 => x + (widths[col] - ch.size.width) / 2,
           _ => x,
         };
-        (ch.parentData! as _AlignedParentData).offset = Offset(dx, y + (h - ch.size.height) / 2);
+        (ch.parentData! as _GridParentData).offset = Offset(dx, y + (h - ch.size.height) / 2);
+        _cellRects.add(Rect.fromLTWH(x, y, widths[col], h));
         x += widths[col];
       }
-      _rowRects.add(Rect.fromLTWH(0, y + 2, total, h - 4));
+      _rowRects.add(Rect.fromLTWH(0, y + (_gridColor == null ? 2 : 0), total, h - (_gridColor == null ? 4 : 0)));
       y += h;
     }
     size = constraints.constrain(Size(total, y));
@@ -444,13 +931,25 @@ class _RenderAlignedRows extends RenderBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    final canvas = context.canvas;
     for (final (r, rect) in _rowRects.indexed) {
-      final color = r < _backgrounds.length ? _backgrounds[r] : null;
+      final color = r < _rowBackgrounds.length ? _rowBackgrounds[r] : null;
       if (color == null) continue;
-      context.canvas.drawRRect(
-        RRect.fromRectAndRadius(rect.shift(offset), const Radius.circular(8)),
-        Paint()..color = color,
-      );
+      canvas.drawRRect(RRect.fromRectAndRadius(rect.shift(offset), const Radius.circular(8)), Paint()..color = color);
+    }
+    for (final (i, rect) in _cellRects.indexed) {
+      final color = i < _cellBackgrounds.length ? _cellBackgrounds[i] : null;
+      if (color != null) canvas.drawRect(rect.shift(offset), Paint()..color = color);
+    }
+    final grid = _gridColor;
+    if (grid != null) {
+      final paint = Paint()
+        ..color = grid
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1;
+      for (final rect in _cellRects) {
+        canvas.drawRect(rect.shift(offset), paint);
+      }
     }
     defaultPaint(context, offset);
   }

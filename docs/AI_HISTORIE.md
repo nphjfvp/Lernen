@@ -1692,3 +1692,22 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     wieder) und `sequence-calc` (Zustand `calculatorOpen` für die Sitzung): ab 900 px Rechner rechts
     (`sequence-calc-panel`), sonst `DraggableScrollableSheet` über der Aufgabe mit `sequence-calc-close`;
     `onUseResult` kopiert in die Zwischenablage (SnackBar). Test: `study_sequence_screen_test`.
+124. Vorrechnen für alles: `WorkKind` (math, focus, text, table) in `WorkStep` (`content`, `marks` = `WorkMark`
+    text/role gegeben|gesucht|hinweis, `table` = `WorkTable` columns/rows/fresh), `WorkedSolution.general` (Rezept)
+    und `copyWith(cardId:)`. worked_board.dart: `WorkPlayback.blocks(step, phase)` → `MathBlock`/`FocusBlock`/
+    `TextBlock`/`TableBlock` (Tabelle ersetzt sich an derselben Stelle; Phase -1 = sokratisch: nur die
+    Ausgangszeile ohne Umformung), `board()` = nur Rechenzeilen; Layout `_GridRows` (Spalten, Ausrichtung,
+    Zeilen-/Zell-Hintergründe, Gitter, `maxCellWidth`); `LatexChunks.split` (antippbare Teile: Zeichen einzeln,
+    Bausteine samt Hochzahl/Index/Strich, \frac, \sqrt, \left…\right, Funktion+Klammer). AiService:
+    `solveWorked(general:)` (MODUS: ALLGEMEIN, kein Rechner), Prompt mit Schritt-Arten (focus immer zuerst),
+    `checkWorkedIdea` (`_workedIdeaSystemPrompt`, richtig/teilweise/falsch + feedback/hint). WorkedSolutionScreen:
+    `general`, `startSocratic`, `taskTypesLoader` (erkannte Aufgabentypen als `worked-type-i`), `worked-kind-concrete`/
+    `-general`, `worked-socratic`, `worked-mode-watch`/`-socratic`, `_askStep` → `worked-ask-panel` (`worked-chunk-i`,
+    `worked-chunk-all`, `worked-idea`, `worked-idea-check`, `worked-idea-skip`, `worked-idea-result`),
+    `worked-praise`, `worked-socratic-summary` + `worked-practice-unknown`, `worked-save-card` (Flashcard front/back,
+    Lösung bekommt `cardId`; Rezept-Karte öffnet sokratisch), PopScope gibt `selfSolved` zurück.
+    ui/visual/task_help.dart `QuestionWithHelp` (Keys `help-worked`, `help-calc`, `help-calc-panel`,
+    `help-calc-close`, `help-watched`; vorgerechnet → `Grade.again`, außer selfSolved; Rechenweg-Karten ohne
+    eigene Knöpfe) in DailyQuizScreen, PracticeScreen, StudySequenceScreen (dort Kopfzeile `sequence-position` +
+    `sequence-understood`). ModuleDetailScreen Reiter Lernen: `module-worked`. Tests: `worked_socratic_test`,
+    `study_sequence_screen_test`, `worked_solution_test`.

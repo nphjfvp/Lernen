@@ -204,10 +204,10 @@ void main() {
     expect(find.text('Rechne 1 + 1'), findsOneWidget);
 
     // Taschenrechner aufklappen, rechnen, Ergebnis kopieren, wieder zu.
-    expect(find.byKey(const ValueKey('sequence-calc-panel')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('sequence-calc')));
+    expect(find.byKey(const ValueKey('help-calc-panel')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('help-calc')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('sequence-calc-panel')), findsOneWidget);
+    expect(find.byKey(const ValueKey('help-calc-panel')), findsOneWidget);
     for (final k in ['1', 'ADD', '1', 'EQ']) {
       await tester.tap(find.byKey(ValueKey('calc-key-$k')));
       await tester.pump(const Duration(milliseconds: 200));
@@ -217,18 +217,18 @@ void main() {
     expect(find.textContaining('Ergebnis kopiert: 2'), findsOneWidget);
     tester.state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger)).removeCurrentSnackBar();
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('sequence-calc-close')));
+    await tester.tap(find.byKey(const ValueKey('help-calc-close')));
     await tester.pump();
-    expect(find.byKey(const ValueKey('sequence-calc-panel')), findsNothing);
+    expect(find.byKey(const ValueKey('help-calc-panel')), findsNothing);
 
     // Vorrechnen lassen: öffnet die Tafel mit der Aufgabe, danach zählt sie als „Nochmal“.
-    await tester.tap(find.byKey(const ValueKey('sequence-worked')));
+    await tester.tap(find.byKey(const ValueKey('help-worked')));
     await tester.pumpAndSettle();
     expect(find.byType(WorkedSolutionScreen), findsOneWidget);
     expect(find.text('Rechne 1 + 1'), findsWidgets);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('sequence-watched')), findsOneWidget);
+    expect(find.byKey(const ValueKey('help-watched')), findsOneWidget);
     await tester.tap(find.text('Zum Umdrehen tippen'));
     await settle(tester, 4);
     await tester.ensureVisible(find.text('Gut'));

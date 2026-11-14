@@ -1,8 +1,31 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7h) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7i) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7i. Vorrechnen für alle Aufgaben, Rezepte, selbst überlegen
+
+- **Nicht nur Mathe**: Vorrechnen löst auch Tabellen-, Freitext- und
+  Vergleichsaufgaben Schritt für Schritt. Immer zuerst **Aufgabe verstehen**
+  (gegeben, gesucht, zu beachten als farbige Kärtchen), dann wächst die
+  Antwort Absatz für Absatz bzw. die Tabelle Zelle für Zelle – Neues grün.
+- **Rezept (allgemein)**: einen Aufgabentyp ohne konkrete Zahlen erklären
+  lassen – allgemeine Formeln, merkbare Schritt-Namen, Regeln. Erkannte
+  Aufgabentypen des Fachs stehen als Vorschlag bereit, oder eine Aufgabe als
+  Beispiel nehmen.
+- **Selbst überlegen (sokratisch)**: Vor jedem Schritt markierst du an der
+  Tafel, woran du arbeiten würdest (z.B. y′), und schreibst, was du tun
+  würdest („wird zu dy/dx“). Stimmt die Idee, wird der Schritt gezeigt; sonst
+  kommt ein Tipp – oder du spulst vor. Am Ende: wie viele Schritte du selbst
+  wusstest, und nur die nicht gewussten noch einmal üben.
+- **Als Lernkarte speichern**: Ein Rezept (oder ein Lösungsweg) wird zur
+  Karte, die wie eine Vokabel wiederkommt; „Vorrechnen“ an der Karte öffnet
+  die Tafel gleich zum Selbst-Überlegen.
+- **Überall beim Lernen**: Daily Quiz, Gemischt üben und Der Reihe nach haben
+  oben bei jeder Aufgabe ∑ (Vorrechnen) und den Taschenrechner. Im Reiter
+  „Lernen“ gibt es „Vorrechnen & Rezepte“. Vor dem Lösen vorgerechnet zählt
+  als „Nochmal“ – außer du hast sokratisch jeden Schritt selbst gewusst.
 
 ### 7h. Der Reihe nach: Vorrechnen und Taschenrechner bei jeder Aufgabe
 

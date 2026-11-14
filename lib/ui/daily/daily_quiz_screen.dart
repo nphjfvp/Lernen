@@ -21,7 +21,7 @@ import '../widgets/calc_tasks_toggle.dart';
 import '../widgets/floating_nav_bar.dart';
 import 'card_review_mixin.dart';
 import 'missed_lessons_screen.dart';
-import 'question_answer_view.dart';
+import '../visual/task_help.dart';
 
 /// Welche Runde einer Session eine Karte gerade angezeigt wird – steuert in
 /// [_DailyQuizScreenState._handleComplete], aus welcher Warteschlange sie
@@ -746,7 +746,7 @@ class _SessionView extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: QuestionAnswerView(
+          child: QuestionWithHelp(
             key: ValueKey(card.id),
             card: card,
             isNew: isNew,

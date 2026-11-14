@@ -422,6 +422,14 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Fragen, Herleitung und „genauer“ je Schritt; simulierter Taschenrechner mit
   Tastenbelegung wie fx-991DE X (`calculator_sim.dart`), die App drückt die
   Tasten vor, danach rechnet man selbst weiter. Gespeichert lokal.
+- **Vorrechnen für alle Aufgaben** – Schritt-Arten `WorkKind` focus (gegeben/
+  gesucht/zu beachten), math, text (Antwort wächst), table (Tabelle füllt
+  sich); **Rezept (allgemein)** ohne Zahlen; **Selbst überlegen**: Teile der
+  Tafel antippen (`LatexChunks`), Idee beschreiben, KI prüft
+  (`checkWorkedIdea`), vorspulen, nicht Gewusstes üben; **Als Lernkarte
+  speichern**. In Daily Quiz, Üben und Der Reihe nach über
+  `lib/ui/visual/task_help.dart` (`QuestionWithHelp`); Reiter „Lernen“ →
+  „Vorrechnen & Rezepte“.
 - **Taschenrechner** (`lib/services/pocket_calculator.dart`, Anzeige
   `calculator_sim.dart`) – rechnet wirklich (ohne KI): Bruch-Vorlage, Wurzel,
   Potenzen, log/ln/eˣ, Trigonometrie in Grad/Bogenmaß, Ans, ∫, d/dx, SOLVE,

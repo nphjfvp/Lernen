@@ -355,7 +355,21 @@ const appGuideChapters = <GuideChapter>[
             'Taschenrechners mit der Tastenbelegung des fx-991DE X, und das Display zeigt mit. Auch aus jeder '
             'Rechenweg-Aufgabe heraus – vor dem Lösen zählt das als aufgedeckt. „Vorhandene Aufgabe wählen“ '
             'holt eine Aufgabe des Fachs samt Musterlösung. Vorgerechnetes bleibt gespeichert.',
-        where: 'Visuell lernen → Aufgabe vorrechnen lassen',
+        where: 'Visuell lernen → Aufgabe vorrechnen lassen · Lernen → Vorrechnen & Rezepte',
+      ),
+      GuideItem(
+        'Vorrechnen für alle Aufgaben, Rezepte, selbst überlegen',
+        'Nicht nur Mathe: Tabellen, Freitext, Vergleiche – zuerst „Aufgabe verstehen“ (gegeben, gesucht, zu '
+            'beachten), dann wächst die Antwort Stück für Stück bzw. die Tabelle Zelle für Zelle (neu = grün). '
+            '„Rezept (allgemein)“ erklärt einen Aufgabentyp ohne Zahlen – mit allgemeinen Formeln und merkbaren '
+            'Schritt-Namen; erkannte Aufgabentypen des Fachs stehen als Vorschlag da. „Selbst überlegen“: vor jedem '
+            'Schritt tippst du an, woran du arbeiten würdest (z.B. y′), und schreibst, was du tun würdest („wird zu '
+            'dy/dx“) – die KI sagt, ob die Idee stimmt, sonst gibt sie einen Tipp; „Vorspulen“ zeigt den Schritt. '
+            'Am Ende: wie viele Schritte du selbst wusstest, „Nur die nicht gewussten üben“. „Als Lernkarte '
+            'speichern“ legt eine Karte an, die wie eine Vokabel wiederkommt und diese Tafel öffnet. In Daily Quiz, '
+            'Üben und „Der Reihe nach“ gibt es oben bei jeder Aufgabe ∑ (Vorrechnen) und den Taschenrechner – wer '
+            'vor dem Lösen vorrechnen lässt, bekommt „Nochmal“, außer er hat sokratisch alles selbst gewusst.',
+        where: 'Lernen → Vorrechnen & Rezepte · in jeder Aufgabe oben ∑',
       ),
       GuideItem(
         'Frei fragen',

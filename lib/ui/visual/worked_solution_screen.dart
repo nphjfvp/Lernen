@@ -9,9 +9,11 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/flashcard.dart';
 import '../../models/step_task.dart';
+import '../../models/visual_task_type.dart';
 import '../../models/worked_solution.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../repositories/visual_task_type_repository.dart';
 import '../../repositories/worked_solution_repository.dart';
 import '../../services/ai_service.dart';
 import '../../theme/app_colors.dart';
@@ -36,7 +38,15 @@ class WorkedSolutionScreen extends StatefulWidget {
     this.image,
     this.cardId,
     this.solution,
+    this.general = false,
+    this.startSocratic = false,
   });
+
+  /// Gleich als Rezept (allgemein, ohne Zahlen) starten.
+  final bool general;
+
+  /// Gleich sokratisch: erst selbst überlegen, dann aufdecken.
+  final bool startSocratic;
 
   final String moduleId;
 
@@ -75,6 +85,9 @@ class WorkedSolutionScreen extends StatefulWidget {
     }
   }
 
+  /// Test-Hook: Aufgabentypen des Fachs (Titel: Beschreibung).
+  static Future<List<String>> Function(String moduleId)? taskTypesLoader;
+
   /// Takt bei „Automatisch“.
   static Duration autoDelay = const Duration(milliseconds: 2800);
 
@@ -90,6 +103,26 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   late Uint8List? _image = widget.image;
   late String? _cardId = widget.cardId;
   Flashcard? _pickedCard;
+  late bool _general = widget.general;
+
+  /// Sokratisch: vor jedem Schritt erst selbst sagen, was man tun würde.
+  late bool _socratic = widget.startSocratic;
+
+  /// Schritt, zu dem gerade ein Vorschlag erwartet wird.
+  int? _askStep;
+  final Set<int> _known = {};
+  final Set<int> _skipped = {};
+
+  /// „Nicht Gewusstes üben“: nur diese Schritte werden abgefragt.
+  Set<int>? _practiceOnly;
+  final Set<int> _selected = {};
+  final _idea = TextEditingController();
+  bool _ideaBusy = false;
+  ({String verdict, String feedback, String hint})? _ideaResult;
+
+  /// Rückmeldung zum zuletzt richtig vorgeschlagenen Schritt.
+  ({int step, String text})? _praise;
+  List<String> _taskTypes = const [];
   WorkDetail _detail = WorkDetail.normal;
   bool _calculator = true;
   bool _busy = false;
@@ -118,6 +151,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   void dispose() {
     _auto?.cancel();
     _problem.dispose();
+    _idea.dispose();
     super.dispose();
   }
 
@@ -125,7 +159,11 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
 
   Future<void> _load({bool openExisting = true}) async {
     final repo = _repo;
-    if (repo == null) return;
+    if (repo == null) {
+      await _loadTypes();
+      if (_solution != null && _socratic && _askStep == null) _beginAsk();
+      return;
+    }
     if (openExisting && _solution == null && _cardId != null) {
       final existing = await repo.forCard(_cardId!);
       if (existing != null) {
@@ -133,6 +171,8 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
           _solution = existing;
           _detail = existing.detail;
           _calculator = existing.withCalculator;
+          // Eine Rezept-Karte lernt man durch Selbst-Überlegen.
+          if (existing.general) _socratic = true;
         });
       }
     }
@@ -140,6 +180,27 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
       final saved = await repo.forModule(widget.moduleId);
       setState(() => _saved = saved);
     }
+    await _loadTypes();
+    if (_solution != null && _socratic && _askStep == null) _beginAsk();
+  }
+
+  Future<void> _loadTypes() async {
+    final loader = WorkedSolutionScreen.taskTypesLoader ?? (_repo == null ? null : _loadTaskTypes);
+    if (loader == null) return;
+    try {
+      final catalog = await loader(widget.moduleId);
+      setState(() => _taskTypes = catalog);
+    } catch (_) {
+      // Ohne erkannte Aufgabentypen geht es auch.
+    }
+  }
+
+  static Future<List<String>> _loadTaskTypes(String moduleId) async {
+    final catalog = await VisualTaskTypeRepository().load(moduleId);
+    return [
+      for (final t in catalog?.types ?? const <VisualTaskType>[])
+        t.description.isEmpty ? t.title : '${t.title}: ${t.description}',
+    ];
   }
 
   AiService? _ai({bool vision = false}) {
@@ -170,8 +231,9 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
         problem: _problem.text,
         detail: _detail,
         reference: _reference,
-        calculator: _calculator,
+        calculator: _calculator && !_general,
         image: _image,
+        general: _general,
       );
       final solution = WorkedSolution.fromAi(
         json,
@@ -180,8 +242,10 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
         problem: _problem.text.trim(),
         detail: _detail,
         now: DateTime.now(),
-        cardId: _cardId,
-        withCalculator: _calculator,
+        // Ein Rezept gehört zum Aufgabentyp, nicht zur Beispielaufgabe.
+        cardId: _general ? null : _cardId,
+        withCalculator: _calculator && !_general,
+        general: _general,
       );
       if (solution.steps.isEmpty) {
         throw AiServiceException('Die KI hat keine lesbaren Schritte geliefert.', rawResponse: '$json');
@@ -191,7 +255,9 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
         _solution = solution;
         _t = 0;
         _chats.clear();
+        _resetSocratic();
       });
+      if (_socratic) _beginAsk();
     } on AiServiceException catch (e) {
       setState(() {
         _error = e.message;
@@ -216,8 +282,17 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   }
 
   void _next() {
+    if (_askStep != null) return;
     if (_t >= _playback.length - 1) {
       _stopAuto();
+      return;
+    }
+    // Sokratisch: vor einem neuen Schritt erst selbst überlegen.
+    final (current, _) = _playback.at(_t);
+    final (next, _) = _playback.at(_t + 1);
+    if (_socratic && next != current && _needsAsk(next)) {
+      _stopAuto();
+      _askFor(next);
       return;
     }
     _go(_t + 1);
@@ -225,7 +300,159 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
 
   void _prev() {
     _stopAuto();
+    if (_askStep != null) {
+      setState(() => _askStep = null);
+      return;
+    }
     _go(_t - 1);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sokratisch: selbst überlegen, dann aufdecken
+  // ---------------------------------------------------------------------------
+
+  bool _needsAsk(int step) =>
+      !_known.contains(step) && !_skipped.contains(step) && (_practiceOnly == null || _practiceOnly!.contains(step));
+
+  void _resetSocratic() {
+    _askStep = null;
+    _known.clear();
+    _skipped.clear();
+    _practiceOnly = null;
+    _ideaResult = null;
+    _praise = null;
+    _selected.clear();
+    _idea.clear();
+  }
+
+  /// Am Anfang bzw. beim Umschalten: den aktuellen Schritt abfragen.
+  void _beginAsk() {
+    if (_solution == null) return;
+    final (step, phase) = _playback.at(_t);
+    if (phase == _playback.phasesOf(step).first && _needsAsk(step)) _askFor(step);
+  }
+
+  void _askFor(int step) => setState(() {
+    _askStep = step;
+    _ideaResult = null;
+    _selected.clear();
+    _idea.clear();
+  });
+
+  /// Schritt aufdecken – [known]: selbst richtig vorgeschlagen.
+  void _reveal(int step, {required bool known, String praise = ''}) {
+    setState(() {
+      if (known) {
+        _known.add(step);
+      } else {
+        _skipped.add(step);
+      }
+      _askStep = null;
+      _praise = praise.isEmpty ? null : (step: step, text: praise);
+      _t = _playback.startOf(step);
+    });
+  }
+
+  Future<void> _checkIdea() async {
+    final step = _askStep;
+    final ai = _ai();
+    if (step == null || _idea.text.trim().isEmpty || _ideaBusy) return;
+    if (ai == null) {
+      setState(() => _error = 'Zum Prüfen deiner Idee braucht die App deinen OpenRouter-Key (Einstellungen).');
+      return;
+    }
+    final solution = _solution!;
+    final chunks = _askChunks(step);
+    final selection = [
+      for (final (i, c) in chunks.indexed)
+        if (_selected.contains(i)) c.tex,
+    ].join(' ');
+    setState(() {
+      _ideaBusy = true;
+      _error = null;
+    });
+    try {
+      final result = await ai.checkWorkedIdea(
+        problem: solution.problem,
+        boardSoFar: _boardTexts(step, -1),
+        step: solution.steps[step].toMap(),
+        selection: selection,
+        idea: _idea.text,
+        general: solution.general,
+      );
+      if (!mounted) return;
+      if (result.verdict == 'richtig') {
+        _reveal(step, known: true, praise: result.feedback.isEmpty ? 'Richtig!' : result.feedback);
+      } else {
+        setState(() => _ideaResult = result);
+      }
+    } on AiServiceException catch (e) {
+      setState(() => _error = e.message);
+    } catch (e) {
+      setState(() => _error = 'Prüfen fehlgeschlagen: $e');
+    } finally {
+      setState(() => _ideaBusy = false);
+    }
+  }
+
+  /// Antippbare Teile der Ausgangszeile des abgefragten Schritts.
+  List<({String tex, bool op})> _askChunks(int step) {
+    final lines = _playback.board(step, -1);
+    if (lines.isEmpty || _solution!.steps[step].kind != WorkKind.math) return const [];
+    return LatexChunks.split(lines.last.tex);
+  }
+
+  /// Nur die nicht selbst gewussten Schritte noch einmal abfragen.
+  void _practiceUnknown() {
+    final steps = _solution!.steps;
+    final unknown = {
+      for (var i = 0; i < steps.length; i++)
+        if (!_known.contains(i)) i,
+    };
+    setState(() {
+      _resetSocratic();
+      _socratic = true;
+      _practiceOnly = unknown;
+      _t = 0;
+    });
+    _beginAsk();
+  }
+
+  /// Als Lernkarte speichern: Vorderseite fragt nach dem Vorgehen, Rückseite
+  /// sind die Schritte; die Karte öffnet diese Tafel (sokratisch) wieder.
+  Future<void> _saveAsCard() async {
+    final solution = _solution!;
+    final repo = context.read<FlashcardRepository?>();
+    if (repo == null) return;
+    final now = DateTime.now();
+    final title = solution.displayTitle;
+    final front = solution.general
+        ? 'Wie gehst du vor? ${title.startsWith('Rezept') ? title : 'Rezept: $title'}'
+        : 'Wie löst du diese Aufgabe – Schritt für Schritt?\n\n${solution.problem}';
+    final back = [
+      for (final (i, st) in solution.steps.indexed)
+        '${i + 1}. ${st.title}${st.rule == null ? '' : ' – ${st.rule!.name}${st.rule!.formula.isEmpty ? '' : ': \$${st.rule!.formula}\$'}'}',
+    ].join('\n');
+    final card = Flashcard(
+      id: const Uuid().v4(),
+      moduleId: widget.moduleId,
+      front: front,
+      back: back,
+      createdAt: now,
+      due: now,
+    );
+    await repo.saveAll([card]);
+    final linked = solution.copyWith(cardId: card.id);
+    await _repo?.save(linked);
+    if (!mounted) return;
+    setState(() => _solution = linked);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Als Lernkarte gespeichert – sie kommt im Daily Quiz; „Vorrechnen“ an der Karte öffnet diese Tafel.',
+        ),
+      ),
+    );
   }
 
   void _toggleAuto() {
@@ -251,7 +478,13 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   // ---------------------------------------------------------------------------
 
   List<String> _boardTexts(int step, int phase) => [
-    for (final l in _playback.board(step, phase)) WorkMarkup.toTex(l.tex, colored: false),
+    for (final b in _playback.blocks(step, phase))
+      ...switch (b) {
+        MathBlock(:final lines) => [for (final l in lines) WorkMarkup.toTex(l.tex, colored: false)],
+        TextBlock(:final text) => [text],
+        FocusBlock(:final marks) => [for (final m in marks) '${m.role}: ${m.text}'],
+        TableBlock(:final table) => [table.columns.join(' | '), for (final r in table.rows) r.join(' | ')],
+      },
   ];
 
   Future<void> _ask(int step, {String? preset}) async {
@@ -313,17 +546,8 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
       // Die Tafel soll genau dort weitergehen, wo der Schritt aufhörte.
       final fixed = [
         for (final (i, p) in parts.indexed)
-          i == parts.length - 1 && s.to.isNotEmpty && p.to.isEmpty
-              ? WorkStep(
-                  title: p.title,
-                  say: p.say,
-                  from: p.from,
-                  op: p.op,
-                  work: p.work,
-                  to: s.to,
-                  rule: p.rule,
-                  calc: p.calc,
-                )
+          i == parts.length - 1 && s.to.isNotEmpty && p.to.isEmpty && p.kind == WorkKind.math
+              ? p.copyWith(to: s.to)
               : p,
       ];
       final steps = [...solution.steps]..replaceRange(step, step + 1, fixed);
@@ -356,6 +580,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
       _solution = null;
       _t = 0;
       _chats.clear();
+      _resetSocratic();
     });
     await _load(openExisting: false);
   }
@@ -389,7 +614,9 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
         _calculator = existing.withCalculator;
         _t = 0;
         _chats.clear();
+        _resetSocratic();
       });
+      if (_socratic) _beginAsk();
     }
   }
 
@@ -405,15 +632,41 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   // Anzeige
   // ---------------------------------------------------------------------------
 
+  /// Sokratisch jeden Schritt selbst gewusst (nichts vorgespult)?
+  bool get _selfSolved {
+    final steps = _solution?.steps ?? const <WorkStep>[];
+    return _socratic && _practiceOnly == null && steps.isNotEmpty && _skipped.isEmpty && _known.length == steps.length;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final solution = _solution;
+    // Beim Verlassen: Hat man jeden Schritt selbst gewusst? (Zählt dann nicht
+    // als Hilfe – siehe QuestionWithHelp.)
+    return PopScope<bool>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        Navigator.of(context).pop(_selfSolved);
+      },
+      child: _scaffold(c, solution),
+    );
+  }
+
+  Widget _scaffold(AppColors c, WorkedSolution? solution) {
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(
         title: Text(solution == null ? 'Vorrechnen lassen' : solution.displayTitle, overflow: TextOverflow.ellipsis),
         actions: [
+          if (solution != null && solution.cardId == null && context.read<FlashcardRepository?>() != null)
+            IconButton(
+              key: const ValueKey('worked-save-card'),
+              tooltip: 'Als Lernkarte speichern (wie eine Vokabel wiederholen)',
+              onPressed: _busy ? null : _saveAsCard,
+              icon: const Icon(Icons.bookmark_add_outlined),
+            ),
           if (solution != null)
             IconButton(
               key: const ValueKey('worked-new'),
@@ -441,6 +694,56 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
             'App einen Taschenrechner, damit du siehst, welche Tasten du drücken würdest.',
             style: TextStyle(color: c.inkMuted, height: 1.4),
           ),
+          const SizedBox(height: 14),
+          SegmentedButton<bool>(
+            key: const ValueKey('worked-kind'),
+            segments: const [
+              ButtonSegment(
+                value: false,
+                icon: Icon(Icons.calculate_outlined, size: 18),
+                label: Text('Aufgabe lösen', key: ValueKey('worked-kind-concrete')),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: Icon(Icons.menu_book_outlined, size: 18),
+                label: Text('Rezept (allgemein)', key: ValueKey('worked-kind-general')),
+              ),
+            ],
+            selected: {_general},
+            showSelectedIcon: false,
+            onSelectionChanged: _busy ? null : (v) => setState(() => _general = v.first),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _general
+                ? 'Der Aufgabentyp ohne konkrete Zahlen – die Grundschritte als Rezept, zum Lernen wie Vokabeln. '
+                      'Gib einen Aufgabentyp ein, wähle einen erkannten oder eine Beispielaufgabe.'
+                : 'Rechnungen, Tabellen, Freitext – die Aufgabe wird Schritt für Schritt gelöst, beginnend mit: '
+                      'Was ist gegeben, was ist gesucht?',
+            style: TextStyle(fontSize: 12.5, color: c.inkMuted, height: 1.35),
+          ),
+          if (_general && _taskTypes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final (i, t) in _taskTypes.take(12).indexed)
+                  ActionChip(
+                    key: ValueKey('worked-type-$i'),
+                    label: Text(t.split(':').first, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                            _problem.text = t;
+                            _pickedCard = null;
+                            _reference = '';
+                            _image = null;
+                          }),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           if (widget.cardId == null) ...[
             Wrap(
@@ -485,10 +788,12 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
             minLines: 2,
             maxLines: 8,
             enabled: !_busy,
-            decoration: const InputDecoration(
-              labelText: 'Aufgabe',
-              hintText: 'z.B. Löse ln((48x + 6)²) = 10 nach x auf  oder  Berechne ∫ 2x(x² + 1)³ dx',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: _general ? 'Aufgabentyp oder Beispielaufgabe' : 'Aufgabe',
+              hintText: _general
+                  ? 'z.B. DGL mit Trennung der Variablen, Partialbruchzerlegung, Werkstoffe in einer Tabelle vergleichen'
+                  : 'z.B. Löse ln((48x + 6)²) = 10 nach x auf  oder  Berechne ∫ 2x(x² + 1)³ dx',
+              border: const OutlineInputBorder(),
             ),
           ),
           if (_problem.text.contains(r'$')) ...[
@@ -515,13 +820,25 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
           Text(_detail.hint, style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
           const SizedBox(height: 8),
           SwitchListTile(
-            key: const ValueKey('worked-calculator'),
+            key: const ValueKey('worked-socratic'),
             contentPadding: EdgeInsets.zero,
-            value: _calculator,
-            onChanged: _busy ? null : (v) => setState(() => _calculator = v),
-            title: const Text('Mit Taschenrechner'),
-            subtitle: const Text('Die App zeigt Tastenfolgen (Tasten wie fx-991DE X), wo man ihn benutzen würde.'),
+            value: _socratic,
+            onChanged: _busy ? null : (v) => setState(() => _socratic = v),
+            title: const Text('Selbst überlegen (sokratisch)'),
+            subtitle: const Text(
+              'Vor jedem Schritt markierst du, woran du arbeiten würdest, und sagst, was du tun würdest – die KI '
+              'sagt, ob die Idee stimmt. Weißt du es nicht, spulst du vor.',
+            ),
           ),
+          if (!_general)
+            SwitchListTile(
+              key: const ValueKey('worked-calculator'),
+              contentPadding: EdgeInsets.zero,
+              value: _calculator,
+              onChanged: _busy ? null : (v) => setState(() => _calculator = v),
+              title: const Text('Mit Taschenrechner'),
+              subtitle: const Text('Die App zeigt Tastenfolgen (Tasten wie fx-991DE X), wo man ihn benutzen würde.'),
+            ),
           const SizedBox(height: 8),
           FilledButton.icon(
             key: const ValueKey('worked-start'),
@@ -529,7 +846,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
             icon: _busy
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.play_lesson_outlined),
-            label: Text(_busy ? 'Die KI rechnet vor …' : 'Vorrechnen'),
+            label: Text(_busy ? 'Die KI rechnet vor …' : (_general ? 'Rezept erklären' : 'Vorrechnen')),
           ),
           if (_error != null) _errorBox(c),
           if (_saved.isNotEmpty) ...[
@@ -542,12 +859,16 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.functions, color: c.accent),
                 title: Text(s.displayTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text('${s.detail.label} · ${s.steps.length} Schritte'),
-                onTap: () => setState(() {
-                  _solution = s;
-                  _t = 0;
-                  _chats.clear();
-                }),
+                subtitle: Text('${s.general ? 'Rezept · ' : ''}${s.detail.label} · ${s.steps.length} Schritte'),
+                onTap: () {
+                  setState(() {
+                    _solution = s;
+                    _t = 0;
+                    _chats.clear();
+                    _resetSocratic();
+                  });
+                  if (_socratic) _beginAsk();
+                },
                 trailing: IconButton(
                   tooltip: 'Löschen',
                   icon: const Icon(Icons.delete_outline),
@@ -581,10 +902,12 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
 
   Widget _buildPlayer(AppColors c, WorkedSolution solution) {
     final playback = _playback;
-    final (step, phase) = playback.at(_t);
+    final ask = _askStep;
+    final (shownStep, shownPhase) = playback.at(_t);
+    final step = ask ?? shownStep;
+    final phase = ask == null ? shownPhase : -1;
     final s = solution.steps[step];
-    final lines = playback.board(step, phase);
-    final calc = solution.withCalculator ? s.calc : null;
+    final calc = solution.withCalculator && ask == null ? s.calc : null;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.arrowRight): _next,
@@ -610,18 +933,39 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
                     child: MathText(solution.problem, style: const TextStyle(fontSize: 14.5, height: 1.4)),
                   ),
                 const SizedBox(height: 10),
+                _modeToggle(c),
+                const SizedBox(height: 10),
                 _progress(c, solution, step),
                 const SizedBox(height: 10),
                 SizedBox(
                   height: wide ? 380 : 260,
-                  child: WorkBoard(lines: lines),
+                  child: WorkBoard(blocks: playback.blocks(step, phase)),
                 ),
                 const SizedBox(height: 10),
-                _explanation(c, s, step, phase),
-                const SizedBox(height: 8),
-                _controls(c, step),
+                if (ask != null) ...[
+                  _askPanel(c, ask),
+                ] else ...[
+                  if (_praise case final p? when p.step == step)
+                    Container(
+                      key: const ValueKey('worked-praise'),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: c.goodSoft, borderRadius: BorderRadius.circular(12)),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: c.good, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(child: MathText(p.text, style: const TextStyle(fontSize: 13.5, height: 1.35))),
+                        ],
+                      ),
+                    ),
+                  _explanation(c, s, step, phase),
+                  const SizedBox(height: 8),
+                  _controls(c, step),
+                ],
                 if (_error != null) _errorBox(c),
-                if (_atEnd && solution.answer.isNotEmpty)
+                if (_atEnd && ask == null && _socratic) _socraticSummary(c, solution),
+                if (_atEnd && ask == null && solution.answer.isNotEmpty)
                   Container(
                     key: const ValueKey('worked-answer'),
                     margin: const EdgeInsets.only(top: 12),
@@ -691,6 +1035,235 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     );
   }
 
+  Widget _modeToggle(AppColors c) => SegmentedButton<bool>(
+    key: const ValueKey('worked-mode'),
+    segments: const [
+      ButtonSegment(
+        value: false,
+        icon: Icon(Icons.slideshow_outlined, size: 18),
+        label: Text('Vorrechnen', key: ValueKey('worked-mode-watch')),
+      ),
+      ButtonSegment(
+        value: true,
+        icon: Icon(Icons.psychology_outlined, size: 18),
+        label: Text('Selbst überlegen', key: ValueKey('worked-mode-socratic')),
+      ),
+    ],
+    selected: {_socratic},
+    showSelectedIcon: false,
+    onSelectionChanged: (v) {
+      _stopAuto();
+      setState(() {
+        _socratic = v.first;
+        if (!_socratic) _askStep = null;
+      });
+      if (_socratic) _beginAsk();
+    },
+  );
+
+  /// Sokratisch: Teile der Tafel markieren und sagen, was man tun würde.
+  Widget _askPanel(AppColors c, int step) {
+    final chunks = _askChunks(step);
+    final s = _solution!.steps[step];
+    final result = _ideaResult;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final question = switch (s.kind) {
+      WorkKind.focus => 'Was ist hier gegeben, was ist gesucht – und was verlangt die Aufgabe genau?',
+      WorkKind.text => 'Was gehört als Nächstes in die Antwort?',
+      WorkKind.table => 'Was trägst du als Nächstes in die Tabelle ein – und woher weißt du es?',
+      WorkKind.math =>
+        chunks.isEmpty
+            ? 'Was machst du als Nächstes?'
+            : 'Tipp an, woran du arbeiten würdest, und schreib, was du damit machst.',
+    };
+    return Container(
+      key: const ValueKey('worked-ask-panel'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.accent.withAlpha(120), width: 1.4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.psychology_outlined, color: c.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Dein Zug – Schritt ${step + 1}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(question, style: TextStyle(fontSize: 13.5, color: c.inkMuted, height: 1.35)),
+          if (chunks.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 4,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                for (final (i, chunk) in chunks.indexed)
+                  InkWell(
+                    key: ValueKey('worked-chunk-$i'),
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => setState(() => _selected.contains(i) ? _selected.remove(i) : _selected.add(i)),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _selected.contains(i) ? c.accent.withAlpha(dark ? 90 : 55) : c.surfaceAlt,
+                        border: Border.all(color: _selected.contains(i) ? c.accent : c.border),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Math.tex(
+                        chunk.tex,
+                        textStyle: TextStyle(fontSize: 20, color: c.ink),
+                        onErrorFallback: (_) => Text(chunk.tex),
+                      ),
+                    ),
+                  ),
+                TextButton(
+                  key: const ValueKey('worked-chunk-all'),
+                  onPressed: () => setState(() {
+                    if (_selected.length == chunks.length) {
+                      _selected.clear();
+                    } else {
+                      _selected.addAll([for (var i = 0; i < chunks.length; i++) i]);
+                    }
+                  }),
+                  child: Text(_selected.length == chunks.length ? 'Nichts' : 'Ganze Zeile'),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          TextField(
+            key: const ValueKey('worked-idea'),
+            controller: _idea,
+            minLines: 1,
+            maxLines: 4,
+            enabled: !_ideaBusy,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _checkIdea(),
+            decoration: InputDecoration(
+              hintText: switch (s.kind) {
+                WorkKind.math => 'z.B. „y′ wird zu dy/dx“ oder „nach y und x sortieren“',
+                WorkKind.focus => 'z.B. „gesucht ist die Geschwindigkeit nach 3 s“',
+                _ => 'deine Idee …',
+              },
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          if (result != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              key: const ValueKey('worked-idea-result'),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: result.verdict == 'teilweise' ? c.warnSoft : c.dangerSoft,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    result.verdict == 'teilweise' ? 'Fast – die Richtung stimmt' : 'Noch nicht',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  if (result.feedback.isNotEmpty)
+                    MathText(result.feedback, style: const TextStyle(fontSize: 13.5, height: 1.35)),
+                  if (result.hint.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: MathText('Tipp: ${result.hint}', style: const TextStyle(fontSize: 13, height: 1.35)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                key: const ValueKey('worked-prev'),
+                onPressed: _prev,
+                icon: const Icon(Icons.chevron_left),
+                label: const Text('Zurück'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  key: const ValueKey('worked-idea-check'),
+                  onPressed: _ideaBusy ? null : _checkIdea,
+                  icon: _ideaBusy
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.task_alt),
+                  label: const Text('Prüfen'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Weiß ich nicht – Schritt zeigen',
+                child: OutlinedButton.icon(
+                  key: const ValueKey('worked-idea-skip'),
+                  onPressed: _ideaBusy ? null : () => _reveal(step, known: false),
+                  icon: const Icon(Icons.fast_forward),
+                  label: const Text('Vorspulen'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _socraticSummary(AppColors c, WorkedSolution solution) {
+    final asked = _practiceOnly ?? {for (var i = 0; i < solution.steps.length; i++) i};
+    final known = _known.intersection(asked).length;
+    final missing = asked.length - known;
+    return Container(
+      key: const ValueKey('worked-socratic-summary'),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: missing == 0 ? c.goodSoft : c.accentSoft,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Selbst gewusst: $known von ${asked.length} Schritten',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          if (missing > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Nicht gewusst: ${[for (final i in asked)
+                if (!_known.contains(i)) solution.steps[i].title].join(' · ')}',
+              style: const TextStyle(fontSize: 13, height: 1.35),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+              key: const ValueKey('worked-practice-unknown'),
+              onPressed: _practiceUnknown,
+              icon: const Icon(Icons.replay),
+              label: const Text('Nur die nicht gewussten Schritte üben'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _progress(AppColors c, WorkedSolution solution, int step) {
     final len = _playback.length;
     return Column(
@@ -707,7 +1280,10 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(10)),
-              child: Text(solution.detail.label, style: TextStyle(fontSize: 11, color: c.accentOnSoft)),
+              child: Text(
+                '${solution.general ? 'Rezept · ' : ''}${solution.detail.label}',
+                style: TextStyle(fontSize: 11, color: c.accentOnSoft),
+              ),
             ),
             const Spacer(),
             PopupMenuButton<int>(
@@ -716,6 +1292,12 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
               icon: const Icon(Icons.format_list_numbered, size: 20),
               onSelected: (i) {
                 _stopAuto();
+                if (_socratic && _needsAsk(i)) {
+                  setState(() => _t = _playback.startOf(i));
+                  _askFor(i);
+                  return;
+                }
+                setState(() => _askStep = null);
                 _go(_playback.startOf(i));
               },
               itemBuilder: (_) => [
@@ -741,7 +1323,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     final phaseNote = switch (phase) {
       0 when s.op.isNotEmpty => 'Umformung auf beiden Seiten:',
       1 => 'Grün kommt dazu, rot fällt weg, blau wird umgeformt.',
-      2 => 'Neue Zeile.',
+      2 => s.kind == WorkKind.math ? 'Neue Zeile.' : 'Neu an der Tafel (grün).',
       _ => '',
     };
     return AnimatedSwitcher(

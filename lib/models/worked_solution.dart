@@ -96,6 +96,100 @@ class WorkCalc {
   }
 }
 
+/// Art eines Schritts: Rechnung an der Tafel (Standard), Aufgabe verstehen
+/// (was ist gegeben/gesucht), ein Stück Antworttext, eine Tabelle.
+enum WorkKind {
+  math,
+  focus,
+  text,
+  table;
+
+  static WorkKind from(Object? raw, Map source) {
+    final v = '${raw ?? ''}'.toLowerCase().trim();
+    for (final k in values) {
+      if (k.name == v) return k;
+    }
+    if (v.contains('tab')) return table;
+    if (v.contains('verst') || v.contains('analy') || v.contains('gesucht')) return focus;
+    if (v.contains('text') || v.contains('antwort')) return text;
+    if (source['table'] is Map || source['tabelle'] is Map) return table;
+    if (source['highlights'] is List || source['marks'] is List) return focus;
+    if ((source['content'] ?? source['inhalt']) != null && source['to'] == null) return text;
+    return math;
+  }
+}
+
+/// Eine Markierung beim Aufgabe-Verstehen: ein Stück der Aufgabe und seine
+/// Rolle (gegeben, gesucht, Bedingung/Hinweis).
+class WorkMark {
+  const WorkMark({required this.text, this.role = 'hinweis'});
+
+  final String text;
+
+  /// 'gegeben', 'gesucht' oder 'hinweis'.
+  final String role;
+
+  Map<String, dynamic> toMap() => {'text': text, 'role': role};
+
+  static WorkMark? fromMap(Object? raw) {
+    if (raw is String) return raw.trim().isEmpty ? null : WorkMark(text: raw.trim());
+    if (raw is! Map) return null;
+    final text = _text(raw['text'] ?? raw['quote'] ?? raw['teil']);
+    if (text.isEmpty) return null;
+    final r = _text(raw['role'] ?? raw['rolle'] ?? raw['type']).toLowerCase();
+    final role = r.startsWith('geg') || r.startsWith('giv')
+        ? 'gegeben'
+        : (r.startsWith('ges') || r.startsWith('wan') || r.startsWith('ask') ? 'gesucht' : 'hinweis');
+    return WorkMark(text: text, role: role);
+  }
+}
+
+/// Tabelle an der Tafel – Stand nach dem Schritt; [fresh] = neu ausgefüllte
+/// Zellen (Zeile, Spalte) werden hervorgehoben.
+class WorkTable {
+  const WorkTable({required this.columns, required this.rows, this.fresh = const {}});
+
+  final List<String> columns;
+  final List<List<String>> rows;
+  final Set<(int, int)> fresh;
+
+  Map<String, dynamic> toMap() => {
+    'columns': columns,
+    'rows': rows,
+    if (fresh.isNotEmpty)
+      'new': [
+        for (final (r, c) in fresh) [r, c],
+      ],
+  };
+
+  static WorkTable? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final cols = raw['columns'] ?? raw['header'] ?? raw['spalten'];
+    final rows = raw['rows'] ?? raw['zeilen'];
+    final columns = [
+      if (cols is List)
+        for (final c in cols) _text(c),
+    ];
+    final body = [
+      if (rows is List)
+        for (final r in rows)
+          if (r is List) [for (final c in r) _text(c)],
+    ];
+    if (columns.isEmpty && body.isEmpty) return null;
+    final freshRaw = raw['new'] ?? raw['fresh'] ?? raw['neu'];
+    return WorkTable(
+      columns: columns,
+      rows: body,
+      fresh: {
+        if (freshRaw is List)
+          for (final f in freshRaw)
+            if (f is List && f.length >= 2 && f[0] is num && f[1] is num)
+              ((f[0] as num).toInt(), (f[1] as num).toInt()),
+      },
+    );
+  }
+}
+
 /// Ein Schritt an der Tafel. Die Zeilen sind LaTeX (ohne `$`); [work] darf
 /// `\add{…}` (kommt dazu, grün), `\del{…}` (fällt weg, rot) und `\focus{…}`
 /// (wird bearbeitet, blau) enthalten, [to] `\focus{…}`.
@@ -109,9 +203,23 @@ class WorkStep {
     this.to = '',
     this.rule,
     this.calc,
+    this.kind = WorkKind.math,
+    this.content = '',
+    this.marks = const [],
+    this.table,
   });
 
   final String title;
+  final WorkKind kind;
+
+  /// Text-Schritt: das Stück der Antwort, das dazukommt (Text mit `$…$`).
+  final String content;
+
+  /// Aufgabe verstehen: was gegeben, gesucht, zu beachten ist.
+  final List<WorkMark> marks;
+
+  /// Tabellen-Schritt: Stand der Tabelle danach.
+  final WorkTable? table;
 
   /// Erklärung (Du-Form, Formeln in `$…$`).
   final String say;
@@ -127,10 +235,34 @@ class WorkStep {
   final WorkCalc? calc;
 
   /// Hat der Schritt eine eigene Zeile an der Tafel?
-  bool get hasLine => to.trim().isNotEmpty;
+  bool get hasLine => switch (kind) {
+    WorkKind.math => to.trim().isNotEmpty,
+    WorkKind.text => content.trim().isNotEmpty,
+    WorkKind.table => table != null,
+    WorkKind.focus => marks.isNotEmpty,
+  };
+
+  WorkStep copyWith({String? to}) => WorkStep(
+    title: title,
+    say: say,
+    from: from,
+    op: op,
+    work: work,
+    to: to ?? this.to,
+    rule: rule,
+    calc: calc,
+    kind: kind,
+    content: content,
+    marks: marks,
+    table: table,
+  );
 
   Map<String, dynamic> toMap() => {
     'title': title,
+    if (kind != WorkKind.math) 'kind': kind.name,
+    if (content.isNotEmpty) 'content': content,
+    if (marks.isNotEmpty) 'marks': [for (final m in marks) m.toMap()],
+    if (table != null) 'table': table!.toMap(),
     if (say.isNotEmpty) 'say': say,
     if (from.isNotEmpty) 'from': from,
     if (op.isNotEmpty) 'op': op,
@@ -142,9 +274,26 @@ class WorkStep {
 
   static WorkStep? fromMap(Object? raw) {
     if (raw is! Map) return null;
+    final kind = WorkKind.from(raw['kind'] ?? raw['art'], raw);
+    final marksRaw = raw['marks'] ?? raw['highlights'] ?? raw['markierungen'];
     final step = WorkStep(
       title: _text(raw['title'] ?? raw['titel'] ?? raw['name']),
-      say: _text(raw['say'] ?? raw['explain'] ?? raw['text'] ?? raw['erklaerung'] ?? raw['erklärung']),
+      kind: kind,
+      content: _text(
+        raw['content'] ?? raw['inhalt'] ?? (kind == WorkKind.text && raw['say'] != null ? raw['text'] : null),
+      ),
+      marks: [
+        if (marksRaw is List)
+          for (final m in marksRaw) ?WorkMark.fromMap(m),
+      ],
+      table: WorkTable.fromMap(raw['table'] ?? raw['tabelle']),
+      say: _text(
+        raw['say'] ??
+            raw['explain'] ??
+            (kind == WorkKind.text && raw['say'] == null ? null : raw['text']) ??
+            raw['erklaerung'] ??
+            raw['erklärung'],
+      ),
       from: _latex(raw['from'] ?? raw['before'] ?? raw['vorher']),
       op: _latex(raw['op'] ?? raw['operation'] ?? raw['umformung']),
       work: _latex(raw['work'] ?? raw['during'] ?? raw['markiert']),
@@ -152,7 +301,7 @@ class WorkStep {
       rule: WorkRule.fromMap(raw['rule'] ?? raw['regel']),
       calc: WorkCalc.fromMap(raw['calc'] ?? raw['taschenrechner']),
     );
-    if (step.title.isEmpty && step.say.isEmpty && step.to.isEmpty && step.from.isEmpty) return null;
+    if (step.title.isEmpty && step.say.isEmpty && !step.hasLine && step.from.isEmpty) return null;
     return step;
   }
 }
@@ -169,9 +318,13 @@ class WorkedSolution {
     this.answer = '',
     this.cardId,
     this.withCalculator = true,
+    this.general = false,
   });
 
   final String id;
+
+  /// Rezept: der Aufgabentyp allgemein erklärt (ohne konkrete Zahlen).
+  final bool general;
   final String moduleId;
 
   /// Die Aufgabe, wie sie gestellt wurde (Text mit `$…$`).
@@ -194,7 +347,7 @@ class WorkedSolution {
     return p.length > 70 ? '${p.substring(0, 69)}…' : p;
   }
 
-  WorkedSolution copyWith({List<WorkStep>? steps}) => WorkedSolution(
+  WorkedSolution copyWith({List<WorkStep>? steps, String? cardId}) => WorkedSolution(
     id: id,
     moduleId: moduleId,
     problem: problem,
@@ -203,8 +356,9 @@ class WorkedSolution {
     createdAt: createdAt,
     title: title,
     answer: answer,
-    cardId: cardId,
+    cardId: cardId ?? this.cardId,
     withCalculator: withCalculator,
+    general: general,
   );
 
   Map<String, dynamic> toMap() => {
@@ -218,6 +372,7 @@ class WorkedSolution {
     if (answer.isNotEmpty) 'answer': answer,
     if (cardId != null) 'cardId': cardId,
     'withCalculator': withCalculator,
+    if (general) 'general': true,
   };
 
   static WorkedSolution? fromMap(Object? raw) {
@@ -235,6 +390,7 @@ class WorkedSolution {
       answer: _latex(raw['answer']),
       cardId: raw['cardId'] == null ? null : '${raw['cardId']}',
       withCalculator: raw['withCalculator'] != false,
+      general: raw['general'] == true,
     );
   }
 
@@ -249,6 +405,7 @@ class WorkedSolution {
     required DateTime now,
     String? cardId,
     bool withCalculator = true,
+    bool general = false,
   }) {
     final rawSteps = json['steps'] ?? json['schritte'];
     return WorkedSolution(
@@ -262,6 +419,7 @@ class WorkedSolution {
       answer: _latex(json['answer'] ?? json['ergebnis']),
       cardId: cardId,
       withCalculator: withCalculator,
+      general: general,
     );
   }
 }

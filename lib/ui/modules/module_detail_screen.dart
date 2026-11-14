@@ -62,6 +62,7 @@ import 'module_form_screen.dart';
 import '../flags/flagged_questions_screen.dart';
 import '../visual/visual_learn_screen.dart';
 import '../visual/visual_task_types_screen.dart';
+import '../visual/worked_solution_screen.dart';
 
 /// Die drei Reiter der Fach-Seite.
 enum ModuleTab {
@@ -391,6 +392,16 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                         MaterialPageRoute(
                           builder: (_) => MockExamScreen(moduleId: module.id, moduleName: module.name),
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftRow(
+                      key: const ValueKey('module-worked'),
+                      icon: Icons.functions,
+                      title: 'Vorrechnen & Rezepte',
+                      subtitle: 'Aufgaben an der Tafel lösen lassen, Rezepte ohne Zahlen, selbst überlegen',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => WorkedSolutionScreen(moduleId: module.id)),
                       ),
                     ),
                     const SizedBox(height: 10),

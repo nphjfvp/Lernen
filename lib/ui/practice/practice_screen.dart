@@ -10,7 +10,7 @@ import '../../services/mastery_service.dart';
 import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
 import '../daily/card_review_mixin.dart';
-import '../daily/question_answer_view.dart';
+import '../visual/task_help.dart';
 import 'study_sequence_screen.dart';
 import '../widgets/calc_tasks_toggle.dart';
 import '../widgets/mastery_dot.dart';
@@ -189,7 +189,7 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
                               style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
                           const SizedBox(height: 4),
                           Expanded(
-                            child: QuestionAnswerView(
+                            child: QuestionWithHelp(
                               key: ValueKey(queue[_index].id),
                               card: queue[_index],
                               isNew: queue[_index].reps == 0,

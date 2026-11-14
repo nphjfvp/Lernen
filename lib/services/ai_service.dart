@@ -3186,9 +3186,23 @@ Antworte in der Sprache der Vorlage.
     String reference = '',
     bool calculator = true,
     Uint8List? image,
+    bool general = false,
   }) async {
     if (problem.trim().isEmpty && image == null) throw AiServiceException('Gib zuerst die Aufgabe ein.');
-    final text = StringBuffer()
+    final text = StringBuffer();
+    if (general) {
+      text
+        ..writeln(
+          'MODUS: ALLGEMEIN (Rezept) – erkläre den AUFGABENTYP als Rezept, OHNE konkrete Zahlen und ohne die Werte der '
+          r"Aufgabe: allgemeine Bezeichnungen (z.B. $y' = f(x)\cdot g(y)$, $a$, $b$, $f(x)$, „die gesuchte Größe“). "
+          'Jeder Schritt ist ein Grundschritt des Rezepts: knapper, merkbarer Titel (wie eine Vokabel, z.B. „Variablen '
+          'trennen“), Erklärung WANN und WARUM, Regel mit Formel. Kein Taschenrechner. "title" = „Rezept: <Aufgabentyp>“, '
+          '"answer" = das allgemeine Ergebnis-Schema. Bei Nicht-Rechenaufgaben: die allgemeine Vorgehensweise '
+          '(Gliederung, was in jede Spalte/jeden Abschnitt gehört) mit Platzhaltern.',
+        )
+        ..writeln();
+    }
+    text
       ..writeln('Detailgrad: ${switch (detail) {
         WorkDetail.coarse => 'grob – nur die Hauptschritte (etwa 3–8 Schritte), Zwischenrechnungen zusammengefasst',
         WorkDetail.normal => 'regulär – jede Umformung ein eigener Schritt (etwa 6–15 Schritte)',
@@ -3196,16 +3210,18 @@ Antworte in der Sprache der Vorlage.
           'fein – jede kleinste Operation ein eigener Schritt (auch 6·8 = 48, Klammer auflösen, Vorzeichen), jede Regel '
               'benannt und mit Formel, Erklärungen ausführlicher (gern 12–35 Schritte)',
       }}')
-      ..writeln(calculator
+      ..writeln(calculator && !general
           ? 'Taschenrechner: ja – gib "calc" an, wo man ihn in einer Prüfung benutzen würde (Zahlenwerte, Kontrolle).'
           : 'Taschenrechner: nein – kein "calc".')
       ..writeln()
-      ..writeln('Aufgabe:')
+      ..writeln(general ? 'Aufgabentyp (bzw. eine Beispielaufgabe dieses Typs – ihre Zahlen NICHT übernehmen):' : 'Aufgabe:')
       ..writeln(_cap(problem.trim().isEmpty ? '(siehe Bild)' : problem.trim(), 6000));
     if (reference.trim().isNotEmpty) {
       text
         ..writeln()
-        ..writeln('Vorhandene Musterlösung (Weg und Ergebnis daran ausrichten, aber ausführlicher vorrechnen):')
+        ..writeln(general
+            ? 'Musterlösung der Beispielaufgabe (nur, um den Lösungsweg des Typs zu erkennen):'
+            : 'Vorhandene Musterlösung (Weg und Ergebnis daran ausrichten, aber ausführlicher vorrechnen):')
         ..writeln(_cap(reference.trim(), 6000));
     }
     final Object content = image == null
@@ -3299,17 +3315,74 @@ Antworte in der Sprache der Vorlage.
     return out;
   }
 
+  /// Sokratisch: Hat die Person den nächsten Schritt richtig vorgeschlagen?
+  /// [step] ist der erwartete Schritt (JSON), [selection] der markierte Teil
+  /// der Tafel, [idea] ihre Beschreibung. Antwort: verdict (richtig/teilweise/
+  /// falsch), feedback, hint.
+  Future<({String verdict, String feedback, String hint})> checkWorkedIdea({
+    required String problem,
+    required List<String> boardSoFar,
+    required Map<String, dynamic> step,
+    String selection = '',
+    required String idea,
+    bool general = false,
+  }) async {
+    if (idea.trim().isEmpty) throw AiServiceException('Schreib, was du als Nächstes machen würdest.');
+    final buffer = StringBuffer()
+      ..writeln(general ? 'Rezept für den Aufgabentyp:' : 'Aufgabe:')
+      ..writeln(_cap(problem.trim(), 4000))
+      ..writeln()
+      ..writeln('Bisher an der Tafel:');
+    for (final l in boardSoFar.length > 12 ? boardSoFar.sublist(boardSoFar.length - 12) : boardSoFar) {
+      buffer.writeln('  $l');
+    }
+    buffer
+      ..writeln()
+      ..writeln('Erwarteter nächster Schritt (NUR für dich, nicht verraten): ${_cap(jsonEncode(step), 3000)}')
+      ..writeln()
+      ..writeln(selection.trim().isEmpty ? 'Die Person hat nichts markiert.' : 'Die Person hat markiert: ${_cap(selection, 600)}')
+      ..writeln('Ihr Vorschlag: ${_cap(idea.trim(), 1500)}');
+    final raw = await _complete(_workedIdeaSystemPrompt, buffer.toString(), temperature: 0);
+    final json = await _json(raw);
+    final v = '${json['verdict'] ?? json['urteil'] ?? ''}'.toLowerCase();
+    final verdict = v.startsWith('richt') || v == 'ok' || v == 'correct'
+        ? 'richtig'
+        : (v.startsWith('teil') || v.startsWith('part') ? 'teilweise' : 'falsch');
+    return (
+      verdict: verdict,
+      feedback: '${json['feedback'] ?? json['comment'] ?? ''}'.trim(),
+      hint: '${json['hint'] ?? json['tipp'] ?? ''}'.trim(),
+    );
+  }
+
+  static const _workedIdeaSystemPrompt = r"""
+Du bist ein sokratischer Tutor in einer Lern-App. Eine Person lernt Lösungswege wie Vokabeln: Sie sieht die Tafel, markiert einen Teil und beschreibt, was sie als Nächstes tun würde. Du vergleichst ihren Vorschlag mit dem erwarteten nächsten Schritt.
+
+- "richtig": dieselbe Idee wie der erwartete Schritt – Wortlaut egal, Fachbegriffe oder eigene Worte zählen gleich. Auch ein anderer, ebenso richtiger und zielführender Schritt ist "richtig".
+- "teilweise": die Richtung stimmt, aber etwas Wesentliches fehlt oder ist ungenau (z.B. „nach y sortieren“, aber nicht, dass dy/dx aufgeteilt wird).
+- "falsch": falsche Idee, falscher Teil markiert oder nicht zielführend.
+"feedback": 1–2 Sätze an die Person (Du-Form): bei "richtig" kurz bestätigen und den Fachbegriff nennen; sonst sagen, was stimmt und was fehlt – OHNE den Schritt zu verraten.
+"hint": nur bei "teilweise"/"falsch" ein kleiner Denkanstoß (eine Frage oder ein Stichwort), sonst leer.
+Formeln mit $…$. Antworte NUR mit JSON: {"verdict": "richtig", "feedback": "...", "hint": ""}""";
+
   static const _workedDiscussSystemPrompt = r"""
-Du bist ein geduldiger Mathe-Tutor in einer Lern-App. Eine Aufgabe wird gerade Schritt für Schritt an der Tafel vorgerechnet; die Person fragt zum aktuellen Schritt nach.
+Du bist ein geduldiger Tutor in einer Lern-App. Eine Aufgabe wird gerade Schritt für Schritt an der Tafel vorgerechnet bzw. gelöst (auch Text- oder Tabellen-Aufgaben); die Person fragt zum aktuellen Schritt nach.
 - Beantworte genau die Frage, verständlich, Du-Form, Deutsch. Formeln in LaTeX mit $…$ (abgesetzt $$…$$).
 - Bei „Herleitung“: leite die Regel bzw. den Schritt Schritt für Schritt her (z.B. ln(a^b) = b·ln(a) aus e^{b·ln a} = (e^{ln a})^b = a^b), mit kurzer Begründung je Zeile, und zeig ein kleines Zahlenbeispiel.
 - Bei „Warum?“: erkläre die Idee dahinter, nicht nur die Rechnung.
 - Antworte als reiner Text (kein JSON).""";
 
   static const _workedSystemPrompt = r"""
-Du rechnest in einer Lern-App eine Aufgabe Schritt für Schritt an der Tafel vor – so, dass man JEDE Veränderung sieht und versteht.
+Du rechnest bzw. löst in einer Lern-App eine Aufgabe Schritt für Schritt an der Tafel vor – so, dass man JEDE Veränderung sieht und versteht. Das gilt für Rechnungen genauso wie für ganz andere Aufgaben (Tabelle ausfüllen, Freitext/Erklären, Begriffe zuordnen, Ablauf beschreiben, Werkstoffe vergleichen …).
 
-Jeder Schritt ist ein Objekt in "steps":
+Schritt-Arten ("kind"):
+- "focus" – Aufgabe verstehen. IMMER der erste Schritt: "marks": [{"text": "wörtliches Stück der Aufgabe oder knappe Angabe (Formeln mit $…$)", "role": "gegeben" | "gesucht" | "hinweis"}] und "say": was genau verlangt ist und wie man vorgeht (Operator wie „berechne“, „erläutere“, „vergleiche“ beachten).
+- "math" (Standard, "kind" weglassen) – eine Zeile an der Tafel umformen, siehe unten.
+- "text" – ein Stück der Antwort: "content": 1–4 Sätze, die zur Antwort dazukommen (Formeln mit $…$), "say": warum genau das hier hingehört. So entsteht eine Freitext-Antwort Stück für Stück.
+- "table" – eine Tabelle Stück für Stück füllen: "table": {"columns": ["…"], "rows": [["…", "…"], …], "new": [[zeile, spalte], …]} ist der KOMPLETTE Stand NACH dem Schritt (noch leere Zellen ""), "new" = die in diesem Schritt gefüllten Zellen (Zeilen ab 0, ohne Kopfzeile); "say": woher der Eintrag kommt.
+Arten dürfen gemischt werden (z.B. focus → Rechenzeilen → ein text-Schritt als Antwortsatz). Jeder Schritt hat "title" und "say".
+
+Felder eines Rechen-Schritts ("math"):
 - "title": kurze Überschrift, z.B. „5x auf beiden Seiten abziehen“, „Logarithmusgesetz anwenden“.
 - "say": Erklärung (Du-Form, Deutsch, 1–3 Sätze, beim feinen Detailgrad ausführlicher): WAS passiert und WARUM. Formeln darin mit $…$.
 - "from": die vollständige Zeile VOR dem Schritt (LaTeX ohne $). Leer lassen, wenn sie genau das "to" des vorigen Schritts ist. Im ERSTEN Schritt immer angeben (die Ausgangsgleichung bzw. der Ausgangsterm).
@@ -3332,7 +3405,8 @@ Regeln:
 - Mathematisch korrekt rechnen. Bei Gleichungen jede Umformung auf BEIDEN Seiten sichtbar machen.
 - Jede Zeile vollständig (ganze Gleichung bzw. ganzer Term). Zeilen, die eine Termumformung fortsetzen, beginnen mit "=" (z.B. "= 2\ln(48x+6)").
 - Keine ganzen Sätze in den Zeilen – Erklärungen gehören in "say".
-- Am Ende "answer": das Endergebnis (LaTeX) und "title": kurzer Titel der Aufgabe.
+- Bei Text- und Tabellen-Aufgaben: fachlich korrekt, vollständig und so, wie es in einer Klausur volle Punkte gäbe.
+- Am Ende "answer": das Endergebnis (LaTeX bei Rechnungen, sonst ein kurzer Satz) und "title": kurzer Titel der Aufgabe.
 Antworte NUR mit JSON (in JSON jeden Backslash verdoppeln): {"title": "...", "steps": [...], "answer": "..."}""";
 
   /// Liest EINE handgeschriebene Zeile vom Stift-Blatt („Selbst rechnen“
