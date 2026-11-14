@@ -392,4 +392,74 @@ class Scene3DLive {
       lifts,
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Ablauf („Simulation erweitern“): Zustände über die Zeit, die App rechnet
+  // für jeden Moment die Kräfte neu.
+  // ---------------------------------------------------------------------------
+
+  /// Der Ablauf eines Bausteins (`timeline`), fehlende Werte vom Schritt davor
+  /// bzw. aus [base]. Sortiert nach `at` (0…1).
+  static List<({double at, Scene3DLiveState state, String caption})> timelineOf(
+    Map<String, dynamic> block,
+    Scene3DLiveState base,
+  ) {
+    final raw = block['timeline'] ?? block['ablauf'];
+    if (raw is! List) return const [];
+    final entries = [
+      for (final e in raw)
+        if (e is Map && _num(e['at'] ?? e['t']) != null) e,
+    ]..sort((a, b) => _num(a['at'] ?? a['t'])!.compareTo(_num(b['at'] ?? b['t'])!));
+    final out = <({double at, Scene3DLiveState state, String caption})>[];
+    var state = base;
+    for (final e in entries) {
+      final lifted = e['lifted'] ?? e['angehoben'] ?? e['offGround'];
+      state = Scene3DLiveState(
+        lifted: lifted is List
+            ? {
+                for (final w in lifted)
+                  if (wheelNames.containsKey('$w'.toLowerCase())) '$w'.toLowerCase(),
+              }
+            : state.lifted,
+        cg: (_num(e['cg']) ?? state.cg).clamp(0.0, 1.0),
+        slope: (_num(e['slope'] ?? e['neigung']) ?? state.slope).clamp(-60.0, 60.0),
+        mu: (_num(e['mu']) ?? state.mu).clamp(0.0, 1.5),
+        forceAt: _num(e['forceAt'] ?? e['force_at']) ?? state.forceAt,
+      );
+      out.add((
+        at: _num(e['at'] ?? e['t'])!.clamp(0.0, 1.0),
+        state: state,
+        caption: '${e['caption'] ?? e['text'] ?? ''}'.trim(),
+      ));
+    }
+    return out;
+  }
+
+  /// Zustand zur Zeit [p] (0…1): Zahlen gleiten zwischen den Schritten,
+  /// angehobene Räder und Text wechseln am Schritt.
+  static ({Scene3DLiveState state, String caption}) stateAt(
+    List<({double at, Scene3DLiveState state, String caption})> timeline,
+    double p,
+  ) {
+    if (timeline.isEmpty) return (state: const Scene3DLiveState(), caption: '');
+    if (p <= timeline.first.at) return (state: timeline.first.state, caption: timeline.first.caption);
+    for (var i = 0; i + 1 < timeline.length; i++) {
+      final a = timeline[i], b = timeline[i + 1];
+      if (p >= a.at && p < b.at) {
+        final f = b.at == a.at ? 0.0 : (p - a.at) / (b.at - a.at);
+        double lerp(double x, double y) => x + (y - x) * f;
+        return (
+          state: Scene3DLiveState(
+            lifted: a.state.lifted,
+            cg: lerp(a.state.cg, b.state.cg),
+            slope: lerp(a.state.slope, b.state.slope),
+            mu: lerp(a.state.mu, b.state.mu),
+            forceAt: lerp(a.state.forceAt, b.state.forceAt),
+          ),
+          caption: a.caption,
+        );
+      }
+    }
+    return (state: timeline.last.state, caption: timeline.last.caption);
+  }
 }

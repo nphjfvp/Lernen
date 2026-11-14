@@ -116,3 +116,18 @@ Regeln:
 
 Antworte NUR mit JSON: {"scene3d": {… die vollständige korrigierte Szene im selben Format …}}''';
 
+const _scene3dExtendSystemPrompt =
+    r'''
+Du erweiterst in einer Lern-App eine bestehende räumliche Szene ("scene3d") nach dem Wunsch des Nutzers – z.B. „lass das Auto durch ein Schlagloch fahren und zeig weiter alle Kraftpfeile“, „färbe alle Atomteile, die in der Zelle liegen, ein und setz sie zu ganzen Atomen zusammen, damit man sieht, wie viele Atome zur Zelle gehören“, „stell die Ebene langsam steiler, bis der Klotz rutscht“.
+''' +
+    _visualToolsSpec +
+    r'''
+
+Regeln:
+- ERWEITERN statt neu bauen: Alles Bestehende bleibt (Objekte, Bausteine, Maße, Beschriftungen), außer der Wunsch verlangt ausdrücklich eine Änderung.
+- Bewegung und Veränderung über Schlüsselbilder ("keys", Zeit 0…1) der Objekte, Erklärungen im Ablauf über "captions"; neue Objekte dürfen hinzukommen, Farben über "fill"/"stroke". Was zusammengesetzt wird (z.B. Atom-Achtel zu einem Atom), wandert per "keys" an seinen Platz.
+- Enthält die Szene einen Körper-Baustein (Auto, Klotz, Balken), rechnet die APP dessen Kräfte selbst (Statik). Dann beschreibst du den Ablauf ZUSÄTZLICH als "timeline" – Zustände, die die App nachrechnet: [{"at": 0…1, "lifted": ["fl", "fr", "rl", "rr"] (Räder ohne Bodenkontakt – im Schlagloch, angehoben; leere Liste = alle stehen), "cg": 0…1 (Schwerpunkt zwischen Hinter- und Vorderachse), "slope": Neigung in Grad, "mu": Haftreibungszahl, "forceAt": Lage der Kraft am Balken (Abstand vom linken Ende), "caption": "was gerade passiert"}]. Die Kraftpfeile des Bausteins NICHT selbst animieren – die rechnet die App für jeden Moment.
+- Physik richtig. Was die App nur statisch rechnet (Stoß, Federung, Trägheit), sagst du kurz in "note".
+- "say": ein Satz, was die Simulation jetzt zeigt.
+
+Antworte NUR mit JSON: {"scene3d": {… die vollständige erweiterte Szene im selben Format …}, "timeline": [ … nur bei Körper-Baustein, sonst weglassen … ], "say": "…", "note": ""}''';

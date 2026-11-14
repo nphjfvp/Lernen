@@ -341,6 +341,15 @@ const appGuideChapters = <GuideChapter>[
         where: 'Lektion → 3D-Modell → Ausprobieren',
       ),
       GuideItem(
+        'Simulation erweitern',
+        'Unter jedem 3D-Modell einer Lektion: schreib, was zusätzlich passieren soll – z.B. „lass das Auto durch ein '
+            'Schlagloch fahren und zeig weiter alle Kraftpfeile“ oder „färbe alle Atomteile in der Zelle ein und '
+            'setz sie zu ganzen Atomen zusammen“. Die KI baut die Szene aus (Bewegung, Farben, neue Teile). Bei Auto, '
+            'Klotz und Balken entsteht ein Ablauf zum Abspielen und Vorspulen, dessen Kräfte die App für jeden '
+            'Moment selbst rechnet. Die Erweiterung wird im Schritt gespeichert, „Rückgängig“ holt die vorige.',
+        where: 'Lektion → 3D-Modell → Simulation erweitern',
+      ),
+      GuideItem(
         'Lernpfad',
         'Mehrere Vorlesungen oder ein ganzes Semester als Folge von Lektionen mit Rückblick und Kurzfassung.',
         where: 'Visuell lernen → Lernpfad erstellen',

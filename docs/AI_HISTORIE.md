@@ -1711,3 +1711,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     eigene Knöpfe) in DailyQuizScreen, PracticeScreen, StudySequenceScreen (dort Kopfzeile `sequence-position` +
     `sequence-understood`). ModuleDetailScreen Reiter Lernen: `module-worked`. Tests: `worked_socratic_test`,
     `study_sequence_screen_test`, `worked_solution_test`.
+125. Simulation erweitern: `AiService.extendScene3d(scene, wish, context)` (`_scene3dExtendSystemPrompt` in
+    ai_prompts/visual.dart mit `_visualToolsSpec`: erweitern statt neu bauen, keys/captions, bei Körper-Baustein
+    zusätzlich "timeline") → (scene, timeline, say, note). `Scene3DLive.timelineOf(block, base)` (Einträge at, lifted,
+    cg, slope, mu, forceAt, caption; fehlende Werte vom Schritt davor) und `stateAt(timeline, p)` (Zahlen gleiten,
+    Räder/Text wechseln am Schritt). `Scene3DLiveView(extendAi:, onSceneChanged:, extendContext:)`: Ablauf-Leiste
+    `scene3d-timeline` (`-play`, `-slider`, `-caption`; 50-ms-Takt über `scene.seconds`, Kräfte je Moment über
+    `Scene3DLive.apply`), Erweitern `scene3d-extend` (`-input`, `-go`, `-suggest-i`, `-say`, `-error`, `-undo`;
+    Ablauf an den ersten Körper-Baustein gehängt, Verlauf fürs Rückgängig). VisualLessonScreen speichert über
+    `withScene(isResult ? -1 : _page)` + `_applyRevision`. Tests: `scene3d_extend_test`.

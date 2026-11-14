@@ -588,7 +588,22 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
     ],
     if (step.show.scene3d != null) ...[
       const SizedBox(height: 12),
-      Scene3DLiveView(key: ValueKey('visual-scene3d-$_page'), scene: step.show.scene3d!, title: step.title),
+      Scene3DLiveView(
+        key: ValueKey('visual-scene3d-$_page'),
+        scene: step.show.scene3d!,
+        title: step.title,
+        extendAi: () => _reviseAi(context, model: scene3dAutoModelOf(context)),
+        extendContext: '${step.title}\n${step.text}',
+        onSceneChanged: (scene) {
+          final before = _l;
+          final revised = before.withScene(isResult ? -1 : _page, {
+            'show': {'scene3d': scene.toMap()},
+          });
+          if (revised != null) {
+            _applyRevision(before, VisualMath.sanitize(revised), 'Simulation erweitert.', page: _page);
+          }
+        },
+      ),
     ],
     if (VisualSceneView.hasScene(step.show)) ...[
       const SizedBox(height: 12),

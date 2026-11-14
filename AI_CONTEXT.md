@@ -477,7 +477,7 @@ immer direkt dorthin pushen, auch aus anderen Sitzungs-Branches; siehe CLAUDE.md
 sauber, 1782 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
-Umgesetzt sind 124 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
+Umgesetzt sind 125 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
 [docs/AI_HISTORIE.md](docs/AI_HISTORIE.md) (dort per Suche nachschlagen, bevor
 ein Bereich geändert wird). Zuletzt: Web-App über GitHub Pages fürs iPad
 (85–89), Releases nur vom App-Branch (90), KI-Wiederholung bei 429/5xx und
@@ -508,7 +508,8 @@ Vorrechnen an der Tafel (grob/regulär/fein) mit simuliertem Taschenrechner (120
 Taschenrechner rechnet wirklich (PocketCalculator), aufklappbar beim Selberrechnen (121),
 Vorrechnen mit vorhandenen Aufgaben des Fachs (122),
 Vorrechnen und Taschenrechner bei jeder Aufgabe in „Der Reihe nach“ (123),
-Vorrechnen für alle Aufgabenarten, Rezepte ohne Zahlen, sokratischer Modus, überall beim Lernen (124).
+Vorrechnen für alle Aufgabenarten, Rezepte ohne Zahlen, sokratischer Modus, überall beim Lernen (124),
+3D: Simulation erweitern per Wunsch, Abläufe mit von der App gerechneten Kräften (125).
 
 **Aufgaben für den Nutzer bauen** („ins Postfach“, Übungsblatt schicken):
 Skill `.claude/skills/postfach/SKILL.md` befolgen – Postfach-Code nie ins

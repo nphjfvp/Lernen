@@ -1,8 +1,23 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7i) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7j) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7j. 3D: Simulation erweitern, Abläufe mit gerechneten Kräften
+
+- **Simulation erweitern** unter jedem 3D-Modell einer Lektion: Wunsch
+  eingeben oder Vorschlag antippen („lass das Auto durch ein Schlagloch
+  fahren und zeig weiter alle Kraftpfeile“, „färbe alle Teile in der Zelle
+  ein und setz sie zu ganzen Atomen zusammen“, „stell die Ebene steiler, bis
+  der Klotz rutscht“). Die KI baut die bestehende Szene aus – nichts wird neu
+  gebaut, was nicht verlangt ist.
+- **Ablauf mit gerechneten Kräften**: Bei Auto, Klotz und Balken wird daraus
+  ein Ablauf (z.B. Rad vorn links im Schlagloch → die anderen drei tragen),
+  zum Abspielen und mit dem Schieber vorspulen. Die Kräfte rechnet die App für
+  jeden Moment selbst (Statik); was nur statisch gerechnet ist, steht dabei.
+- Die Erweiterung bleibt im Schritt gespeichert; „Rückgängig“ holt die vorige
+  Szene zurück.
 
 ### 7i. Vorrechnen für alle Aufgaben, Rezepte, selbst überlegen
 

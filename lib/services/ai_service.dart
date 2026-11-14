@@ -3811,6 +3811,43 @@ Antworte NUR mit JSON: {"status": "ok", "comment": "...", "fix": ""}''';
     return Map<String, dynamic>.from(fixed);
   }
 
+  /// „Simulation erweitern“: baut eine bestehende räumliche Szene nach
+  /// [wish] aus (Ablauf, neue Teile, Farben). Mit Körper-Baustein kommt ein
+  /// Ablauf ("timeline") dazu, dessen Kräfte die App selbst rechnet (siehe
+  /// Scene3DLive.timelineOf). Antwort: scene3d (Map), timeline (Liste oder
+  /// null), say, note.
+  Future<({Map<String, dynamic> scene, List<dynamic>? timeline, String say, String note})> extendScene3d({
+    required Map<String, dynamic> scene,
+    required String wish,
+    String context = '',
+  }) async {
+    if (wish.trim().isEmpty) throw AiServiceException('Schreib, was die Simulation zusätzlich zeigen soll.');
+    final buffer = StringBuffer()
+      ..writeln('Szene (JSON):')
+      ..writeln(_cap(jsonEncode(scene), 40000))
+      ..writeln();
+    if (context.trim().isNotEmpty) {
+      buffer
+        ..writeln('Zusammenhang (Schritt der Lektion): ${_cap(context.trim(), 3000)}')
+        ..writeln();
+    }
+    buffer.writeln('Wunsch des Nutzers: ${_cap(wish.trim(), 3000)}');
+    final raw = await _complete(_scene3dExtendSystemPrompt, buffer.toString(), temperature: 0.2);
+    final json = await _json(raw);
+    final show = json['show'];
+    final extended = json['scene3d'] ?? (show is Map ? show['scene3d'] : null) ?? (json['objects'] is List ? json : null);
+    if (extended is! Map) {
+      throw AiServiceException('Die KI hat keine erweiterte Szene geliefert – bitte erneut versuchen.', rawResponse: raw);
+    }
+    final timeline = json['timeline'] ?? json['ablauf'];
+    return (
+      scene: Map<String, dynamic>.from(extended),
+      timeline: timeline is List && timeline.isNotEmpty ? timeline : null,
+      say: '${json['say'] ?? ''}'.trim(),
+      note: '${json['note'] ?? ''}'.trim(),
+    );
+  }
+
   /// Zeichnet EINE Szene nach ihrem Bauplan (Stufe 2, siehe
   /// [generateVisualLessons]). [lesson] = die Lektion als JSON, [stepIndex] =
   /// Index in "steps", -1 = Ergebnis, -2 = Kurzfassung. Antwort:
