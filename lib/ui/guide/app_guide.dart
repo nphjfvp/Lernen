@@ -436,6 +436,12 @@ const appGuideChapters = <GuideChapter>[
         where: 'Einstellungen → Lernerinnerung',
       ),
       GuideItem(
+        'Lernzeit-Sperre',
+        'Instagram & Co. erst nach dem Lernen: 30 min frei, +30 min je neu gelerntem Thema, unbegrenzt mit '
+            'Daily Quiz. Lernen auf anderen Geräten zählt mit (Android).',
+        where: 'Einstellungen → Lernzeit-Sperre',
+      ),
+      GuideItem(
         'Widget (Android)',
         'Auf dem Startbildschirm: nächste Vorlesung, fällige Karten und Countdown zur Klausur.',
       ),

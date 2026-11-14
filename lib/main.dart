@@ -21,6 +21,7 @@ import 'repositories/module_repository.dart';
 import 'repositories/settings_repository.dart';
 import 'repositories/visual_chat_repository.dart';
 import 'repositories/worked_solution_repository.dart';
+import 'services/screen_guard.dart';
 import 'repositories/visual_course_repository.dart';
 import 'repositories/visual_lesson_repository.dart';
 import 'repositories/summary_repository.dart';
@@ -190,6 +191,8 @@ class LernenApp extends StatelessWidget {
               await moduleRepository.load();
               await labs.loadAll();
               if (flags.isLoaded) await flags.load(reload: true);
+              // Auf einem anderen Gerät Gelerntes zählt fürs Lernzeit-Guthaben.
+              await ScreenGuard.push();
             },
           )..start(),
         ),

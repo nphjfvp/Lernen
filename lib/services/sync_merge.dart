@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../models/learn_credit.dart';
 import '../models/mastery_snapshot.dart';
 
 /// Wie eine Sammlung des Sync-Stands ihre Einträge benennt.
@@ -149,10 +150,10 @@ SyncBase hashesOfPayload(Map<String, dynamic> payload) {
 }
 
 List<Map<String, dynamic>> _records(Object? list) => [
-      if (list is List)
-        for (final e in list)
-          if (e is Map) Map<String, dynamic>.from(e),
-    ];
+  if (list is List)
+    for (final e in list)
+      if (e is Map) Map<String, dynamic>.from(e),
+];
 
 /// Führt den lokalen und den Cloud-Stand zusammen – Dreiwege-Vergleich gegen
 /// den Basisstand [base] (was beide beim letzten Abgleich gemeinsam hatten):
@@ -184,9 +185,9 @@ SyncMergeResult mergeSyncPayloads({
     final name = entry.key;
     final keyOf = entry.value;
     Map<String, Map<String, dynamic>> byKey(Object? list) => {
-          for (final r in _records(list))
-            if (keyOf(r) != null) keyOf(r)!: r,
-        };
+      for (final r in _records(list))
+        if (keyOf(r) != null) keyOf(r)!: r,
+    };
     final l = byKey(local[name]);
     final r = byKey(remote[name]);
     // Fehlt eine Sammlung ganz, kennt die andere Seite sie nicht (ältere
@@ -232,7 +233,9 @@ SyncMergeResult mergeSyncPayloads({
   // Einträge ohne ihr Fach entfernen.
   final moduleKeys = (merged['modules'] as Map<String, Map<String, dynamic>>).keys.toSet();
   for (final name in _perModule) {
-    (merged[name] as Map<String, Map<String, dynamic>>).removeWhere((_, record) => !moduleKeys.contains('${record['moduleId']}'));
+    (merged[name] as Map<String, Map<String, dynamic>>).removeWhere(
+      (_, record) => !moduleKeys.contains('${record['moduleId']}'),
+    );
   }
 
   // Zählen, was sich auf welcher Seite ändert, und in Listen zurückverwandeln.
@@ -242,14 +245,13 @@ SyncMergeResult mergeSyncPayloads({
     final keyOf = entry.value;
     final mergedMap = merged[name] as Map<String, Map<String, dynamic>>;
     Map<String, String> hashes(Object? list) => {
-          for (final rec in _records(list))
-            if (keyOf(rec) != null) keyOf(rec)!: recordHash(rec),
-        };
+      for (final rec in _records(list))
+        if (keyOf(rec) != null) keyOf(rec)!: recordHash(rec),
+    };
     final lh = hashes(local[name]);
     final rh = hashes(remote[name]);
     final mh = {for (final e in mergedMap.entries) e.key: recordHash(e.value)};
-    int differences(Map<String, String> side) =>
-        {...side.keys, ...mh.keys}.where((k) => side[k] != mh[k]).length;
+    int differences(Map<String, String> side) => {...side.keys, ...mh.keys}.where((k) => side[k] != mh[k]).length;
     stats[name] = CollectionMerge(
       changedLocally: differences(lh),
       changedRemotely: differences(rh),
@@ -269,6 +271,12 @@ SyncMergeResult mergeSyncPayloads({
   );
   // Der Daily-Stand wird beim Anwenden mit dem lokalen zusammengeführt.
   payload['dailySession'] = remote['dailySession'] ?? local['dailySession'];
+  // Lernguthaben: Themen und Daily-Tage beider Geräte vereinigen.
+  payload['learnCredit'] = LearnCredit.fromMap(local['learnCredit'])
+      .mergedWith(LearnCredit.fromMap(remote['learnCredit']))
+      .toSyncMap();
+  // Regeln: die zuletzt geänderten gelten auf allen Geräten.
+  payload['learnCreditRules'] = LearnCreditRules.newer(local['learnCreditRules'], remote['learnCreditRules']);
   payload['dataVersion'] = syncDataVersion;
 
   return SyncMergeResult(payload: payload, collections: stats, remoteDataVersion: dataVersionOf(remote));
@@ -405,10 +413,10 @@ String describeMerge(SyncMergeResult result) {
     'studyDays': 'Lerntage',
   };
   String list(int Function(CollectionMerge) pick) => [
-        for (final e in labels.entries)
-          if (result.collections[e.key] != null && pick(result.collections[e.key]!) > 0)
-            '${pick(result.collections[e.key]!)} ${e.value}',
-      ].join(', ');
+    for (final e in labels.entries)
+      if (result.collections[e.key] != null && pick(result.collections[e.key]!) > 0)
+        '${pick(result.collections[e.key]!)} ${e.value}',
+  ].join(', ');
   final here = list((c) => c.changedLocally);
   final cloud = list((c) => c.changedRemotely);
   final notice = dataVersionNotice(result.remoteDataVersion);

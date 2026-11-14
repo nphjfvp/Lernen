@@ -28,6 +28,54 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        // Lernzeit-Sperre (siehe ScreenGuard.kt und lib/services/screen_guard.dart).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "lernen/screen_guard").setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "status" -> result.success(
+                        mapOf(
+                            "usageAccess" to ScreenGuard.hasUsageAccess(this),
+                            "overlay" to ScreenGuard.canOverlay(this),
+                            "running" to ScreenGuardService.running,
+                        ),
+                    )
+                    "configure" -> {
+                        ScreenGuard.configure(this, call.arguments as? Map<*, *> ?: emptyMap<String, Any>())
+                        result.success(true)
+                    }
+                    "openUsageSettings" -> {
+                        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                        result.success(true)
+                    }
+                    "openOverlaySettings" -> {
+                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                        result.success(true)
+                    }
+                    "installedApps" -> result.success(installedApps())
+                    "usedMinutes" -> {
+                        val packages = (call.argument<List<String>>("packages") ?: emptyList()).toSet()
+                        val hour = call.argument<Int>("dayStartHour") ?: 4
+                        val now = System.currentTimeMillis()
+                        val used = ScreenGuard.usedMillis(this, packages, ScreenGuard.dayStart(now, hour), now)
+                        result.success((used / 60_000).toInt())
+                    }
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) {
+                result.error("screen_guard", e.message, null)
+            }
+        }
+    }
+
+    /** Apps mit Startsymbol (ohne diese App), für die Auswahl der gesperrten Apps. */
+    @Suppress("DEPRECATION")
+    private fun installedApps(): List<Map<String, String>> {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return packageManager.queryIntentActivities(launcher, 0)
+            .map { it.activityInfo.packageName to it.loadLabel(packageManager).toString() }
+            .filter { it.first != packageName }
+            .distinctBy { it.first }
+            .map { mapOf("package" to it.first, "label" to it.second) }
     }
 
     /** "started", "needsPermission" oder "failed". */

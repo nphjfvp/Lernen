@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Cloud-Sync, KI-Anfragen und Update-Prüfung. In Release-Builds nicht
          automatisch dabei (nur in debug/profile) – ausdrücklich angefordert,
          statt sich darauf zu verlassen, dass ein Plugin sie mitbringt. -->
@@ -9,6 +10,14 @@
     <!-- Update aus der App: die neue APK an den System-Installer übergeben
          (der Nutzer bestätigt dort "Aktualisieren"). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Lernzeit-Sperre (ScreenGuard.kt): Zeit in gesperrten Apps messen
+         (Nutzungszugriff, gibt der Nutzer in den Einstellungen frei), einen
+         Sperrbildschirm darüberlegen und im Vordergrund weiterlaufen. -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="lernen"
         android:name="${applicationName}"
@@ -55,6 +64,21 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
+        <!-- Lernzeit-Sperre: läuft im Vordergrund, startet nach einem Neustart neu. -->
+        <service
+            android:name=".ScreenGuardService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Selbst gewählte Lernzeit-Sperre: misst die Zeit in ausgewählten Apps und sperrt sie, bis Lernziele erreicht sind." />
+        </service>
+        <receiver android:name=".ScreenGuardBootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
         <!-- Gibt heruntergeladene Updates (cache/updates) an den Installer frei. -->
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -80,6 +104,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Lernzeit-Sperre: Apps mit Startsymbol zur Auswahl anzeigen. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
         </intent>
     </queries>
 </manifest>

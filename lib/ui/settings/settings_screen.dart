@@ -39,6 +39,7 @@ import 'ai_usage_screen.dart';
 import 'model_picker_sheet.dart';
 import 'model_roles.dart';
 import 'model_test_screen.dart';
+import 'screen_guard_screen.dart';
 import 'sync_backups_dialog.dart';
 import 'sync_cloud_history_dialog.dart';
 import 'sync_code_hint.dart';
@@ -1104,6 +1105,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       trailing: TextButton(onPressed: _pickReminderTime, child: const Text('Ändern')),
                     ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 26),
+                    child: Divider(height: 1, color: c.border),
+                  ),
+                  _SectionLabel('Lernzeit-Sperre'),
+                  const SizedBox(height: 4),
+                  ListTile(
+                    key: const ValueKey('settings-screen-guard'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.lock_clock_outlined),
+                    title: const Text('Apps erst nach dem Lernen'),
+                    subtitle: const Text(
+                      'z.B. Instagram: 30 min frei, +30 min je neuem Thema, unbegrenzt nach Daily Quiz – Android',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const ScreenGuardScreen()),
+                    ),
+                  ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 26),
                     child: Divider(height: 1, color: c.border),

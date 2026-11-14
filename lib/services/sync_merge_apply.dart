@@ -39,7 +39,11 @@ Future<SyncMergeResult> mergeRemoteIntoLocal(Database db, Map<String, dynamic> r
     } else {
       // Nichts Neues – aber der heutige Daily-Stand des anderen Geräts zählt
       // trotzdem gegen das Tagesbudget.
-      await applySyncedHistory(txn, {'dailySession': remote['dailySession']});
+      await applySyncedHistory(txn, {
+        'dailySession': remote['dailySession'],
+        'learnCredit': remote['learnCredit'],
+        'learnCreditRules': remote['learnCreditRules'],
+      });
     }
   });
   return result;

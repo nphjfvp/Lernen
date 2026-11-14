@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../repositories/learn_credit_repository.dart';
+import '../../services/screen_guard.dart';
 import '../../models/daily_session_state.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
@@ -109,6 +111,22 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
 
   /// Gibt es überhaupt Rechenaufgaben? Nur dann steht der Schalter da.
   bool _hasCalcCards = false;
+
+  /// Daily Quiz fertig – fürs Lernzeit-Guthaben (einmal je Anzeige).
+  bool _dailyCredited = false;
+
+  void _creditDailyDone() {
+    if (_dailyCredited) return;
+    _dailyCredited = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await LearnCreditRepository.markDailyDone();
+        await ScreenGuard.push();
+      } catch (_) {
+        // Darf das Daily Quiz nie stören.
+      }
+    });
+  }
 
   bool get _sessionFinished {
     final plan = _plan;
@@ -468,8 +486,10 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         onImageEdited: (bytes) => saveEditedImage(card, bytes),
       );
     } else if (plan.total == 0 && _reviewedCount == 0) {
+      _creditDailyDone();
       body = _AllDoneView(onContinue: _continueVoluntarily, loading: _bonusLoading);
     } else {
+      _creditDailyDone();
       body = _SessionDoneView(
         count: _reviewedCount,
         onRestart: _loadPlan,

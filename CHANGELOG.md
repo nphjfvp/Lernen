@@ -1,8 +1,32 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7l) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7m) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7m. Lernzeit-Sperre: Instagram & Co. erst nach dem Lernen (Android)
+
+- Neu in den Einstellungen → Lernzeit-Sperre: ausgewählte Apps (Standard:
+  Instagram) gibt es jeden Lerntag 30 Minuten frei. Jedes neu gelernte Thema
+  bringt +30 Minuten; mit einem neuen Thema und fertigem Daily Quiz ist die
+  Zeit für den Rest des Tages unbegrenzt. Der Lerntag läuft von 4:00 bis 4:00.
+- Ein Thema ist fein unterteilt (z.B. unter DGL „Variablen trennen“ und
+  „Substitution“ getrennt): das Konzept einer Karte, sonst ihr Aufgabentyp,
+  sonst ihre Vorlesungs-Einheit. Es zählt als gelernt, sobald 2 Aufgaben bzw.
+  Fragen dazu hintereinander fehlerfrei gelöst sind (richtig ohne Hilfe; bei
+  Karteikarten „gewusst“) – in Daily Quiz, Üben, Der Reihe nach, Sprint,
+  Probeklausur und Boss-Kampf. Jedes Thema zählt nur einmal.
+- Gelerntes auf Windows, im Browser oder auf dem iPad zählt mit: das
+  Lernguthaben reist mit dem Cloud-Abgleich; das Handy holt es beim Öffnen der
+  App bzw. beim nächsten Abgleich.
+- Ist die Zeit aufgebraucht, legt die Android-App einen Sperrbildschirm über
+  die App – mit Stand, was als Nächstes Zeit bringt, und Knöpfen „Zur
+  Lern-App“ und „Zum Startbildschirm“. Nötig: Nutzungszugriff und „Über anderen
+  Apps einblenden“ (beides mit Knopf in den Einstellungen); läuft als
+  Hintergrunddienst mit Benachrichtigung, auch nach Neustart.
+- Alle Werte einstellbar: freie Minuten, Minuten je Thema, Serienlänge,
+  Themen für unbegrenzt (0 = nie), Daily Quiz nötig, Beginn des Lerntags. Die
+  Regeln reisen ebenfalls mit dem Abgleich (die zuletzt geänderten gelten).
 
 ### 7l. Tasten: beim Schreiben hat das Textfeld Vorrang
 

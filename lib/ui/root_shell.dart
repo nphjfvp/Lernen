@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/screen_guard.dart';
 import '../repositories/settings_repository.dart';
 import '../services/claude_inbox.dart';
 import '../services/update_checker_service.dart';
@@ -31,13 +32,25 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   int _index = 0;
 
+  /// Lernzeit-Sperre: beim Öffnen und Zurückkehren das Guthaben ans Handy
+  /// geben (ein neuer Lerntag, auf einem anderen Gerät Gelerntes).
+  late final AppLifecycleListener _lifecycle = AppLifecycleListener(onResume: ScreenGuard.push);
+
   @override
   void initState() {
     super.initState();
+    _lifecycle;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdate();
       _checkInbox();
+      ScreenGuard.push();
     });
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
   }
 
   /// Einmaliger, stiller Check beim App-Start, ob unter der festen

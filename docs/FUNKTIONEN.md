@@ -540,6 +540,16 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   `flutter_local_notifications` (kein eigener Server, wiederholt sich nach
   dem ersten Planen selbst täglich). Auf Web ohne Wirkung, da das Paket dort
   nicht unterstützt wird – der Schalter bleibt sichtbar, tut aber nichts.
+- **Lernzeit-Sperre (Android)** – Einstellungen → Lernzeit-Sperre: gewählte
+  Apps (Standard Instagram) gibt es jeden Lerntag (4:00 bis 4:00) 30 Minuten
+  frei, jedes neu gelernte Thema bringt +30 Minuten, mit einem neuen Thema und
+  fertigem Daily Quiz ist die Zeit unbegrenzt (alles einstellbar). Thema = das
+  Konzept einer Karte, sonst ihr Aufgabentyp, sonst ihre Einheit (fein: unter
+  DGL sind „Variablen trennen“ und „Substitution“ eigene Themen); gelernt nach
+  2 fehlerfreien Antworten in Folge, in allen Lernwegen. Das Guthaben reist mit
+  dem Cloud-Abgleich, Lernen auf Windows/Web zählt also mit. Die Android-App
+  misst die Zeit über die Nutzungsstatistik und legt nach Ablauf einen
+  Sperrbildschirm über die App (Vordergrunddienst, startet nach Neustart neu).
 - **Startbildschirm-Widget (Android)** – zeigt die nächste Vorlesung, die
   Anzahl heute fälliger Karten und einen Klausur-Countdown direkt auf dem
   Android-Homescreen, ohne die App zu öffnen (`home_widget`-Package +

@@ -22,6 +22,7 @@ import '../models/pdf_storage_config.dart';
 import '../models/summary.dart';
 import '../models/unsupported_task.dart';
 import '../repositories/daily_session_repository.dart';
+import '../repositories/learn_credit_repository.dart';
 import '../repositories/mock_exam_repository.dart';
 import '../repositories/study_log_repository.dart';
 import '../services/database_service.dart';
@@ -191,6 +192,9 @@ Future<void> applySyncedHistory(DatabaseClient txn, Map<String, dynamic> data) a
   if (days is List) {
     await StudyLogRepository.mergeDayKeysIn(txn, days.map((d) => d.toString()));
   }
+  final credit = data['learnCredit'];
+  if (credit is Map) await LearnCreditRepository.mergeIn(txn, credit);
+  await LearnCreditRepository.mergeRulesIn(txn, data['learnCreditRules']);
   final session = data['dailySession'];
   if (session is Map) {
     final now = DateTime.now();
@@ -248,6 +252,9 @@ Future<Map<String, dynamic>> buildSyncPayload(DatabaseClient db) async {
     // Heute eingeführte neue Karten – damit ein zweites Gerät am selben Tag
     // nicht noch einmal das volle Neu-Karten-Budget verteilt.
     'dailySession': (await DailySessionRepository.loadFrom(db, DateTime.now())).toMap(),
+    // Lernguthaben der Lernzeit-Sperre – Lernen auf jedem Gerät zählt.
+    'learnCredit': await LearnCreditRepository.syncMapFrom(db),
+    'learnCreditRules': (await LearnCreditRepository.loadRulesFrom(db)).toMap(),
     // Datenformat – meldet beim Abgleich unterschiedliche App-Versionen.
     'dataVersion': syncDataVersion,
   };

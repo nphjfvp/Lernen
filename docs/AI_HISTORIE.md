@@ -1732,3 +1732,17 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Feld durch); `Listener.onPointerUp` holt den Tastenfokus zurück, Ideenfeld `onTapOutside` → unfocus.
     GanttTaskView `_onKey`: Balken verschieben/löschen nicht beim Schreiben. Regel für neue Kürzel: immer
     `isEditingText()` prüfen. Test: `worked_socratic_test`.
+128. Lernzeit-Sperre (Android): `LearnCreditRules`/`LearnCredit`/`LearnAllowance` (lib/models/learn_credit.dart;
+    Lerntag `dayKey` ab `dayStartHour`, Thema gelernt bei `correctInRow` fehlerfreien Antworten in Folge – `isClean`:
+    geprüft richtig ohne „Schwer“, selbst bewertet ≠ „Nochmal“ –, jedes Thema einmal, `mergedWith` vereint Geräte).
+    `LearnCreditRepository` (settings `learn_credit` synct als `learnCredit` – sync_service/sync_merge/
+    sync_merge_apply; Regeln `learn_credit_rules` synct als `learnCreditRules`, `LearnCreditRules.newer`/`mergeRulesIn`:
+    zuletzt geänderte (`updatedAt`) gewinnen; `topicOf`: Konzept → Aufgabentyp aus `VisualTaskCatalog` →
+    Einheit). Verbucht in `CardReviewMixin._creditAnswer` (alle Lernwege über `recordReview`), Daily Quiz fertig in
+    `_creditDailyDone`. `ScreenGuard` (lib/services/screen_guard.dart, Kanal `lernen/screen_guard`) schiebt Regeln +
+    Guthaben ans Handy: nach jeder Antwort, nach AutoSync (main.dart), beim Start/Fortsetzen (RootShell
+    `AppLifecycleListener`). Kotlin `ScreenGuard.kt`: Prefs, `ScreenGuardService` (Vordergrunddienst specialUse, 1-s-Takt
+    über `UsageEvents`, Overlay `TYPE_APPLICATION_OVERLAY`), `ScreenGuardBootReceiver`; MainActivity-Kanal (status,
+    configure, Einstellungen öffnen, installedApps, usedMinutes); Manifest: PACKAGE_USAGE_STATS, SYSTEM_ALERT_WINDOW,
+    FOREGROUND_SERVICE_SPECIAL_USE, `<queries>` Launcher. UI `ScreenGuardScreen` (Einstellungen → Lernzeit-Sperre).
+    Tests: `learn_credit_test`, `learn_credit_repository_test`, `screen_guard_screen_test`.

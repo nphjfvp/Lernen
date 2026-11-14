@@ -5,6 +5,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../repositories/learn_credit_repository.dart';
+import '../../services/database_service.dart';
+import '../../services/screen_guard.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
@@ -58,6 +61,8 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
     final saved = stored != null && await repo.update(outcome.card);
     if (!saved) return ReviewOutcome(card: outcome.card, wasWrong: outcome.wasWrong, cardDeleted: true);
     unawaited(StudyLogRepository().recordDay(DateTime.now()));
+    // Lernzeit-Sperre: zwei fehlerfreie Antworten zu einem Thema = neues Thema.
+    unawaited(_creditAnswer(current, selfGrade: selfGrade, isCorrect: isCorrect));
 
     final target = outcome.targetType;
     if (outcome.needsGeneration && target != null && settings.hasApiKey) {
@@ -87,6 +92,28 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
       );
     }
     return result;
+  }
+
+  Future<void> _creditAnswer(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
+    try {
+      final learned = await LearnCreditRepository.recordAnswer(card, selfGrade: selfGrade, isCorrect: isCorrect);
+      await ScreenGuard.push();
+      if (learned == null || !mounted) return;
+      final db = await DatabaseService.instance.database;
+      final rules = await LearnCreditRepository.loadRulesFrom(db);
+      // Nur, wer die Lernzeit-Sperre nutzt, bekommt die Meldung.
+      if (!rules.enabled || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(
+            'Neues Thema gelernt: $learned${rules.minutesPerTopic > 0 ? ' – +${rules.minutesPerTopic} min Lernzeit' : ''}',
+          ),
+        ),
+      );
+    } catch (_) {
+      // Das Guthaben darf das Lernen nie stören.
+    }
   }
 
   /// Rückfall bei getrennten Karten (siehe StageGate.reactivateEasier): holt
