@@ -192,7 +192,11 @@ const appGuideChapters = <GuideChapter>[
             'Der Stand bleibt gespeichert: Was du nicht geschafft hast, kommt in der nächsten Runde wieder, Gelöstes '
             'wird übersprungen. „Kann ich schon“ überspringt eine Aufgabe; tippe in der Übersicht eine Aufgabe an, '
             'um dort neu zu starten, oder starte ganz von vorn. Die Reihenfolge lässt sich umschalten: wie im '
-            'Dokument oder von leicht nach schwer. Zufällig üben geht weiterhin.',
+            'Dokument oder von leicht nach schwer. Zufällig üben geht weiterhin. Oben bei jeder Aufgabe: ∑ rechnet sie '
+            'an der Tafel vor (danach zählt sie als „Nochmal“ und kommt in der nächsten Runde wieder – dann löst du '
+            'sie selbst), das Rechner-Symbol klappt den Taschenrechner auf (am PC daneben, am Handy zum Aufziehen); '
+            '„Ergebnis übernehmen“ kopiert das Ergebnis. Rechenweg-Aufgaben haben dazu „Selbst rechnen“ mit Stift, '
+            'Nebenrechnungen und Nachrechnen wie überall.',
         where: 'Fach → Lernen → Üben → Der Reihe nach · bei einer PDF „… Aufgaben der Reihe nach“ · im PDF oben',
       ),
       GuideItem(

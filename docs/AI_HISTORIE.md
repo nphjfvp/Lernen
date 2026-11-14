@@ -1686,3 +1686,9 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `worked-pick-i`, `worked-pick-empty`), übernimmt Text, Bild (`imageOf`), Musterlösung (`referenceFor`: Rückseite +
     Schritte) und `cardId` (Chip `worked-picked`, abwählbar); schon vorgerechnet → `forCard` öffnet direkt.
     `_load(openExisting: false)` beim „Neu vorrechnen“. Test: `worked_solution_test`.
+123. „Der Reihe nach“ mit Vorrechnen und Taschenrechner: `StudySequenceScreen._question` Kopfzeile `sequence-worked`
+    (→ `WorkedSolutionScreen` mit `referenceFor`/`imageOf`/`cardId`; danach `_watched` + Hinweis `sequence-watched`,
+    `_answered` verbucht dann `Grade.again`/falsch → Status „noch nicht geschafft“, kommt in der nächsten Runde
+    wieder) und `sequence-calc` (Zustand `calculatorOpen` für die Sitzung): ab 900 px Rechner rechts
+    (`sequence-calc-panel`), sonst `DraggableScrollableSheet` über der Aufgabe mit `sequence-calc-close`;
+    `onUseResult` kopiert in die Zwischenablage (SnackBar). Test: `study_sequence_screen_test`.

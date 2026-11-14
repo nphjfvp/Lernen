@@ -12,6 +12,7 @@ import 'package:lernen/repositories/settings_repository.dart';
 import 'package:lernen/repositories/study_sequence_repository.dart';
 import 'package:lernen/theme/app_colors.dart';
 import 'package:lernen/ui/practice/study_sequence_screen.dart';
+import 'package:lernen/ui/visual/worked_solution_screen.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:provider/provider.dart';
@@ -157,6 +158,85 @@ void main() {
     expect(find.text('Bei Aufgabe 1 beginnen'), findsNothing);
     expect(find.text('Weiter bei Aufgabe 1'), findsOneWidget);
     expect(summary(), '0 von 4 erledigt');
+    await tester.pumpWidget(const SizedBox());
+    await settle(tester);
+  });
+
+  testWidgets('Der Reihe nach: Taschenrechner auf/zu, vorrechnen lassen zählt als nicht gewusst', (tester) async {
+    tester.view.physicalSize = const Size(600, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const src = StudySequenceSource(kind: StudySequenceKind.material, id: 'blatt2', title: 'Blatt 4');
+    Flashcard card(int i) => Flashcard(
+      id: 'w$i',
+      moduleId: 'wm',
+      front: 'Rechne $i + $i',
+      back: '${2 * i}',
+      createdAt: DateTime(2026, 11, 1, 10, i),
+      due: DateTime(2026, 11, 1),
+      sourceMaterialId: 'blatt2',
+      sourcePage: 1,
+    );
+    final flashcards = FlashcardRepository();
+    final settings = SettingsRepository();
+    await tester.runAsync(() async {
+      await settings.update(const AppSettings());
+      await ModuleRepository().save(
+        Module(id: 'wm', name: 'Mathe', colorValue: 0xFF336699, icon: 'calculate', examDate: null, createdAt: DateTime(2026)),
+      );
+      await flashcards.saveAll([card(1), card(2)]);
+    });
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<FlashcardRepository>.value(value: flashcards),
+          ChangeNotifierProvider<SettingsRepository>.value(value: settings),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(extensions: const [AppColors.light]),
+          home: const StudySequenceScreen(moduleId: 'wm', source: src),
+        ),
+      ),
+    );
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('sequence-continue')));
+    await settle(tester);
+    expect(find.text('Rechne 1 + 1'), findsOneWidget);
+
+    // Taschenrechner aufklappen, rechnen, Ergebnis kopieren, wieder zu.
+    expect(find.byKey(const ValueKey('sequence-calc-panel')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('sequence-calc')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('sequence-calc-panel')), findsOneWidget);
+    for (final k in ['1', 'ADD', '1', 'EQ']) {
+      await tester.tap(find.byKey(ValueKey('calc-key-$k')));
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await tester.tap(find.byKey(const ValueKey('calc-use')));
+    await tester.pump();
+    expect(find.textContaining('Ergebnis kopiert: 2'), findsOneWidget);
+    tester.state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger)).removeCurrentSnackBar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sequence-calc-close')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('sequence-calc-panel')), findsNothing);
+
+    // Vorrechnen lassen: öffnet die Tafel mit der Aufgabe, danach zählt sie als „Nochmal“.
+    await tester.tap(find.byKey(const ValueKey('sequence-worked')));
+    await tester.pumpAndSettle();
+    expect(find.byType(WorkedSolutionScreen), findsOneWidget);
+    expect(find.text('Rechne 1 + 1'), findsWidgets);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sequence-watched')), findsOneWidget);
+    await tester.tap(find.text('Zum Umdrehen tippen'));
+    await settle(tester, 4);
+    await tester.ensureVisible(find.text('Gut'));
+    await tester.pump();
+    await tester.tap(find.text('Gut'));
+    await settle(tester, 30);
+    final stored = await tester.runAsync(() => StudySequenceRepository().load('wm', src));
+    expect(stored!.status['w1'], StudySequenceStatus.failed, reason: 'vorgerechnet = nicht selbst gekonnt');
     await tester.pumpWidget(const SizedBox());
     await settle(tester);
   });

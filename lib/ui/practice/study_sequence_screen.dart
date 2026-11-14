@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/flashcard.dart';
@@ -15,6 +16,8 @@ import '../../services/study_sequence.dart';
 import '../../theme/app_colors.dart';
 import '../daily/card_review_mixin.dart';
 import '../daily/question_answer_view.dart';
+import '../visual/calculator_sim.dart';
+import '../visual/worked_solution_screen.dart';
 
 /// Öffnet „Der Reihe nach“ für [source].
 Future<void> openStudySequence(BuildContext context, String moduleId, StudySequenceSource source) =>
@@ -124,6 +127,13 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
   int _roundFailed = 0;
   int _roundSkipped = 0;
 
+  /// Vor dem Lösen vorrechnen lassen – zählt dann als „Nochmal“ und kommt in
+  /// der nächsten Runde wieder.
+  final Set<String> _watched = {};
+
+  /// Taschenrechner neben bzw. unter der Aufgabe (bleibt für die Sitzung).
+  static bool calculatorOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -180,6 +190,11 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
   }
 
   Future<void> _answered(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
+    if (_watched.contains(card.id)) {
+      // Vorgerechnet angesehen: ehrlich als nicht gewusst verbuchen.
+      selfGrade = Grade.again;
+      isCorrect = false;
+    }
     final solved = isCorrect ?? (selfGrade != null && selfGrade != Grade.again);
     _update(
       StudySequence.record(
@@ -199,6 +214,32 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
       _index++;
     });
     await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
+  }
+
+  /// Die Aufgabe an der Tafel vorrechnen lassen (Vorrechnen-Bildschirm mit
+  /// Text, Bild und Musterlösung der Karte).
+  Future<void> _openWorked(Flashcard card) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WorkedSolutionScreen(
+          moduleId: widget.moduleId,
+          problem: card.front,
+          reference: WorkedSolutionScreen.referenceFor(card),
+          image: WorkedSolutionScreen.imageOf(card),
+          cardId: card.id,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _watched.add(card.id));
+  }
+
+  void _copyResult(String value) {
+    if (value.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: value));
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('Ergebnis kopiert: $value – zum Einfügen ins Antwortfeld')));
   }
 
   void _understood(Flashcard card) {
@@ -352,7 +393,10 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
           key: const ValueKey('sequence-order'),
           segments: [
             for (final o in StudySequenceOrder.values)
-              ButtonSegment(value: o, label: Text(o.label, key: ValueKey('sequence-order-${o.name}'))),
+              ButtonSegment(
+                value: o,
+                label: Text(o.label, key: ValueKey('sequence-order-${o.name}')),
+              ),
           ],
           selected: {p.order},
           showSelectedIcon: false,
@@ -436,6 +480,16 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
   Widget _question(AppColors c, Flashcard card) {
     final queue = _queue!;
     final position = _ordered.indexWhere((x) => x.id == card.id) + 1;
+    final watched = _watched.contains(card.id);
+    final question = QuestionAnswerView(
+      key: ValueKey('sequence-q-${card.id}'),
+      card: card,
+      isNew: card.reps == 0,
+      canGiveUp: true,
+      onImageEdited: (bytes) => saveEditedImage(card, bytes),
+      onComplete: ({selfGrade, isCorrect}) => _answered(card, selfGrade: selfGrade, isCorrect: isCorrect),
+    );
+    final calculator = CalculatorSim(onUseResult: _copyResult);
     return Column(
       children: [
         Padding(
@@ -461,6 +515,20 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
                   style: TextStyle(fontSize: 12.5, color: c.inkMuted),
                 ),
               ),
+              IconButton(
+                key: const ValueKey('sequence-worked'),
+                tooltip: 'An der Tafel vorrechnen lassen (vor dem Lösen: zählt als „Nochmal“)',
+                onPressed: () => _openWorked(card),
+                icon: Icon(Icons.functions, color: c.accent),
+              ),
+              IconButton(
+                key: const ValueKey('sequence-calc'),
+                tooltip: calculatorOpen ? 'Taschenrechner ausblenden' : 'Taschenrechner',
+                isSelected: calculatorOpen,
+                onPressed: () => setState(() => calculatorOpen = !calculatorOpen),
+                icon: const Icon(Icons.calculate_outlined),
+                selectedIcon: Icon(Icons.calculate, color: c.accent),
+              ),
               TextButton.icon(
                 key: const ValueKey('sequence-understood'),
                 onPressed: () => _understood(card),
@@ -470,14 +538,86 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
             ],
           ),
         ),
+        if (watched)
+          Container(
+            key: const ValueKey('sequence-watched'),
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(20, 2, 20, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(10)),
+            child: Text(
+              'Vorgerechnet angesehen – rechne sie jetzt selbst nach. Sie zählt als „Nochmal“ und kommt in der '
+              'nächsten Runde wieder, dann ohne Hilfe.',
+              style: const TextStyle(fontSize: 12.5, height: 1.35),
+            ),
+          ),
         Expanded(
-          child: QuestionAnswerView(
-            key: ValueKey('sequence-q-${card.id}'),
-            card: card,
-            isNew: card.reps == 0,
-            canGiveUp: true,
-            onImageEdited: (bytes) => saveEditedImage(card, bytes),
-            onComplete: ({selfGrade, isCorrect}) => _answered(card, selfGrade: selfGrade, isCorrect: isCorrect),
+          child: LayoutBuilder(
+            builder: (context, box) {
+              if (!calculatorOpen) return question;
+              // Breit: Rechner daneben; schmal: aufziehbar über der Aufgabe.
+              if (box.maxWidth >= 900) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: question),
+                    SizedBox(
+                      width: 380,
+                      child: SingleChildScrollView(
+                        key: const ValueKey('sequence-calc-panel'),
+                        padding: const EdgeInsets.fromLTRB(0, 8, 20, 24),
+                        child: calculator,
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return Stack(
+                children: [
+                  Positioned.fill(child: question),
+                  DraggableScrollableSheet(
+                    key: const ValueKey('sequence-calc-panel'),
+                    initialChildSize: 0.62,
+                    minChildSize: 0.12,
+                    maxChildSize: 0.96,
+                    builder: (context, scroll) => Material(
+                      color: c.surface,
+                      elevation: 8,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                      child: ListView(
+                        controller: scroll,
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Center(
+                                  child: Container(
+                                    width: 40,
+                                    height: 4,
+                                    decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2)),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                key: const ValueKey('sequence-calc-close'),
+                                tooltip: 'Ausblenden',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => setState(() => calculatorOpen = false),
+                                icon: const Icon(Icons.close, size: 20),
+                              ),
+                            ],
+                          ),
+                          Center(
+                            child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 400), child: calculator),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],

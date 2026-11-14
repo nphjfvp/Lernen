@@ -1,8 +1,21 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7g) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7h) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7h. Der Reihe nach: Vorrechnen und Taschenrechner bei jeder Aufgabe
+
+- Oben bei jeder Aufgabe (nicht nur Rechenwegen): **∑ Vorrechnen** öffnet die
+  Tafel mit Aufgabe, Bild und Musterlösung (grob/regulär/fein, Fragen,
+  Herleitung, Taschenrechner). Danach steht ein Hinweis da, und die Aufgabe
+  zählt ehrlich als „Nochmal“ – sie kommt in der nächsten Runde wieder, dann
+  löst du sie selbst.
+- **Taschenrechner** auf- und zuklappen: am PC neben der Aufgabe, am Handy
+  als Leiste zum Aufziehen über der Aufgabe; „Ergebnis übernehmen“ kopiert
+  das Ergebnis zum Einfügen. Er bleibt von Aufgabe zu Aufgabe offen (mit Ans).
+- Rechenweg-Aufgaben haben hier wie überall „Selbst rechnen“ (Tippen oder
+  Stift), Nebenrechnungen und das Nachrechnen jeder Zeile.
 
 ### 7g. Vorrechnen: vorhandene Aufgaben wählen
 

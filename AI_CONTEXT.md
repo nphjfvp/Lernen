@@ -474,10 +474,10 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48` (App-Branch – fertige Änderungen
 immer direkt dorthin pushen, auch aus anderen Sitzungs-Branches; siehe CLAUDE.md). `flutter analyze`
-sauber, 1777 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1778 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
-Umgesetzt sind 122 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
+Umgesetzt sind 123 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
 [docs/AI_HISTORIE.md](docs/AI_HISTORIE.md) (dort per Suche nachschlagen, bevor
 ein Bereich geändert wird). Zuletzt: Web-App über GitHub Pages fürs iPad
 (85–89), Releases nur vom App-Branch (90), KI-Wiederholung bei 429/5xx und
@@ -506,7 +506,8 @@ Selbst rechnen: Nebenrechnungen, Umformungen ohne KI nachrechnen (LineChain), St
 Erkennung je Zeile (119),
 Vorrechnen an der Tafel (grob/regulär/fein) mit simuliertem Taschenrechner (120),
 Taschenrechner rechnet wirklich (PocketCalculator), aufklappbar beim Selberrechnen (121),
-Vorrechnen mit vorhandenen Aufgaben des Fachs (122).
+Vorrechnen mit vorhandenen Aufgaben des Fachs (122),
+Vorrechnen und Taschenrechner bei jeder Aufgabe in „Der Reihe nach“ (123).
 
 **Aufgaben für den Nutzer bauen** („ins Postfach“, Übungsblatt schicken):
 Skill `.claude/skills/postfach/SKILL.md` befolgen – Postfach-Code nie ins
