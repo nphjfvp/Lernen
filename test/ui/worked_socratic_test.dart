@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -356,5 +357,42 @@ void main() {
     expect(sent.last, contains(r'\frac{dy}{dx} = f(x)\cdot g(y)'), reason: 'der eigene Schritt geht mit');
     expect(find.byKey(const ValueKey('worked-ask-panel')), findsNothing);
     expect(find.byKey(const ValueKey('worked-praise')), findsOneWidget);
+  });
+
+  testWidgets('Tasten: beim Schreiben gehören Pfeile und Leertaste dem Feld, sonst blättern sie', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SettingsRepository>.value(
+        value: _SettingsWithKey(),
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: WorkedSolutionScreen(moduleId: 'm1', solution: _separation(), startSocratic: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('worked-ask-panel')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('worked-idea')));
+    await tester.enterText(find.byKey(const ValueKey('worked-idea')), 'abc');
+    await tester.pump();
+    TextEditingController field() => tester.widget<TextField>(find.byKey(const ValueKey('worked-idea'))).controller!;
+    expect(field().selection.baseOffset, 3);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(field().selection.baseOffset, 2, reason: 'der Cursor wandert im Feld');
+    expect(find.byKey(const ValueKey('worked-ask-panel')), findsOneWidget, reason: 'nicht zurückgeblättert');
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('worked-ask-panel')), findsOneWidget);
+
+    // Neben das Feld getippt: Pfeil links blättert wie bisher (zurück aus der Frage).
+    await tester.tap(find.byKey(const ValueKey('work-board')));
+    await tester.pump();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('worked-ask-panel')), findsNothing);
   });
 }

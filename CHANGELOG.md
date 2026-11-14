@@ -1,8 +1,17 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7k) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7l) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7l. Tasten: beim Schreiben hat das Textfeld Vorrang
+
+- Vorrechnen: Pfeiltasten und Leertaste blättern nur noch, wenn man nicht
+  gerade in ein Feld schreibt – beim Schreiben bewegen die Pfeile den Cursor
+  und die Leertaste macht ein Leerzeichen (Browser und Windows). Neben das
+  Feld tippen beendet das Schreiben, dann blättern die Tasten wieder.
+- Terminierung (Gantt): Pfeile, Entf und Rücktaste verschieben bzw. löschen
+  den markierten Balken nicht mehr, während man in einem Antwortfeld tippt.
 
 ### 7k. Selbst überlegen: dein eigener Weg zählt
 

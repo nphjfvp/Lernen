@@ -1726,3 +1726,9 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `_askChunks` aus der letzten eigenen Zeile, gehen als boardSoFar mit), grüne Rückmeldung „Richtig – und wie geht es
     weiter?“, aufgedeckt erst bei covers „ganz“. `LatexChunks`: Buchstabe + Klammer (f(x)) ist ein Teil. Zurück im
     Fragefeld als `IconButton.outlined`. Test: `worked_socratic_test`.
+127. Tastenkürzel vs. Textfeld: `isEditingText()` (lib/ui/widgets/text_focus.dart: Primärfokus in einem
+    `EditableText`). WorkedSolutionScreen: statt `CallbackShortcuts` ein `Focus(focusNode: _keysFocus, onKeyEvent:
+    _onKey)` – Pfeile/Leertaste nur ohne Modifikator und nicht beim Schreiben (`KeyEventResult.ignored` lässt sie zum
+    Feld durch); `Listener.onPointerUp` holt den Tastenfokus zurück, Ideenfeld `onTapOutside` → unfocus.
+    GanttTaskView `_onKey`: Balken verschieben/löschen nicht beim Schreiben. Regel für neue Kürzel: immer
+    `isEditingText()` prüfen. Test: `worked_socratic_test`.

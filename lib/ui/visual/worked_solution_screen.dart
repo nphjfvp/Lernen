@@ -20,6 +20,7 @@ import '../../theme/app_colors.dart';
 import '../widgets/math_text.dart';
 import '../widgets/raw_response_dialog.dart';
 import '../widgets/safe_set_state.dart';
+import '../widgets/text_focus.dart';
 import 'calculator_sim.dart';
 import 'worked_board.dart';
 
@@ -117,6 +118,10 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   Set<int>? _practiceOnly;
   final Set<int> _selected = {};
   final _idea = TextEditingController();
+
+  /// Fokus für die Blätter-Tasten (Pfeile, Leertaste) – kommt zurück, sobald
+  /// man neben ein Textfeld tippt.
+  final _keysFocus = FocusNode(debugLabel: 'worked-keys');
   bool _ideaBusy = false;
   ({String verdict, String feedback, String hint, bool partial, String line})? _ideaResult;
 
@@ -157,6 +162,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     _auto?.cancel();
     _problem.dispose();
     _idea.dispose();
+    _keysFocus.dispose();
     super.dispose();
   }
 
@@ -957,14 +963,17 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     final phase = ask == null ? shownPhase : -1;
     final s = solution.steps[step];
     final calc = solution.withCalculator && ask == null ? s.calc : null;
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.arrowRight): _next,
-        const SingleActivator(LogicalKeyboardKey.space): _next,
-        const SingleActivator(LogicalKeyboardKey.arrowLeft): _prev,
-      },
-      child: Focus(
-        autofocus: true,
+    return Focus(
+      focusNode: _keysFocus,
+      autofocus: true,
+      onKeyEvent: _onKey,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        // Neben ein Textfeld getippt: Schreibmodus vorbei, die Tasten blättern
+        // wieder.
+        onPointerUp: (_) => WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !isEditingText() && !_keysFocus.hasFocus) _keysFocus.requestFocus();
+        }),
         child: LayoutBuilder(
           builder: (context, box) {
             final wide = box.maxWidth >= 980 && solution.withCalculator;
@@ -1084,6 +1093,27 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     );
   }
 
+  /// Pfeiltasten und Leertaste blättern – außer man schreibt gerade in ein
+  /// Feld (Idee, Aufgabe), dann gehören sie dem Feld.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    if (isEditingText()) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed || keyboard.isAltPressed || keyboard.isMetaPressed || keyboard.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowRight || key == LogicalKeyboardKey.space) {
+      _next();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      _prev();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   Widget _modeToggle(AppColors c) => SegmentedButton<bool>(
     key: const ValueKey('worked-mode'),
     segments: const [
@@ -1195,6 +1225,9 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
           TextField(
             key: const ValueKey('worked-idea'),
             controller: _idea,
+            // Daneben tippen beendet das Schreiben (auch im Browser und unter
+            // Windows) – dann blättern die Pfeiltasten wieder.
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             minLines: 1,
             maxLines: 4,
             enabled: !_ideaBusy,

@@ -10,6 +10,7 @@ import '../../services/gantt_scheduler.dart';
 import '../../theme/app_colors.dart';
 import '../study/study_aids.dart';
 import '../widgets/math_text.dart';
+import '../widgets/text_focus.dart';
 
 /// Farben der Teile im Diagramm (unterscheiden sich auch in der Helligkeit).
 List<Color> ganttPalette(Brightness b) => b == Brightness.dark
@@ -255,6 +256,8 @@ class _GanttTaskViewState extends State<GanttTaskView> {
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
     if (_sel == null) return KeyEventResult.ignored;
+    // In einem Antwortfeld gehören Pfeile und Löschen dem Feld.
+    if (isEditingText()) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       _move(-1);
       return KeyEventResult.handled;
