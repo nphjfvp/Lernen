@@ -3319,7 +3319,7 @@ Antworte in der Sprache der Vorlage.
   /// [step] ist der erwartete Schritt (JSON), [selection] der markierte Teil
   /// der Tafel, [idea] ihre Beschreibung. Antwort: verdict (richtig/teilweise/
   /// falsch), feedback, hint.
-  Future<({String verdict, String feedback, String hint})> checkWorkedIdea({
+  Future<({String verdict, String feedback, String hint, bool partial, String line})> checkWorkedIdea({
     required String problem,
     required List<String> boardSoFar,
     required Map<String, dynamic> step,
@@ -3332,13 +3332,14 @@ Antworte in der Sprache der Vorlage.
       ..writeln(general ? 'Rezept für den Aufgabentyp:' : 'Aufgabe:')
       ..writeln(_cap(problem.trim(), 4000))
       ..writeln()
-      ..writeln('Bisher an der Tafel:');
+      ..writeln('Bisher an der Tafel (die letzten Zeilen sind ggf. schon eigene Teilschritte der Person):');
     for (final l in boardSoFar.length > 12 ? boardSoFar.sublist(boardSoFar.length - 12) : boardSoFar) {
       buffer.writeln('  $l');
     }
     buffer
       ..writeln()
-      ..writeln('Erwarteter nächster Schritt (NUR für dich, nicht verraten): ${_cap(jsonEncode(step), 3000)}')
+      ..writeln('Erwarteter nächster Schritt der Musterlösung (NUR für dich, nicht verraten – andere richtige Wege '
+          'und Reihenfolgen sind genauso gut): ${_cap(jsonEncode(step), 3000)}')
       ..writeln()
       ..writeln(selection.trim().isEmpty ? 'Die Person hat nichts markiert.' : 'Die Person hat markiert: ${_cap(selection, 600)}')
       ..writeln('Ihr Vorschlag: ${_cap(idea.trim(), 1500)}');
@@ -3348,22 +3349,33 @@ Antworte in der Sprache der Vorlage.
     final verdict = v.startsWith('richt') || v == 'ok' || v == 'correct'
         ? 'richtig'
         : (v.startsWith('teil') || v.startsWith('part') ? 'teilweise' : 'falsch');
+    final covers = '${json['covers'] ?? json['umfang'] ?? 'ganz'}'.toLowerCase();
+    var line = '${json['line'] ?? json['zeile'] ?? ''}'.trim();
+    if (line.startsWith(r'$') && line.endsWith(r'$') && line.length > 2) line = line.replaceAll(r'$', '').trim();
     return (
       verdict: verdict,
       feedback: '${json['feedback'] ?? json['comment'] ?? ''}'.trim(),
       hint: '${json['hint'] ?? json['tipp'] ?? ''}'.trim(),
+      // Ein richtiger Teilschritt (oder anderer Weg), nach dem noch etwas fehlt.
+      partial: verdict == 'richtig' && (covers.startsWith('teil') || covers.startsWith('part')),
+      line: line,
     );
   }
 
   static const _workedIdeaSystemPrompt = r"""
-Du bist ein sokratischer Tutor in einer Lern-App. Eine Person lernt Lösungswege wie Vokabeln: Sie sieht die Tafel, markiert einen Teil und beschreibt, was sie als Nächstes tun würde. Du vergleichst ihren Vorschlag mit dem erwarteten nächsten Schritt.
+Du bist ein sokratischer Tutor in einer Lern-App. Eine Person lernt Lösungswege wie Vokabeln: Sie sieht die Tafel, markiert einen Teil und beschreibt, was sie als Nächstes tun würde. Du prüfst, ob ihr Vorschlag ein richtiger, zielführender nächster Schritt ist.
 
-- "richtig": dieselbe Idee wie der erwartete Schritt – Wortlaut egal, Fachbegriffe oder eigene Worte zählen gleich. Auch ein anderer, ebenso richtiger und zielführender Schritt ist "richtig".
-- "teilweise": die Richtung stimmt, aber etwas Wesentliches fehlt oder ist ungenau (z.B. „nach y sortieren“, aber nicht, dass dy/dx aufgeteilt wird).
-- "falsch": falsche Idee, falscher Teil markiert oder nicht zielführend.
-"feedback": 1–2 Sätze an die Person (Du-Form): bei "richtig" kurz bestätigen und den Fachbegriff nennen; sonst sagen, was stimmt und was fehlt – OHNE den Schritt zu verraten.
-"hint": nur bei "teilweise"/"falsch" ein kleiner Denkanstoß (eine Frage oder ein Stichwort), sonst leer.
-Formeln mit $…$. Antworte NUR mit JSON: {"verdict": "richtig", "feedback": "...", "hint": ""}""";
+SEI FLEXIBEL: Es gibt fast immer mehrere richtige Wege und Reihenfolgen. Der erwartete Schritt der Musterlösung ist nur EIN möglicher Weg. Macht die Person nur einen Teil davon (z.B. erst $y'$ als $\frac{dy}{dx}$ schreiben und danach trennen), geht sie in anderer Reihenfolge vor oder nimmt einen anderen, ebenso richtigen Weg, ist das "richtig".
+
+- "verdict":
+  - "richtig": der Vorschlag ist mathematisch bzw. fachlich richtig und bringt die Lösung voran – Wortlaut egal, eigene Worte zählen wie Fachbegriffe.
+  - "teilweise": die Richtung stimmt, aber der Vorschlag ist zu vage, um ihn als konkreten Schritt auszuführen (z.B. „irgendwie umstellen“), oder enthält einen kleinen Fehler.
+  - "falsch": falsche Idee, falscher Teil markiert, mathematisch falsch oder führt nicht weiter.
+- "covers" (nur bei "richtig"): "ganz", wenn danach der erwartete Schritt erledigt ist (die Tafel ist dort angekommen, wo der erwartete Schritt endet, oder gleichwertig); "teil", wenn danach noch etwas davon fehlt.
+- "line" (nur bei "richtig"): die Zeile an der Tafel NACH dem Vorschlag – genau so, wie die Person es gemacht hat, auch wenn sie anders vorgeht als erwartet (LaTeX ohne $, vollständige Gleichung bzw. ganzer Term).
+- "feedback": 1–2 Sätze an die Person (Du-Form). Bei "richtig" bestätigen und den Fachbegriff nennen; bei "teil" zusätzlich fragen, was als Nächstes kommt – OHNE es zu verraten. Sonst sagen, was stimmt und was fehlt, ohne den Schritt zu verraten.
+- "hint": nur bei "teilweise"/"falsch" ein kleiner Denkanstoß (eine Frage oder ein Stichwort), sonst leer.
+Formeln mit $…$. Antworte NUR mit JSON: {"verdict": "richtig", "covers": "ganz", "line": "...", "feedback": "...", "hint": ""}""";
 
   static const _workedDiscussSystemPrompt = r"""
 Du bist ein geduldiger Tutor in einer Lern-App. Eine Aufgabe wird gerade Schritt für Schritt an der Tafel vorgerechnet bzw. gelöst (auch Text- oder Tabellen-Aufgaben); die Person fragt zum aktuellen Schritt nach.

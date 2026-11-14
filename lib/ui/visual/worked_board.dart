@@ -327,7 +327,10 @@ class LatexChunks {
         i = j;
         continue;
       }
-      final j = scripts(i + 1);
+      // Funktion eines Buchstabens: f(x), g(y) als ein Teil.
+      var j = i + 1;
+      if (RegExp(r'[A-Za-z]').hasMatch(ch) && j < s.length && s[j] == '(') j = group(j, '(', ')');
+      j = scripts(j);
       add(start, j);
       i = j;
     }

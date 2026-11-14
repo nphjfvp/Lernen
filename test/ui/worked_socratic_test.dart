@@ -131,6 +131,7 @@ void main() {
     final chunks = LatexChunks.split(r"y' = y^2 \sin(x)");
     expect(chunks.map((c) => c.tex), ["y'", '=', 'y^2', r'\sin(x)']);
     expect(chunks[1].op, isTrue);
+    expect(LatexChunks.split("y' = f(x)g(y)").map((c) => c.tex), ["y'", '=', 'f(x)', 'g(y)'], reason: 'f(x) als ein Teil');
   });
 
   tearDown(() => WorkedSolutionScreen.aiFactory = null);
@@ -277,5 +278,83 @@ void main() {
     expect(sent.single, contains('MODUS: ALLGEMEIN'));
     expect(sent.single, contains('Taschenrechner: nein'));
     expect(find.textContaining('Rezept ·'), findsOneWidget);
+  });
+
+  testWidgets('Sokratisch: eigener Weg in Teilschritten wird angenommen', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final replies = [
+      {
+        'verdict': 'richtig',
+        'covers': 'teil',
+        'line': r'\frac{dy}{dx} = f(x)\cdot g(y)',
+        'feedback': 'Richtig, das ist der Differentialquotient. Was machst du jetzt?',
+      },
+      {'verdict': 'richtig', 'covers': 'ganz', 'line': r'\frac{dy}{g(y)} = f(x)\,dx', 'feedback': 'Genau – getrennt.'},
+    ];
+    final sent = <String>[];
+    WorkedSolutionScreen.aiFactory = (key, model) => AiService(
+      apiKey: key,
+      model: model,
+      client: MockClient((r) async {
+        sent.add('${((jsonDecode(r.body) as Map)['messages'] as List)[1]['content']}');
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {'content': jsonEncode(replies[sent.length - 1])},
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+    // Rezept, in dem Schritt 2 umschreiben UND trennen auf einmal macht.
+    final recipe = WorkedSolution.fromAi(
+      {
+        'steps': [
+          {
+            'title': 'Variablen trennen',
+            'say': 'y′ als dy/dx, dann alles mit y links, alles mit x rechts.',
+            'from': "y' = f(x)g(y)",
+            'to': r'\frac{dy}{g(y)} = f(x)\,dx',
+          },
+        ],
+      },
+      id: 'r2',
+      moduleId: 'm1',
+      problem: 'Trennung der Variablen',
+      detail: WorkDetail.fine,
+      now: DateTime(2026),
+      general: true,
+    );
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SettingsRepository>.value(
+        value: _SettingsWithKey(),
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: WorkedSolutionScreen(moduleId: 'm1', solution: recipe, startSocratic: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('worked-chunk-0')));
+    await tester.enterText(find.byKey(const ValueKey('worked-idea')), 'als dy/dx schreiben');
+    await tester.tap(find.byKey(const ValueKey('worked-idea-check')));
+    await tester.pumpAndSettle();
+    // Angenommen, aber der Schritt ist noch nicht fertig: eigene Zeile an der Tafel, weiter von dort.
+    expect(find.byKey(const ValueKey('worked-ask-panel')), findsOneWidget);
+    expect(find.text('Richtig – und wie geht es weiter?'), findsOneWidget);
+    expect(find.byKey(const ValueKey('board-1-2')), findsOneWidget, reason: 'eigene Zeile unter der Ausgangszeile');
+    expect(sent.first, contains('andere richtige Wege'));
+    await tester.enterText(find.byKey(const ValueKey('worked-idea')), 'mal dx und durch g(y)');
+    await tester.tap(find.byKey(const ValueKey('worked-idea-check')));
+    await tester.pumpAndSettle();
+    expect(sent.last, contains(r'\frac{dy}{dx} = f(x)\cdot g(y)'), reason: 'der eigene Schritt geht mit');
+    expect(find.byKey(const ValueKey('worked-ask-panel')), findsNothing);
+    expect(find.byKey(const ValueKey('worked-praise')), findsOneWidget);
   });
 }

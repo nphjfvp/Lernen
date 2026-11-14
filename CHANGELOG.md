@@ -1,8 +1,16 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7j) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7k) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7k. Selbst überlegen: dein eigener Weg zählt
+
+- Die Prüfung ist flexibel: Ein richtiger Teilschritt (erst y′ als dy/dx
+  schreiben, dann trennen), eine andere Reihenfolge oder ein anderer richtiger
+  Weg wird angenommen. Dein Schritt steht dann grün an der Tafel, und du machst
+  von dort aus weiter, bis der Schritt erledigt ist.
+- f(x), g(y) usw. lassen sich als Ganzes antippen.
 
 ### 7j. 3D: Simulation erweitern, Abläufe mit gerechneten Kräften
 

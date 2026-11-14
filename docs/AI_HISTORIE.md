@@ -1720,3 +1720,9 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `Scene3DLive.apply`), Erweitern `scene3d-extend` (`-input`, `-go`, `-suggest-i`, `-say`, `-error`, `-undo`;
     Ablauf an den ersten Körper-Baustein gehängt, Verlauf fürs Rückgängig). VisualLessonScreen speichert über
     `withScene(isResult ? -1 : _page)` + `_applyRevision`. Tests: `scene3d_extend_test`.
+126. Sokratisch flexibel: `checkWorkedIdea` liefert zusätzlich `partial` (covers „teil“) und `line` (Tafelzeile nach dem
+    Vorschlag der Person); Prompt: andere Wege/Reihenfolgen/Teilschritte sind „richtig“, „teilweise“ nur bei zu vagen
+    Vorschlägen. WorkedSolutionScreen: `_ownLines` (eigene Teilschritte, `_askBlocks` grün je Seite über `_green`,
+    `_askChunks` aus der letzten eigenen Zeile, gehen als boardSoFar mit), grüne Rückmeldung „Richtig – und wie geht es
+    weiter?“, aufgedeckt erst bei covers „ganz“. `LatexChunks`: Buchstabe + Klammer (f(x)) ist ein Teil. Zurück im
+    Fragefeld als `IconButton.outlined`. Test: `worked_socratic_test`.

@@ -118,7 +118,12 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   final Set<int> _selected = {};
   final _idea = TextEditingController();
   bool _ideaBusy = false;
-  ({String verdict, String feedback, String hint})? _ideaResult;
+  ({String verdict, String feedback, String hint, bool partial, String line})? _ideaResult;
+
+  /// Eigene richtige Teilschritte zum abgefragten Schritt – stehen an der
+  /// Tafel, von dort geht es weiter (auch auf einem anderen Weg als die
+  /// Musterlösung).
+  final List<String> _ownLines = [];
 
   /// Rückmeldung zum zuletzt richtig vorgeschlagenen Schritt.
   ({int step, String text})? _praise;
@@ -335,6 +340,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   void _askFor(int step) => setState(() {
     _askStep = step;
     _ideaResult = null;
+    _ownLines.clear();
     _selected.clear();
     _idea.clear();
   });
@@ -348,6 +354,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
         _skipped.add(step);
       }
       _askStep = null;
+      _ownLines.clear();
       _praise = praise.isEmpty ? null : (step: step, text: praise);
       _t = _playback.startOf(step);
     });
@@ -374,15 +381,23 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     try {
       final result = await ai.checkWorkedIdea(
         problem: solution.problem,
-        boardSoFar: _boardTexts(step, -1),
+        boardSoFar: [..._boardTexts(step, -1), ..._ownLines],
         step: solution.steps[step].toMap(),
         selection: selection,
         idea: _idea.text,
         general: solution.general,
       );
       if (!mounted) return;
-      if (result.verdict == 'richtig') {
+      if (result.verdict == 'richtig' && !result.partial) {
         _reveal(step, known: true, praise: result.feedback.isEmpty ? 'Richtig!' : result.feedback);
+      } else if (result.verdict == 'richtig') {
+        // Richtiger Teilschritt bzw. anderer Weg: an die Tafel, weiter von dort.
+        setState(() {
+          if (result.line.isNotEmpty) _ownLines.add(result.line);
+          _ideaResult = result;
+          _selected.clear();
+          _idea.clear();
+        });
       } else {
         setState(() => _ideaResult = result);
       }
@@ -397,9 +412,43 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
 
   /// Antippbare Teile der Ausgangszeile des abgefragten Schritts.
   List<({String tex, bool op})> _askChunks(int step) {
+    if (_solution!.steps[step].kind != WorkKind.math) return const [];
+    if (_ownLines.isNotEmpty) return LatexChunks.split(_ownLines.last);
     final lines = _playback.board(step, -1);
-    if (lines.isEmpty || _solution!.steps[step].kind != WorkKind.math) return const [];
+    if (lines.isEmpty) return const [];
     return LatexChunks.split(lines.last.tex);
+  }
+
+  /// Eigene Zeile grün – je Seite, damit das Gleichheitszeichen in seiner
+  /// Spalte bleibt.
+  static String _green(String line) {
+    final (left, rel, right) = WorkMarkup.split(line);
+    if (rel.isEmpty) return '\\add{$line}';
+    return '${left.isEmpty ? '' : '\\add{$left}'} $rel \\add{$right}';
+  }
+
+  /// Tafel beim Selbst-Überlegen: bis zum Schritt, dazu die eigenen
+  /// Teilschritte (grün, die neueste blendet ein).
+  List<BoardBlock> _askBlocks(int step) {
+    final blocks = _playback.blocks(step, -1);
+    if (_ownLines.isEmpty) return blocks;
+    final mine = [
+      for (final (i, l) in _ownLines.indexed)
+        BoardLine(
+          tex: _green(l),
+          colored: true,
+          isNew: i == _ownLines.length - 1,
+          isCurrent: i == _ownLines.length - 1,
+        ),
+    ];
+    if (blocks.isNotEmpty && blocks.last is MathBlock) {
+      final last = blocks.last as MathBlock;
+      return [
+        ...blocks.sublist(0, blocks.length - 1),
+        MathBlock([for (final l in last.lines) BoardLine(tex: l.tex, op: l.op), ...mine]),
+      ];
+    }
+    return [...blocks, MathBlock(mine)];
   }
 
   /// Nur die nicht selbst gewussten Schritte noch einmal abfragen.
@@ -939,7 +988,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
                 const SizedBox(height: 10),
                 SizedBox(
                   height: wide ? 380 : 260,
-                  child: WorkBoard(blocks: playback.blocks(step, phase)),
+                  child: WorkBoard(blocks: ask != null ? _askBlocks(ask) : playback.blocks(step, phase)),
                 ),
                 const SizedBox(height: 10),
                 if (ask != null) ...[
@@ -1167,16 +1216,19 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
               key: const ValueKey('worked-idea-result'),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: result.verdict == 'teilweise' ? c.warnSoft : c.dangerSoft,
+                color: result.verdict == 'richtig'
+                    ? c.goodSoft
+                    : (result.verdict == 'teilweise' ? c.warnSoft : c.dangerSoft),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    result.verdict == 'teilweise' ? 'Fast – die Richtung stimmt' : 'Noch nicht',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
+                  Text(switch (result.verdict) {
+                    'richtig' => 'Richtig – und wie geht es weiter?',
+                    'teilweise' => 'Fast – die Richtung stimmt',
+                    _ => 'Noch nicht',
+                  }, style: const TextStyle(fontWeight: FontWeight.w700)),
                   if (result.feedback.isNotEmpty)
                     MathText(result.feedback, style: const TextStyle(fontSize: 13.5, height: 1.35)),
                   if (result.hint.isNotEmpty)
@@ -1191,11 +1243,11 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
           const SizedBox(height: 10),
           Row(
             children: [
-              OutlinedButton.icon(
+              IconButton.outlined(
                 key: const ValueKey('worked-prev'),
+                tooltip: 'Zurück',
                 onPressed: _prev,
                 icon: const Icon(Icons.chevron_left),
-                label: const Text('Zurück'),
               ),
               const SizedBox(width: 8),
               Expanded(
