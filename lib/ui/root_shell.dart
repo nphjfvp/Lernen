@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/screen_guard.dart';
 import '../repositories/settings_repository.dart';
 import '../services/claude_inbox.dart';
+import '../services/screen_guard.dart';
 import '../services/update_checker_service.dart';
 import '../theme/app_colors.dart';
 import 'calendar/calendar_screen.dart';
