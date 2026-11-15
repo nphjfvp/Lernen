@@ -46,11 +46,13 @@ HWND HwndFrom(const flutter::EncodableValue* value) {
   if (value == nullptr) {
     return nullptr;
   }
-  if (const auto* small = std::get_if<int32_t>(value)) {
-    return reinterpret_cast<HWND>(static_cast<intptr_t>(*small));
+  // Dart schickt kleine Zahlen als int32, grosse als int64 ("small" ist in
+  // den Windows-Headern ein Makro, darum andere Namen).
+  if (const auto* as_int32 = std::get_if<int32_t>(value)) {
+    return reinterpret_cast<HWND>(static_cast<intptr_t>(*as_int32));
   }
-  if (const auto* big = std::get_if<int64_t>(value)) {
-    return reinterpret_cast<HWND>(static_cast<intptr_t>(*big));
+  if (const auto* as_int64 = std::get_if<int64_t>(value)) {
+    return reinterpret_cast<HWND>(static_cast<intptr_t>(*as_int64));
   }
   return nullptr;
 }
