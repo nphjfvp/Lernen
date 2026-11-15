@@ -536,6 +536,9 @@ class WorkBoard extends StatefulWidget {
 }
 
 class _WorkBoardState extends State<WorkBoard> {
+  /// Texte auf der Tafel wachsen mit der Tafelschrift (Standard 22).
+  double get _k => widget.fontSize / 22;
+
   final _scroll = ScrollController();
 
   int _size(List<BoardBlock> blocks) => blocks.fold(
@@ -655,7 +658,7 @@ class _WorkBoardState extends State<WorkBoard> {
                       children: [
                         Text(
                           '${style(role).$1}:',
-                          style: TextStyle(fontWeight: FontWeight.w700, color: style(role).$2, fontSize: 14),
+                          style: TextStyle(fontWeight: FontWeight.w700, color: style(role).$2, fontSize: 14 * _k),
                         ),
                         for (final m in list)
                           Container(
@@ -665,7 +668,7 @@ class _WorkBoardState extends State<WorkBoard> {
                               border: Border.all(color: style(role).$2.withAlpha(120)),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: MathText(m.text, style: const TextStyle(fontSize: 14.5, height: 1.3)),
+                            child: MathText(m.text, style: TextStyle(fontSize: 14.5 * _k, height: 1.3)),
                           ),
                       ],
                     ),
@@ -690,9 +693,9 @@ class _WorkBoardState extends State<WorkBoard> {
                 if (title.isNotEmpty)
                   Text(
                     title,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c.inkMuted),
+                    style: TextStyle(fontSize: 12 * _k, fontWeight: FontWeight.w700, color: c.inkMuted),
                   ),
-                MathText(text, style: const TextStyle(fontSize: 16, height: 1.5)),
+                MathText(text, style: TextStyle(fontSize: 16 * _k, height: 1.5)),
               ],
             ),
           ),
@@ -709,7 +712,7 @@ class _WorkBoardState extends State<WorkBoard> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           child: MathText(
             t,
-            style: TextStyle(fontSize: 14.5, fontWeight: head ? FontWeight.w700 : FontWeight.w400, height: 1.3),
+            style: TextStyle(fontSize: 14.5 * _k, fontWeight: head ? FontWeight.w700 : FontWeight.w400, height: 1.3),
           ),
         );
         if (table.columns.isNotEmpty) {

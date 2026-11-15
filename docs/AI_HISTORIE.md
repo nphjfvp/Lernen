@@ -1795,3 +1795,6 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     (`lecture-concept-i`), eingebettetes Vorrechnen (Key `worked-<Konzept>-<Fokus>`), Formelsammlung unten
     (`lecture-formulas`). Tafel-Fenster: bekommt KI-Einstellungen (`settings`-Nachricht, `_BoardSettings`), meldet
     `select`/`refined` zurück. Tests: `lecture_walk_test` (Modell und UI).
+    Große Fenster: WorkedSolutionScreen `_buildPlayer` – Tafelhöhe = verfügbare Höhe − 560 (− 640, wenn der
+    Taschenrechner darunter steht), mind. 380/260, höchstens 1000; Tafelschrift = Breite/50 (22–40). WorkBoard `_k`:
+    Gesucht/Gegeben, Texte und Tabellen wachsen mit `fontSize`.

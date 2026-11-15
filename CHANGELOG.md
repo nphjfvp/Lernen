@@ -20,6 +20,10 @@ Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.
   ihre Seite gelesen ist; oben wechselt man zwischen den Konzepten (mit
   Fortschritt), unten liegt die Formelsammlung mit Fragen.
 - Auch im eigenen Tafel-Fenster am PC (Fragen und „feiner“ funktionieren dort).
+- Große Fenster (z.B. Tafel im Vollbild auf dem zweiten Bildschirm): Die Tafel
+  wächst mit der Fensterhöhe statt unten viel Platz frei zu lassen, und die
+  Schrift an der Tafel (Formeln, Gesucht/Gegeben, Texte, Tabellen) wird mit
+  der Breite größer – auch bei „Vorrechnen & Rezepte“.
 
 ### 7p. Vorlesung mit Aufgabe: je Thema eine schwere Aufgabe, gemeinsam an der Tafel
 

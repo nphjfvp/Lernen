@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1073,6 +1074,15 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
         child: LayoutBuilder(
           builder: (context, box) {
             final wide = box.maxWidth >= 980 && solution.withCalculator;
+            // Große Fenster (z.B. Tafel im Vollbild auf dem zweiten Bildschirm):
+            // Tafel höher, Schrift größer – statt viel leerem Platz.
+            final boardWidth = box.maxWidth - (wide ? 420 : 40);
+            final boardFont = (boardWidth / 50).clamp(22.0, 40.0);
+            final available = box.maxHeight.isFinite ? box.maxHeight : 0.0;
+            // Rest der Seite (Aufgabe, Fortschritt, Erklärung, Knöpfe – und der
+            // Taschenrechner, wenn er darunter statt daneben steht) bleibt sichtbar.
+            final reserved = 560 + (!wide && calc != null ? 640 : 0);
+            final boardHeight = math.max(wide ? 380.0 : 260.0, math.min(available - reserved, 1000.0));
             final main = ListView(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
               children: [
@@ -1093,8 +1103,11 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
                 _progress(c, solution, step),
                 const SizedBox(height: 10),
                 SizedBox(
-                  height: wide ? 380 : 260,
-                  child: WorkBoard(blocks: ask != null ? _askBlocks(ask) : playback.blocks(step, phase)),
+                  height: boardHeight,
+                  child: WorkBoard(
+                    blocks: ask != null ? _askBlocks(ask) : playback.blocks(step, phase),
+                    fontSize: boardFont,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 if (ask != null) ...[
