@@ -4,6 +4,7 @@ import 'package:sembast/sembast.dart';
 import '../models/material_item.dart';
 import '../models/page_note.dart';
 import '../services/database_service.dart';
+import '../services/unlock_block_service.dart';
 
 class MaterialRepository extends ChangeNotifier {
   final Map<String, List<MaterialItem>> _byModule = {};
@@ -29,6 +30,8 @@ class MaterialRepository extends ChangeNotifier {
     final db = await DatabaseService.instance.database;
     await DatabaseService.materials.record(item.id).put(db, item.toMap());
     await loadForModule(item.moduleId);
+    // Neues Material: Entsperr-Blöcke gleich vorbereiten bzw. anpassen.
+    UnlockBlockService.instance.markDirty(item.moduleId, delay: const Duration(seconds: 30));
   }
 
   /// Markiert ein Material als (nicht) im Unterricht behandelt. Rein

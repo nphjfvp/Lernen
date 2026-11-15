@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../services/windows_guard.dart';
 import '../../theme/app_colors.dart';
+import '../unlock/unlock_blocks_screen.dart';
+import '../widgets/slow_ai_dialog.dart' show appNavigatorKey;
 
 /// Lernzeit-Sperre am PC: legt den Sperrbildschirm über die ganze App,
 /// sobald [WindowsGuard] ein Fenster gesperrt hat (das Fenster ist dann schon
@@ -94,6 +96,22 @@ class _BlockScreen extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      key: const ValueKey('pc-block-unlock'),
+                      style: FilledButton.styleFrom(backgroundColor: c.good),
+                      onPressed: () {
+                        WindowsGuard.instance.dismissBlock();
+                        appNavigatorKey.currentState?.push(
+                          MaterialPageRoute<void>(builder: (_) => const UnlockBlocksScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.lock_open_rounded),
+                      label: const Text('Entsperr-Block lösen – mehr Zeit'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(

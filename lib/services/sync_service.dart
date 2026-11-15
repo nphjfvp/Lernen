@@ -20,6 +20,7 @@ import '../models/material_item.dart';
 import '../models/module.dart';
 import '../models/pdf_storage_config.dart';
 import '../models/summary.dart';
+import '../models/unlock_block.dart';
 import '../models/unsupported_task.dart';
 import '../repositories/daily_session_repository.dart';
 import '../repositories/learn_credit_repository.dart';
@@ -173,6 +174,14 @@ Future<void> applySyncedHistory(DatabaseClient txn, Map<String, dynamic> data) a
       await DatabaseService.unsupportedTasks.record(entry.id).put(txn, entry.toMap());
     }
   }
+  final unlock = data['unlockBlocks'];
+  if (unlock is List) {
+    await DatabaseService.unlockBlocks.delete(txn);
+    for (final m in unlock) {
+      final block = UnlockBlock.fromMap(m);
+      if (block != null) await DatabaseService.unlockBlocks.record(block.id).put(txn, block.toMap());
+    }
+  }
   final exams = data['mockExamResults'];
   if (exams is List) {
     await MockExamRepository.replaceIn(txn, [
@@ -246,6 +255,7 @@ Future<Map<String, dynamic>> buildSyncPayload(DatabaseClient db) async {
     // an (Streak, Probeklausur-Noten, Ampel-Trend, Frage-Chats).
     'chatMessages': (await DatabaseService.chatMessages.find(db)).map((r) => r.value).toList(),
     'unsupportedTasks': (await DatabaseService.unsupportedTasks.find(db)).map((r) => r.value).toList(),
+    'unlockBlocks': (await DatabaseService.unlockBlocks.find(db)).map((r) => r.value).toList(),
     'masterySnapshots': (await DatabaseService.masterySnapshots.find(db)).map((r) => r.value).toList(),
     'mockExamResults': (await MockExamRepository.loadFrom(db)).map((r) => r.toMap()).toList(),
     'studyDays': await StudyLogRepository.dayKeysFrom(db),
@@ -384,6 +394,10 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );
   await DatabaseService.unsupportedTasks.delete(
+    txn,
+    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
+  );
+  await DatabaseService.unlockBlocks.delete(
     txn,
     finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
   );

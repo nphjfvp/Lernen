@@ -6,6 +6,7 @@ import '../../services/database_service.dart';
 import '../../services/screen_guard.dart';
 import '../../services/windows_guard.dart';
 import '../../theme/app_colors.dart';
+import '../unlock/unlock_blocks_screen.dart';
 import '../widgets/safe_set_state.dart';
 
 /// Lernzeit-Sperre einrichten: gesperrte Apps (z.B. Instagram) gibt es jeden
@@ -158,6 +159,21 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                 ),
                 const SizedBox(height: 14),
                 _today(c, rules),
+                const SizedBox(height: 10),
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: ListTile(
+                    key: const ValueKey('guard-unlock-blocks'),
+                    leading: const Icon(Icons.lock_open_rounded),
+                    title: const Text('Entsperr-Blöcke', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      '2 Aufgaben zu einem Thema, das du noch nicht sicher kannst – ohne Hilfe gelöst: '
+                      '+${rules.blockMinutes} min',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => openUnlockBlocks(context),
+                  ),
+                ),
                 if (locked) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -339,6 +355,28 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                   canUp: !locked,
                   canDown: !locked,
                   onChanged: (v) => _save(rules.copyWith(dayStartHour: v)),
+                ),
+                _stepper(
+                  c,
+                  key: 'guard-block-minutes',
+                  label: 'Entsperr-Block (ohne Hilfe gelöst)',
+                  value: rules.blockMinutes,
+                  unit: 'min',
+                  step: 5,
+                  max: 240,
+                  canUp: !locked,
+                  onChanged: (v) => _save(rules.copyWith(blockMinutes: v)),
+                ),
+                _stepper(
+                  c,
+                  key: 'guard-practice-minutes',
+                  label: '… davon schon für die Übungseinheit',
+                  value: rules.practiceMinutes,
+                  unit: 'min',
+                  step: 5,
+                  max: rules.blockMinutes,
+                  canUp: !locked,
+                  onChanged: (v) => _save(rules.copyWith(practiceMinutes: v)),
                 ),
               ],
             ),

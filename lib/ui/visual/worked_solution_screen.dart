@@ -47,7 +47,11 @@ class WorkedSolutionScreen extends StatefulWidget {
     this.revealLimit,
     this.header,
     this.onRefined,
+    this.onFinished,
   });
+
+  /// Bis zum letzten Schritt durchgearbeitet (einmal).
+  final VoidCallback? onFinished;
 
   /// Eingebettet (z.B. „Vorlesung mit Aufgabe“): ohne eigene App-Leiste, ohne
   /// Speichern in „Vorgerechnet“.
@@ -349,7 +353,13 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     final max = _maxT;
     if (max < 0) return;
     setState(() => _t = t.clamp(0, max));
+    if (!_finishedReported && _t >= _playback.length - 1 && widget.onFinished != null) {
+      _finishedReported = true;
+      widget.onFinished!();
+    }
   }
+
+  bool _finishedReported = false;
 
   void _next() {
     if (_askStep != null) return;

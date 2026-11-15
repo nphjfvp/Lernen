@@ -23,6 +23,7 @@ import 'repositories/visual_chat_repository.dart';
 import 'repositories/worked_solution_repository.dart';
 import 'services/lecture_board_window.dart';
 import 'services/screen_guard.dart';
+import 'services/unlock_block_service.dart';
 import 'services/windows_guard.dart';
 import 'ui/settings/pc_block_layer.dart';
 import 'repositories/visual_course_repository.dart';
@@ -75,6 +76,12 @@ Future<void> main(List<String> args) async {
   final settingsRepository = SettingsRepository();
   await settingsRepository.load();
   unawaited(ReminderService().reschedule(settingsRepository.settings));
+  // Entsperr-Blöcke: die KI mit den aktuellen Einstellungen.
+  UnlockBlockService.aiFactory = () {
+    final settings = settingsRepository.settings;
+    if (!settings.hasApiKey) return null;
+    return AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+  };
 
   // Ebenso VOR runApp() geladen statt per `create: (_) => ModuleRepository()
   // ..load()` im Provider-Baum: RootShell hält alle Haupt-Tabs in einem

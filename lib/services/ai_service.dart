@@ -23,6 +23,7 @@ import '../models/phase_task.dart';
 import '../models/step_task.dart';
 import '../models/step_task_review.dart';
 import '../models/task_verification.dart';
+import '../models/unlock_block.dart';
 import '../models/visual_lesson.dart';
 import '../models/worked_solution.dart';
 import '../models/visual_task_type.dart';
@@ -43,6 +44,7 @@ part 'ai_prompts/check.dart';
 part 'ai_prompts/tasks.dart';
 part 'ai_prompts/visual.dart';
 part 'ai_prompts/lecture.dart';
+part 'ai_prompts/unlock.dart';
 
 /// Wird geworfen, wenn die KI-Antwort kein (reparierbares) JSON enthält.
 /// Trägt die Rohantwort mit, damit die UI sie bei Bedarf anzeigen kann

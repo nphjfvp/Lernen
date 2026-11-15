@@ -29,8 +29,9 @@ class CollectionMerge {
 /// meldet der Abgleich, dass ein Gerät aktualisiert werden sollte (ältere
 /// Versionen zeigen unbekannte Aufgaben nur als Karteikarte und speichern sie
 /// beim Lernen auch so). 2 = Stückliste und Diagramm-Skizze, 3 = Zustandsdiagramm,
-/// 4 = Freihand-Skizze und Bilder als Antwortoptionen, 5 = Lektionen aus „Visuell lernen“.
-const syncDataVersion = 8;
+/// 4 = Freihand-Skizze und Bilder als Antwortoptionen, 5 = Lektionen aus „Visuell lernen“,
+/// 9 = Entsperr-Blöcke der Lernzeit-Sperre.
+const syncDataVersion = 9;
 
 /// Datenformat eines Sync-Stands (0 = von einer Version vor [syncDataVersion]).
 int dataVersionOf(Map<String, dynamic> payload) => (payload['dataVersion'] as num?)?.toInt() ?? 0;
@@ -86,6 +87,7 @@ final Map<String, _KeyOf> _keyed = {
   'studySequences': _idKey,
   'chatMessages': _idKey,
   'unsupportedTasks': _idKey,
+  'unlockBlocks': _idKey,
   'masterySnapshots': (r) {
     final date = DateTime.tryParse('${r['date']}');
     return date == null ? null : MasterySnapshot.fromMap(r).dateKey;
@@ -114,6 +116,7 @@ const _perModule = [
   'studySequences',
   'chatMessages',
   'unsupportedTasks',
+  'unlockBlocks',
   'mockExamResults',
 ];
 
@@ -409,6 +412,7 @@ String describeMerge(SyncMergeResult result) {
     'studySequences': 'Stände „Der Reihe nach“',
     'chatMessages': 'Chat-Nachrichten',
     'unsupportedTasks': 'Aufgaben auf der Liste „Noch nicht interaktiv“',
+    'unlockBlocks': 'Entsperr-Blöcke',
     'mockExamResults': 'Probeklausuren',
     'studyDays': 'Lerntage',
   };

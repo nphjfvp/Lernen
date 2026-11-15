@@ -1798,3 +1798,17 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Große Fenster: WorkedSolutionScreen `_buildPlayer` – Tafelhöhe = verfügbare Höhe − 560 (− 640, wenn der
     Taschenrechner darunter steht), mind. 380/260, höchstens 1000; Tafelschrift = Breite/50 (22–40). WorkBoard `_k`:
     Gesucht/Gegeben, Texte und Tabellen wachsen mit `fontSize`.
+133. Entsperr-Blöcke: `UnlockBlock`/`UnlockTask`/`UnlockPractice` (lib/models/unlock_block.dart; `untouched`, `solved`,
+    `withTask`, Übungseinheit mit `retry` und `finished`); Store `unlock_blocks`, Sync-Sammlung `unlockBlocks`
+    (syncDataVersion 9, per Fach, AutoSync beobachtet, Fach löschen räumt auf). Zeitkonto: `LearnCredit.bonus`
+    (Kennung → Tag/Minuten, je Kennung einmal, Union beim Merge), `withBonus`, `bonusOn`; `LearnAllowance` zählt sie
+    zur Tageszeit; Regeln `blockMinutes` (30) und `practiceMinutes` (5), festgelegt nur weniger.
+    `UnlockBlockRepository.reward` (Übung +practiceMinutes, gelöst +Rest bis blockMinutes). KI
+    (ai_prompts/unlock.dart, Extension `UnlockBlockAi`): `planUnlockBlocks` (Fehler beim Üben → nicht gelernte
+    Konzepte → neuer Stoff, `keep`), `checkUnlockAttempt`, `planUnlockPractice` (intro, exercises, retry).
+    `UnlockBlockService` (markDirty mit Verzögerung: MaterialRepository.save 30 s, Fehler in `_creditAnswer` 3 min;
+    `refresh` nur mit eingeschalteter Sperre oder `force`, höchstens alle 20 min je Fach, max 3 offene;
+    `aiFactory` aus main.dart). UI lib/ui/unlock/unlock_blocks_screen.dart (`UnlockBlocksScreen`,
+    `UnlockBlockScreen`: Prüfen, „Lösung ansehen“ = Hilfe, Übungseinheit über WorkedSolutionScreen
+    `startSocratic` + neuem `onFinished`); Einstiege ScreenGuardScreen (`guard-unlock-blocks`) und PcBlockLayer
+    (`pc-block-unlock`). Tests: `unlock_blocks_test`.

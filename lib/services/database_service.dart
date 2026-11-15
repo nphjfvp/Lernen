@@ -46,6 +46,9 @@ class DatabaseService {
   /// Vorgerechnete Aufgaben („Vorrechnen“, siehe WorkedSolution) – nur lokal.
   static final workedSolutions = stringMapStoreFactory.store('worked_solutions');
 
+  /// Entsperr-Blöcke der Lernzeit-Sperre (siehe UnlockBlock) – reisen mit dem Abgleich.
+  static final unlockBlocks = stringMapStoreFactory.store('unlock_blocks');
+
   /// „Vorlesung mit Aufgabe“ je PDF (siehe LectureWalk) – nur lokal.
   static final lectureWalks = stringMapStoreFactory.store('lecture_walks');
 

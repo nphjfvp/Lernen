@@ -23,6 +23,8 @@ class LearnCreditRules {
     this.pcGames = defaultPcGames,
     this.weeklyGameMinutes = 240,
     this.gameMinutesPerTopic = 30,
+    this.blockMinutes = 30,
+    this.practiceMinutes = 5,
   });
 
   static const defaultPcSites = ['YouTube', 'Instagram'];
@@ -79,6 +81,12 @@ class LearnCreditRules {
   /// … und je in der Woche neu gelerntem Thema zusätzlich.
   final int gameMinutesPerTopic;
 
+  /// Entsperr-Block (2 Aufgaben ohne Hilfe gelöst) bringt so viele Minuten …
+  final int blockMinutes;
+
+  /// … eine abgeschlossene Übungseinheit davon schon so viele vorab.
+  final int practiceMinutes;
+
   bool isLocked(DateTime now) => lockedUntil != null && now.isBefore(lockedUntil!);
 
   /// [next] soll gelten – solange diese Regeln festgelegt sind, aber nur so
@@ -115,6 +123,8 @@ class LearnCreditRules {
       pcGames: _union(next.pcGames, pcGames),
       weeklyGameMinutes: math.min(weeklyGameMinutes, next.weeklyGameMinutes),
       gameMinutesPerTopic: math.min(gameMinutesPerTopic, next.gameMinutesPerTopic),
+      blockMinutes: math.min(blockMinutes, next.blockMinutes),
+      practiceMinutes: math.min(practiceMinutes, next.practiceMinutes),
     );
   }
 
@@ -140,6 +150,8 @@ class LearnCreditRules {
     List<String>? pcGames,
     int? weeklyGameMinutes,
     int? gameMinutesPerTopic,
+    int? blockMinutes,
+    int? practiceMinutes,
   }) => LearnCreditRules(
     enabled: enabled ?? this.enabled,
     packages: packages ?? this.packages,
@@ -156,6 +168,8 @@ class LearnCreditRules {
     pcGames: pcGames ?? this.pcGames,
     weeklyGameMinutes: weeklyGameMinutes ?? this.weeklyGameMinutes,
     gameMinutesPerTopic: gameMinutesPerTopic ?? this.gameMinutesPerTopic,
+    blockMinutes: blockMinutes ?? this.blockMinutes,
+    practiceMinutes: practiceMinutes ?? this.practiceMinutes,
   );
 
   Map<String, dynamic> toMap() => {
@@ -174,6 +188,8 @@ class LearnCreditRules {
     'pcGames': pcGames,
     'weeklyGameMinutes': weeklyGameMinutes,
     'gameMinutesPerTopic': gameMinutesPerTopic,
+    'blockMinutes': blockMinutes,
+    'practiceMinutes': practiceMinutes,
   };
 
   static LearnCreditRules fromMap(Object? raw) {
@@ -202,6 +218,8 @@ class LearnCreditRules {
       pcGames: list(raw['pcGames'], defaultPcGames),
       weeklyGameMinutes: number(raw['weeklyGameMinutes'], 240, 0, 10080),
       gameMinutesPerTopic: number(raw['gameMinutesPerTopic'], 30, 0, 600),
+      blockMinutes: number(raw['blockMinutes'], 30, 0, 600),
+      practiceMinutes: number(raw['practiceMinutes'], 5, 0, 600),
     );
   }
 
@@ -255,6 +273,7 @@ class LearnCredit {
     this.streaks = const {},
     this.streakDay = '',
     this.used = const {},
+    this.bonus = const {},
   });
 
   /// Thema (Schlüssel, z.B. `concept:<id>`) → wann gelernt. Jedes Thema zählt
@@ -272,6 +291,10 @@ class LearnCredit {
   /// [dailyUsageKey] (Tageszeit, Handy und PC zusammen) und [gameUsageKey]
   /// (Spielzeit der Woche).
   final Map<String, Map<String, int>> used;
+
+  /// Extra-Minuten (z.B. aus Entsperr-Blöcken): Kennung → Lerntag und Minuten.
+  /// Jede Kennung zählt nur einmal – auch über mehrere Geräte.
+  final Map<String, ({String day, int minutes})> bonus;
 
   /// So lange bleiben Nutzungszahlen erhalten.
   static const usageKeepDays = 21;
@@ -321,12 +344,14 @@ class LearnCredit {
     Map<String, int>? streaks,
     String? streakDay,
     Map<String, Map<String, int>>? used,
+    Map<String, ({String day, int minutes})>? bonus,
   }) => LearnCredit(
     earned: earned ?? this.earned,
     dailyDays: dailyDays ?? this.dailyDays,
     streaks: streaks ?? this.streaks,
     streakDay: streakDay ?? this.streakDay,
     used: used ?? this.used,
+    bonus: bonus ?? this.bonus,
   );
 
   /// Eine Antwort zu Thema [topic] verbuchen. Liefert den neuen Stand und –
@@ -377,6 +402,16 @@ class LearnCredit {
     return _with(used: {...used, device: mine});
   }
 
+  /// Extra-Minuten [minutes] unter [id] für den Lerntag von [now] – nur
+  /// einmal je Kennung.
+  LearnCredit withBonus(String id, int minutes, DateTime now, int startHour) {
+    if (bonus.containsKey(id) || minutes <= 0) return this;
+    return _with(bonus: {...bonus, id: (day: dayKey(now, startHour), minutes: minutes)});
+  }
+
+  /// Extra-Minuten am Lerntag [day].
+  int bonusOn(String day) => bonus.values.where((b) => b.day == day).fold(0, (sum, b) => sum + b.minutes);
+
   /// Genutzte Sekunden für [key] auf allen Geräten (außer [exceptDevice]).
   int usedSeconds(String key, {String? exceptDevice}) {
     var total = 0;
@@ -404,7 +439,12 @@ class LearnCredit {
         target[e.key] = math.max(target[e.key] ?? 0, e.value);
       }
     }
-    return _with(earned: merged, dailyDays: {...dailyDays, ...other.dailyDays}, used: usage);
+    return _with(
+      earned: merged,
+      dailyDays: {...dailyDays, ...other.dailyDays},
+      used: usage,
+      bonus: {...other.bonus, ...bonus},
+    );
   }
 
   /// Heute neu gelernte Themen (Titel, in Reihenfolge).
@@ -426,6 +466,9 @@ class LearnCredit {
     'earned': {for (final e in earned.entries) e.key: e.value.toMap()},
     'dailyDays': (dailyDays.toList()..sort()),
     'used': used,
+    'bonus': {
+      for (final e in bonus.entries) e.key: {'day': e.value.day, 'minutes': e.value.minutes},
+    },
   };
 
   Map<String, dynamic> toMap() => {...toSyncMap(), 'streaks': streaks, 'streakDay': streakDay};
@@ -436,6 +479,7 @@ class LearnCredit {
     final days = raw['dailyDays'];
     final streaks = raw['streaks'];
     final used = raw['used'];
+    final bonus = raw['bonus'];
     return LearnCredit(
       earned: {
         if (earned is Map)
@@ -459,6 +503,12 @@ class LearnCredit {
                 for (final e in (d.value as Map).entries)
                   if (e.value is num) '${e.key}': (e.value as num).toInt(),
               },
+      },
+      bonus: {
+        if (bonus is Map)
+          for (final e in bonus.entries)
+            if (e.value case {'day': final Object day, 'minutes': final num minutes})
+              '${e.key}': (day: '$day', minutes: minutes.toInt()),
       },
     );
   }
@@ -494,7 +544,7 @@ class LearnAllowance {
         rules.topicsForUnlimited > 0 &&
         topics.length >= rules.topicsForUnlimited &&
         (!rules.dailyForUnlimited || daily);
-    final minutes = rules.freeMinutes + topics.length * rules.minutesPerTopic;
+    final minutes = rules.freeMinutes + topics.length * rules.minutesPerTopic + credit.bonusOn(day);
     final missingTopics = rules.topicsForUnlimited - topics.length;
     final unlimitedNeeds = [
       if (missingTopics > 0) missingTopics == 1 ? 'einem weiteren neuen Thema' : '$missingTopics weiteren neuen Themen',
@@ -504,6 +554,7 @@ class LearnAllowance {
       if (rules.minutesPerTopic > 0)
         'Lerne ein neues Thema (${rules.correctInRow} Aufgaben bzw. Fragen dazu hintereinander fehlerfrei) für '
             '+${rules.minutesPerTopic} Minuten.',
+      if (rules.blockMinutes > 0) 'Oder löse einen Entsperr-Block (2 Aufgaben) für +${rules.blockMinutes} Minuten.',
       if (rules.topicsForUnlimited > 0 && unlimitedNeeds.isNotEmpty) 'Unbegrenzt mit ${unlimitedNeeds.join(' und ')}.',
     ];
     return LearnAllowance(

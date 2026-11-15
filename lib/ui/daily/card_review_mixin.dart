@@ -5,9 +5,11 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/learn_credit.dart';
 import '../../repositories/learn_credit_repository.dart';
 import '../../services/database_service.dart';
 import '../../services/screen_guard.dart';
+import '../../services/unlock_block_service.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
@@ -97,6 +99,10 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
   Future<void> _creditAnswer(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
     try {
       final learned = await LearnCreditRepository.recordAnswer(card, selfGrade: selfGrade, isCorrect: isCorrect);
+      // Fehler beim Üben: Entsperr-Blöcke bald danach ausrichten.
+      if (!LearnCredit.isClean(selfGrade: selfGrade, isCorrect: isCorrect)) {
+        UnlockBlockService.instance.markDirty(card.moduleId, delay: const Duration(minutes: 3));
+      }
       await ScreenGuard.push();
       if (learned == null || !mounted) return;
       final db = await DatabaseService.instance.database;

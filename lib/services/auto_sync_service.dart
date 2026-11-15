@@ -120,6 +120,7 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     DatabaseService.studySequences,
     DatabaseService.chatMessages,
     DatabaseService.unsupportedTasks,
+    DatabaseService.unlockBlocks,
   ];
 
   /// Stand der mitgesyncten Einstellungen beim letzten Blick – ändert sich

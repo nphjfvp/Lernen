@@ -1,8 +1,28 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7q) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7r) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7r. Entsperr-Blöcke: zwei Aufgaben lösen, Handyzeit verdienen
+
+- Neu bei der Lernzeit-Sperre: Entsperr-Blöcke – je Block zwei Aufgaben zu
+  einem Thema, das man noch nicht sicher kann. Beide ohne Hilfe gelöst:
+  +30 Minuten Handyzeit (im gemeinsamen Zeitkonto von Handy und PC).
+- Die KI stellt sie aus Vorlesungen, Übungsblättern und Fehlern beim Üben
+  zusammen: vorbereitet gleich beim Hochladen von Material, danach immer
+  wieder angepasst – nach Fehlern beim Üben zuerst genau zu diesem Haken.
+  Höchstens drei offene Blöcke je Fach; angefangene bleiben, unberührte
+  werden ersetzt, wenn sie nicht mehr passen.
+- Lösung prüft die KI (andere richtige Wege zählen). „Lösung ansehen“ zählt
+  als Hilfe. Klappt es nicht: Übungseinheit – der Haken erklärt, kleinere
+  Übungsaufgaben an der Vorrechnen-Tafel zum Selbst-Überlegen; fertig
+  durchgearbeitet +5 Minuten. Danach kommt eine neue Aufgabe gleicher Art
+  (nicht die schon gesehene) – gelöst gibt es die vollen 30 Minuten.
+- Zu finden unter Einstellungen → Lernzeit-Sperre → Entsperr-Blöcke und am
+  PC direkt auf dem Sperrbildschirm („Entsperr-Block lösen“); auch der
+  Sperrbildschirm am Handy weist darauf hin. Minuten je Block und je
+  Übungseinheit sind einstellbar. Die Blöcke reisen mit dem Abgleich.
 
 ### 7q. Vorlesung mit Aufgabe: Konzepte statt Seitenblöcke, echte Vorrechnen-Tafel
 

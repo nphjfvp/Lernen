@@ -453,6 +453,13 @@ const appGuideChapters = <GuideChapter>[
         where: 'Einstellungen → Lernzeit-Sperre',
       ),
       GuideItem(
+        'Entsperr-Blöcke',
+        'Zwei Aufgaben zu einem Thema, das du noch nicht sicher kannst – aus deinen Vorlesungen, Übungen und '
+            'Fehlern. Ohne Hilfe gelöst: +30 min Handyzeit. Sonst gibt es eine Übungseinheit (+5 min) und danach '
+            'eine neue Aufgabe gleicher Art.',
+        where: 'Einstellungen → Lernzeit-Sperre → Entsperr-Blöcke · PC-Sperrbildschirm',
+      ),
+      GuideItem(
         'Widget (Android)',
         'Auf dem Startbildschirm: nächste Vorlesung, fällige Karten und Countdown zur Klausur.',
       ),
