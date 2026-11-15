@@ -550,6 +550,9 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   dem Cloud-Abgleich, Lernen auf Windows/Web zählt also mit. Die Android-App
   misst die Zeit über die Nutzungsstatistik und legt nach Ablauf einen
   Sperrbildschirm über die App (Vordergrunddienst, startet nach Neustart neu).
+  Beim Einschalten wird die Sperre für eine Woche festgelegt (mit Rückfrage):
+  bis dahin nicht abschaltbar, die Regeln gehen nur strenger – auch über den
+  Abgleich von einem anderen Gerät aus.
 - **Startbildschirm-Widget (Android)** – zeigt die nächste Vorlesung, die
   Anzahl heute fälliger Karten und einen Klausur-Countdown direkt auf dem
   Android-Homescreen, ohne die App zu öffnen (`home_widget`-Package +

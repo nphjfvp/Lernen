@@ -1,8 +1,21 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7m) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7n) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7n. Lernzeit-Sperre: eine Woche festgelegt
+
+- Beim Einschalten der Lernzeit-Sperre fragt die App einmal nach und legt sie
+  dann für 7 Tage fest: bis zum angezeigten Datum lässt sie sich in der App
+  nicht ausschalten.
+- Damit man nicht über die Regeln ausweicht, gehen sie in der Zeit nur
+  strenger: keine App entfernen, nicht mehr freie Minuten oder Minuten je
+  Thema, keine kürzere Serie, Daily Quiz bleibt Pflicht, der Lerntag bleibt
+  bei seiner Uhrzeit. Das gilt auch für Änderungen von Windows/Web über den
+  Cloud-Abgleich.
+- Nach der Woche bleibt die Sperre an, lässt sich aber ausschalten – oder mit
+  „Wieder für eine Woche festlegen“ erneut festlegen.
 
 ### 7m. Lernzeit-Sperre: Instagram & Co. erst nach dem Lernen (Android)
 

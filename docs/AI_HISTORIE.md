@@ -1746,3 +1746,11 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     configure, Einstellungen öffnen, installedApps, usedMinutes); Manifest: PACKAGE_USAGE_STATS, SYSTEM_ALERT_WINDOW,
     FOREGROUND_SERVICE_SPECIAL_USE, `<queries>` Launcher. UI `ScreenGuardScreen` (Einstellungen → Lernzeit-Sperre).
     Tests: `learn_credit_test`, `learn_credit_repository_test`, `screen_guard_screen_test`.
+129. Lernzeit-Sperre festlegen: `LearnCreditRules.lockedUntil` (synct mit), `isLocked`, `guard(next, now)` – solange
+    festgelegt nur strenger (enabled bleibt, Apps nur dazu, Minuten nur weniger, Serie nur länger, Themen für
+    unbegrenzt: 0 ist das Strengste, Daily-Pflicht und `dayStartHour` bleiben, Festlegung nur länger).
+    Durchgesetzt in `LearnCreditRepository.saveRulesIn` (liefert die geltenden Regeln; damit auch `mergeRulesIn`)
+    und `LearnCreditRules.newer` (Sync-Merge). ScreenGuardScreen: `_lock` (Bestätigung, 7 Tage,
+    `lockDuration`), Schalter/Stepper (`canUp`/`canDown`), Chips und `_AppPicker.fixed` gesperrt, Hinweis
+    `guard-locked`, „Wieder für eine Woche festlegen“ (`guard-relock`), `formatLockDate`. Tests: `learn_credit_test`
+    (Festlegung), `learn_credit_repository_test`, `screen_guard_screen_test`.

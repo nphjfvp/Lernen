@@ -163,6 +163,73 @@ void main() {
     });
   });
 
+  group('Festlegung für eine Woche', () {
+    final now = DateTime(2026, 11, 15, 10);
+    final locked = rules.copyWith(
+      packages: ['com.instagram.android', 'com.zhiliaoapp.musically'],
+      topicsForUnlimited: 2,
+      lockedUntil: now.add(LearnCreditRules.lockDuration),
+    );
+
+    test('solange festgelegt: nicht abschaltbar, nur strenger', () {
+      expect(locked.isLocked(now), isTrue);
+      final loose = LearnCreditRules(
+        packages: const ['com.zhiliaoapp.musically', 'com.reddit.frontpage'],
+        freeMinutes: 120,
+        minutesPerTopic: 60,
+        topicsForUnlimited: 1,
+        dailyForUnlimited: false,
+        correctInRow: 1,
+        dayStartHour: 8,
+        updatedAt: now,
+      );
+      final g = locked.guard(loose, now);
+      expect(g.enabled, isTrue);
+      expect(g.packages, ['com.zhiliaoapp.musically', 'com.reddit.frontpage', 'com.instagram.android']);
+      expect(g.freeMinutes, 30);
+      expect(g.minutesPerTopic, 30);
+      expect(g.topicsForUnlimited, 2);
+      expect(g.dailyForUnlimited, isTrue);
+      expect(g.correctInRow, 2);
+      expect(g.dayStartHour, 4);
+      expect(g.lockedUntil, locked.lockedUntil, reason: 'die Festlegung bleibt');
+      expect(g.updatedAt, now);
+
+      // Strenger geht: weniger Minuten, längere Serie, nie unbegrenzt.
+      final strict = locked.guard(
+        locked.copyWith(freeMinutes: 10, correctInRow: 4, topicsForUnlimited: 0, minutesPerTopic: 15),
+        now,
+      );
+      expect(strict.freeMinutes, 10);
+      expect(strict.correctInRow, 4);
+      expect(strict.topicsForUnlimited, 0);
+      expect(strict.minutesPerTopic, 15);
+      // Und von „nie“ zurück zu „unbegrenzt ab 3“ wäre lockerer.
+      expect(strict.guard(strict.copyWith(topicsForUnlimited: 3), now).topicsForUnlimited, 0);
+
+      // Verlängern geht, verkürzen nicht.
+      final later = now.add(const Duration(days: 10));
+      expect(locked.guard(locked.copyWith(lockedUntil: later), now).lockedUntil, later);
+    });
+
+    test('nach einer Woche wieder frei', () {
+      final after = now.add(const Duration(days: 7, minutes: 1));
+      expect(locked.isLocked(after), isFalse);
+      expect(locked.guard(locked.copyWith(enabled: false), after).enabled, isFalse);
+      expect(LearnCreditRules.fromMap(locked.toMap()).lockedUntil, locked.lockedUntil);
+    });
+
+    test('Abgleich: neuere, aber lockerere Regeln eines anderen Geräts lockern nichts', () {
+      final windows = const LearnCreditRules(freeMinutes: 90).copyWith(updatedAt: now.add(const Duration(hours: 1)));
+      final merged = LearnCreditRules.fromMap(
+        LearnCreditRules.newer(locked.copyWith(updatedAt: now).toMap(), windows.toMap(), now: now),
+      );
+      expect(merged.enabled, isTrue);
+      expect(merged.freeMinutes, 30);
+      expect(merged.isLocked(now), isTrue);
+    });
+  });
+
   group('Geräte zusammenführen', () {
     test('Themen und Daily-Tage beider Geräte zählen, das frühere gewinnt', () {
       final phone = LearnCredit(

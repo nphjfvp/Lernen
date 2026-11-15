@@ -121,5 +121,23 @@ void main() {
     expect((await LearnCreditRepository.loadRulesFrom(db)).freeMinutes, 20);
     await LearnCreditRepository.mergeRulesIn(db, const LearnCreditRules(freeMinutes: 5).toMap());
     expect((await LearnCreditRepository.loadRulesFrom(db)).freeMinutes, 20);
+
+    // Festgelegt: auch das Speichern in der Datenbank lockert nichts.
+    final now = DateTime.now();
+    await LearnCreditRepository.saveRulesIn(
+      db,
+      phone.copyWith(lockedUntil: now.add(LearnCreditRules.lockDuration)),
+      now: now,
+    );
+    final saved = await LearnCreditRepository.saveRulesIn(db, const LearnCreditRules(freeMinutes: 200), now: now);
+    expect(saved.enabled, isTrue);
+    expect(saved.freeMinutes, 20);
+    await LearnCreditRepository.mergeRulesIn(
+      db,
+      LearnCreditRules(freeMinutes: 300, updatedAt: now.add(const Duration(hours: 1))).toMap(),
+    );
+    final after = await LearnCreditRepository.loadRulesFrom(db);
+    expect(after.enabled, isTrue);
+    expect(after.freeMinutes, 20);
   });
 }

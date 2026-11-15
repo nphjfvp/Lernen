@@ -26,8 +26,14 @@ class LearnCreditRepository {
   static Future<LearnCreditRules> loadRulesFrom(DatabaseClient db) async =>
       LearnCreditRules.fromMap(await DatabaseService.settings.record(rulesKey).get(db));
 
-  static Future<void> saveRulesIn(DatabaseClient db, LearnCreditRules rules) =>
-      DatabaseService.settings.record(rulesKey).put(db, rules.toMap());
+  /// Speichert neue Regeln – eine festgelegte Sperre wird dabei nur strenger
+  /// (siehe [LearnCreditRules.guard]). Liefert, was tatsächlich gilt.
+  static Future<LearnCreditRules> saveRulesIn(DatabaseClient db, LearnCreditRules rules, {DateTime? now}) async {
+    final current = await loadRulesFrom(db);
+    final guarded = current.guard(rules, now ?? DateTime.now());
+    await DatabaseService.settings.record(rulesKey).put(db, guarded.toMap());
+    return guarded;
+  }
 
   /// Das Thema einer Karte: ihr Konzept, sonst ihr erkannter Aufgabentyp,
   /// sonst ihre Vorlesungs-Einheit. null = die Karte zählt keinem Thema zu.

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../services/fsrs_service.dart';
 
 /// Regeln der Lernzeit-Sperre. Reisen mit dem Cloud-Abgleich (die zuletzt
@@ -14,7 +16,11 @@ class LearnCreditRules {
     this.correctInRow = 2,
     this.dayStartHour = 4,
     this.updatedAt,
+    this.lockedUntil,
   });
+
+  /// So lange ist eine eingeschaltete Sperre festgelegt.
+  static const lockDuration = Duration(days: 7);
 
   final bool enabled;
 
@@ -42,6 +48,40 @@ class LearnCreditRules {
   /// Wann die Regeln zuletzt geändert wurden (null = nie, Standardwerte).
   final DateTime? updatedAt;
 
+  /// Bis dahin lässt sich die Sperre nicht ausschalten und nur strenger
+  /// stellen (siehe [guard]).
+  final DateTime? lockedUntil;
+
+  bool isLocked(DateTime now) => lockedUntil != null && now.isBefore(lockedUntil!);
+
+  /// [next] soll gelten – solange diese Regeln festgelegt sind, aber nur so
+  /// weit, wie es strenger ist: eingeschaltet bleiben, keine App weniger,
+  /// nicht mehr Minuten, keine kürzere Serie, Lerntag und Daily-Pflicht
+  /// bleiben. Die Festlegung selbst kann nur länger werden.
+  LearnCreditRules guard(LearnCreditRules next, DateTime now) {
+    if (!isLocked(now)) return next;
+    final until = next.lockedUntil != null && next.lockedUntil!.isAfter(lockedUntil!) ? next.lockedUntil : lockedUntil;
+    return LearnCreditRules(
+      enabled: true,
+      packages: [
+        ...next.packages,
+        for (final p in packages)
+          if (!next.packages.contains(p)) p,
+      ],
+      freeMinutes: math.min(freeMinutes, next.freeMinutes),
+      minutesPerTopic: math.min(minutesPerTopic, next.minutesPerTopic),
+      // 0 = nie unbegrenzt ist das Strengste, sonst gilt: mehr Themen = strenger.
+      topicsForUnlimited: topicsForUnlimited == 0 || next.topicsForUnlimited == 0
+          ? 0
+          : math.max(topicsForUnlimited, next.topicsForUnlimited),
+      dailyForUnlimited: dailyForUnlimited || next.dailyForUnlimited,
+      correctInRow: math.max(correctInRow, next.correctInRow),
+      dayStartHour: dayStartHour,
+      updatedAt: next.updatedAt,
+      lockedUntil: until,
+    );
+  }
+
   LearnCreditRules copyWith({
     bool? enabled,
     List<String>? packages,
@@ -52,6 +92,7 @@ class LearnCreditRules {
     int? correctInRow,
     int? dayStartHour,
     DateTime? updatedAt,
+    DateTime? lockedUntil,
   }) => LearnCreditRules(
     enabled: enabled ?? this.enabled,
     packages: packages ?? this.packages,
@@ -62,6 +103,7 @@ class LearnCreditRules {
     correctInRow: correctInRow ?? this.correctInRow,
     dayStartHour: dayStartHour ?? this.dayStartHour,
     updatedAt: updatedAt ?? this.updatedAt,
+    lockedUntil: lockedUntil ?? this.lockedUntil,
   );
 
   Map<String, dynamic> toMap() => {
@@ -74,6 +116,7 @@ class LearnCreditRules {
     'correctInRow': correctInRow,
     'dayStartHour': dayStartHour,
     if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
+    if (lockedUntil != null) 'lockedUntil': lockedUntil!.toIso8601String(),
   };
 
   static LearnCreditRules fromMap(Object? raw) {
@@ -90,19 +133,23 @@ class LearnCreditRules {
       correctInRow: number(raw['correctInRow'], 2, 1, 10),
       dayStartHour: number(raw['dayStartHour'], 4, 0, 23),
       updatedAt: DateTime.tryParse('${raw['updatedAt'] ?? ''}'),
+      lockedUntil: DateTime.tryParse('${raw['lockedUntil'] ?? ''}'),
     );
   }
 
-  /// Von zwei gespeicherten Regeln (Maps) die zuletzt geänderten.
-  static Map<String, dynamic>? newer(Object? a, Object? b) {
+  /// Von zwei gespeicherten Regeln (Maps) die zuletzt geänderten – eine
+  /// festgelegte Sperre der anderen Seite lockern sie aber nicht (siehe
+  /// [guard]).
+  static Map<String, dynamic>? newer(Object? a, Object? b, {DateTime? now}) {
     final ra = a is Map ? fromMap(a) : null;
     final rb = b is Map ? fromMap(b) : null;
     if (ra == null) return rb?.toMap();
     if (rb == null) return ra.toMap();
     final ta = ra.updatedAt;
     final tb = rb.updatedAt;
-    if (tb != null && (ta == null || tb.isAfter(ta))) return rb.toMap();
-    return ra.toMap();
+    final bWins = tb != null && (ta == null || tb.isAfter(ta));
+    final when = now ?? DateTime.now();
+    return (bWins ? ra.guard(rb, when) : rb.guard(ra, when)).toMap();
   }
 }
 

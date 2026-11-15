@@ -75,15 +75,7 @@ void main() {
     );
     expect(calls.map((c) => c.$1), contains('openOverlaySettings'));
 
-    await tester.tap(find.byKey(const ValueKey('guard-enabled')));
-    await tester.pumpAndSettle();
-    expect(saved.enabled, isTrue);
-    final configure = calls.lastWhere((c) => c.$1 == 'configure').$2! as Map;
-    expect(configure['enabled'], isTrue);
-    expect(configure['packages'], ['com.instagram.android']);
-    expect(configure['allowedMinutes'], 60);
-    expect(configure['unlimited'], isFalse);
-
+    // Noch nicht festgelegt: alles frei einstellbar.
     await tester.tap(find.byKey(const ValueKey('guard-free-plus')));
     await tester.pumpAndSettle();
     expect(saved.freeMinutes, 35);
@@ -97,6 +89,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(saved.packages, ['com.instagram.android', 'com.zhiliaoapp.musically']);
     expect(find.text('TikTok'), findsOneWidget);
+
+    // Einschalten fragt nach: dann eine Woche festgelegt.
+    await tester.tap(find.byKey(const ValueKey('guard-enabled')));
+    await tester.pumpAndSettle();
+    expect(find.text('Für eine Woche festlegen?'), findsOneWidget);
+    await tester.tap(find.text('Abbrechen'));
+    await tester.pumpAndSettle();
+    expect(saved.enabled, isFalse);
+
+    await tester.tap(find.byKey(const ValueKey('guard-enabled')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guard-lock-confirm')));
+    await tester.pumpAndSettle();
+    expect(saved.enabled, isTrue);
+    expect(saved.lockedUntil!.difference(DateTime.now()).inHours, inInclusiveRange(167, 168));
+    final configure = calls.lastWhere((c) => c.$1 == 'configure').$2! as Map;
+    expect(configure['enabled'], isTrue);
+    expect(configure['packages'], ['com.instagram.android', 'com.zhiliaoapp.musically']);
+    expect(configure['allowedMinutes'], 65);
+    expect(configure['unlimited'], isFalse);
+
+    // Festgelegt: nicht abschaltbar, nur strenger.
+    expect(find.byKey(const ValueKey('guard-locked')), findsOneWidget);
+    expect(tester.widget<SwitchListTile>(find.byKey(const ValueKey('guard-enabled'))).onChanged, isNull);
+    await tester.tap(find.byKey(const ValueKey('guard-enabled')));
+    await tester.pumpAndSettle();
+    expect(saved.enabled, isTrue);
+    expect(tester.widget<IconButton>(find.byKey(const ValueKey('guard-free-plus'))).onPressed, isNull);
+    expect(tester.widget<IconButton>(find.byKey(const ValueKey('guard-per-topic-plus'))).onPressed, isNull);
+    expect(tester.widget<IconButton>(find.byKey(const ValueKey('guard-in-row-minus'))).onPressed, isNull);
+    expect(tester.widget<IconButton>(find.byKey(const ValueKey('guard-day-start-minus'))).onPressed, isNull);
+    expect(tester.widget<SwitchListTile>(find.byKey(const ValueKey('guard-daily'))).onChanged, isNull);
+    expect(tester.widget<InputChip>(find.widgetWithText(InputChip, 'Instagram')).onDeleted, isNull);
+    await tester.tap(find.byKey(const ValueKey('guard-free-minus')));
+    await tester.pumpAndSettle();
+    expect(saved.freeMinutes, 30, reason: 'strenger geht');
+
+    await tester.tap(find.byKey(const ValueKey('guard-pick-apps')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<CheckboxListTile>(find.byKey(const ValueKey('guard-app-com.instagram.android'))).onChanged,
+      isNull,
+    );
+    await tester.tap(find.byKey(const ValueKey('guard-apps-done')));
+    await tester.pumpAndSettle();
+    expect(saved.packages, containsAll(['com.instagram.android', 'com.zhiliaoapp.musically']));
   });
 
   testWidgets('ohne Android: Hinweis, dass Lernen hier mitzählt', (tester) async {

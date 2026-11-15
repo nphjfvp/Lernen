@@ -75,28 +75,59 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
   }
 
   Future<void> _save(LearnCreditRules changed) async {
-    final rules = changed.copyWith(updatedAt: DateTime.now());
+    final now = DateTime.now();
+    // Eine festgelegte Sperre wird nur strenger (die Datenbank prüft es noch einmal).
+    var rules = (_rules ?? const LearnCreditRules()).guard(changed.copyWith(updatedAt: now), now);
     setState(() => _rules = rules);
     final hook = ScreenGuardScreen.saveHook;
     if (hook != null) {
       await hook(rules);
     } else {
       final db = await DatabaseService.instance.database;
-      await LearnCreditRepository.saveRulesIn(db, rules);
+      rules = await LearnCreditRepository.saveRulesIn(db, rules, now: now);
+      setState(() => _rules = rules);
     }
     await ScreenGuard.pushWith(rules, LearnAllowance.of(_credit, rules, DateTime.now()));
     final status = _android ? await ScreenGuard.status() : null;
     setState(() => _status = status);
   }
 
+  /// Einschalten bzw. erneut festlegen – vorher einmal bestätigen lassen.
+  Future<void> _lock(LearnCreditRules rules) async {
+    final until = DateTime.now().add(LearnCreditRules.lockDuration);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Für eine Woche festlegen?'),
+        content: Text(
+          'Bis ${formatLockDate(until)} lässt sich die Sperre dann nicht ausschalten. Die Regeln kannst du in '
+          'der Zeit nur strenger stellen: keine App entfernen, nicht mehr Minuten, keine kürzere Serie – auch '
+          'nicht auf einem anderen Gerät.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
+          FilledButton(
+            key: const ValueKey('guard-lock-confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Festlegen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _save(rules.copyWith(enabled: true, lockedUntil: until));
+  }
+
   Future<void> _pickApps(LearnCreditRules rules) async {
     final apps = await ScreenGuard.installedApps();
     if (!mounted) return;
+    final locked = rules.isLocked(DateTime.now());
     final chosen = await showModalBottomSheet<List<String>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _AppPicker(apps: apps, selected: rules.packages.toSet()),
+      builder: (_) =>
+          _AppPicker(apps: apps, selected: rules.packages.toSet(), fixed: locked ? rules.packages.toSet() : const {}),
     );
     if (chosen == null) return;
     setState(() => _labels = {..._labels, for (final a in apps) a.package: a.label});
@@ -107,6 +138,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
   Widget build(BuildContext context) {
     final c = context.colors;
     final rules = _rules;
+    final locked = rules?.isLocked(DateTime.now()) ?? false;
     return Scaffold(
       backgroundColor: c.bg,
       appBar: AppBar(title: const Text('Lernzeit-Sperre')),
@@ -118,6 +150,27 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                 Text(_intro(rules), style: TextStyle(color: c.inkMuted, height: 1.4)),
                 const SizedBox(height: 14),
                 _today(c, rules),
+                if (locked) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    key: const ValueKey('guard-locked'),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: c.warnSoft, borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock_rounded, color: c.warn),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Festgelegt bis ${formatLockDate(rules.lockedUntil!)}: bis dahin nicht abschaltbar, '
+                            'die Regeln lassen sich nur strenger stellen.',
+                            style: const TextStyle(height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 if (!_android)
                   Container(
@@ -135,12 +188,27 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                     key: const ValueKey('guard-enabled'),
                     contentPadding: EdgeInsets.zero,
                     value: rules.enabled,
-                    onChanged: (v) => _save(rules.copyWith(enabled: v)),
+                    // Einschalten legt die Sperre für eine Woche fest; solange geht sie nicht aus.
+                    onChanged: locked ? null : (v) => v ? _lock(rules) : _save(rules.copyWith(enabled: false)),
                     title: const Text('Sperre einschalten', style: TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
-                      _status?.running == true ? 'Läuft – mit Benachrichtigung in der Statusleiste.' : 'Aus.',
+                      locked
+                          ? 'Festgelegt bis ${formatLockDate(rules.lockedUntil!)}.'
+                          : rules.enabled
+                          ? (_status?.running == true ? 'Läuft – mit Benachrichtigung in der Statusleiste.' : 'An.')
+                          : 'Aus. Beim Einschalten wird sie für eine Woche festgelegt.',
                     ),
                   ),
+                  if (rules.enabled && !locked)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        key: const ValueKey('guard-relock'),
+                        onPressed: () => _lock(rules),
+                        icon: const Icon(Icons.lock_clock_outlined, size: 18),
+                        label: const Text('Wieder für eine Woche festlegen'),
+                      ),
+                    ),
                   _permission(
                     c,
                     key: 'guard-usage',
@@ -176,7 +244,9 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                       for (final p in rules.packages)
                         InputChip(
                           label: Text(_labels[p] ?? p),
-                          onDeleted: () => _save(rules.copyWith(packages: [...rules.packages]..remove(p))),
+                          onDeleted: locked
+                              ? null
+                              : () => _save(rules.copyWith(packages: [...rules.packages]..remove(p))),
                         ),
                       if (rules.packages.isEmpty)
                         Text('Noch keine – „Auswählen“ tippen.', style: TextStyle(color: c.inkMuted)),
@@ -194,6 +264,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                   unit: 'min',
                   step: 5,
                   max: 240,
+                  canUp: !locked,
                   onChanged: (v) => _save(rules.copyWith(freeMinutes: v)),
                 ),
                 _stepper(
@@ -204,6 +275,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                   unit: 'min',
                   step: 5,
                   max: 240,
+                  canUp: !locked,
                   onChanged: (v) => _save(rules.copyWith(minutesPerTopic: v)),
                 ),
                 _stepper(
@@ -215,6 +287,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                   step: 1,
                   min: 1,
                   max: 10,
+                  canDown: !locked,
                   onChanged: (v) => _save(rules.copyWith(correctInRow: v)),
                 ),
                 _stepper(
@@ -225,13 +298,18 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                   unit: '',
                   step: 1,
                   max: 20,
+                  // 0 = nie unbegrenzt ist das Strengste, sonst sind mehr Themen strenger.
+                  canUp: !locked || rules.topicsForUnlimited != 0,
+                  canDown: !locked || rules.topicsForUnlimited == 1,
                   onChanged: (v) => _save(rules.copyWith(topicsForUnlimited: v)),
                 ),
                 SwitchListTile(
                   key: const ValueKey('guard-daily'),
                   contentPadding: EdgeInsets.zero,
                   value: rules.dailyForUnlimited,
-                  onChanged: (v) => _save(rules.copyWith(dailyForUnlimited: v)),
+                  onChanged: locked && rules.dailyForUnlimited
+                      ? null
+                      : (v) => _save(rules.copyWith(dailyForUnlimited: v)),
                   title: const Text('Für unbegrenzt auch das Daily Quiz fertig'),
                 ),
                 _stepper(
@@ -242,6 +320,8 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                   unit: 'Uhr',
                   step: 1,
                   max: 12,
+                  canUp: !locked,
+                  canDown: !locked,
                   onChanged: (v) => _save(rules.copyWith(dayStartHour: v)),
                 ),
               ],
@@ -326,6 +406,8 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
     required int step,
     int min = 0,
     required int max,
+    bool canUp = true,
+    bool canDown = true,
     required ValueChanged<int> onChanged,
   }) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 2),
@@ -334,7 +416,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
         Expanded(child: Text(label)),
         IconButton(
           key: ValueKey('$key-minus'),
-          onPressed: value - step < min ? null : () => onChanged(value - step),
+          onPressed: !canDown || value - step < min ? null : () => onChanged(value - step),
           icon: const Icon(Icons.remove_circle_outline),
         ),
         SizedBox(
@@ -348,7 +430,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
         ),
         IconButton(
           key: ValueKey('$key-plus'),
-          onPressed: value + step > max ? null : () => onChanged(value + step),
+          onPressed: !canUp || value + step > max ? null : () => onChanged(value + step),
           icon: const Icon(Icons.add_circle_outline),
         ),
       ],
@@ -356,11 +438,21 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
   );
 }
 
+/// „Sa 22.11. um 18:05“.
+String formatLockDate(DateTime d) {
+  const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${days[d.weekday - 1]} ${two(d.day)}.${two(d.month)}. um ${two(d.hour)}:${two(d.minute)}';
+}
+
 class _AppPicker extends StatefulWidget {
-  const _AppPicker({required this.apps, required this.selected});
+  const _AppPicker({required this.apps, required this.selected, this.fixed = const {}});
 
   final List<({String package, String label})> apps;
   final Set<String> selected;
+
+  /// Während der Festlegung: diese Apps bleiben gesperrt.
+  final Set<String> fixed;
 
   @override
   State<_AppPicker> createState() => _AppPickerState();
@@ -408,7 +500,9 @@ class _AppPickerState extends State<_AppPicker> {
                   CheckboxListTile(
                     key: ValueKey('guard-app-${a.package}'),
                     value: _chosen.contains(a.package),
-                    onChanged: (v) => setState(() => v == true ? _chosen.add(a.package) : _chosen.remove(a.package)),
+                    onChanged: widget.fixed.contains(a.package)
+                        ? null
+                        : (v) => setState(() => v == true ? _chosen.add(a.package) : _chosen.remove(a.package)),
                     title: Text(a.label),
                     subtitle: Text(a.package, style: const TextStyle(fontSize: 11)),
                   ),
