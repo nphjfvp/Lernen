@@ -381,6 +381,15 @@ const appGuideChapters = <GuideChapter>[
         where: 'Lernen → Vorrechnen & Rezepte · in jeder Aufgabe oben ∑',
       ),
       GuideItem(
+        'Vorlesung mit Aufgabe',
+        'Die KI erkennt die Themen deiner Vorlesung und stellt zu jedem am Anfang eine schwere Aufgabe. Du liest '
+            'Seite für Seite – nach jeder Seite, die das Thema weiter erklärt, rechnet ihr gemeinsam an der Tafel '
+            'weiter. Neue Formeln landen an der Tafel und in der Formelsammlung (Fragen jederzeit). Am PC lässt sich '
+            'die Tafel in ein eigenes Fenster auf den zweiten Bildschirm ziehen. Einmal durch: selbst lösen – bei '
+            'einem Fehler springt die App zur Seite mit dem Haken und erklärt genau.',
+        where: 'PDF öffnen → Tafel-Symbol · Material-Menü → Mit Aufgabe durchgehen',
+      ),
+      GuideItem(
         'Frei fragen',
         'Ohne PDF einfach fragen – die KI erklärt mit Bildern im Chat. „Als Lektion speichern“ übernimmt genau '
             'die Antworten und Darstellungen, die du siehst – ohne neue Anfrage.',

@@ -1769,3 +1769,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `--minimized`)/notify (Sprechblase); main.cpp: eine Instanz (Mutex), `--minimized` startet unsichtbar. UI:
     ScreenGuardScreen `_pcSection`/`_ListEditor`/`_pickWindow`, `formatHours`. Tests: `windows_guard_test`,
     `pc_block_layer_test`, `learn_credit_test`, `learn_credit_repository_test`, `screen_guard_screen_test`.
+131. Vorlesung mit Aufgabe: `LectureWalk` (lib/models/lecture_walk.dart: `topics` (`LectureTopic.tidy`), `tasks` je
+    Thema (`LectureTask` mit `LectureTaskStep` = WorkStep + `page` + `formulas`, Seiten nie fallend), `page`/`maxPage`,
+    `revealedCount` (Schritte bis zur erreichten Seite), `withPage`/`withRevealedFormulas` (Formelsammlung ohne
+    Doppelte), `attempts` (`LectureAttempt`: solved, feedback, explain, step)); `LectureWalkRepository` (Store
+    `lecture_walks`, nur lokal). KI (lib/services/ai_prompts/lecture.dart, Extension `LectureWalkAi`): `lectureTopics`,
+    `lectureTopicTask` (nutzt `_workedSystemPrompt` + page/formulas/problem), `askLectureWalk` (über
+    `discussWorkedStep`), `checkLectureAttempt`. UI lib/ui/lecture/: `LectureBoardState` (serialisierbar) +
+    `LectureBoardView` (WorkBoard, neue Schritte Takt für Takt, neue Formeln, Formelsammlung mit Fragen, Chat),
+    `LectureWalkScreen` (SfPdfViewer bzw. Seitentext, `_onPage` → „Okay, lass uns mit unserer Aufgabe
+    weitermachen“, neues Thema → `_ensureTask`, `_SelfSolveScreen` → `_showHook` springt zur Haken-Seite, Vorrechnen
+    über WorkedSolutionScreen, „Visuell erklären“ über `openVisualForCard` mit Hilfskarte). Eigenes Tafel-Fenster:
+    `LectureBoardWindow` (lib/services/lecture_board_window_io.dart: HttpServer auf 127.0.0.1 + WebSocket mit
+    Zufallsschlüssel, zweiter App-Start `--lecture-board=Port:Schlüssel`; main.dart startet dann nur
+    `LectureBoardApp`; main.cpp: kein Einzel-Instanz-Schutz, Titel „Lernen - Tafel“). Einstieg: PDF-Viewer
+    (`viewer-lecture-walk`) und Material-Menü (`material-lecture-walk-…`). Tests: `lecture_walk_test` (Modell und UI).

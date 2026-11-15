@@ -430,6 +430,15 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   speichern**. In Daily Quiz, Üben und Der Reihe nach über
   `lib/ui/visual/task_help.dart` (`QuestionWithHelp`); Reiter „Lernen“ →
   „Vorrechnen & Rezepte“.
+- **Vorlesung mit Aufgabe** (`lib/ui/lecture/lecture_walk_screen.dart`) – zu
+  einer Vorlesungs-PDF erkennt die KI die Themen (fein abgegrenzt) und stellt
+  je Thema am Anfang eine schwere Aufgabe; jeder Lösungsschritt hängt an der
+  Seite, auf der sein Wissen erklärt wird. Beim Durchblättern erscheinen die
+  Schritte an der Tafel („Okay, lass uns mit unserer Aufgabe weitermachen“),
+  neue Formeln an der Tafel und in der Formelsammlung (Fragen dazu möglich).
+  Am PC lässt sich die Tafel in ein eigenes Fenster ziehen. Einmal durch:
+  „Selbst lösen“ – bei einem Fehler Sprung zur Seite mit dem Haken, genaue
+  Erklärung, Vorrechnen und „Visuell erklären“.
 - **Taschenrechner** (`lib/services/pocket_calculator.dart`, Anzeige
   `calculator_sim.dart`) – rechnet wirklich (ohne KI): Bruch-Vorlage, Wurzel,
   Potenzen, log/ln/eˣ, Trigonometrie in Grad/Bogenmaß, Ans, ∫, d/dx, SOLVE,

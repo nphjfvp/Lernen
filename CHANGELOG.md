@@ -1,8 +1,28 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7o) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7p) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7p. Vorlesung mit Aufgabe: je Thema eine schwere Aufgabe, gemeinsam an der Tafel
+
+- Neu bei Vorlesungs-PDFs („Mit Aufgabe durchgehen“ im PDF-Viewer oder im
+  Menü des Materials): Die KI erkennt die Themen der Vorlesung (fein, z.B.
+  „Variablen trennen“, „Substitution“) und stellt zu Beginn jedes Themas eine
+  schwere Übungsaufgabe.
+- Man liest die Vorlesung Seite für Seite; nach jeder Seite, die das Thema
+  weiter erklärt, heißt es „Okay, lass uns mit unserer Aufgabe weitermachen“
+  und die nächsten Schritte erscheinen an der Tafel – im Stil von Vorrechnen
+  (rot/grün, Regeln, Umformungen).
+- Neue Formeln werden an die Tafel geschrieben und kommen in die
+  Formelsammlung; zu jeder Formel (und zur Aufgabe) lassen sich Fragen stellen
+  – oder man liest einfach weiter.
+- Am PC lässt sich die Tafel in ein eigenes Fenster ziehen (z.B. auf den
+  zweiten Bildschirm); am Handy steht sie unter der Vorlesung.
+- Einmal durch: „Selbst lösen“ – jede Aufgabe ohne Hilfe aufschreiben und
+  prüfen lassen. Klappt es nicht, weiß die App, an welchem Schritt es hakt,
+  springt zur Seite, auf der genau das erklärt wird, erklärt was, wieso und
+  warum, und bietet Vorrechnen und „Visuell erklären“ an.
 
 ### 7o. Lernzeit-Sperre auch am PC (Windows): YouTube & Co. und Spiele
 
