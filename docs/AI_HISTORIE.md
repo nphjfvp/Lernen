@@ -1784,3 +1784,14 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Zufallsschlüssel, zweiter App-Start `--lecture-board=Port:Schlüssel`; main.dart startet dann nur
     `LectureBoardApp`; main.cpp: kein Einzel-Instanz-Schutz, Titel „Lernen - Tafel“). Einstieg: PDF-Viewer
     (`viewer-lecture-walk`) und Material-Menü (`material-lecture-walk-…`). Tests: `lecture_walk_test` (Modell und UI).
+132. Vorlesung mit Aufgabe umgebaut: `LectureConcept` (title, goal, `pages` auch verteilt, `pagesLabel`, `tidy`) statt
+    Seitenblöcken; `LectureWalk.version` 2 (alte Stände werden neu vorbereitet), `current` (Konzept an der Tafel),
+    `conceptsOn`, `prepared`, `withPage` wechselt zum Konzept, bei dem es weitergeht; `LectureTaskStep.snap` (Seite auf
+    die des Konzepts), `LectureTask.toWorked`/`withRefined`. KI: `lectureConcepts` (ganze Vorlesung, Konzept = ganze
+    Aufgabe lösen können) und `lectureConceptTask` (vollständige Aufgabe, keine aus der Vorlesung, mit "calc").
+    `_prepare` bereitet beim Öffnen alles der Reihe nach vor (Lesen geht schon). WorkedSolutionScreen: `embedded`
+    (kein Scaffold/PopScope, kein Speichern), `revealLimit` (ValueListenable: `_maxT`, `_onReveal` schreibt neue Schritte
+    automatisch an, Platzhalter `worked-waiting`), `header`, `onRefined`. `LectureBoardView`: Konzept-Chips
+    (`lecture-concept-i`), eingebettetes Vorrechnen (Key `worked-<Konzept>-<Fokus>`), Formelsammlung unten
+    (`lecture-formulas`). Tafel-Fenster: bekommt KI-Einstellungen (`settings`-Nachricht, `_BoardSettings`), meldet
+    `select`/`refined` zurück. Tests: `lecture_walk_test` (Modell und UI).

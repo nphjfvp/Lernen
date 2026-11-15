@@ -11,6 +11,7 @@ class LectureBoardWindow {
   final connected = ValueNotifier<bool>(false);
 
   static Future<LectureBoardWindow?> open({
+    Map<String, dynamic> settings = const {},
     required void Function(Map<String, dynamic> action) onAction,
     VoidCallback? onClosed,
   }) async => null;

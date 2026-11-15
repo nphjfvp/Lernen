@@ -1,8 +1,25 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7p) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7q) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7q. Vorlesung mit Aufgabe: Konzepte statt Seitenblöcke, echte Vorrechnen-Tafel
+
+- Beim Öffnen geht die KI jetzt die GANZE Vorlesung durch und bestimmt, welche
+  Konzepte vermittelt werden sollen – jedes mit allen Seiten, auf denen es
+  erklärt wird (auch verteilt; eine Seite kann zu mehreren Konzepten gehören).
+- Zu jedem Konzept entsteht vorab eine vollständige, prüfungsnahe Aufgabe von
+  vorne bis hinten (Ansatz bis Ergebnis/Probe) – ausdrücklich keine Aufgabe
+  oder kein Beispiel aus der Vorlesung, die meist nur Teile zeigen. Die
+  Schritte verteilen sich über die Seiten des Konzepts. Lesen geht schon,
+  während die Aufgaben vorbereitet werden.
+- Die Tafel ist jetzt die von „Vorrechnen & Rezepte“: Tafel-Look mit
+  Umformungen, Taschenrechner, Regeln, Fragen zu jedem Schritt, „Diesen
+  Schritt genauer“, sokratisch. Neue Schritte werden angeschrieben, sobald
+  ihre Seite gelesen ist; oben wechselt man zwischen den Konzepten (mit
+  Fortschritt), unten liegt die Formelsammlung mit Fragen.
+- Auch im eigenen Tafel-Fenster am PC (Fragen und „feiner“ funktionieren dort).
 
 ### 7p. Vorlesung mit Aufgabe: je Thema eine schwere Aufgabe, gemeinsam an der Tafel
 

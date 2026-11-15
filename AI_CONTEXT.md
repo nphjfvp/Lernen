@@ -477,7 +477,7 @@ immer direkt dorthin pushen, auch aus anderen Sitzungs-Branches; siehe CLAUDE.md
 sauber, 1821 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
-Umgesetzt sind 131 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
+Umgesetzt sind 132 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
 [docs/AI_HISTORIE.md](docs/AI_HISTORIE.md) (dort per Suche nachschlagen, bevor
 ein Bereich geändert wird). Zuletzt: Web-App über GitHub Pages fürs iPad
 (85–89), Releases nur vom App-Branch (90), KI-Wiederholung bei 429/5xx und
@@ -515,7 +515,8 @@ Tastenkürzel treten zurück, solange man in ein Textfeld schreibt (127),
 Lernzeit-Sperre für Apps wie Instagram mit geräteübergreifendem Lernguthaben (128),
 Lernzeit-Sperre beim Einschalten eine Woche festgelegt, Regeln dann nur strenger (129),
 Lernzeit-Sperre am PC: Webseiten zur geteilten Tageszeit, Spiele zur Wochenzeit (130),
-Vorlesung mit Aufgabe: Themen, Aufgabe je Thema an der Tafel, Formelsammlung, selbst lösen mit Haken-Seite (131).
+Vorlesung mit Aufgabe: Themen, Aufgabe je Thema an der Tafel, Formelsammlung, selbst lösen mit Haken-Seite (131),
+Vorlesung mit Aufgabe: Konzepte über die ganze Vorlesung, vollständige Aufgaben vorab, echte Vorrechnen-Tafel (132).
 
 **Aufgaben für den Nutzer bauen** („ins Postfach“, Übungsblatt schicken):
 Skill `.claude/skills/postfach/SKILL.md` befolgen – Postfach-Code nie ins

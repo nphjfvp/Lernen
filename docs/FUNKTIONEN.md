@@ -430,12 +430,15 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   speichern**. In Daily Quiz, Üben und Der Reihe nach über
   `lib/ui/visual/task_help.dart` (`QuestionWithHelp`); Reiter „Lernen“ →
   „Vorrechnen & Rezepte“.
-- **Vorlesung mit Aufgabe** (`lib/ui/lecture/lecture_walk_screen.dart`) – zu
-  einer Vorlesungs-PDF erkennt die KI die Themen (fein abgegrenzt) und stellt
-  je Thema am Anfang eine schwere Aufgabe; jeder Lösungsschritt hängt an der
-  Seite, auf der sein Wissen erklärt wird. Beim Durchblättern erscheinen die
-  Schritte an der Tafel („Okay, lass uns mit unserer Aufgabe weitermachen“),
-  neue Formeln an der Tafel und in der Formelsammlung (Fragen dazu möglich).
+- **Vorlesung mit Aufgabe** (`lib/ui/lecture/lecture_walk_screen.dart`) – beim
+  Öffnen geht die KI die ganze Vorlesungs-PDF durch und bestimmt die
+  vermittelten Konzepte mit allen Seiten, auf denen sie erklärt werden (auch
+  verteilt). Zu jedem Konzept entsteht vorab eine vollständige Prüfungsaufgabe
+  von vorne bis hinten (keine aus der Vorlesung); jeder Lösungsschritt hängt an
+  der Seite, auf der sein Wissen erklärt wird. Beim Durchblättern schreibt die
+  Vorrechnen-Tafel (Taschenrechner, Regeln, Fragen je Schritt, feiner) die
+  Schritte an („Okay, lass uns mit unserer Aufgabe weitermachen“); oben die
+  Konzepte zum Wechseln, unten die Formelsammlung (Fragen dazu möglich).
   Am PC lässt sich die Tafel in ein eigenes Fenster ziehen. Einmal durch:
   „Selbst lösen“ – bei einem Fehler Sprung zur Seite mit dem Haken, genaue
   Erklärung, Vorrechnen und „Visuell erklären“.

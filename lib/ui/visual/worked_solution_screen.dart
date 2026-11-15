@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
@@ -41,7 +42,25 @@ class WorkedSolutionScreen extends StatefulWidget {
     this.solution,
     this.general = false,
     this.startSocratic = false,
+    this.embedded = false,
+    this.revealLimit,
+    this.header,
+    this.onRefined,
   });
+
+  /// Eingebettet (z.B. „Vorlesung mit Aufgabe“): ohne eigene App-Leiste, ohne
+  /// Speichern in „Vorgerechnet“.
+  final bool embedded;
+
+  /// Nur so viele Schritte dürfen an die Tafel (wächst von außen – neue
+  /// Schritte werden dann automatisch angeschrieben). null = alle.
+  final ValueListenable<int>? revealLimit;
+
+  /// Steht über der Aufgabe (z.B. was die KI zur Vorlesung sagt).
+  final Widget? header;
+
+  /// Schritt [step] wurde in [count] feinere Schritte aufgeteilt.
+  final void Function(int step, int count, WorkedSolution updated)? onRefined;
 
   /// Gleich als Rezept (allgemein, ohne Zahlen) starten.
   final bool general;
@@ -153,12 +172,50 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     if (_solution != null) {
       _detail = _solution!.detail;
       _calculator = _solution!.withCalculator;
+      // Schon freigegebene Schritte stehen gleich an der Tafel.
+      if (widget.revealLimit != null && _maxT >= 0) _t = _maxT;
     }
+    widget.revealLimit?.addListener(_onReveal);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   @override
+  void didUpdateWidget(WorkedSolutionScreen old) {
+    super.didUpdateWidget(old);
+    if (old.revealLimit != widget.revealLimit) {
+      old.revealLimit?.removeListener(_onReveal);
+      widget.revealLimit?.addListener(_onReveal);
+    }
+  }
+
+  /// Letzter Takt, der an die Tafel darf (-1 = noch keiner).
+  int get _maxT {
+    final solution = _solution;
+    if (solution == null || solution.steps.isEmpty) return -1;
+    final playback = WorkPlayback(solution.steps);
+    final limit = widget.revealLimit?.value;
+    if (limit == null) return playback.length - 1;
+    if (limit <= 0) return -1;
+    final last = limit.clamp(1, solution.steps.length) - 1;
+    return (playback.startOf(last) + playback.phasesOf(last).length - 1).clamp(0, playback.length - 1);
+  }
+
+  /// Neue Schritte freigegeben: von selbst anschreiben.
+  void _onReveal() {
+    if (!mounted || _solution == null) return;
+    final max = _maxT;
+    if (max < 0) return setState(() {});
+    if (_t > max) return _go(max);
+    if (_t < max && _auto == null && _askStep == null) {
+      _auto = Timer.periodic(WorkedSolutionScreen.autoDelay, (_) => _next());
+      _next();
+    }
+    setState(() {});
+  }
+
+  @override
   void dispose() {
+    widget.revealLimit?.removeListener(_onReveal);
     _auto?.cancel();
     _problem.dispose();
     _idea.dispose();
@@ -166,7 +223,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     super.dispose();
   }
 
-  WorkedSolutionRepository? get _repo => context.read<WorkedSolutionRepository?>();
+  WorkedSolutionRepository? get _repo => widget.embedded ? null : context.read<WorkedSolutionRepository?>();
 
   Future<void> _load({bool openExisting = true}) async {
     final repo = _repo;
@@ -288,13 +345,14 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   WorkPlayback get _playback => WorkPlayback(_solution!.steps);
 
   void _go(int t) {
-    final len = _playback.length;
-    setState(() => _t = t.clamp(0, len - 1));
+    final max = _maxT;
+    if (max < 0) return;
+    setState(() => _t = t.clamp(0, max));
   }
 
   void _next() {
     if (_askStep != null) return;
-    if (_t >= _playback.length - 1) {
+    if (_t >= _maxT) {
       _stopAuto();
       return;
     }
@@ -608,6 +666,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
       final steps = [...solution.steps]..replaceRange(step, step + 1, fixed);
       final updated = solution.copyWith(steps: steps);
       await _repo?.save(updated);
+      widget.onRefined?.call(step, fixed.length, updated);
       setState(() {
         _solution = updated;
         _t = WorkPlayback(steps).startOf(step);
@@ -697,6 +756,12 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   Widget build(BuildContext context) {
     final c = context.colors;
     final solution = _solution;
+    if (widget.embedded) {
+      return Material(
+        color: c.bg,
+        child: solution == null ? const SizedBox.shrink() : _buildPlayer(c, solution),
+      );
+    }
     // Beim Verlassen: Hat man jeden Schritt selbst gewusst? (Zählt dann nicht
     // als Hilfe – siehe QuestionWithHelp.)
     return PopScope<bool>(
@@ -956,6 +1021,37 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
   );
 
   Widget _buildPlayer(AppColors c, WorkedSolution solution) {
+    if (_maxT < 0) {
+      // Noch kein Schritt freigegeben (Vorlesung mit Aufgabe).
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
+        children: [
+          ?widget.header,
+          if (solution.problem.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: c.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: c.border),
+              ),
+              child: MathText(solution.problem, style: const TextStyle(fontSize: 14.5, height: 1.4)),
+            ),
+          const SizedBox(height: 12),
+          Container(
+            key: const ValueKey('worked-waiting'),
+            height: 160,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: const Color(0xFF1F2A24), borderRadius: BorderRadius.circular(14)),
+            child: const Text(
+              'Die Tafel ist noch leer – lies die Seiten dazu, dann rechnen wir los.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+        ],
+      );
+    }
     final playback = _playback;
     final ask = _askStep;
     final (shownStep, shownPhase) = playback.at(_t);
@@ -965,7 +1061,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
     final calc = solution.withCalculator && ask == null ? s.calc : null;
     return Focus(
       focusNode: _keysFocus,
-      autofocus: true,
+      autofocus: !widget.embedded,
       onKeyEvent: _onKey,
       child: Listener(
         behavior: HitTestBehavior.translucent,
@@ -980,6 +1076,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
             final main = ListView(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
               children: [
+                ?widget.header,
                 if (solution.problem.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -1378,7 +1475,7 @@ class _WorkedSolutionScreenState extends State<WorkedSolutionScreen> with SafeSe
               onSelected: (i) {
                 _stopAuto();
                 if (_socratic && _needsAsk(i)) {
-                  setState(() => _t = _playback.startOf(i));
+                  _go(_playback.startOf(i));
                   _askFor(i);
                   return;
                 }

@@ -1,24 +1,30 @@
 part of '../ai_service.dart';
 
-// „Vorlesung mit Aufgabe“: Themen einer Vorlesung erkennen, je Thema eine
-// schwere Aufgabe mit Seitenbezug vorrechnen, Fragen beantworten, eigene
+// „Vorlesung mit Aufgabe“: Konzepte einer Vorlesung erkennen, je Konzept eine
+// vollständige Aufgabe mit Seitenbezug vorrechnen, Fragen beantworten, eigene
 // Lösungen prüfen (siehe LectureWalk).
 
-const _lectureTopicsSystemPrompt = r'''
-Du gliederst eine Vorlesung (Folien als Text je Seite) in THEMEN für ein Lernprogramm. Zu jedem Thema rechnet die
-Person später EINE schwere Übungsaufgabe, während sie die Seiten des Themas durchgeht.
+const _lectureConceptsSystemPrompt = r'''
+Du gehst eine komplette Vorlesung (Folien als Text je Seite) durch und bestimmst, welche KONZEPTE hier vermittelt
+werden sollen – für ein Lernprogramm, in dem die Person zu jedem Konzept EINE vollständige Prüfungsaufgabe von
+vorne bis hinten löst, während sie die Seiten dieses Konzepts liest.
 
-Ein Thema ist fein abgegrenzt: eine Methode, ein Verfahren oder ein Konzept, zu dem man eine eigene Aufgabe stellen
-kann – z.B. unter „Differentialgleichungen“ sind „Variablen trennen“, „Substitution“ und „Variation der Konstanten“
-je ein eigenes Thema, nicht „Differentialgleichungen“ als Ganzes.
+Ein Konzept ist das, was man am Ende KÖNNEN soll: eine komplette Aufgabe eines Typs lösen – z.B. „Lineare DGL
+1. Ordnung mit Variation der Konstanten lösen“ oder „DGL durch Substitution lösen“ – nicht nur ein Teilschritt
+(„wie substituiere ich“) und nicht das ganze Kapitel („Differentialgleichungen“).
 
 Regeln:
-- Seiten ohne Stoff (Titelseite, Gliederung, Organisatorisches, Literatur) gehören zu keinem Thema.
-- Reine Motivation/Einleitung ohne eigene Aufgabe: dem folgenden Thema zuschlagen.
-- Themen in der Reihenfolge der Vorlesung, Seiten zusammenhängend, ohne Überlappung.
-- Titel kurz und merkbar (2–5 Wörter), auf Deutsch.
+- Zu jedem Konzept ALLE Seiten, die man dafür braucht: wo es eingeführt, hergeleitet, an Beispielen gezeigt wird
+  und wo nötige Teilschritte/Regeln erklärt werden – auch wenn die Seiten verteilt liegen. Seiten dürfen zu
+  mehreren Konzepten gehören.
+- Seiten ohne Stoff (Titelseite, Gliederung, Organisatorisches, Literatur) gehören zu keinem Konzept.
+- Reine Teilschritte, die nur innerhalb eines größeren Verfahrens vorkommen, sind kein eigenes Konzept, sondern
+  gehören (mit ihren Seiten) zu dem Konzept, in dem sie gebraucht werden.
+- Reihenfolge wie in der Vorlesung (nach der ersten Seite). Titel kurz und merkbar, auf Deutsch.
+- "goal": in einem Satz, welche vollständige Aufgabe man danach lösen kann.
 
-Antworte NUR mit JSON: {"topics": [{"title": "Variablen trennen", "from": 3, "to": 7}]}
+Antworte NUR mit JSON:
+{"concepts": [{"title": "DGL durch Substitution lösen", "goal": "…", "pages": [4, 5, 6, 9]}]}
 ''';
 
 const _lectureCheckSystemPrompt = r'''
@@ -36,12 +42,13 @@ geht – Schritt für Schritt, Formeln mit $…$"}
 ''';
 
 extension LectureWalkAi on AiService {
-  /// Die Themen einer Vorlesung mit ihren Seiten.
-  Future<List<LectureTopic>> lectureTopics({required String title, required List<String> pageTexts}) async {
+  /// Die Konzepte einer Vorlesung – jedes mit allen Seiten, auf denen es
+  /// erklärt wird.
+  Future<List<LectureConcept>> lectureConcepts({required String title, required List<String> pageTexts}) async {
     if (pageTexts.every((t) => t.trim().isEmpty)) {
-      throw AiServiceException('Die PDF hat keinen lesbaren Text – Themen lassen sich so nicht erkennen.');
+      throw AiServiceException('Die PDF hat keinen lesbaren Text – Konzepte lassen sich so nicht erkennen.');
     }
-    final perPage = (70000 ~/ (pageTexts.isEmpty ? 1 : pageTexts.length)).clamp(200, 1200);
+    final perPage = (80000 ~/ (pageTexts.isEmpty ? 1 : pageTexts.length)).clamp(250, 1500);
     final text = StringBuffer()
       ..writeln('Vorlesung: $title')
       ..writeln('Seiten: ${pageTexts.length}')
@@ -51,53 +58,66 @@ extension LectureWalkAi on AiService {
         ..writeln('--- Seite ${i + 1} ---')
         ..writeln(AiService._cap(pageTexts[i].trim().isEmpty ? '(kein Text – Bild)' : pageTexts[i].trim(), perPage));
     }
-    final raw = await _complete(_lectureTopicsSystemPrompt, text.toString(), temperature: 0.2);
+    final raw = await _complete(_lectureConceptsSystemPrompt, text.toString(), temperature: 0.2);
     final json = await _json(raw);
-    final topics = json['topics'] ?? json['themen'];
-    final parsed = LectureTopic.tidy([
-      for (final t in topics is List ? topics : const []) ?LectureTopic.fromMap(t),
+    final concepts = json['concepts'] ?? json['konzepte'] ?? json['topics'];
+    final parsed = LectureConcept.tidy([
+      for (final t in concepts is List ? concepts : const []) ?LectureConcept.fromMap(t),
     ], pageTexts.length);
     if (parsed.isEmpty) {
-      throw AiServiceException('Die KI hat keine Themen erkannt – bitte erneut versuchen.', rawResponse: raw);
+      throw AiServiceException('Die KI hat keine Konzepte erkannt – bitte erneut versuchen.', rawResponse: raw);
     }
     return parsed;
   }
 
-  /// Eine schwere Aufgabe zu [topic], vorgerechnet wie an der Tafel – jeder
-  /// Schritt mit der Seite, auf der sein Wissen erklärt wird, und seinen neuen
-  /// Formeln.
-  Future<LectureTask> lectureTopicTask({
+  /// Eine vollständige, prüfungsnahe Aufgabe zu [concept] (nicht aus der
+  /// Vorlesung), vorgerechnet wie an der Tafel – jeder Schritt mit der Seite,
+  /// auf der sein Wissen erklärt wird, und seinen neuen Formeln.
+  Future<LectureTask> lectureConceptTask({
     required String lectureTitle,
-    required LectureTopic topic,
+    required LectureConcept concept,
     required List<String> pageTexts,
+    List<String> otherConcepts = const [],
     List<LectureFormula> known = const [],
   }) async {
+    final pages = concept.pages;
     final text = StringBuffer()
       ..writeln('Vorlesung: $lectureTitle')
-      ..writeln('Thema: ${topic.title} (Seiten ${topic.from}–${topic.to})')
+      ..writeln('Konzept: ${concept.title}')
+      ..writeln(concept.goal.isEmpty ? '' : 'Ziel: ${concept.goal}')
+      ..writeln('Seiten des Konzepts: ${pages.join(', ')}')
       ..writeln()
       ..writeln(
-        'AUFTRAG: Erfinde EINE schwere, prüfungsnahe Übungsaufgabe zu genau diesem Thema, die möglichst alles '
-        'nutzt, was auf diesen Seiten erklärt wird (Zahlen/Funktionen selbst gewählt, sauber lösbar). Die Person '
-        'bekommt sie am Anfang des Themas und rechnet sie gemeinsam mit dir, während sie die Seiten durchgeht. '
-        'Rechne sie vor wie an der Tafel (Format unten), Detailgrad regulär, ohne Taschenrechner (kein "calc").',
+        'AUFTRAG: Erfinde EINE vollständige, schwere, prüfungsnahe Aufgabe zu genau diesem Konzept, die man '
+        'nur lösen kann, wenn man das GANZE Konzept beherrscht – von vorne bis hinten (z.B. nicht nur „substituiere“, '
+        'sondern die komplette Aufgabe inklusive Ansatz, allen Umformungen, Rücksubstitution, Anfangsbedingung und '
+        'Ergebnis/Probe). Übernimm KEINE Aufgabe und kein Beispiel aus der Vorlesung – eigene Zahlen/Funktionen, '
+        'sauber lösbar. Die Beispiele der Vorlesung zeigen meist nur Teile; deine Aufgabe verbindet alles.',
+      )
+      ..writeln(
+        'Rechne sie vollständig vor wie an der Tafel (Format unten), Detailgrad regulär. Taschenrechner: ja – '
+        'gib "calc" an, wo man ihn in einer Prüfung benutzen würde (Zahlenwerte, Kontrolle).',
       )
       ..writeln('Zusätzlich:')
       ..writeln('- "problem": der Aufgabentext (Formeln mit \$…\$).')
       ..writeln(
-        '- je Schritt "page": die Seite (${topic.from}–${topic.to}), auf der das Wissen erklärt wird, das dieser '
-        'Schritt braucht. Ein Schritt wird erst aufgedeckt, wenn diese Seite gelesen ist – also nie früher als die '
-        'Erklärung; die Seiten der Schritte steigen nicht.',
+        '- je Schritt "page": eine Seite aus [${pages.join(', ')}], auf der das Wissen erklärt wird, das dieser '
+        'Schritt braucht. Die Person liest die Seiten der Reihe nach; ein Schritt erscheint erst, wenn seine Seite '
+        'gelesen ist. Verteile die Schritte so über die Seiten, dass die Aufgabe mit dem Lesen voranschreitet – nie '
+        'früher als die Erklärung, die Seiten der Schritte steigen nicht.',
       )
       ..writeln(
         '- je Schritt "formulas": Formeln/Regeln, die dieser Schritt NEU benutzt (noch nicht in der '
-        'Formelsammlung): [{"name": "Kettenregel", "latex": "(f(g(x)))\' = f\'(g(x))\\\\cdot g\'(x)", "note": "wann man '
-        'sie benutzt"}] – sonst [].',
+        'Formelsammlung): [{"name": "Kettenregel", "latex": "(f(g(x)))\' = f\'(g(x))\\\\cdot g\'(x)", "note": "wann '
+        'man sie benutzt"}] – sonst [].',
       )
       ..writeln(
         '- "say" jedes Schritts knüpft an die Vorlesung an (z.B. „Auf Seite 5 kam die Kettenregel – genau die '
         'brauchen wir jetzt“).',
       );
+    if (otherConcepts.isNotEmpty) {
+      text.writeln('Andere Konzepte der Vorlesung (die haben eigene Aufgaben): ${otherConcepts.join('; ')}');
+    }
     if (known.isNotEmpty) {
       text
         ..writeln()
@@ -108,10 +128,13 @@ extension LectureWalkAi on AiService {
     }
     text
       ..writeln()
-      ..writeln('Seiten des Themas:');
-    final pages = [for (var p = topic.from; p <= topic.to && p <= pageTexts.length; p++) p];
-    final perPage = (30000 ~/ (pages.isEmpty ? 1 : pages.length)).clamp(400, 3000);
-    for (final p in pages) {
+      ..writeln('Seiten des Konzepts:');
+    final valid = [
+      for (final p in pages)
+        if (p >= 1 && p <= pageTexts.length) p,
+    ];
+    final perPage = (36000 ~/ (valid.isEmpty ? 1 : valid.length)).clamp(400, 3000);
+    for (final p in valid) {
       text
         ..writeln('--- Seite $p ---')
         ..writeln(
@@ -120,7 +143,7 @@ extension LectureWalkAi on AiService {
     }
     final raw = await _complete(AiService._workedSystemPrompt, text.toString(), temperature: 0.4);
     final json = await _json(raw);
-    final task = LectureTask.fromMap(json, from: topic.from, to: topic.to);
+    final task = LectureTask.fromMap(json, pages: pages);
     if (task == null) {
       throw AiServiceException('Die KI hat keine Aufgabe geliefert – bitte erneut versuchen.', rawResponse: raw);
     }
@@ -129,7 +152,7 @@ extension LectureWalkAi on AiService {
 
   /// Frage zur gemeinsamen Aufgabe oder zu einer Formel der Formelsammlung.
   Future<String> askLectureWalk({
-    required String topic,
+    required String concept,
     required String problem,
     required List<String> boardSoFar,
     String pageText = '',
@@ -139,7 +162,7 @@ extension LectureWalkAi on AiService {
   }) async {
     if (question.trim().isEmpty) throw AiServiceException('Stell eine Frage.');
     final context = StringBuffer()
-      ..writeln('Thema der Vorlesung: $topic')
+      ..writeln('Konzept der Vorlesung: $concept')
       ..writeln(
         pageText.trim().isEmpty ? '' : 'Aktuelle Seite der Vorlesung:\n${AiService._cap(pageText.trim(), 3000)}',
       );

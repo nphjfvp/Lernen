@@ -6,6 +6,11 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:provider/provider.dart';
+
+import '../models/app_settings.dart';
+import '../models/worked_solution.dart';
+import '../repositories/settings_repository.dart';
 import '../theme/app_theme.dart';
 import '../ui/lecture/lecture_board.dart';
 
@@ -35,7 +40,10 @@ class LectureBoardWindow {
 
   String get argument => '--lecture-board=${_server.port}:$_token';
 
+  /// [settings]: KI-Einstellungen (Key, Modelle) – damit im Tafel-Fenster Fragen
+  /// und „feiner“ gehen; bleibt auf diesem Rechner.
   static Future<LectureBoardWindow?> open({
+    Map<String, dynamic> settings = const {},
     required void Function(Map<String, dynamic> action) onAction,
     VoidCallback? onClosed,
   }) async {
@@ -60,6 +68,7 @@ class LectureBoardWindow {
       final socket = await WebSocketTransformer.upgrade(request);
       window._sockets.add(socket);
       window.connected.value = true;
+      socket.add(jsonEncode({'type': 'settings', 'settings': settings}));
       final last = window._last;
       if (last != null) socket.add(jsonEncode({'type': 'state', 'state': last.toMap()}));
       socket.listen(
@@ -129,6 +138,7 @@ class LectureBoardApp extends StatefulWidget {
 class _LectureBoardAppState extends State<LectureBoardApp> {
   WebSocket? _socket;
   LectureBoardState _state = const LectureBoardState(busy: true, busyText: 'Verbinde mit der Lern-App …');
+  final _settings = _BoardSettings();
 
   @override
   void initState() {
@@ -143,7 +153,10 @@ class _LectureBoardAppState extends State<LectureBoardApp> {
       socket.listen(
         (data) {
           final message = jsonDecode('$data');
-          if (message is Map && message['type'] == 'state' && mounted) {
+          if (message is! Map || !mounted) return;
+          if (message['type'] == 'settings' && message['settings'] is Map) {
+            _settings.apply(AppSettings.fromMap(Map<String, dynamic>.from(message['settings'] as Map)));
+          } else if (message['type'] == 'state') {
             setState(() => _state = LectureBoardState.fromMap(message['state']));
           }
         },
@@ -156,19 +169,45 @@ class _LectureBoardAppState extends State<LectureBoardApp> {
     }
   }
 
-  void _ask(String question, {int? formula}) =>
-      _socket?.add(jsonEncode({'type': 'ask', 'text': question, 'formula': ?formula}));
+  void _send(Map<String, Object?> message) => _socket?.add(jsonEncode(message));
+
+  void _ask(String question, {int? formula}) => _send({'type': 'ask', 'text': question, 'formula': ?formula});
+
+  void _refined(int concept, int step, int count, WorkedSolution updated) =>
+      _send({'type': 'refined', 'concept': concept, 'step': step, 'count': count, 'solution': updated.toMap()});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Lernen – Tafel',
-    debugShowCheckedModeBanner: false,
-    theme: AppTheme.light,
-    darkTheme: AppTheme.dark,
-    home: Scaffold(
-      body: SafeArea(
-        child: LectureBoardView(state: _state, onAsk: _ask),
+  Widget build(BuildContext context) => ChangeNotifierProvider<SettingsRepository>.value(
+    value: _settings,
+    child: MaterialApp(
+      title: 'Lernen – Tafel',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      home: Scaffold(
+        body: SafeArea(
+          child: LectureBoardView(
+            state: _state,
+            onAsk: _ask,
+            onSelect: (concept) => _send({'type': 'select', 'concept': concept}),
+            onRefined: _refined,
+          ),
+        ),
       ),
     ),
   );
+}
+
+/// Die KI-Einstellungen aus dem Hauptfenster (das Tafel-Fenster öffnet keine
+/// Datenbank).
+class _BoardSettings extends SettingsRepository {
+  AppSettings _received = const AppSettings();
+
+  @override
+  AppSettings get settings => _received;
+
+  void apply(AppSettings settings) {
+    _received = settings;
+    notifyListeners();
+  }
 }

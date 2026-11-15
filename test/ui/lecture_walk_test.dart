@@ -12,15 +12,17 @@ import 'package:lernen/services/ai_service.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/lecture/lecture_board.dart';
 import 'package:lernen/ui/lecture/lecture_walk_screen.dart';
+import 'package:lernen/ui/visual/calculator_sim.dart';
+import 'package:lernen/ui/visual/worked_solution_screen.dart';
 import 'package:sembast/sembast_memory.dart';
 
 const _pages = [
-  'Integrationsmethoden – Vorlesung 5',
-  'Substitution: Idee – innere Funktion u = g(x)',
-  'Substitutionsregel und du = g\'(x) dx',
-  'Beispiel Substitution, Rücksubstitution',
-  'Partielle Integration: Produktregel rückwärts',
-  'Partielle Integration: Beispiele',
+  'Differentialgleichungen – Vorlesung 5',
+  'Substitution: Idee u = x + y',
+  'Trennung der Variablen und Substitution',
+  'Trennen: Integrieren beider Seiten',
+  'Substitution: Rücksubstitution, Anfangswert',
+  'Trennen: Beispiele',
 ];
 
 Map<String, dynamic> _task(String problem, List<int> pages, {String formula = ''}) => {
@@ -35,9 +37,14 @@ Map<String, dynamic> _task(String problem, List<int> pages, {String formula = ''
         'from': i == 0 ? 'A = 0' : '',
         'to': 'A = ${i + 1}',
         'page': p,
+        if (i == 1)
+          'calc': {
+            'keys': ['2', '×', '3', '='],
+            'expr': '2*3',
+            'result': '6',
+          },
         'formulas': [
-          if (i == 0 && formula.isNotEmpty)
-            {'name': formula, 'latex': r'\int f(g(x))g(x)\,dx', 'note': 'Kettenregel rückwärts'},
+          if (i == 0 && formula.isNotEmpty) {'name': formula, 'latex': r'u = x + y', 'note': 'macht die DGL trennbar'},
         ],
       },
   ],
@@ -60,7 +67,7 @@ void main() {
 
   setUp(() {
     asked = [];
-    LectureBoardView.phaseDelay = const Duration(milliseconds: 5);
+    WorkedSolutionScreen.autoDelay = const Duration(milliseconds: 20);
     LectureWalkScreen.loadHook = (_) async => (bytes: null, pageTexts: _pages);
     LectureWalkScreen.aiFactory = () => AiService(
       apiKey: 'k',
@@ -70,28 +77,35 @@ void main() {
         final system = '${messages[0]['content']}';
         final user = '${messages[1]['content']}';
         asked.add(user);
-        if (system.contains('THEMEN')) {
+        if (system.contains('KONZEPTE')) {
           return _reply({
-            'topics': [
-              {'title': 'Substitution', 'from': 2, 'to': 4},
-              {'title': 'Partielle Integration', 'from': 5, 'to': 6},
+            'concepts': [
+              {
+                'title': 'DGL durch Substitution lösen',
+                'goal': 'eine DGL mit u = x + y vollständig lösen',
+                'pages': [2, 3, 5],
+              },
+              {
+                'title': 'Trennung der Variablen',
+                'pages': [3, 4, 6],
+              },
             ],
           });
         }
         if (user.contains('AUFTRAG: Erfinde')) {
-          return user.contains('Thema: Substitution')
-              ? _reply(_task(r'Berechne $\int 2x\cos(x^2)\,dx$.', [2, 3, 4], formula: 'Substitutionsregel'))
-              : _reply(_task(r'Berechne $\int x e^x\,dx$.', [5, 6]));
+          return user.contains('Konzept: DGL durch Substitution')
+              ? _reply(_task(r"Löse $y' = (x+y)^2$, $y(0)=0$.", [2, 3, 5], formula: 'Substitution'))
+              : _reply(_task(r"Löse $y' = xy$, $y(0)=2$.", [3, 4, 6]));
         }
         if (system.contains('Lösungsversuch')) {
           return _reply({
             'solved': false,
-            'feedback': 'Beim Ersetzen von dx fehlt der Faktor.',
+            'feedback': 'Nach dem Einsetzen fehlt die 1 in u\' = 1 + y\'.',
             'step': 2,
-            'explain': r'Aus $u = x^2$ folgt $du = 2x\,dx$ – genau das steht auf Seite 3.',
+            'explain': r"Aus $u = x + y$ folgt $u' = 1 + y'$ – genau das steht auf Seite 3.",
           });
         }
-        return _reply(r'Weil $u = x^2$ die innere Funktion ist.');
+        return _reply(r'Weil $u = x + y$ die DGL trennbar macht.');
       }),
     );
   });
@@ -99,12 +113,13 @@ void main() {
   tearDown(() {
     LectureWalkScreen.loadHook = null;
     LectureWalkScreen.aiFactory = null;
+    WorkedSolutionScreen.autoDelay = const Duration(milliseconds: 2800);
   });
 
-  testWidgets('Vorlesung mit Aufgabe: Seite für Seite weiterrechnen, Formeln, Fragen, selbst lösen, Haken-Seite', (
+  testWidgets('Vorlesung mit Aufgabe: Konzepte vorab, Vorrechnen-Tafel Seite für Seite, Formeln, selbst lösen', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.physicalSize = const Size(1600, 1800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final db = (await tester.runAsync(
@@ -128,90 +143,101 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Titelseite: Themen erkannt, erstes Thema kommt noch.
-    expect(find.textContaining('Blättere weiter'), findsOneWidget);
-    expect(find.byKey(const ValueKey('lecture-page-text')), findsOneWidget);
+    // Vorab: Konzepte der ganzen Vorlesung und beide Aufgaben – die Tafel ist noch leer.
+    expect(asked.where((u) => u.contains('AUFTRAG: Erfinde')), hasLength(2));
+    expect(asked.firstWhere((u) => u.contains('Konzept: DGL')), contains('KEINE Aufgabe'));
+    expect(find.textContaining('Alles vorbereitet'), findsOneWidget);
+    expect(find.byKey(const ValueKey('lecture-concept-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('lecture-concept-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('worked-waiting')), findsOneWidget);
 
-    // Seite 2: neues Thema → Aufgabe, erster Schritt und neue Formel an der Tafel.
+    // Seite 2: erster Schritt an der Vorrechnen-Tafel, neue Formel.
     await tester.tap(find.byKey(const ValueKey('lecture-next')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Los geht’s'), findsOneWidget);
-    expect(find.textContaining('Thema 1/2 · Substitution'), findsOneWidget);
+    expect(find.textContaining('Okay, lass uns mit unserer Aufgabe zu „DGL durch Substitution lösen“'), findsOneWidget);
+    expect(find.byKey(const ValueKey('worked-waiting')), findsNothing);
     expect(find.byKey(const ValueKey('lecture-new-formulas')), findsOneWidget);
-    expect(find.textContaining('Formelsammlung (1)'), findsOneWidget);
+    expect(find.text('1. DGL durch Substitution lösen · 1/3'), findsOneWidget);
 
-    // Seite 3: weiter mit unserer Aufgabe.
+    // Seite 3: beide Konzepte gehen weiter; Taschenrechner an der Tafel.
     await tester.tap(find.byKey(const ValueKey('lecture-next')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Okay, lass uns mit unserer Aufgabe weitermachen'), findsOneWidget);
-    expect(find.textContaining('Schritt 2.'), findsOneWidget);
-    expect(find.byKey(const ValueKey('lecture-new-formulas')), findsNothing);
+    expect(find.text('1. DGL durch Substitution lösen · 2/3'), findsOneWidget);
+    expect(find.text('2. Trennung der Variablen · 1/3'), findsOneWidget);
+    expect(find.byType(CalculatorSim), findsWidgets);
+
+    // Anderes Konzept an die Tafel holen.
+    await tester.ensureVisible(find.byKey(const ValueKey('lecture-concept-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('lecture-concept-1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('worked-1-null')), findsOneWidget);
 
     // Frage zur Formel.
-    await tester.ensureVisible(find.byKey(const ValueKey('lecture-formula-ask-0')));
+    await tester.tap(find.byKey(const ValueKey('lecture-formulas')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('lecture-formula-ask-0')));
     await tester.pumpAndSettle();
-    expect(asked.last, contains('Substitutionsregel'));
-    expect(find.textContaining('innere Funktion ist'), findsOneWidget);
+    expect(asked.last, contains('Substitution'));
+    expect(find.textContaining('trennbar macht'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('lecture-formulas')));
+    await tester.pumpAndSettle();
 
-    // Seite 4: gelöst; Seite 5: neues Thema mit neuer Aufgabe; Seite 6: einmal durch.
-    await tester.tap(find.byKey(const ValueKey('lecture-next')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Damit ist sie gelöst'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('lecture-next')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Neues Thema: „Partielle Integration“'), findsOneWidget);
-    expect(find.byKey(const ValueKey('lecture-self-solve')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('lecture-next')));
-    await tester.pumpAndSettle();
+    // Seiten 4–6: einmal durch.
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byKey(const ValueKey('lecture-next')));
+      await tester.pumpAndSettle();
+    }
     expect(find.byKey(const ValueKey('lecture-self-solve')), findsOneWidget);
-
     final saved = (await tester.runAsync(() => repo.load('pdf1')))!;
     expect(saved.tasks.keys, containsAll([0, 1]));
     expect(saved.maxPage, 6);
-    expect(saved.formulas.single.name, 'Substitutionsregel');
+    expect(saved.formulas.single.name, 'Substitution');
 
-    // Selbst lösen: Haken bei Schritt 2 → Seite 3, dort genau erklärt.
+    // Selbst lösen: Haken bei Schritt 2 → Seite 3, Tafel springt dorthin.
     await tester.tap(find.byKey(const ValueKey('lecture-self-solve')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('self-topic-0')));
+    await tester.tap(find.byKey(const ValueKey('self-concept-0')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('self-answer')), 'u = x^2, dann sin(u)');
+    await tester.enterText(find.byKey(const ValueKey('self-answer')), "u = x + y, dann u' = u^2");
     await tester.tap(find.byKey(const ValueKey('self-check')));
     await tester.pumpAndSettle();
     expect(find.text('Noch nicht ganz.'), findsOneWidget);
-    expect(find.text('Zu Seite 3 – dort genau erklären'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('self-jump')));
     await tester.pumpAndSettle();
-    expect(find.text('Seite 3/6 · Substitution'), findsOneWidget);
+    expect(find.textContaining('Seite 3/6'), findsWidgets);
     expect(find.textContaining('Hier hakt es – auf Seite 3'), findsOneWidget);
-    expect(find.textContaining('genau das steht auf Seite 3'), findsOneWidget);
+    expect(find.byKey(const ValueKey('worked-0-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('lecture-visual')), findsOneWidget);
     expect((await tester.runAsync(() => repo.load('pdf1')))!.attempts[0]!.step, 1);
   });
 
   test('Tafel-Stand übersteht den Weg ins eigene Fenster', () {
-    const state = LectureBoardState(
-      topicTitle: 'Substitution',
-      topicNumber: 1,
-      topicCount: 2,
-      pageLabel: 'Seite 3/6',
-      problem: r'$\int 2x\cos(x^2)\,dx$',
-      steps: [WorkStep(title: 'Schritt', to: 'u = x^2')],
-      revealed: 1,
+    final state = LectureBoardState(
+      concepts: const [LectureBoardConcept(title: 'Substitution', pages: 'S. 2–3', revealed: 1, total: 3)],
       current: 0,
-      formulas: [LectureFormula(name: 'Regel', latex: 'a=b', page: 2)],
+      solution: WorkedSolution(
+        id: 'x',
+        moduleId: 'm',
+        problem: 'Aufgabe',
+        detail: WorkDetail.normal,
+        steps: const [WorkStep(title: 'Schritt', to: 'u = x^2')],
+        createdAt: DateTime(2026),
+      ),
+      revealed: 1,
+      focus: 0,
+      pageLabel: 'Seite 3/6',
+      formulas: const [LectureFormula(name: 'Regel', latex: 'a=b', page: 2)],
       freshFormulas: 1,
       coach: 'Weiter!',
-      chat: [(user: true, text: 'Warum?')],
+      chat: const [(user: true, text: 'Warum?')],
       busy: true,
       busyText: 'Moment',
     );
     final back = LectureBoardState.fromMap(jsonDecode(jsonEncode(state.toMap())));
-    expect(back.topicTitle, 'Substitution');
-    expect(back.steps.single.to, 'u = x^2');
-    expect(back.current, 0);
+    expect(back.concepts.single.total, 3);
+    expect(back.solution!.steps.single.to, 'u = x^2');
+    expect(back.focus, 0);
     expect(back.formulas.single.page, 2);
     expect(back.chat.single.text, 'Warum?');
     expect(back.busy, isTrue);

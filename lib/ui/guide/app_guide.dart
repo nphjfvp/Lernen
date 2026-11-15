@@ -382,9 +382,10 @@ const appGuideChapters = <GuideChapter>[
       ),
       GuideItem(
         'Vorlesung mit Aufgabe',
-        'Die KI erkennt die Themen deiner Vorlesung und stellt zu jedem am Anfang eine schwere Aufgabe. Du liest '
-            'Seite für Seite – nach jeder Seite, die das Thema weiter erklärt, rechnet ihr gemeinsam an der Tafel '
-            'weiter. Neue Formeln landen an der Tafel und in der Formelsammlung (Fragen jederzeit). Am PC lässt sich '
+        'Die KI geht vorab die ganze Vorlesung durch, bestimmt die vermittelten Konzepte (mit allen Seiten dazu) '
+            'und stellt zu jedem eine vollständige Prüfungsaufgabe. Du liest Seite für Seite – nach jeder Seite, die '
+            'ein Konzept weiter erklärt, rechnet ihr an der Vorrechnen-Tafel weiter (mit Taschenrechner, Regeln, '
+            'Fragen je Schritt). Neue Formeln landen an der Tafel und in der Formelsammlung. Am PC lässt sich '
             'die Tafel in ein eigenes Fenster auf den zweiten Bildschirm ziehen. Einmal durch: selbst lösen – bei '
             'einem Fehler springt die App zur Seite mit dem Haken und erklärt genau.',
         where: 'PDF öffnen → Tafel-Symbol · Material-Menü → Mit Aufgabe durchgehen',
