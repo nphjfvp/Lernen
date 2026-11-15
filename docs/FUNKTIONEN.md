@@ -550,6 +550,13 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   dem Cloud-Abgleich, Lernen auf Windows/Web zählt also mit. Die Android-App
   misst die Zeit über die Nutzungsstatistik und legt nach Ablauf einen
   Sperrbildschirm über die App (Vordergrunddienst, startet nach Neustart neu).
+  Am PC (Windows) sperrt die App mit: Webseiten im Browser (z.B. YouTube,
+  Instagram – am Tab-Titel erkannt, nur gezählt, solange sie vorn zu sehen
+  sind, Ausnahmen wie „YouTube Music“) zur Tageszeit, die sich Handy und PC
+  teilen, und Spiele (z.B. Minecraft, VALORANT) zu einer Wochenzeit (4 h,
+  +30 min je in der Woche gelerntem Thema). Warnung vorher, danach wird das
+  Fenster minimiert und die Lern-App zeigt die Sperre; die App startet mit
+  Windows und läuft im Infobereich weiter.
   Beim Einschalten wird die Sperre für eine Woche festgelegt (mit Rückfrage):
   bis dahin nicht abschaltbar, die Regeln gehen nur strenger – auch über den
   Abgleich von einem anderen Gerät aus.

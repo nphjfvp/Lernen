@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../repositories/settings_repository.dart';
 import '../services/claude_inbox.dart';
 import '../services/screen_guard.dart';
+import '../services/windows_guard.dart';
 import '../services/update_checker_service.dart';
 import '../theme/app_colors.dart';
 import 'calendar/calendar_screen.dart';
@@ -43,7 +44,12 @@ class _RootShellState extends State<RootShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdate();
       _checkInbox();
-      ScreenGuard.push();
+      // Lernzeit-Sperre: am PC die Überwachung starten, am Handy das Guthaben schicken.
+      if (WindowsGuard.supported) {
+        WindowsGuard.instance.start();
+      } else {
+        ScreenGuard.push();
+      }
     });
   }
 

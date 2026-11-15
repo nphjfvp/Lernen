@@ -140,4 +140,25 @@ void main() {
     expect(after.enabled, isTrue);
     expect(after.freeMinutes, 20);
   });
+
+  test('Nutzung verbuchen: Gerätekennung bleibt, ruhiger oder sofortiger Upload', () async {
+    final db = await databaseFactoryMemory.openDatabase('learn_credit_${DateTime.now().microsecondsSinceEpoch}');
+    addTearDown(db.close);
+    final id = await LearnCreditRepository.deviceIdIn(db);
+    expect(await LearnCreditRepository.deviceIdIn(db), id);
+    final usage = LearnCreditRepository.usageChanges.value;
+    final local = LearnCreditRepository.localChanges.value;
+    final now = DateTime(2026, 11, 18, 12);
+    final key = LearnCredit.dailyUsageKey(LearnCredit.dayKey(now, 4));
+    await LearnCreditRepository.recordUsageIn(db, key, 120, now: now);
+    expect(LearnCreditRepository.usageChanges.value, usage + 1);
+    expect(LearnCreditRepository.localChanges.value, local);
+    await LearnCreditRepository.recordUsageIn(db, key, 100, now: now);
+    expect(LearnCreditRepository.usageChanges.value, usage + 1, reason: 'nichts Neues');
+    await LearnCreditRepository.recordUsageIn(db, key, 1800, now: now, urgent: true);
+    expect(LearnCreditRepository.localChanges.value, local + 1);
+    final credit = await LearnCreditRepository.loadFrom(db);
+    expect(credit.used[id]![key], 1800);
+    expect((await LearnCreditRepository.syncMapFrom(db))['used'], isNotEmpty);
+  });
 }

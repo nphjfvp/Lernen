@@ -1117,7 +1117,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     leading: const Icon(Icons.lock_clock_outlined),
                     title: const Text('Apps erst nach dem Lernen'),
                     subtitle: const Text(
-                      'z.B. Instagram: 30 min frei, +30 min je neuem Thema, unbegrenzt nach Daily Quiz – Android',
+                      'z.B. Instagram: 30 min frei, +30 min je neuem Thema, unbegrenzt nach Daily Quiz – '
+                      'Android und Windows (auch Spiele)',
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(

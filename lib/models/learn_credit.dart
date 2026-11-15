@@ -4,7 +4,8 @@ import '../services/fsrs_service.dart';
 
 /// Regeln der Lernzeit-Sperre. Reisen mit dem Cloud-Abgleich (die zuletzt
 /// geänderten gelten, siehe [newer]), damit jedes Gerät dasselbe Guthaben
-/// anzeigt; sperren kann nur die Android-App.
+/// anzeigt. Sperren können die Android-App ([packages]) und die Windows-App
+/// ([pcSites], [pcGames]); die Tageszeit teilen sich Handy und PC.
 class LearnCreditRules {
   const LearnCreditRules({
     this.enabled = false,
@@ -17,7 +18,16 @@ class LearnCreditRules {
     this.dayStartHour = 4,
     this.updatedAt,
     this.lockedUntil,
+    this.pcSites = defaultPcSites,
+    this.pcExceptions = defaultPcExceptions,
+    this.pcGames = defaultPcGames,
+    this.weeklyGameMinutes = 240,
+    this.gameMinutesPerTopic = 30,
   });
+
+  static const defaultPcSites = ['YouTube', 'Instagram'];
+  static const defaultPcExceptions = ['YouTube Music', 'Minecraft Launcher'];
+  static const defaultPcGames = ['Minecraft', 'VALORANT'];
 
   /// So lange ist eine eingeschaltete Sperre festgelegt.
   static const lockDuration = Duration(days: 7);
@@ -52,6 +62,23 @@ class LearnCreditRules {
   /// stellen (siehe [guard]).
   final DateTime? lockedUntil;
 
+  /// Am PC (Tageszeit, mit dem Handy geteilt): Webseiten, erkannt am Titel
+  /// des Browser-Tabs – gezählt nur, solange sie vorn zu sehen sind.
+  final List<String> pcSites;
+
+  /// Fenstertitel, die nie zählen (z.B. „YouTube Music“ zum Hören).
+  final List<String> pcExceptions;
+
+  /// Am PC (Wochenzeit): Spiele/Programme, erkannt am Programmnamen
+  /// („…​.exe“) oder Fenstertitel – nicht in Browsern.
+  final List<String> pcGames;
+
+  /// Spielzeit je Woche (Mo ab [dayStartHour] Uhr) ohne Lernen …
+  final int weeklyGameMinutes;
+
+  /// … und je in der Woche neu gelerntem Thema zusätzlich.
+  final int gameMinutesPerTopic;
+
   bool isLocked(DateTime now) => lockedUntil != null && now.isBefore(lockedUntil!);
 
   /// [next] soll gelten – solange diese Regeln festgelegt sind, aber nur so
@@ -79,8 +106,23 @@ class LearnCreditRules {
       dayStartHour: dayStartHour,
       updatedAt: next.updatedAt,
       lockedUntil: until,
+      pcSites: _union(next.pcSites, pcSites),
+      // Ausnahmen lockern – während der Festlegung nur weniger.
+      pcExceptions: [
+        for (final e in next.pcExceptions)
+          if (pcExceptions.contains(e)) e,
+      ],
+      pcGames: _union(next.pcGames, pcGames),
+      weeklyGameMinutes: math.min(weeklyGameMinutes, next.weeklyGameMinutes),
+      gameMinutesPerTopic: math.min(gameMinutesPerTopic, next.gameMinutesPerTopic),
     );
   }
+
+  static List<String> _union(List<String> first, List<String> rest) => [
+    ...first,
+    for (final p in rest)
+      if (!first.contains(p)) p,
+  ];
 
   LearnCreditRules copyWith({
     bool? enabled,
@@ -93,6 +135,11 @@ class LearnCreditRules {
     int? dayStartHour,
     DateTime? updatedAt,
     DateTime? lockedUntil,
+    List<String>? pcSites,
+    List<String>? pcExceptions,
+    List<String>? pcGames,
+    int? weeklyGameMinutes,
+    int? gameMinutesPerTopic,
   }) => LearnCreditRules(
     enabled: enabled ?? this.enabled,
     packages: packages ?? this.packages,
@@ -104,6 +151,11 @@ class LearnCreditRules {
     dayStartHour: dayStartHour ?? this.dayStartHour,
     updatedAt: updatedAt ?? this.updatedAt,
     lockedUntil: lockedUntil ?? this.lockedUntil,
+    pcSites: pcSites ?? this.pcSites,
+    pcExceptions: pcExceptions ?? this.pcExceptions,
+    pcGames: pcGames ?? this.pcGames,
+    weeklyGameMinutes: weeklyGameMinutes ?? this.weeklyGameMinutes,
+    gameMinutesPerTopic: gameMinutesPerTopic ?? this.gameMinutesPerTopic,
   );
 
   Map<String, dynamic> toMap() => {
@@ -117,12 +169,23 @@ class LearnCreditRules {
     'dayStartHour': dayStartHour,
     if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
     if (lockedUntil != null) 'lockedUntil': lockedUntil!.toIso8601String(),
+    'pcSites': pcSites,
+    'pcExceptions': pcExceptions,
+    'pcGames': pcGames,
+    'weeklyGameMinutes': weeklyGameMinutes,
+    'gameMinutesPerTopic': gameMinutesPerTopic,
   };
 
   static LearnCreditRules fromMap(Object? raw) {
     if (raw is! Map) return const LearnCreditRules();
     int number(Object? v, int fallback, int min, int max) => (v is num ? v.toInt() : fallback).clamp(min, max);
     final packages = raw['packages'];
+    List<String> list(Object? v, List<String> fallback) => v is List
+        ? [
+            for (final e in v)
+              if ('$e'.trim().isNotEmpty) '$e'.trim(),
+          ]
+        : fallback;
     return LearnCreditRules(
       enabled: raw['enabled'] == true,
       packages: packages is List ? [for (final p in packages) '$p'] : const ['com.instagram.android'],
@@ -134,6 +197,11 @@ class LearnCreditRules {
       dayStartHour: number(raw['dayStartHour'], 4, 0, 23),
       updatedAt: DateTime.tryParse('${raw['updatedAt'] ?? ''}'),
       lockedUntil: DateTime.tryParse('${raw['lockedUntil'] ?? ''}'),
+      pcSites: list(raw['pcSites'], defaultPcSites),
+      pcExceptions: list(raw['pcExceptions'], defaultPcExceptions),
+      pcGames: list(raw['pcGames'], defaultPcGames),
+      weeklyGameMinutes: number(raw['weeklyGameMinutes'], 240, 0, 10080),
+      gameMinutesPerTopic: number(raw['gameMinutesPerTopic'], 30, 0, 600),
     );
   }
 
@@ -176,11 +244,18 @@ class EarnedTopic {
   }
 }
 
-/// Lernguthaben: welche Themen wann neu gelernt wurden und an welchen
-/// Lerntagen das Daily Quiz fertig war. Reist mit dem Cloud-Abgleich (alle
-/// Geräte zählen), die laufenden Serien bleiben auf dem Gerät.
+/// Lernguthaben: welche Themen wann neu gelernt wurden, an welchen Lerntagen
+/// das Daily Quiz fertig war und wie viel Zeit jedes Gerät in gesperrten Apps
+/// verbracht hat. Reist mit dem Cloud-Abgleich (alle Geräte zählen), die
+/// laufenden Serien bleiben auf dem Gerät.
 class LearnCredit {
-  const LearnCredit({this.earned = const {}, this.dailyDays = const {}, this.streaks = const {}, this.streakDay = ''});
+  const LearnCredit({
+    this.earned = const {},
+    this.dailyDays = const {},
+    this.streaks = const {},
+    this.streakDay = '',
+    this.used = const {},
+  });
 
   /// Thema (Schlüssel, z.B. `concept:<id>`) → wann gelernt. Jedes Thema zählt
   /// nur einmal – beim ersten Mal.
@@ -193,18 +268,43 @@ class LearnCredit {
   final Map<String, int> streaks;
   final String streakDay;
 
+  /// Genutzte Sekunden je Gerät: Gerät → Schlüssel → Sekunden. Schlüssel
+  /// [dailyUsageKey] (Tageszeit, Handy und PC zusammen) und [gameUsageKey]
+  /// (Spielzeit der Woche).
+  final Map<String, Map<String, int>> used;
+
+  /// So lange bleiben Nutzungszahlen erhalten.
+  static const usageKeepDays = 21;
+
+  static String dailyUsageKey(String day) => 'd:$day';
+  static String gameUsageKey(String week) => 'g:$week';
+
   /// Der Lerntag zu [now]: beginnt um [startHour] (vorher zählt noch der
   /// Vortag).
-  static String dayKey(DateTime now, int startHour) {
-    final shifted = now.hour < startHour ? now.subtract(const Duration(days: 1)) : now;
+  static String dayKey(DateTime now, int startHour) => _format(dayStart(now, startHour));
+
+  /// Die Lernwoche zu [now]: der Montag, an dem sie (um [startHour]) begann.
+  static String weekKey(DateTime now, int startHour) {
+    final start = dayStart(now, startHour);
+    return _format(DateTime(start.year, start.month, start.day - (start.weekday - 1)));
+  }
+
+  /// Die Lernwoche eines Lerntags („JJJJ-MM-TT“).
+  static String weekOfDay(String day) {
+    final d = DateTime.tryParse(day);
+    if (d == null) return '';
+    return _format(DateTime(d.year, d.month, d.day - (d.weekday - 1)));
+  }
+
+  static String _format(DateTime d) {
     String two(int v) => v.toString().padLeft(2, '0');
-    return '${shifted.year}-${two(shifted.month)}-${two(shifted.day)}';
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
   /// Beginn des Lerntags zu [now].
   static DateTime dayStart(DateTime now, int startHour) {
     final today = DateTime(now.year, now.month, now.day, startHour);
-    return now.isBefore(today) ? today.subtract(const Duration(days: 1)) : today;
+    return now.isBefore(today) ? DateTime(now.year, now.month, now.day - 1, startHour) : today;
   }
 
   /// Zählt die Antwort als fehlerfrei? Bei geprüften Aufgaben: richtig und
@@ -214,6 +314,20 @@ class LearnCredit {
     if (isCorrect != null) return isCorrect && selfGrade != Grade.hard && selfGrade != Grade.again;
     return selfGrade != null && selfGrade != Grade.again;
   }
+
+  LearnCredit _with({
+    Map<String, EarnedTopic>? earned,
+    Set<String>? dailyDays,
+    Map<String, int>? streaks,
+    String? streakDay,
+    Map<String, Map<String, int>>? used,
+  }) => LearnCredit(
+    earned: earned ?? this.earned,
+    dailyDays: dailyDays ?? this.dailyDays,
+    streaks: streaks ?? this.streaks,
+    streakDay: streakDay ?? this.streakDay,
+    used: used ?? this.used,
+  );
 
   /// Eine Antwort zu Thema [topic] verbuchen. Liefert den neuen Stand und –
   /// falls das Thema dadurch gelernt ist – seinen Titel.
@@ -228,55 +342,81 @@ class LearnCredit {
     final streaks = day == streakDay ? {...this.streaks} : <String, int>{};
     if (!clean) {
       streaks[topic] = 0;
-      return (LearnCredit(earned: earned, dailyDays: dailyDays, streaks: streaks, streakDay: day), null);
+      return (_with(streaks: streaks, streakDay: day), null);
     }
     final count = (streaks[topic] ?? 0) + 1;
     streaks[topic] = count;
     if (count >= rules.correctInRow && !earned.containsKey(topic)) {
       return (
-        LearnCredit(
+        _with(
           earned: {
             ...earned,
             topic: EarnedTopic(day: day, title: title, at: now),
           },
-          dailyDays: dailyDays,
           streaks: streaks,
           streakDay: day,
         ),
         title,
       );
     }
-    return (LearnCredit(earned: earned, dailyDays: dailyDays, streaks: streaks, streakDay: day), null);
+    return (_with(streaks: streaks, streakDay: day), null);
   }
 
-  LearnCredit withDailyDone(DateTime now, int startHour) => LearnCredit(
-    earned: earned,
-    dailyDays: {...dailyDays, dayKey(now, startHour)},
-    streaks: streaks,
-    streakDay: streakDay,
-  );
+  LearnCredit withDailyDone(DateTime now, int startHour) => _with(dailyDays: {...dailyDays, dayKey(now, startHour)});
+
+  /// Die Nutzung dieses Geräts ([device]) für [key] setzen – nie kleiner als
+  /// schon verbucht. Alte Zahlen (älter als [usageKeepDays]) fallen weg.
+  LearnCredit withUsage(String device, String key, int seconds, DateTime now) {
+    final cutoff = _format(now.subtract(const Duration(days: usageKeepDays)));
+    Map<String, int> prune(Map<String, int> m) => {
+      for (final e in m.entries)
+        if (e.key.length < 3 || e.key.substring(2).compareTo(cutoff) >= 0) e.key: e.value,
+    };
+    final mine = prune({...?used[device]});
+    mine[key] = math.max(mine[key] ?? 0, seconds);
+    return _with(used: {...used, device: mine});
+  }
+
+  /// Genutzte Sekunden für [key] auf allen Geräten (außer [exceptDevice]).
+  int usedSeconds(String key, {String? exceptDevice}) {
+    var total = 0;
+    for (final e in used.entries) {
+      if (e.key != exceptDevice) total += e.value[key] ?? 0;
+    }
+    return total;
+  }
 
   /// Mit dem Stand eines anderen Geräts zusammenführen: Themen und Daily-Tage
-  /// vereinigen (bei doppelt gelernten Themen zählt das frühere).
+  /// vereinigen (bei doppelt gelernten Themen zählt das frühere), Nutzung je
+  /// Gerät das Größere.
   LearnCredit mergedWith(LearnCredit other) {
     final merged = {...earned};
     for (final e in other.earned.entries) {
       final mine = merged[e.key];
       if (mine == null || e.value.at.isBefore(mine.at)) merged[e.key] = e.value;
     }
-    return LearnCredit(
-      earned: merged,
-      dailyDays: {...dailyDays, ...other.dailyDays},
-      streaks: streaks,
-      streakDay: streakDay,
-    );
+    final usage = {
+      for (final e in used.entries) e.key: {...e.value},
+    };
+    for (final device in other.used.entries) {
+      final target = usage.putIfAbsent(device.key, () => {});
+      for (final e in device.value.entries) {
+        target[e.key] = math.max(target[e.key] ?? 0, e.value);
+      }
+    }
+    return _with(earned: merged, dailyDays: {...dailyDays, ...other.dailyDays}, used: usage);
   }
 
   /// Heute neu gelernte Themen (Titel, in Reihenfolge).
-  List<String> topicsOn(String day) {
+  List<String> topicsOn(String day) => _titles((e) => e.day == day);
+
+  /// In der Lernwoche [week] neu gelernte Themen.
+  List<String> topicsInWeek(String week) => _titles((e) => weekOfDay(e.day) == week);
+
+  List<String> _titles(bool Function(EarnedTopic) test) {
     final list = [
       for (final e in earned.values)
-        if (e.day == day) e,
+        if (test(e)) e,
     ]..sort((a, b) => a.at.compareTo(b.at));
     return [for (final e in list) e.title];
   }
@@ -285,6 +425,7 @@ class LearnCredit {
   Map<String, dynamic> toSyncMap() => {
     'earned': {for (final e in earned.entries) e.key: e.value.toMap()},
     'dailyDays': (dailyDays.toList()..sort()),
+    'used': used,
   };
 
   Map<String, dynamic> toMap() => {...toSyncMap(), 'streaks': streaks, 'streakDay': streakDay};
@@ -294,6 +435,7 @@ class LearnCredit {
     final earned = raw['earned'];
     final days = raw['dailyDays'];
     final streaks = raw['streaks'];
+    final used = raw['used'];
     return LearnCredit(
       earned: {
         if (earned is Map)
@@ -309,6 +451,15 @@ class LearnCredit {
             if (e.value is num) '${e.key}': (e.value as num).toInt(),
       },
       streakDay: '${raw['streakDay'] ?? ''}',
+      used: {
+        if (used is Map)
+          for (final d in used.entries)
+            if (d.value is Map)
+              '${d.key}': {
+                for (final e in (d.value as Map).entries)
+                  if (e.value is num) '${e.key}': (e.value as num).toInt(),
+              },
+      },
     );
   }
 }
@@ -362,6 +513,26 @@ class LearnAllowance {
       topicsToday: topics,
       dailyDone: daily,
       nextStep: unlimited ? '' : steps.join(' '),
+    );
+  }
+}
+
+/// Spielzeit am PC in dieser Lernwoche: [LearnCreditRules.weeklyGameMinutes]
+/// frei, je in der Woche neu gelerntem Thema mehr.
+class GameAllowance {
+  const GameAllowance({required this.week, required this.minutes, required this.topicsThisWeek});
+
+  final String week;
+  final int minutes;
+  final int topicsThisWeek;
+
+  static GameAllowance of(LearnCredit credit, LearnCreditRules rules, DateTime now) {
+    final week = LearnCredit.weekKey(now, rules.dayStartHour);
+    final topics = credit.topicsInWeek(week).length;
+    return GameAllowance(
+      week: week,
+      minutes: rules.weeklyGameMinutes + topics * rules.gameMinutesPerTopic,
+      topicsThisWeek: topics,
     );
   }
 }

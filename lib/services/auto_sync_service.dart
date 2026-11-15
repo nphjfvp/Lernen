@@ -6,6 +6,7 @@ import 'package:sembast/sembast.dart';
 import 'package:uuid/uuid.dart';
 
 import '../repositories/auth_repository.dart';
+import '../repositories/learn_credit_repository.dart';
 import '../repositories/settings_repository.dart';
 import 'database_service.dart';
 import 'pdf_cloud_store.dart';
@@ -136,6 +137,10 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     }
     _settingsSignature = _currentSettingsSignature();
     _settings.addListener(_onSettingsChanged);
+    // Lernzeit-Sperre: gelernte Themen, Regeln und aufgebrauchte Zeit bald
+    // hochladen, reine Nutzungszahlen mit dem nächsten ruhigen Upload.
+    LearnCreditRepository.localChanges.addListener(_markDirty);
+    LearnCreditRepository.usageChanges.addListener(_markUsageDirty);
     WidgetsBinding.instance.addObserver(this);
     // Kurz nach dem Start nachsehen, ob ein anderes Gerät weitergelernt hat.
     unawaited(Future<void>.delayed(startCheckDelay, checkCloud));
@@ -205,6 +210,19 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
     _schedule(debounce);
     if (_status != AutoSyncStatus.retrying) _setStatus(AutoSyncStatus.pending);
   }
+
+  /// Nur neue Nutzungszahlen der Lernzeit-Sperre: höchstens alle paar
+  /// Minuten hochladen (steht schon ein Upload an, reicht der).
+  void _markUsageDirty() {
+    if (_disposed || _suppressDepth > 0 || !_settings.settings.autoSyncEnabled) return;
+    if (_dirty) return;
+    _dirty = true;
+    if (_status == AutoSyncStatus.conflict) return;
+    _schedule(usageDebounce);
+    if (_status != AutoSyncStatus.retrying) _setStatus(AutoSyncStatus.pending);
+  }
+
+  static const usageDebounce = Duration(minutes: 5);
 
   void _schedule(Duration delay) {
     _timer?.cancel();
@@ -399,6 +417,8 @@ class AutoSyncService extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
       _settings.removeListener(_onSettingsChanged);
+      LearnCreditRepository.localChanges.removeListener(_markDirty);
+      LearnCreditRepository.usageChanges.removeListener(_markUsageDirty);
       WidgetsBinding.instance.removeObserver(this);
     }
     super.dispose();

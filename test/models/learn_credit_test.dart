@@ -230,6 +230,72 @@ void main() {
     });
   });
 
+  group('PC: Regeln und gemeinsames Zeitkonto', () {
+    final now = DateTime(2026, 11, 18, 12);
+
+    test('festgelegt: Webseiten und Spiele nur dazu, Ausnahmen nur weg, Spielzeit nur weniger', () {
+      final locked = rules.copyWith(lockedUntil: now.add(LearnCreditRules.lockDuration));
+      final g = locked.guard(
+        locked.copyWith(
+          pcSites: ['Twitch'],
+          pcExceptions: ['YouTube Music', 'YouTube'],
+          pcGames: ['Fortnite'],
+          weeklyGameMinutes: 600,
+          gameMinutesPerTopic: 90,
+        ),
+        now,
+      );
+      expect(g.pcSites, ['Twitch', 'YouTube', 'Instagram']);
+      expect(g.pcExceptions, ['YouTube Music'], reason: 'neue Ausnahme „YouTube“ würde lockern');
+      expect(g.pcGames, ['Fortnite', 'Minecraft', 'VALORANT']);
+      expect(g.weeklyGameMinutes, 240);
+      expect(g.gameMinutesPerTopic, 30);
+      final stricter = locked.guard(locked.copyWith(pcExceptions: const [], weeklyGameMinutes: 120), now);
+      expect(stricter.pcExceptions, isEmpty);
+      expect(stricter.weeklyGameMinutes, 120);
+
+      final back = LearnCreditRules.fromMap(g.toMap());
+      expect(back.pcSites, g.pcSites);
+      expect(back.pcGames, g.pcGames);
+      expect(LearnCreditRules.fromMap(const {}).pcExceptions, ['YouTube Music', 'Minecraft Launcher']);
+    });
+
+    test('Nutzung je Gerät: zusammenführen, summieren, alte Tage fallen weg', () {
+      final day = LearnCredit.dayKey(now, 4);
+      final key = LearnCredit.dailyUsageKey(day);
+      var phone = const LearnCredit().withUsage('handy', key, 600, now);
+      phone = phone.withUsage('handy', key, 300, now);
+      expect(phone.used['handy']![key], 600, reason: 'nie weniger als schon verbucht');
+      phone = phone.withUsage('handy', 'd:2026-10-01', 999, now.subtract(const Duration(days: 40)));
+      phone = phone.withUsage('handy', key, 660, now);
+      expect(phone.used['handy']!.containsKey('d:2026-10-01'), isFalse);
+
+      final pc = const LearnCredit()
+          .withUsage('pc', key, 900, now)
+          .withUsage('pc', LearnCredit.gameUsageKey(LearnCredit.weekKey(now, 4)), 3600, now);
+      final merged = phone.mergedWith(LearnCredit.fromMap(pc.toSyncMap()));
+      expect(merged.usedSeconds(key), 1560);
+      expect(merged.usedSeconds(key, exceptDevice: 'pc'), 660);
+      // Ein älterer Stand desselben Geräts senkt nichts.
+      final again = merged.mergedWith(const LearnCredit().withUsage('pc', key, 100, now));
+      expect(again.usedSeconds(key), 1560);
+    });
+
+    test('Spielzeit: frei pro Woche plus je in der Woche gelerntem Thema', () {
+      final credit = LearnCredit(
+        earned: {
+          'a': EarnedTopic(day: '2026-11-16', title: 'A', at: DateTime(2026, 11, 16, 9)),
+          'b': EarnedTopic(day: '2026-11-18', title: 'B', at: DateTime(2026, 11, 18, 9)),
+          'c': EarnedTopic(day: '2026-11-15', title: 'C', at: DateTime(2026, 11, 15, 9)),
+        },
+      );
+      final a = GameAllowance.of(credit, rules, now);
+      expect(a.week, '2026-11-16');
+      expect(a.topicsThisWeek, 2, reason: 'C war in der Vorwoche');
+      expect(a.minutes, 240 + 2 * 30);
+    });
+  });
+
   group('Geräte zusammenführen', () {
     test('Themen und Daily-Tage beider Geräte zählen, das frühere gewinnt', () {
       final phone = LearnCredit(

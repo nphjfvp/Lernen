@@ -1,8 +1,31 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7n) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7o) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7o. Lernzeit-Sperre auch am PC (Windows): YouTube & Co. und Spiele
+
+- Die Windows-App sperrt jetzt mit: Webseiten im Browser (Standard YouTube
+  und Instagram, erkannt am Titel des Tabs) zählen zur Tageszeit, die sich
+  Handy und PC teilen – 30 Minuten heißt 30 Minuten zusammen.
+- Gezählt wird nur, was vorn zu sehen ist: Musik von YouTube im Hintergrund
+  zählt nicht. Dazu feste Ausnahmen, die nie zählen (Standard „YouTube
+  Music“).
+- Spiele (Standard Minecraft und VALORANT, erkannt am Programmnamen oder
+  Fenstertitel; aus den gerade offenen Programmen wählbar) haben eine eigene
+  Wochenzeit: 4 Stunden ab Montag 4:00, jedes in der Woche neu gelernte Thema
+  bringt +30 Minuten dazu.
+- Warnungen als Windows-Benachrichtigung (bei Spielen 15, 5 und 1 Minute
+  vorher, bei Webseiten 5 und 1). Ist die Zeit um, wird das Fenster minimiert
+  und die Lern-App zeigt den Sperrbildschirm; wird ein Spiel trotzdem immer
+  wieder geöffnet, schließt die App es beim dritten Mal.
+- Solange die Sperre an ist, startet die Lern-App mit Windows (unsichtbar,
+  Symbol im Infobereich), „Schließen“ blendet sie nur aus, und es läuft immer
+  nur eine Lern-App. Die genutzten Minuten reisen mit dem Abgleich, der PC holt
+  alle 5 Minuten den Stand vom Handy (dort gelernte Themen, dort genutzte Zeit).
+- Auch das Handy rechnet die am PC genutzte Zeit mit ein (sobald die Lern-App
+  dort abgleicht). Die Wochen-Festlegung gilt auch für die PC-Regeln.
 
 ### 7n. Lernzeit-Sperre: eine Woche festgelegt
 

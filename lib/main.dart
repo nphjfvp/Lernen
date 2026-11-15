@@ -22,6 +22,8 @@ import 'repositories/settings_repository.dart';
 import 'repositories/visual_chat_repository.dart';
 import 'repositories/worked_solution_repository.dart';
 import 'services/screen_guard.dart';
+import 'services/windows_guard.dart';
+import 'ui/settings/pc_block_layer.dart';
 import 'repositories/visual_course_repository.dart';
 import 'repositories/visual_lesson_repository.dart';
 import 'repositories/summary_repository.dart';
@@ -40,8 +42,10 @@ import 'ui/root_shell.dart';
 import 'ui/widgets/app_error_reporter.dart';
 import 'ui/widgets/slow_ai_dialog.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Lernzeit-Sperre am PC: per Autostart unsichtbar gestartet.
+  WindowsGuard.startedHidden = args.contains('--minimized');
 
   // Cloud-Sync ist optional: schlägt die Initialisierung fehl, bleibt die
   // App vollständig offline nutzbar. Timeout ist bewusst gesetzt: im Web
@@ -179,7 +183,7 @@ class LernenApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(
           lazy: false,
-          create: (ctx) => AutoSyncService(
+          create: (ctx) => WindowsGuard.pullCloudFrom(AutoSyncService(
             settings: settingsRepository,
             auth: ctx.read<AuthRepository>(),
             // Ein Abgleich mit der Cloud hat Daten dieses Geräts verändert: Fächer
@@ -194,7 +198,7 @@ class LernenApp extends StatelessWidget {
               // Auf einem anderen Gerät Gelerntes zählt fürs Lernzeit-Guthaben.
               await ScreenGuard.push();
             },
-          )..start(),
+          )..start()),
         ),
       ],
       // Builder statt MaterialApp direkt: liest die gewählte Farbpalette und
@@ -213,6 +217,8 @@ class LernenApp extends StatelessWidget {
             darkTheme: AppTheme.forSkin(skin, Brightness.dark),
             themeMode: themeModePreferenceFromName(appSettings.themeModePreference).themeMode,
             home: const RootShell(),
+            // Lernzeit-Sperre am PC: Sperrbildschirm über der ganzen App.
+            builder: (context, child) => PcBlockLayer(child: child ?? const SizedBox.shrink()),
           );
         },
       ),

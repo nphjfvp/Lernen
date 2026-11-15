@@ -1754,3 +1754,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `lockDuration`), Schalter/Stepper (`canUp`/`canDown`), Chips und `_AppPicker.fixed` gesperrt, Hinweis
     `guard-locked`, „Wieder für eine Woche festlegen“ (`guard-relock`), `formatLockDate`. Tests: `learn_credit_test`
     (Festlegung), `learn_credit_repository_test`, `screen_guard_screen_test`.
+130. Lernzeit-Sperre am PC: `LearnCreditRules.pcSites`/`pcExceptions`/`pcGames`/`weeklyGameMinutes`/
+    `gameMinutesPerTopic` (guard: Listen nur dazu, Ausnahmen nur weg, Minuten nur weniger). `LearnCredit.used`
+    (Gerät → `d:<Tag>`/`g:<Woche>` → Sekunden, Merge je Gerät Maximum, `withUsage` mit Aufräumen nach 21 Tagen,
+    `usedSeconds(exceptDevice:)`), `weekKey`/`weekOfDay`/`topicsInWeek`, `GameAllowance`. Repository: `deviceIdIn`
+    (lokal `learn_credit_device`), `recordUsageIn`, Notifier `localChanges` (AutoSync `_markDirty`) und
+    `usageChanges` (`_markUsageDirty`, 5 min). Android: `ScreenGuard.push` bucht die Handy-Minuten und schickt
+    `otherUsedMinutes` (Kotlin zählt sie mit). Windows: `WindowsGuard` (lib/services/windows_guard.dart, Kanal
+    `lernen/windows_guard`): 1-s-Takt, `classifyPcWindow` (Webseiten nur in `pcBrowsers` am Titel, Spiele nur
+    außerhalb, `.exe` = Programmname), Warnungen per `notify`, Sperre: `minimize` + `bringToFront` + `block`
+    (`PcBlockLayer` im MaterialApp-builder), Spiele beim 3. Wiederöffnen `close`, minütlich speichern, alle 5 min
+    `pullCloud` (AutoSync.checkCloud). C++ (windows/runner/flutter_window.cpp): Kanal-Methoden foreground/windows/
+    minimize/close/bringToFront/hideSelf/setKeepRunning (WM_CLOSE blendet aus, Infobereich-Symbol, Autostart HKCU Run
+    `--minimized`)/notify (Sprechblase); main.cpp: eine Instanz (Mutex), `--minimized` startet unsichtbar. UI:
+    ScreenGuardScreen `_pcSection`/`_ListEditor`/`_pickWindow`, `formatHours`. Tests: `windows_guard_test`,
+    `pc_block_layer_test`, `learn_credit_test`, `learn_credit_repository_test`, `screen_guard_screen_test`.

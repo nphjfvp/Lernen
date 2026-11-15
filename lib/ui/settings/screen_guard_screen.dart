@@ -4,6 +4,7 @@ import '../../models/learn_credit.dart';
 import '../../repositories/learn_credit_repository.dart';
 import '../../services/database_service.dart';
 import '../../services/screen_guard.dart';
+import '../../services/windows_guard.dart';
 import '../../theme/app_colors.dart';
 import '../widgets/safe_set_state.dart';
 
@@ -27,6 +28,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
   LearnCredit _credit = const LearnCredit();
   ({bool usageAccess, bool overlay, bool running})? _status;
   int? _used;
+  String _device = '';
   Map<String, String> _labels = {};
   late final AppLifecycleListener _lifecycle = AppLifecycleListener(onResume: _load);
 
@@ -46,6 +48,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
   }
 
   bool get _android => ScreenGuard.available;
+  bool get _windows => !_android && WindowsGuard.available;
 
   Future<void> _load() async {
     final LearnCreditRules rules;
@@ -59,6 +62,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
       final db = await DatabaseService.instance.database;
       rules = await LearnCreditRepository.loadRulesFrom(db);
       credit = await LearnCreditRepository.loadFrom(db);
+      _device = await LearnCreditRepository.deviceIdIn(db);
     }
     final status = _android ? await ScreenGuard.status() : null;
     final used = _android ? await ScreenGuard.usedMinutes(rules.packages, rules.dayStartHour) : null;
@@ -82,12 +86,13 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
     final hook = ScreenGuardScreen.saveHook;
     if (hook != null) {
       await hook(rules);
+      await ScreenGuard.pushWith(rules, LearnAllowance.of(_credit, rules, now));
     } else {
       final db = await DatabaseService.instance.database;
       rules = await LearnCreditRepository.saveRulesIn(db, rules, now: now);
       setState(() => _rules = rules);
+      await ScreenGuard.push();
     }
-    await ScreenGuard.pushWith(rules, LearnAllowance.of(_credit, rules, DateTime.now()));
     final status = _android ? await ScreenGuard.status() : null;
     setState(() => _status = status);
   }
@@ -147,7 +152,10 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
           : ListView(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
               children: [
-                Text(_intro(rules), style: TextStyle(color: c.inkMuted, height: 1.4)),
+                Text(
+                  _intro(rules, pc: _windows),
+                  style: TextStyle(color: c.inkMuted, height: 1.4),
+                ),
                 const SizedBox(height: 14),
                 _today(c, rules),
                 if (locked) ...[
@@ -172,14 +180,15 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                   ),
                 ],
                 const SizedBox(height: 20),
-                if (!_android)
+                if (!_android && !_windows)
                   Container(
                     key: const ValueKey('guard-not-android'),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(12)),
                     child: const Text(
-                      'Sperren kann nur die Android-App. Was du hier lernst, zählt dort mit, und die Regeln '
-                      'gelten auf allen Geräten – dafür muss der Cloud-Abgleich an sein (Einstellungen → Account).',
+                      'Sperren können die Android- und die Windows-App. Was du hier lernst, zählt dort mit, und die '
+                      'Regeln gelten auf allen Geräten – dafür muss der Cloud-Abgleich an sein (Einstellungen → '
+                      'Account).',
                       style: TextStyle(height: 1.4),
                     ),
                   )
@@ -195,7 +204,11 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                       locked
                           ? 'Festgelegt bis ${formatLockDate(rules.lockedUntil!)}.'
                           : rules.enabled
-                          ? (_status?.running == true ? 'Läuft – mit Benachrichtigung in der Statusleiste.' : 'An.')
+                          ? (_windows
+                                ? 'Läuft – Symbol im Infobereich, startet mit Windows.'
+                                : _status?.running == true
+                                ? 'Läuft – mit Benachrichtigung in der Statusleiste.'
+                                : 'An.')
                           : 'Aus. Beim Einschalten wird sie für eine Woche festgelegt.',
                     ),
                   ),
@@ -209,49 +222,52 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
                         label: const Text('Wieder für eine Woche festlegen'),
                       ),
                     ),
-                  _permission(
-                    c,
-                    key: 'guard-usage',
-                    ok: _status?.usageAccess ?? false,
-                    title: 'Nutzungszugriff',
-                    detail: 'Damit die App misst, wie lange die gesperrten Apps heute offen waren.',
-                    onFix: ScreenGuard.openUsageSettings,
-                  ),
-                  _permission(
-                    c,
-                    key: 'guard-overlay',
-                    ok: _status?.overlay ?? false,
-                    title: 'Über anderen Apps einblenden',
-                    detail: 'Damit der Sperrbildschirm über Instagram erscheinen kann.',
-                    onFix: ScreenGuard.openOverlaySettings,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(child: Text('Gesperrte Apps', style: Theme.of(context).textTheme.titleSmall)),
-                      TextButton.icon(
-                        key: const ValueKey('guard-pick-apps'),
-                        onPressed: () => _pickApps(rules),
-                        icon: const Icon(Icons.apps, size: 18),
-                        label: const Text('Auswählen'),
-                      ),
-                    ],
-                  ),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final p in rules.packages)
-                        InputChip(
-                          label: Text(_labels[p] ?? p),
-                          onDeleted: locked
-                              ? null
-                              : () => _save(rules.copyWith(packages: [...rules.packages]..remove(p))),
+                  if (_windows) ..._pcSection(context, c, rules, locked),
+                  if (_android) ...[
+                    _permission(
+                      c,
+                      key: 'guard-usage',
+                      ok: _status?.usageAccess ?? false,
+                      title: 'Nutzungszugriff',
+                      detail: 'Damit die App misst, wie lange die gesperrten Apps heute offen waren.',
+                      onFix: ScreenGuard.openUsageSettings,
+                    ),
+                    _permission(
+                      c,
+                      key: 'guard-overlay',
+                      ok: _status?.overlay ?? false,
+                      title: 'Über anderen Apps einblenden',
+                      detail: 'Damit der Sperrbildschirm über Instagram erscheinen kann.',
+                      onFix: ScreenGuard.openOverlaySettings,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: Text('Gesperrte Apps', style: Theme.of(context).textTheme.titleSmall)),
+                        TextButton.icon(
+                          key: const ValueKey('guard-pick-apps'),
+                          onPressed: () => _pickApps(rules),
+                          icon: const Icon(Icons.apps, size: 18),
+                          label: const Text('Auswählen'),
                         ),
-                      if (rules.packages.isEmpty)
-                        Text('Noch keine – „Auswählen“ tippen.', style: TextStyle(color: c.inkMuted)),
-                    ],
-                  ),
+                      ],
+                    ),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final p in rules.packages)
+                          InputChip(
+                            label: Text(_labels[p] ?? p),
+                            onDeleted: locked
+                                ? null
+                                : () => _save(rules.copyWith(packages: [...rules.packages]..remove(p))),
+                          ),
+                        if (rules.packages.isEmpty)
+                          Text('Noch keine – „Auswählen“ tippen.', style: TextStyle(color: c.inkMuted)),
+                      ],
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 22),
                 Text('Regeln', style: Theme.of(context).textTheme.titleSmall),
@@ -329,7 +345,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
     );
   }
 
-  static String _intro(LearnCreditRules r) {
+  static String _intro(LearnCreditRules r, {bool pc = false}) {
     final unlimited = r.topicsForUnlimited <= 0
         ? ''
         : ' Mit ${r.topicsForUnlimited == 1 ? 'einem neuen Thema' : '${r.topicsForUnlimited} neuen Themen'}'
@@ -337,12 +353,25 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
     return 'Gesperrte Apps (z.B. Instagram) gibt es jeden Lerntag (ab ${r.dayStartHour}:00 Uhr) ${r.freeMinutes} '
         'Minuten frei. Jedes neu gelernte Thema bringt +${r.minutesPerTopic} Minuten – ein Thema (z.B. „Variablen '
         'trennen“ unter DGL) zählt, wenn du ${r.correctInRow} Aufgaben bzw. Fragen dazu hintereinander fehlerfrei '
-        'löst.$unlimited Gelernt zählt auf jedem Gerät (über den Cloud-Abgleich).';
+        'löst.$unlimited Gelernt zählt auf jedem Gerät (über den Cloud-Abgleich)'
+        '${pc ? ', die Tageszeit teilen sich Handy und PC. Spiele gibt es ${formatHours(r.weeklyGameMinutes)} pro Woche '
+                  '(ab Montag ${r.dayStartHour}:00 Uhr), jedes in der Woche neu gelernte Thema bringt '
+                  '+${r.gameMinutesPerTopic} Minuten dazu.' : '.'}';
   }
 
   Widget _today(AppColors c, LearnCreditRules rules) {
-    final allowance = LearnAllowance.of(_credit, rules, DateTime.now());
-    final used = _used;
+    final now = DateTime.now();
+    final allowance = LearnAllowance.of(_credit, rules, now);
+    final key = LearnCredit.dailyUsageKey(allowance.day);
+    // Gemeinsames Zeitkonto: Handy (hier frisch gemessen) und alle anderen Geräte.
+    final local = _used;
+    final used = local != null
+        ? local + _credit.usedSeconds(key, exceptDevice: _device) ~/ 60
+        : _credit.usedSeconds(key) > 0
+        ? _credit.usedSeconds(key) ~/ 60
+        : null;
+    final games = GameAllowance.of(_credit, rules, now);
+    final gamesUsed = _credit.usedSeconds(LearnCredit.gameUsageKey(games.week)) ~/ 60;
     return Container(
       key: const ValueKey('guard-today'),
       padding: const EdgeInsets.all(14),
@@ -376,7 +405,111 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
             const SizedBox(height: 6),
             Text(allowance.nextStep, style: TextStyle(fontSize: 13, color: c.inkMuted, height: 1.35)),
           ],
+          if (_windows) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Spiele diese Woche: ${formatHours(gamesUsed)} von ${formatHours(games.minutes)}',
+              key: const ValueKey('guard-games-week'),
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// Am PC: Webseiten (Tageszeit), Ausnahmen, Spiele (Wochenzeit).
+  List<Widget> _pcSection(BuildContext context, AppColors c, LearnCreditRules rules, bool locked) => [
+    const SizedBox(height: 12),
+    _ListEditor(
+      key: const ValueKey('guard-pc-sites'),
+      title: 'Webseiten im Browser – Tageszeit (mit dem Handy geteilt)',
+      hint: 'Teil des Tab-Titels, z.B. YouTube',
+      help: 'Gezählt wird nur, solange der Tab vorn zu sehen ist – im Hintergrund weiterhören zählt nicht.',
+      items: rules.pcSites,
+      canRemove: (_) => !locked,
+      canAdd: true,
+      onChanged: (list) => _save(rules.copyWith(pcSites: list)),
+    ),
+    _ListEditor(
+      key: const ValueKey('guard-pc-exceptions'),
+      title: 'Ausnahmen – zählen nie',
+      hint: 'Teil des Fenstertitels, z.B. YouTube Music',
+      help: locked ? 'Während der Festlegung lassen sich Ausnahmen nur entfernen.' : null,
+      items: rules.pcExceptions,
+      canRemove: (_) => true,
+      canAdd: !locked,
+      onChanged: (list) => _save(rules.copyWith(pcExceptions: list)),
+    ),
+    _ListEditor(
+      key: const ValueKey('guard-pc-games'),
+      title: 'Spiele und Programme – Wochenzeit',
+      hint: 'Programm (z.B. VALORANT-Win64-Shipping.exe) oder Teil des Titels',
+      help: 'Erkannt am Programmnamen („.exe“) oder Fenstertitel, nie in Browsern.',
+      items: rules.pcGames,
+      canRemove: (_) => !locked,
+      canAdd: true,
+      onPick: _pickWindow,
+      onChanged: (list) => _save(rules.copyWith(pcGames: list)),
+    ),
+    _stepper(
+      c,
+      key: 'guard-game-week',
+      label: 'Spielzeit pro Woche',
+      value: rules.weeklyGameMinutes,
+      unit: '',
+      display: formatHours(rules.weeklyGameMinutes),
+      step: 30,
+      max: 2400,
+      canUp: !locked,
+      onChanged: (v) => _save(rules.copyWith(weeklyGameMinutes: v)),
+    ),
+    _stepper(
+      c,
+      key: 'guard-game-topic',
+      label: 'Spielzeit je neuem Thema',
+      value: rules.gameMinutesPerTopic,
+      unit: 'min',
+      step: 5,
+      max: 240,
+      canUp: !locked,
+      onChanged: (v) => _save(rules.copyWith(gameMinutesPerTopic: v)),
+    ),
+  ];
+
+  /// Ein offenes Programm wählen – Programmname oder Fenstertitel kommt ins Feld.
+  Future<String?> _pickWindow() async {
+    final windows = await WindowsGuard.instance.openWindows();
+    if (!mounted) return null;
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.7,
+        child: windows.isEmpty
+            ? const Center(child: Text('Keine offenen Programme gefunden – Spiel starten und noch einmal öffnen.'))
+            : ListView(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Text('Gerade offen – Programm oder Titel übernehmen:'),
+                  ),
+                  for (final w in windows)
+                    ListTile(
+                      key: ValueKey('guard-window-${w.exe}-${w.hwnd}'),
+                      title: Text(w.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(w.exe),
+                      trailing: Wrap(
+                        spacing: 4,
+                        children: [
+                          TextButton(onPressed: () => Navigator.of(context).pop(w.exe), child: const Text('Programm')),
+                          TextButton(onPressed: () => Navigator.of(context).pop(w.title), child: const Text('Titel')),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
       ),
     );
   }
@@ -408,6 +541,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
     required int max,
     bool canUp = true,
     bool canDown = true,
+    String? display,
     required ValueChanged<int> onChanged,
   }) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 2),
@@ -422,7 +556,7 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
         SizedBox(
           width: 64,
           child: Text(
-            unit.isEmpty ? '$value' : '$value $unit',
+            display ?? (unit.isEmpty ? '$value' : '$value $unit'),
             key: ValueKey('$key-value'),
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.w600),
@@ -436,6 +570,123 @@ class _ScreenGuardScreenState extends State<ScreenGuardScreen> with SafeSetState
       ],
     ),
   );
+}
+
+/// „45 min“, „4 h“, „4 h 30 min“.
+String formatHours(int minutes) {
+  if (minutes < 60) return '$minutes min';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  return m == 0 ? '$h h' : '$h h $m min';
+}
+
+/// Eine Liste von Mustern (Chips) mit Feld zum Ergänzen.
+class _ListEditor extends StatefulWidget {
+  const _ListEditor({
+    super.key,
+    required this.title,
+    required this.hint,
+    this.help,
+    required this.items,
+    required this.canRemove,
+    required this.canAdd,
+    required this.onChanged,
+    this.onPick,
+  });
+
+  final String title;
+  final String hint;
+  final String? help;
+  final List<String> items;
+  final bool Function(String item) canRemove;
+  final bool canAdd;
+  final ValueChanged<List<String>> onChanged;
+  final Future<String?> Function()? onPick;
+
+  @override
+  State<_ListEditor> createState() => _ListEditorState();
+}
+
+class _ListEditorState extends State<_ListEditor> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _add() {
+    final value = _controller.text.trim();
+    if (value.isEmpty) return;
+    _controller.clear();
+    if (widget.items.any((e) => e.toLowerCase() == value.toLowerCase())) return;
+    widget.onChanged([...widget.items, value]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final pick = widget.onPick;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(widget.title, style: Theme.of(context).textTheme.titleSmall),
+          if (widget.help != null) ...[
+            const SizedBox(height: 2),
+            Text(widget.help!, style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.35)),
+          ],
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final item in widget.items)
+                InputChip(
+                  label: Text(item),
+                  onDeleted: widget.canRemove(item) ? () => widget.onChanged([...widget.items]..remove(item)) : null,
+                ),
+              if (widget.items.isEmpty) Text('Keine.', style: TextStyle(color: c.inkMuted)),
+            ],
+          ),
+          if (widget.canAdd)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: ValueKey('${(widget.key as ValueKey?)?.value}-field'),
+                      controller: _controller,
+                      onSubmitted: (_) => _add(),
+                      decoration: InputDecoration(hintText: widget.hint, isDense: true),
+                    ),
+                  ),
+                  if (pick != null)
+                    IconButton(
+                      key: ValueKey('${(widget.key as ValueKey?)?.value}-pick'),
+                      tooltip: 'Aus offenen Programmen',
+                      onPressed: () async {
+                        final value = await pick();
+                        if (value != null && mounted) setState(() => _controller.text = value);
+                      },
+                      icon: const Icon(Icons.window_outlined),
+                    ),
+                  IconButton(
+                    key: ValueKey('${(widget.key as ValueKey?)?.value}-add'),
+                    tooltip: 'Hinzufügen',
+                    onPressed: _add,
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// „Sa 22.11. um 18:05“.

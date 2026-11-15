@@ -57,6 +57,7 @@ object ScreenGuard {
             .putInt("allowedMinutes", (args["allowedMinutes"] as? Number)?.toInt() ?: 30)
             .putBoolean("unlimited", args["unlimited"] == true)
             .putString("nextStep", args["nextStep"]?.toString() ?: "")
+            .putInt("otherUsedMinutes", (args["otherUsedMinutes"] as? Number)?.toInt() ?: 0)
             .apply()
         if (isEnabled(context)) ScreenGuardService.start(context) else ScreenGuardService.stop(context)
     }
@@ -94,6 +95,13 @@ object ScreenGuard {
         if (p.getString("dayKey", "") != today) return p.getInt("freeMinutes", 30)
         if (p.getBoolean("unlimited", false)) return null
         return p.getInt("allowedMinutes", 30)
+    }
+
+    /** Heute auf anderen Geräten (z.B. am PC) genutzte Minuten – gemeinsames Zeitkonto. */
+    fun otherUsedMinutes(context: Context, now: Long): Int {
+        val p = prefs(context)
+        if (p.getString("dayKey", "") != dayKey(now, dayStartHour(context))) return 0
+        return p.getInt("otherUsedMinutes", 0)
     }
 
     fun nextStep(context: Context): String = prefs(context).getString("nextStep", "") ?: ""
@@ -254,8 +262,10 @@ class ScreenGuardService : Service() {
         } else if (front != null && front in packages) {
             usedCache += 1000
         }
-        val usedMinutes = (usedCache / 60_000).toInt()
-        val blocked = allowed != null && usedCache >= allowed * 60_000L
+        // Gemeinsames Zeitkonto: was andere Geräte heute schon genutzt haben, zählt mit.
+        val other = ScreenGuard.otherUsedMinutes(this, now)
+        val usedMinutes = (usedCache / 60_000).toInt() + other
+        val blocked = allowed != null && usedCache + other * 60_000L >= allowed * 60_000L
         if (front != null && front in packages && blocked) {
             showOverlay(usedMinutes, allowed ?: 0)
         } else {
@@ -349,7 +359,8 @@ class ScreenGuardService : Service() {
         if (step.isNotEmpty()) root.addView(text(step, 16f, color = Color.parseColor("#E8EAF6")))
         root.addView(
             text(
-                "Auf einem anderen Gerät gelernt? Lern-App öffnen – der Abgleich bringt das Guthaben mit.",
+                "Auf einem anderen Gerät gelernt? Lern-App öffnen – der Abgleich bringt das Guthaben mit. " +
+                    "Die Zeit teilen sich Handy und PC.",
                 13f,
                 color = Color.parseColor("#9FA8DA"),
             ),

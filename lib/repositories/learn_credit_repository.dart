@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:sembast/sembast.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/flashcard.dart';
 import '../models/learn_credit.dart';
@@ -14,8 +15,49 @@ class LearnCreditRepository {
   static const creditKey = 'learn_credit';
   static const rulesKey = 'learn_credit_rules';
 
+  /// Kennung dieses Geräts für die Nutzungszahlen (nur lokal).
+  static const deviceKey = 'learn_credit_device';
+
   /// Meldet Änderungen (für Anzeigen, die das Guthaben zeigen).
   static final changes = ValueNotifier<int>(0);
+
+  /// Hier entstandene Änderungen, die bald in die Cloud sollen (gelerntes
+  /// Thema, Daily Quiz fertig, Regeln, Zeit aufgebraucht) – der Auto-Sync
+  /// hört darauf. Nicht bei Änderungen, die aus der Cloud kamen.
+  static final localChanges = ValueNotifier<int>(0);
+
+  /// Nur neue Nutzungszahlen – reicht mit dem nächsten ruhigen Upload.
+  static final usageChanges = ValueNotifier<int>(0);
+
+  static Future<String> deviceIdIn(DatabaseClient db) async {
+    final record = DatabaseService.settings.record(deviceKey);
+    final existing = await record.get(db);
+    final id = existing?['id'];
+    if (id is String && id.isNotEmpty) return id;
+    final created = const Uuid().v4();
+    await record.put(db, {'id': created});
+    return created;
+  }
+
+  /// Die Nutzung dieses Geräts für [key] (siehe [LearnCredit.dailyUsageKey])
+  /// verbuchen. [urgent]: gleich hochladen (z.B. Zeit gerade aufgebraucht).
+  static Future<void> recordUsageIn(
+    DatabaseClient db,
+    String key,
+    int seconds, {
+    DateTime? now,
+    bool urgent = false,
+  }) async {
+    final device = await deviceIdIn(db);
+    final credit = await loadFrom(db);
+    if ((credit.used[device]?[key] ?? 0) >= seconds) return;
+    await saveIn(db, credit.withUsage(device, key, seconds, now ?? DateTime.now()));
+    if (urgent) {
+      localChanges.value++;
+    } else {
+      usageChanges.value++;
+    }
+  }
 
   static Future<LearnCredit> loadFrom(DatabaseClient db) async =>
       LearnCredit.fromMap(await DatabaseService.settings.record(creditKey).get(db));
@@ -28,10 +70,16 @@ class LearnCreditRepository {
 
   /// Speichert neue Regeln – eine festgelegte Sperre wird dabei nur strenger
   /// (siehe [LearnCreditRules.guard]). Liefert, was tatsächlich gilt.
-  static Future<LearnCreditRules> saveRulesIn(DatabaseClient db, LearnCreditRules rules, {DateTime? now}) async {
+  static Future<LearnCreditRules> saveRulesIn(
+    DatabaseClient db,
+    LearnCreditRules rules, {
+    DateTime? now,
+    bool local = true,
+  }) async {
     final current = await loadRulesFrom(db);
     final guarded = current.guard(rules, now ?? DateTime.now());
     await DatabaseService.settings.record(rulesKey).put(db, guarded.toMap());
+    if (local) localChanges.value++;
     return guarded;
   }
 
@@ -79,6 +127,7 @@ class LearnCreditRepository {
     );
     await saveIn(db, updated);
     changes.value++;
+    if (learned != null) localChanges.value++;
     return learned;
   }
 
@@ -95,6 +144,7 @@ class LearnCreditRepository {
     if (credit.dailyDays.contains(LearnCredit.dayKey(when, rules.dayStartHour))) return;
     await saveIn(db, credit.withDailyDone(when, rules.dayStartHour));
     changes.value++;
+    localChanges.value++;
   }
 
   static Future<void> markDailyDone() async => markDailyDoneIn(await DatabaseService.instance.database);
@@ -116,7 +166,7 @@ class LearnCreditRepository {
     if (at == null) return;
     final mine = (await loadRulesFrom(db)).updatedAt;
     if (mine != null && !at.isAfter(mine)) return;
-    await saveRulesIn(db, theirs);
+    await saveRulesIn(db, theirs, local: false);
     changes.value++;
   }
 

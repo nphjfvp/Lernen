@@ -438,8 +438,8 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Lernzeit-Sperre',
         'Instagram & Co. erst nach dem Lernen: 30 min frei, +30 min je neu gelerntem Thema, unbegrenzt mit '
-            'Daily Quiz. Lernen auf anderen Geräten zählt mit (Android). Beim Einschalten eine Woche lang '
-            'festgelegt.',
+            'Daily Quiz. Lernen auf anderen Geräten zählt mit. Android sperrt Apps, Windows Webseiten (geteilte '
+            'Tageszeit) und Spiele (Wochenzeit). Beim Einschalten eine Woche lang festgelegt.',
         where: 'Einstellungen → Lernzeit-Sperre',
       ),
       GuideItem(

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/learn_credit.dart';
 import '../repositories/learn_credit_repository.dart';
 import 'database_service.dart';
+import 'windows_guard.dart';
 
 /// Brücke zur Lernzeit-Sperre der Android-App (MainActivity, Kanal
 /// `lernen/screen_guard`): misst die Zeit in den gesperrten Apps über die
@@ -70,27 +71,52 @@ class ScreenGuard {
 
   /// Regeln und heutiges Guthaben ans Handy geben – startet bzw. stoppt die
   /// Sperre. Nach jeder Antwort, nach dem Abgleich und beim Öffnen der App.
+  ///
+  /// Das Zeitkonto teilen sich Handy und PC: die hier genutzten Minuten
+  /// werden verbucht (reisen mit dem Abgleich), die der anderen Geräte gehen
+  /// als `otherUsedMinutes` mit. Auf Windows übernimmt [WindowsGuard].
   static Future<void> push({DateTime? now}) async {
+    if (WindowsGuard.supported) return WindowsGuard.instance.refresh();
     if (!available) return;
     try {
+      final when = now ?? DateTime.now();
       final db = await DatabaseService.instance.database;
       final rules = await LearnCreditRepository.loadRulesFrom(db);
-      final credit = await LearnCreditRepository.loadFrom(db);
-      await pushWith(rules, LearnAllowance.of(credit, rules, now ?? DateTime.now()));
+      var credit = await LearnCreditRepository.loadFrom(db);
+      final device = await LearnCreditRepository.deviceIdIn(db);
+      final allowance = LearnAllowance.of(credit, rules, when);
+      final key = LearnCredit.dailyUsageKey(allowance.day);
+      if (rules.enabled) {
+        final mine = await usedMinutes(rules.packages, rules.dayStartHour);
+        if (mine != null && mine > 0) {
+          final total = mine + credit.usedSeconds(key, exceptDevice: device) ~/ 60;
+          await LearnCreditRepository.recordUsageIn(
+            db,
+            key,
+            mine * 60,
+            now: when,
+            urgent: !allowance.unlimited && total >= allowance.minutes,
+          );
+          credit = await LearnCreditRepository.loadFrom(db);
+        }
+      }
+      await pushWith(rules, allowance, otherUsedMinutes: credit.usedSeconds(key, exceptDevice: device) ~/ 60);
     } catch (_) {
       // Die Sperre darf das Lernen nie stören.
     }
   }
 
-  static Future<void> pushWith(LearnCreditRules rules, LearnAllowance allowance) => _invoke('configure', {
-    'enabled': rules.enabled && rules.packages.isNotEmpty,
-    'packages': rules.packages,
-    'dayStartHour': rules.dayStartHour,
-    'freeMinutes': rules.freeMinutes,
-    'dayKey': allowance.day,
-    'allowedMinutes': allowance.minutes,
-    'unlimited': allowance.unlimited,
-    'nextStep': allowance.nextStep,
-    'topicsToday': allowance.topicsToday.length,
-  });
+  static Future<void> pushWith(LearnCreditRules rules, LearnAllowance allowance, {int otherUsedMinutes = 0}) =>
+      _invoke('configure', {
+        'enabled': rules.enabled && rules.packages.isNotEmpty,
+        'packages': rules.packages,
+        'dayStartHour': rules.dayStartHour,
+        'freeMinutes': rules.freeMinutes,
+        'dayKey': allowance.day,
+        'allowedMinutes': allowance.minutes,
+        'unlimited': allowance.unlimited,
+        'nextStep': allowance.nextStep,
+        'topicsToday': allowance.topicsToday.length,
+        'otherUsedMinutes': otherUsedMinutes,
+      });
 }

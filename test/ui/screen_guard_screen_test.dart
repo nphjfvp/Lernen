@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lernen/models/learn_credit.dart';
 import 'package:lernen/services/screen_guard.dart';
+import 'package:lernen/services/windows_guard.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/settings/screen_guard_screen.dart';
 
@@ -32,6 +33,7 @@ void main() {
     ScreenGuardScreen.loadHook = null;
     ScreenGuardScreen.saveHook = null;
     ScreenGuard.invokeHook = null;
+    WindowsGuard.invokeHook = null;
   });
 
   Future<void> pump(WidgetTester tester) async {
@@ -138,7 +140,7 @@ void main() {
   });
 
   testWidgets('ohne Android: Hinweis, dass Lernen hier mitzählt', (tester) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     await pump(tester);
     expect(find.byKey(const ValueKey('guard-not-android')), findsOneWidget);
     expect(find.byKey(const ValueKey('guard-enabled')), findsNothing);
@@ -147,6 +149,81 @@ void main() {
     await tester.pumpAndSettle();
     expect(saved.minutesPerTopic, 25);
     expect(find.text('Heute: 55 Minuten'), findsOneWidget);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('Windows: Webseiten, Ausnahmen, Spiele mit Wochenzeit, gemeinsames Zeitkonto', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final now = DateTime.now();
+    final day = LearnCredit.dayKey(now, 4);
+    final week = LearnCredit.weekKey(now, 4);
+    ScreenGuardScreen.loadHook = () async => (
+      rules: saved,
+      credit: LearnCredit(
+        earned: {'concept:c1': EarnedTopic(day: day, title: 'Variablen trennen', at: now)},
+        used: {
+          'handy': {LearnCredit.dailyUsageKey(day): 20 * 60},
+          'pc': {LearnCredit.gameUsageKey(week): 90 * 60},
+        },
+      ),
+    );
+    WindowsGuard.invokeHook = (method, [args]) async => switch (method) {
+      'windows' => [
+        {'hwnd': 7, 'exe': 'VALORANT-Win64-Shipping.exe', 'title': 'VALORANT  '},
+      ],
+      _ => null,
+    };
+    await pump(tester);
+
+    expect(find.byKey(const ValueKey('guard-not-android')), findsNothing);
+    expect(find.text('Heute: 60 Minuten · 20 genutzt'), findsOneWidget, reason: 'Handy und PC zusammen');
+    expect(find.text('Spiele diese Woche: 1 h 30 min von 4 h 30 min'), findsOneWidget);
+    expect(find.byKey(const ValueKey('guard-usage')), findsNothing, reason: 'Android-Berechtigungen nur am Handy');
+    expect(find.text('YouTube'), findsOneWidget);
+    expect(find.text('YouTube Music'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('guard-pc-sites-field')), 'Twitch');
+    await tester.ensureVisible(find.byKey(const ValueKey('guard-pc-sites-add')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guard-pc-sites-add')));
+    await tester.pumpAndSettle();
+    expect(saved.pcSites, ['YouTube', 'Instagram', 'Twitch']);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('guard-pc-games-pick')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guard-pc-games-pick')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Programm'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('guard-pc-games-add')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guard-pc-games-add')));
+    await tester.pumpAndSettle();
+    expect(saved.pcGames, ['Minecraft', 'VALORANT', 'VALORANT-Win64-Shipping.exe']);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('guard-game-week-plus')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guard-game-week-plus')));
+    await tester.pumpAndSettle();
+    expect(saved.weeklyGameMinutes, 270);
+
+    // Festlegen: dann nur strenger.
+    await tester.ensureVisible(find.byKey(const ValueKey('guard-enabled')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guard-enabled')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guard-lock-confirm')));
+    await tester.pumpAndSettle();
+    expect(saved.enabled, isTrue);
+    expect(tester.widget<InputChip>(find.widgetWithText(InputChip, 'Twitch')).onDeleted, isNull);
+    expect(tester.widget<InputChip>(find.widgetWithText(InputChip, 'YouTube Music')).onDeleted, isNotNull);
+    expect(find.byKey(const ValueKey('guard-pc-exceptions-field')), findsNothing);
+    expect(tester.widget<IconButton>(find.byKey(const ValueKey('guard-game-week-plus'))).onPressed, isNull);
+    await tester.ensureVisible(find.byKey(const ValueKey('guard-game-week-minus')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('guard-game-week-minus')));
+    await tester.pumpAndSettle();
+    expect(saved.weeklyGameMinutes, 240);
     debugDefaultTargetPlatformOverride = null;
   });
 }
