@@ -474,7 +474,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48` (App-Branch – fertige Änderungen
 immer direkt dorthin pushen, auch aus anderen Sitzungs-Branches; siehe CLAUDE.md). `flutter analyze`
-sauber, 1805 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1816 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt sind 130 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
