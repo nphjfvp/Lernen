@@ -228,4 +228,111 @@ void main() {
     expect(find.byKey(const ValueKey('hand-sheet')), findsOneWidget);
     expect(find.byKey(const ValueKey('step-line-0')), findsOneWidget);
   });
+
+  testWidgets('Stift: erst bei neuer Zeile lesen, „Zeile lesen“, großes Blatt vergrößert dasselbe Blatt', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final sent = <String>[];
+    StepTaskView.aiFactory = (key, model) => AiService(
+      apiKey: key,
+      model: model,
+      client: MockClient((r) async {
+        sent.add('x');
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'content': jsonEncode({'text': 'Zeile ${sent.length}', 'unsure': false, 'note': ''}),
+                },
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+    final card = _card();
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SettingsRepository>.value(
+        value: _SettingsWithKey(),
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: QuestionAnswerView(card: card, isNew: false, onComplete: ({Grade? selfGrade, bool? isCorrect}) {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('step-mode-write')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('step-input-ink')));
+    await tester.pump();
+
+    final paper = find.descendant(of: find.byKey(const ValueKey('ink-sheet')), matching: find.byType(CustomPaint)).last;
+    final topLeft = tester.getTopLeft(paper);
+    final width = tester.getSize(paper).width;
+    const h = InkSheetController.rowHeight;
+    expect(tester.getSize(paper).height, greaterThanOrEqualTo(12 * h), reason: 'mindestens 12 Zeilen');
+
+    Future<void> write(Offset origin, Offset from, {double scale = 1}) async {
+      final g = await tester.startGesture(origin + from * scale, kind: PointerDeviceKind.stylus);
+      for (var k = 1; k <= 6; k++) {
+        await g.moveTo(origin + (from + Offset(k * 8.0, k.isEven ? 6 : -6)) * scale);
+      }
+      await g.up();
+      await tester.pump();
+    }
+
+    Future<void> drain() async {
+      for (var k = 0; k < 5; k++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 60)));
+        await tester.pump();
+      }
+    }
+
+    // Kurze Denkpause mitten in der Zeile: noch nichts lesen.
+    await write(topLeft, const Offset(40, h * 0.5));
+    await tester.pump(const Duration(seconds: 3));
+    await drain();
+    await write(topLeft, const Offset(120, h * 0.5));
+    await tester.pump(const Duration(seconds: 3));
+    await drain();
+    expect(sent, isEmpty);
+
+    // Neue Zeile angefangen: die fertige wird gelesen.
+    await write(topLeft, const Offset(40, h * 1.5));
+    await drain();
+    expect(sent, hasLength(1));
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('step-line-0'))).controller!.text, 'Zeile 1');
+
+    // „Zeile lesen“: die angefangene sofort.
+    await tester.tap(find.byKey(const ValueKey('ink-read-now')));
+    await tester.pump();
+    await drain();
+    expect(sent, hasLength(2));
+
+    // Großes Blatt: dasselbe Blatt, vergrößert – Striche landen in derselben Zeile.
+    await tester.tap(find.byKey(const ValueKey('ink-expand')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ink-fullscreen')), findsOneWidget);
+    final big = find
+        .descendant(of: find.byKey(const ValueKey('ink-fullscreen')), matching: find.byType(CustomPaint))
+        .last;
+    final scale = tester.getSize(big).width / width;
+    expect(scale, greaterThan(1.5));
+    await write(tester.getTopLeft(big), const Offset(40, h * 2.5), scale: scale);
+    await tester.tap(find.byKey(const ValueKey('ink-read-now')).last);
+    await tester.pump();
+    await drain();
+    expect(sent, hasLength(3));
+    await tester.tap(find.byKey(const ValueKey('ink-fullscreen-done')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('step-line-2'))).controller!.text, 'Zeile 3');
+  });
 }

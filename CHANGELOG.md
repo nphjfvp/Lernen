@@ -1,8 +1,21 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7r) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7s) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7s. Schreiben mit Stift: flüssiger, schöner, größer
+
+- Die Tinte ist geglättet (Kurven statt Ecken) und wird je nach Stiftdruck
+  bzw. Tempo dicker oder dünner – sieht aus wie geschrieben, nicht pixelig.
+  Der Strich, der gerade entsteht, hat eine eigene Zeichenebene: Beim
+  Schreiben wird nicht mehr das ganze Blatt neu gezeichnet.
+- Eine Zeile wird erst gelesen, wenn man in einer neuen ansetzt – nicht
+  mehr nach jeder kurzen Denkpause. „Zeile lesen“ liest sofort, wer ganz
+  aufhört, wird nach 10 Sekunden gelesen.
+- „Großes Blatt“: dasselbe Blatt im Vollbild, vergrößert (bis 2,4×) – Striche
+  und Zeilen bleiben, wo sie sind. Neben der Aufgabe ist das Blatt breiter.
+- Mindestens 12 Zeilen, und unter der letzten beschriebenen immer 6 freie.
 
 ### 7r. Entsperr-Blöcke: zwei Aufgaben lösen, Handyzeit verdienen
 

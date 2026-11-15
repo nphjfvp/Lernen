@@ -455,8 +455,10 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   App rechnet Umformungen Zeile für Zeile selbst nach (`lib/services/line_chain.dart`:
   Integrale, Ableitungen, Stammfunktionen, Substitution, äquivalente
   Gleichungen); „Mit Stift“ schreibt auf ein liniertes Blatt mit Rand
-  (`lib/ui/tasks/ink_sheet.dart`), jede Zeile liest nach einer Pause das
-  Bild-Modell wörtlich ab, korrigierbar;
+  (`lib/ui/tasks/ink_sheet.dart`: geglättete Tinte mit Stiftdruck, eigene
+  Zeichenebene, mindestens 12 Zeilen, „Großes Blatt“ im Vollbild), jede Zeile
+  liest das Bild-Modell wörtlich ab, sobald man in einer neuen Zeile ansetzt
+  (oder „Zeile lesen“, sonst nach 10 s Ruhe), korrigierbar;
   jeder Schritt mit der KI besprechbar, vor oder nach dem Prüfen;
   „Abgeben“ prüft das Ergebnis) oder „Nur Ergebnis“;
   Rückmeldungen nie schon beim Tippen. Aufgabenbilder zeigen nur die Aufgabe

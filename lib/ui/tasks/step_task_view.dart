@@ -81,8 +81,10 @@ class StepTaskView extends StatefulWidget {
   final Flashcard card;
   final StepTask task;
 
-  /// Mit Stift: so lange Schreibpause, bis eine Zeile gelesen wird.
-  static const inkPause = Duration(milliseconds: 1200);
+  /// Mit Stift: Eine Zeile wird gelesen, sobald man in einer anderen ansetzt
+  /// (oder mit „Zeile lesen“) – nur wer ganz aufhört, wird nach dieser Pause
+  /// gelesen. So unterbricht das Lesen nicht beim Nachdenken mitten in der Zeile.
+  static const inkPause = Duration(seconds: 10);
 
   /// Test-Hook statt OpenRouter (Prüfen einer getippten Zeile).
   static AiService? Function(String apiKey, String model)? aiFactory;
@@ -200,8 +202,39 @@ class _StepTaskViewState extends State<StepTaskView> {
     _writeResult.dispose();
     _inkTimer?.cancel();
     _inkCtrl.dispose();
+    _inkRefresh.dispose();
     super.dispose();
   }
+
+  /// Meldet dem großen Blatt (Vollbild), dass sich Markierungen geändert haben.
+  final _inkRefresh = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _inkRefresh.value++;
+  }
+
+  /// „Zeile lesen“: alles Geschriebene, das noch wartet, gleich lesen.
+  void _readInkNow() {
+    _inkTimer?.cancel();
+    _flushInk();
+  }
+
+  /// „Großes Blatt“: dasselbe Blatt im Vollbild, vergrößert.
+  Future<void> _expandInk() => showInkSheetFullscreen(
+    context,
+    refresh: Listenable.merge([_inkRefresh, _inkCtrl]),
+    sheet: (_) => InkSheet(
+      controller: _inkCtrl,
+      onCellsChanged: _inkCellsChanged,
+      onStrokeStart: _inkStrokeStart,
+      marks: _inkMarks,
+      busy: _inkReading.keys.toSet(),
+      onReadNow: _readInkNow,
+      maxScale: 2.4,
+    ),
+  );
 
   void _submit({Grade? selfGrade, bool? isCorrect}) {
     if (_submitted) return;
@@ -875,7 +908,7 @@ class _StepTaskViewState extends State<StepTaskView> {
           children: [
             Expanded(child: list),
             SizedBox(
-              width: (box.maxWidth * 0.45).clamp(320.0, 520.0),
+              width: (box.maxWidth * 0.5).clamp(340.0, 760.0),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(0, 8, 20, 24),
                 child: Column(
@@ -924,6 +957,8 @@ class _StepTaskViewState extends State<StepTaskView> {
         marks: _inkMarks,
         busy: _inkReading.keys.toSet(),
         onCheckSheet: _aiAvailable ? _checkInkSheet : null,
+        onExpand: _expandInk,
+        onReadNow: _readInkNow,
       );
     }
     final data = _sheetData;

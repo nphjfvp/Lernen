@@ -1812,3 +1812,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     `UnlockBlockScreen`: Prüfen, „Lösung ansehen“ = Hilfe, Übungseinheit über WorkedSolutionScreen
     `startSocratic` + neuem `onFinished`); Einstiege ScreenGuardScreen (`guard-unlock-blocks`) und PcBlockLayer
     (`pc-block-unlock`). Tests: `unlock_blocks_test`.
+134. Stift-Blatt (lib/ui/tasks/ink_sheet.dart): `InkStroke.widths` (Stärke je Punkt aus `pressure` bzw. Tempo),
+    `_LiveStroke` (laufender Strich, leicht geglättet) mit eigenem `_LivePainter(repaint:)`, Blatt und fertige Striche
+    in `_SheetPainter` hinter `RepaintBoundary` (neu nur bei `revision`/Markierungen); `paintInk` (Catmull-Rom,
+    Abschnitte mit wechselnder Stärke), `smoothInkPath` (auch fürs Bild an die KI). Blatt-Koordinaten fest
+    (`InkSheetController.fixWidth`/`lastWidth`), Anzeige skaliert (`maxScale`); `showInkSheetFullscreen` (großes
+    Blatt, 2,4×). Zeilen `max(12, rowsUsed + 6)`; Knöpfe `ink-expand`, `ink-read-now` (immer da – sonst springt
+    das Blatt). StepTaskView: `inkPause` 10 s (Rückfall), gelesen wird beim Ansetzen in einer anderen Zelle
+    (`_inkStrokeStart`) oder per `_readInkNow`; `_expandInk` mit `_inkRefresh` (setState-Override) für Live-Markierungen
+    im Vollbild; Seitenblatt `(Breite·0,5).clamp(340, 760)`. Test: `step_ink_test`.
