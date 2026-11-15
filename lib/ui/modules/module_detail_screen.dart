@@ -47,6 +47,7 @@ import '../flashcards/flashcard_list_screen.dart';
 import '../flashcards/task_folder_screen.dart';
 import '../import/pdf_question_import_screen.dart';
 import '../lab/lab_experiments_section.dart';
+import '../lecture/lecture_walk_screen.dart';
 import '../practice/practice_screen.dart';
 import '../practice/study_sequence_screen.dart';
 import '../prepare/prepare_screen.dart';
@@ -860,6 +861,14 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                   ? () => _recognizeScannedPages(m)
                   : null,
           onCondense: m.kind == MaterialKind.slide ? () => _condense(m) : null,
+          onLectureWalk: m.kind == MaterialKind.slide &&
+                  (m.hasViewablePdf ||
+                      (m.hasRemotePdf && context.watch<SettingsRepository>().settings.pdfStorage.isConfigured))
+              ? () async {
+                  final local = await ensureLocalPdf(context, m);
+                  if (local != null && mounted) await openLectureWalk(context, local);
+                }
+              : null,
           onShowText: m.kind == MaterialKind.condensed ? () => showCondensedTextDialog(context, m) : null,
           onImportQuestions: m.hasViewablePdf && m.kind != MaterialKind.condensed && m.fileName.toLowerCase().endsWith('.pdf')
               ? () => Navigator.of(context).push(
@@ -1588,6 +1597,7 @@ class _MaterialRow extends StatelessWidget {
     this.onRecognizeText,
     this.onImportQuestions,
     this.onInteractiveTasks,
+    this.onLectureWalk,
     this.onAttachPdf,
     this.onCondense,
     this.onShowText,
@@ -1605,6 +1615,9 @@ class _MaterialRow extends StatelessWidget {
   final VoidCallback? onRecognizeText;
   final VoidCallback? onImportQuestions;
   final VoidCallback? onInteractiveTasks;
+
+  /// „Vorlesung mit Aufgabe“: die Folien mit einer Aufgabe je Thema durchgehen.
+  final VoidCallback? onLectureWalk;
   final VoidCallback? onAttachPdf;
   final VoidCallback? onCondense;
   final VoidCallback? onShowText;
@@ -1684,6 +1697,17 @@ class _MaterialRow extends StatelessWidget {
                       icon: Icon(Icons.more_vert, size: 18, color: c.inkMuted),
                       onSelected: (action) => action(),
                       itemBuilder: (_) => [
+                        if (onLectureWalk != null)
+                          PopupMenuItem(
+                            key: ValueKey('material-lecture-walk-${material.id}'),
+                            value: onLectureWalk,
+                            child: const ListTile(
+                              leading: Icon(Icons.co_present_outlined),
+                              title: Text('Mit Aufgabe durchgehen'),
+                              subtitle: Text('Je Thema eine schwere Aufgabe, gemeinsam an der Tafel'),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
                         if (onCondense != null)
                           PopupMenuItem(
                             value: onCondense,

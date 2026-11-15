@@ -17,10 +17,27 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  std::vector<std::string> command_line_arguments =
+      GetCommandLineArguments();
+  bool start_hidden = false;
+  // "Vorlesung mit Aufgabe": die Tafel als eigenes Fenster der App.
+  bool lecture_board = false;
+  for (const std::string& argument : command_line_arguments) {
+    if (argument == "--minimized") {
+      start_hidden = true;
+    }
+    if (argument.rfind("--lecture-board=", 0) == 0) {
+      lecture_board = true;
+    }
+  }
+
   // Nur eine laufende App (die Lernzeit-Sperre startet sie mit Windows):
-  // ein zweiter Start holt die laufende nach vorn.
+  // ein zweiter Start holt die laufende nach vorn. Das Tafel-Fenster zaehlt
+  // nicht mit.
   HANDLE single_instance =
-      ::CreateMutexW(nullptr, FALSE, L"Local\\LernenAppEinzigeInstanz");
+      lecture_board
+          ? nullptr
+          : ::CreateMutexW(nullptr, FALSE, L"Local\\LernenAppEinzigeInstanz");
   if (single_instance != nullptr && ::GetLastError() == ERROR_ALREADY_EXISTS) {
     HWND existing = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"lernen");
     if (existing != nullptr) {
@@ -34,22 +51,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   flutter::DartProject project(L"data");
 
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
-  bool start_hidden = false;
-  for (const std::string& argument : command_line_arguments) {
-    if (argument == "--minimized") {
-      start_hidden = true;
-    }
-  }
-
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
   window.SetStartHidden(start_hidden);
-  Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"lernen", origin, size)) {
+  Win32Window::Point origin(lecture_board ? 60u : 10u, lecture_board ? 60u : 10u);
+  Win32Window::Size size(lecture_board ? 900u : 1280u, lecture_board ? 820u : 720u);
+  if (!window.Create(lecture_board ? L"Lernen - Tafel" : L"lernen", origin,
+                     size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

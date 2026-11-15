@@ -46,6 +46,9 @@ class DatabaseService {
   /// Vorgerechnete Aufgaben („Vorrechnen“, siehe WorkedSolution) – nur lokal.
   static final workedSolutions = stringMapStoreFactory.store('worked_solutions');
 
+  /// „Vorlesung mit Aufgabe“ je PDF (siehe LectureWalk) – nur lokal.
+  static final lectureWalks = stringMapStoreFactory.store('lecture_walks');
+
   /// Aufgabentypen je Fach für „Aufgaben visuell lösen“ (nur lokal).
   static final visualTaskTypes = stringMapStoreFactory.store('visual_task_types');
 

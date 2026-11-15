@@ -14,6 +14,7 @@ import '../models/flashcard.dart' show QuestionType;
 import '../models/formula_sheet.dart';
 import '../models/gantt_task.dart';
 import '../models/interactive_task.dart';
+import '../models/lecture_walk.dart';
 import '../models/lab_experiment.dart' show LabExperiment, LabFeedback;
 import '../models/paper_review.dart';
 import '../models/drawing_task.dart';
@@ -41,6 +42,7 @@ part 'ai_prompts/import.dart';
 part 'ai_prompts/check.dart';
 part 'ai_prompts/tasks.dart';
 part 'ai_prompts/visual.dart';
+part 'ai_prompts/lecture.dart';
 
 /// Wird geworfen, wenn die KI-Antwort kein (reparierbares) JSON enthält.
 /// Trägt die Rohantwort mit, damit die UI sie bei Bedarf anzeigen kann

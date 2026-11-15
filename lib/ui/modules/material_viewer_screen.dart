@@ -24,6 +24,7 @@ import '../../services/question_parsing.dart';
 import '../../services/task_label_locator.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
+import '../lecture/lecture_walk_screen.dart';
 import '../practice/study_sequence_screen.dart';
 import '../tasks/task_import_screen.dart';
 import '../widgets/page_concept_sheet.dart';
@@ -859,6 +860,12 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> with SafeSe
                   ),
                 ),
               ),
+            IconButton(
+              key: const ValueKey('viewer-lecture-walk'),
+              tooltip: 'Mit Aufgabe durchgehen: je Thema eine schwere Aufgabe, gemeinsam an der Tafel',
+              icon: const Icon(Icons.co_present_outlined),
+              onPressed: _bytes == null ? null : () => openLectureWalk(context, widget.material),
+            ),
             IconButton(
               tooltip: 'Konzept speichern',
               icon: _creatingConcept

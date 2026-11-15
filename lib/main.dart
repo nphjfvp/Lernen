@@ -21,6 +21,7 @@ import 'repositories/module_repository.dart';
 import 'repositories/settings_repository.dart';
 import 'repositories/visual_chat_repository.dart';
 import 'repositories/worked_solution_repository.dart';
+import 'services/lecture_board_window.dart';
 import 'services/screen_guard.dart';
 import 'services/windows_guard.dart';
 import 'ui/settings/pc_block_layer.dart';
@@ -44,6 +45,10 @@ import 'ui/widgets/slow_ai_dialog.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // „Vorlesung mit Aufgabe“: die Tafel als eigenes Fenster (zweiter Start der App am PC).
+  for (final arg in args) {
+    if (arg.startsWith('--lecture-board=')) return runLectureBoardClient(arg.substring('--lecture-board='.length));
+  }
   // Lernzeit-Sperre am PC: per Autostart unsichtbar gestartet.
   WindowsGuard.startedHidden = args.contains('--minimized');
 
