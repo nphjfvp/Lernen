@@ -111,6 +111,7 @@ class UnlockTask {
     this.helped = false,
     this.feedback = '',
     this.explain = '',
+    this.card,
   });
 
   final String problem;
@@ -131,6 +132,22 @@ class UnlockTask {
   final String feedback;
   final String explain;
 
+  /// Lösbare Karte zur Aufgabe (Flashcard-Map, siehe buildUnlockCard): Mathe als
+  /// Rechenweg mit Stift-Blatt und Vorrechnen, sonst die passende Frageart.
+  final Map<String, dynamic>? card;
+
+  UnlockTask withCard(Map<String, dynamic> card) => UnlockTask(
+    problem: problem,
+    answer: answer,
+    solution: solution,
+    state: state,
+    attempts: attempts,
+    helped: helped,
+    feedback: feedback,
+    explain: explain,
+    card: card,
+  );
+
   UnlockTask copyWith({UnlockTaskState? state, int? attempts, bool? helped, String? feedback, String? explain}) =>
       UnlockTask(
         problem: problem,
@@ -141,6 +158,7 @@ class UnlockTask {
         helped: helped ?? this.helped,
         feedback: feedback ?? this.feedback,
         explain: explain ?? this.explain,
+        card: card,
       );
 
   Map<String, dynamic> toMap() => {
@@ -152,6 +170,7 @@ class UnlockTask {
     'helped': helped,
     if (feedback.isNotEmpty) 'feedback': feedback,
     if (explain.isNotEmpty) 'explain': explain,
+    if (card != null) 'card': card,
   };
 
   static UnlockTask? fromMap(Object? raw) {
@@ -168,6 +187,7 @@ class UnlockTask {
       helped: raw['helped'] == true,
       feedback: '${raw['feedback'] ?? ''}',
       explain: '${raw['explain'] ?? ''}',
+      card: raw['card'] is Map ? Map<String, dynamic>.from(raw['card'] as Map) : null,
     );
   }
 }

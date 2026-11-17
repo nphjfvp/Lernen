@@ -2,13 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../models/flashcard.dart';
 import '../../models/learn_credit.dart';
 import '../../models/unlock_block.dart';
 import '../../repositories/unlock_block_repository.dart';
 import '../../services/ai_service.dart';
+import '../../services/fsrs_service.dart';
 import '../../services/screen_guard.dart';
 import '../../services/unlock_block_service.dart';
+import '../../services/unlock_task_card.dart';
 import '../../theme/app_colors.dart';
+import '../visual/task_help.dart';
 import '../visual/worked_solution_screen.dart';
 import '../widgets/math_text.dart';
 import '../widgets/safe_set_state.dart';
@@ -251,6 +255,9 @@ class UnlockBlockScreen extends StatefulWidget {
   /// Test-Hook: Übungsaufgabe „durchgearbeitet“ statt Vorrechnen zu öffnen.
   static Future<bool> Function(BuildContext context, String moduleId, String problem)? practiceHook;
 
+  /// Test-Hook: statt die Aufgabe zu lösen, gleich ein Ergebnis.
+  static Future<({Grade? selfGrade, bool? isCorrect})?> Function(BuildContext context, Flashcard card)? solveHook;
+
   @override
   State<UnlockBlockScreen> createState() => _UnlockBlockScreenState();
 }
@@ -260,6 +267,9 @@ class _UnlockBlockScreenState extends State<UnlockBlockScreen> with SafeSetState
   late UnlockBlock _block = widget.block;
   final _answers = <int, TextEditingController>{};
   final _showSolution = <int>{};
+
+  /// Aufgaben, zu denen keine Karte gebaut werden konnte – dann das Textfeld.
+  final _plainAnswer = <int>{};
   int? _busy;
   bool _practiceBusy = false;
   String? _error;
@@ -333,6 +343,80 @@ class _UnlockBlockScreenState extends State<UnlockBlockScreen> with SafeSetState
     } finally {
       setState(() => _busy = null);
     }
+  }
+
+  /// Lösen wie jede andere Aufgabe: Mathe als Rechenweg (Stift-Blatt oder
+  /// getippt, jede Zeile nachgerechnet, Taschenrechner, Vorrechnen an der
+  /// Tafel), sonst in der passenden Frageart. Ohne Hilfe richtig = gelöst.
+  Future<void> _solve(int i) async {
+    var task = _block.tasks[i];
+    var raw = task.card;
+    if (raw == null) {
+      final ai = _ai;
+      if (ai == null) {
+        setState(() => _error = 'Zum Lösen braucht die App deinen OpenRouter-Key (Einstellungen).');
+        return;
+      }
+      setState(() {
+        _busy = i;
+        _error = null;
+      });
+      try {
+        final card = await buildUnlockCard(ai, _block, i);
+        raw = card.toMap();
+        task = task.withCard(raw);
+        await _save(_block.withTask(i, task));
+      } catch (e) {
+        setState(() {
+          _plainAnswer.add(i);
+          _error =
+              'Die Aufgabe ließ sich nicht als Rechenweg aufbereiten (${e is AiServiceException ? e.message : e}) – '
+              'schreib deine Lösung hier unten auf.';
+        });
+        return;
+      } finally {
+        setState(() => _busy = null);
+      }
+    }
+    if (!mounted) return;
+    final card = Flashcard.fromMap(raw);
+    final hook = UnlockBlockScreen.solveHook;
+    final result = hook != null
+        ? await hook(context, card)
+        : await Navigator.of(context).push<({Grade? selfGrade, bool? isCorrect})>(
+            MaterialPageRoute(
+              builder: (context) => Scaffold(
+                appBar: AppBar(title: Text('Aufgabe ${i + 1} · ${_block.title}', overflow: TextOverflow.ellipsis)),
+                body: QuestionWithHelp(
+                  key: ValueKey(card.id),
+                  card: card,
+                  isNew: false,
+                  onComplete: ({Grade? selfGrade, bool? isCorrect}) =>
+                      Navigator.of(context).pop((selfGrade: selfGrade, isCorrect: isCorrect)),
+                ),
+              ),
+            ),
+          );
+    if (result == null || !mounted) return;
+    final current = _block.tasks[i];
+    final clean = LearnCredit.isClean(selfGrade: result.selfGrade, isCorrect: result.isCorrect) && !current.helped;
+    final withHelp = !clean && (result.isCorrect ?? (result.selfGrade != null && result.selfGrade != Grade.again));
+    await _save(
+      _block.withTask(
+        i,
+        current.copyWith(
+          state: clean ? UnlockTaskState.solved : UnlockTaskState.failed,
+          attempts: current.attempts + 1,
+          helped: current.helped || withHelp,
+          feedback: clean
+              ? 'Ohne Hilfe gelöst.'
+              : withHelp
+              ? 'Richtig – aber mit Hilfe (Tipp, Vorrechnen oder Lösung angesehen). Das zählt nicht als „ohne Hilfe“.'
+              : 'Noch nicht richtig.',
+          explain: '',
+        ),
+      ),
+    );
   }
 
   Future<void> _revealSolution(int i) async {
@@ -499,7 +583,37 @@ class _UnlockBlockScreenState extends State<UnlockBlockScreen> with SafeSetState
             ),
             const SizedBox(height: 8),
             MathText(t.problem, style: const TextStyle(height: 1.45)),
-            if (!solved) ...[
+            if (!solved && !_plainAnswer.contains(i)) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    key: ValueKey('unlock-solve-$i'),
+                    onPressed: _busy != null ? null : () => _solve(i),
+                    icon: _busy == i
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.edit_note),
+                    label: Text(_busy == i ? 'Wird vorbereitet …' : (t.attempts == 0 ? 'Lösen' : 'Nochmal lösen')),
+                  ),
+                  OutlinedButton.icon(
+                    key: ValueKey('unlock-solution-$i'),
+                    onPressed: _busy != null ? null : () => _revealSolution(i),
+                    icon: const Icon(Icons.visibility_outlined),
+                    label: const Text('Lösung ansehen (zählt als Hilfe)'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Mathe: Schritt für Schritt oder selbst rechnen – getippt oder mit Stift, jede Zeile wird nachgerechnet, '
+                'Taschenrechner dabei. Vorrechnen an der Tafel und Tipps zählen als Hilfe.',
+                style: TextStyle(fontSize: 12, color: c.inkMuted, height: 1.35),
+              ),
+            ],
+            if (!solved && _plainAnswer.contains(i)) ...[
               const SizedBox(height: 10),
               TextField(
                 key: ValueKey('unlock-answer-$i'),

@@ -574,7 +574,10 @@ hinzufügen" nachreichen. Zusätzlich: **Speedrun** –
   Entsperr-Blöcke: je zwei Aufgaben zu einem Thema, das man noch nicht sicher
   kann (aus Vorlesungen, Übungsblättern und Fehlern beim Üben, beim Hochladen
   vorbereitet und laufend angepasst) – ohne Hilfe gelöst +30 min; sonst
-  Übungseinheit (+5 min) und eine neue Aufgabe gleicher Art.
+  Übungseinheit (+5 min) und eine neue Aufgabe gleicher Art. Gelöst wird wie
+  jede Aufgabe: Rechnen als Rechenweg (Schritte oder selbst rechnen, getippt
+  oder mit Stift, Taschenrechner, Vorrechnen an der Tafel – zählt als Hilfe),
+  andere Fächer in der passenden Art (Skizze, Diagramm, Erklärfrage …).
   Beim Einschalten wird die Sperre für eine Woche festgelegt (mit Rückfrage):
   bis dahin nicht abschaltbar, die Regeln gehen nur strenger – auch über den
   Abgleich von einem anderen Gerät aus.

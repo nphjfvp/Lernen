@@ -4,10 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:sembast/sembast.dart';
 
 import '../models/learn_credit.dart';
+import '../models/unlock_block.dart';
 import '../repositories/learn_credit_repository.dart';
 import '../repositories/unlock_block_repository.dart';
 import 'ai_service.dart';
 import 'database_service.dart';
+import 'unlock_task_card.dart';
 
 /// Bereitet Entsperr-Blöcke vor und passt sie an: nach neuem Material (beim
 /// Hochladen) und nach Fehlern beim Üben – je Fach höchstens [maxOpen] offene
@@ -152,10 +154,31 @@ class UnlockBlockService {
       for (final b in added) {
         await _repo.save(b);
       }
+      // Gleich lösbar machen: Mathe als Rechenweg (Stift, Schritte, Tafel).
+      for (final b in added) {
+        await prepareCards(b, ai);
+      }
       return added.length;
     } finally {
       running.value = {...running.value}..remove(moduleId);
     }
+  }
+
+  /// Zu jeder Aufgabe ohne Karte die lösbare Karte bauen (siehe
+  /// buildUnlockCard) – Fehler lassen die Aufgabe ohne Karte (dann beim Lösen).
+  Future<UnlockBlock> prepareCards(UnlockBlock block, AiService ai) async {
+    var current = block;
+    for (var i = 0; i < current.tasks.length; i++) {
+      if (current.tasks[i].card != null) continue;
+      try {
+        final card = await buildUnlockCard(ai, current, i);
+        current = current.withTask(i, current.tasks[i].withCard(card.toMap()));
+        await _repo.save(current);
+      } catch (_) {
+        // Später beim Lösen noch einmal.
+      }
+    }
+    return current;
   }
 
   /// Alle Fächer anpassen (z.B. beim Öffnen der Übersicht).

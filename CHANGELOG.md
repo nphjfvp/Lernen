@@ -1,8 +1,25 @@
 # Changelog
 
-Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7s) sind die
+Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7t) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
+
+### 7t. Entsperr-Blöcke: rechnen wie bei jeder Aufgabe – mit Stift und Tafel
+
+- Die Aufgaben eines Entsperr-Blocks löst man jetzt in derselben Ansicht wie
+  jede andere Aufgabe statt in einem bloßen Textfeld. Rechenaufgaben kommen als
+  Rechenweg: Schritt für Schritt oder selbst rechnen – getippt oder mit dem
+  Stift auf dem Blatt (jede Zeile wird gelesen und nachgerechnet), mit
+  Taschenrechner und Mathe-Tasten. Vorrechnen an der Tafel und Tipps gibt es
+  dort auch – sie zählen aber als Hilfe.
+- Andere Fächer bekommen die passende Art: Skizze, Diagramm, Zustandsdiagramm,
+  Terminierung, Stückliste – oder eine Erklärfrage, die die KI bewertet.
+- Aufbereitet wird jede Aufgabe gleich beim Anlegen des Blocks (sonst beim
+  ersten „Lösen“) und gespeichert – auch die neue Aufgabe nach der
+  Übungseinheit. Klappt das Aufbereiten nicht, bleibt das Textfeld als
+  Ausweg.
+- Richtig, aber mit Hilfe: wird angezeigt („zählt nicht als ohne Hilfe“),
+  dann noch einmal ohne Hilfe lösen.
 
 ### 7s. Schreiben mit Stift: flüssiger, schöner, größer
 

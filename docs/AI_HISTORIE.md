@@ -1821,3 +1821,13 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     das Blatt). StepTaskView: `inkPause` 10 s (Rückfall), gelesen wird beim Ansetzen in einer anderen Zelle
     (`_inkStrokeStart`) oder per `_readInkNow`; `_expandInk` mit `_inkRefresh` (setState-Override) für Live-Markierungen
     im Vollbild; Seitenblatt `(Breite·0,5).clamp(340, 760)`. Test: `step_ink_test`.
+135. Entsperr-Blöcke lösen wie jede Aufgabe: `buildUnlockCard` (lib/services/unlock_task_card.dart) macht aus einer
+    `UnlockTask` über `AiService.buildInteractiveTasks` (Musterlösung + „Ergebnis:“ als Abgleich, `allowEmpty`) eine
+    Flashcard – Rechnen als `steps` (Stift-Blatt, Taschenrechner, Vorrechnen), sonst gantt/sketch/phase/…, „question“
+    bzw. nichts Brauchbares als Freitext (KI bewertet). Gespeichert in `UnlockTask.card` (`withCard`, toMap/fromMap);
+    `UnlockBlockService.prepareCards` gleich nach dem Anlegen in `refresh`. `UnlockBlockScreen._solve`: Karte bei
+    Bedarf bauen (`unlock-solve-$i`, „Wird vorbereitet …“), dann `QuestionWithHelp` als eigene Seite (Test-Hook
+    `solveHook`); `LearnCredit.isClean` und nicht `helped` → gelöst, sonst „Richtig – aber mit Hilfe“ (helped) bzw.
+    „Noch nicht richtig.“. Textfeld (`unlock-answer-$i`/`unlock-check-$i`, KI-Prüfung) nur noch als Ausweg
+    (`_plainAnswer`), wenn das Aufbereiten scheitert. Tests: `unlock_blocks_test` (Karte zur Aufgabe, Block lösen als
+    Rechenweg).

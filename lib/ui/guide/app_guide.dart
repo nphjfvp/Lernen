@@ -456,8 +456,9 @@ const appGuideChapters = <GuideChapter>[
       GuideItem(
         'Entsperr-Blöcke',
         'Zwei Aufgaben zu einem Thema, das du noch nicht sicher kannst – aus deinen Vorlesungen, Übungen und '
-            'Fehlern. Ohne Hilfe gelöst: +30 min Handyzeit. Sonst gibt es eine Übungseinheit (+5 min) und danach '
-            'eine neue Aufgabe gleicher Art.',
+            'Fehlern. Gelöst wird wie jede Aufgabe: Rechnen als Rechenweg mit Stift, Taschenrechner und Tafel, '
+            'sonst in der passenden Art. Ohne Hilfe gelöst: +30 min Handyzeit. Sonst gibt es eine Übungseinheit '
+            '(+5 min) und danach eine neue Aufgabe gleicher Art.',
         where: 'Einstellungen → Lernzeit-Sperre → Entsperr-Blöcke · PC-Sperrbildschirm',
       ),
       GuideItem(

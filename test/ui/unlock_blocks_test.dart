@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:lernen/models/flashcard.dart';
 import 'package:lernen/models/learn_credit.dart';
 import 'package:lernen/models/unlock_block.dart';
 import 'package:lernen/repositories/learn_credit_repository.dart';
 import 'package:lernen/repositories/unlock_block_repository.dart';
 import 'package:lernen/services/ai_service.dart';
 import 'package:lernen/services/database_service.dart';
+import 'package:lernen/services/fsrs_service.dart';
 import 'package:lernen/services/unlock_block_service.dart';
+import 'package:lernen/services/unlock_task_card.dart';
 import 'package:lernen/theme/app_theme.dart';
 import 'package:lernen/ui/unlock/unlock_blocks_screen.dart';
 import 'package:sembast/sembast_memory.dart';
@@ -156,11 +159,17 @@ void main() {
         ),
       );
       final sent = <String>[];
+      final prepared = <String>[];
       UnlockBlockService.aiFactory = () => AiService(
         apiKey: 'k',
         model: 'm',
         client: MockClient((r) async {
           final messages = (jsonDecode(r.body) as Map)['messages'] as List;
+          if ('${messages[0]['content']}'.contains('interaktive Aufgaben')) {
+            // Beim Anlegen gleich lösbar gemacht (Rechenweg-Karte je Aufgabe).
+            prepared.add('${messages[1]['content']}');
+            return _reply({'tasks': []});
+          }
           sent.add('${messages[1]['content']}');
           return _reply({
             'keep': [],
@@ -189,6 +198,10 @@ void main() {
       expect(blocks.map((b) => b.id), contains('angefangen'));
       expect(blocks.map((b) => b.id), isNot(contains('alt')));
       expect(blocks, hasLength(3));
+      expect(prepared, hasLength(4), reason: 'je neue Aufgabe eine Karte');
+      final fresh = blocks.firstWhere((b) => b.id != 'angefangen');
+      expect(fresh.tasks.every((t) => t.card != null), isTrue);
+      expect(fresh.tasks.first.card!['type'], QuestionType.freeText.name, reason: 'keine Rechenaufgabe: Freitext');
       // Kurz danach nicht schon wieder (außer auf Wunsch).
       await LearnCreditRepository.saveRulesIn(db, const LearnCreditRules(enabled: true));
       expect(await UnlockBlockService.instance.refresh('m1'), 0);
@@ -196,7 +209,82 @@ void main() {
     });
   });
 
-  testWidgets('Block lösen: Fehlversuch → Übungseinheit (+5) → neue Aufgabe → gelöst (+25)', (tester) async {
+  group('Karte zur Aufgabe', () {
+    AiService ai(Map<String, Object> reply, List<String> sent) => AiService(
+      apiKey: 'k',
+      model: 'm',
+      client: MockClient((r) async {
+        final messages = (jsonDecode(r.body) as Map)['messages'] as List;
+        sent.add('${messages[1]['content']}');
+        return _reply(reply);
+      }),
+    );
+    final block = _block(
+      'b',
+      tasks: const [
+        UnlockTask(problem: r"Löse $y' = 1 + y^2$, $y(0) = 0$.", answer: r'$y = \tan x$', solution: 'Trennen'),
+      ],
+    );
+
+    test('Rechenaufgabe: Rechenweg mit Schritten (Stift, Taschenrechner, Vorrechnen)', () async {
+      final sent = <String>[];
+      final card = await buildUnlockCard(
+        ai({
+          'tasks': [
+            {
+              'kind': 'steps',
+              'front': 'Löse die DGL.',
+              'back': 'y = tan x',
+              'taskData': {
+                'steps': [
+                  {
+                    'title': 'Trennen der Variablen',
+                    'fields': [
+                      {
+                        'label': 'y =',
+                        'answer': 'tan(x)',
+                        'variables': ['x'],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        }, sent),
+        block,
+        0,
+        now: DateTime(2026, 11, 17),
+      );
+      expect(sent.single, contains('Trennen'));
+      expect(sent.single, contains(r'Ergebnis: $y = \tan x$'));
+      expect(card.type, QuestionType.steps);
+      expect(card.moduleId, 'm1');
+      expect(card.front, 'Löse die DGL.');
+      expect(card.taskData?['steps'], isA<List>());
+      expect(Flashcard.fromMap(card.toMap()).type, QuestionType.steps, reason: 'gespeichert und wieder gelesen');
+    });
+
+    test('Wissensfrage oder nichts Brauchbares: Freitext, den die KI bewertet', () async {
+      for (final reply in [
+        {
+          'tasks': [
+            {'kind': 'question', 'questionType': 'free_text', 'front': '', 'reason': 'Erklärfrage'},
+          ],
+        },
+        {'tasks': []},
+      ]) {
+        final card = await buildUnlockCard(ai(reply, []), block, 0);
+        expect(card.type, QuestionType.freeText);
+        expect(card.front, block.tasks.first.problem);
+        expect(card.correctText, r'$y = \tan x$');
+      }
+    });
+  });
+
+  testWidgets('Block lösen als Rechenweg: Fehlversuch → Übungseinheit (+5) → neue Aufgabe → gelöst (+25)', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(900, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -209,13 +297,15 @@ void main() {
       UnlockBlockService.openDatabase = null;
       UnlockBlockService.aiFactory = null;
       UnlockBlockScreen.practiceHook = null;
+      UnlockBlockScreen.solveHook = null;
     });
-    var solve = false;
+    final built = <String>[];
     UnlockBlockService.aiFactory = () => AiService(
       apiKey: 'k',
       model: 'm',
       client: MockClient((r) async {
-        final system = '${((jsonDecode(r.body) as Map)['messages'] as List)[0]['content']}';
+        final messages = (jsonDecode(r.body) as Map)['messages'] as List;
+        final system = '${messages[0]['content']}';
         if (system.contains('ÜBUNGSEINHEIT')) {
           return _reply({
             'intro': r'Der Haken: aus $u = x^2$ folgt $du = 2x\,dx$.',
@@ -223,14 +313,42 @@ void main() {
             'retry': {'problem': 'Neue Aufgabe gleicher Art', 'answer': '5', 'solution': 'Weg'},
           });
         }
-        return _reply(
-          solve
-              ? {'solved': true, 'feedback': 'Richtig!'}
-              : {'solved': false, 'feedback': 'Der Faktor 2x fehlt.', 'explain': r'Aus $u = x^2$ folgt $du = 2x\,dx$.'},
-        );
+        if (system.contains('interaktive Aufgaben')) {
+          built.add('${messages[1]['content']}');
+          return _reply({
+            'tasks': [
+              {
+                'kind': 'steps',
+                'front': 'Rechenweg-Aufgabe',
+                'back': 'Lösung',
+                'taskData': {
+                  'steps': [
+                    {
+                      'title': 'Trennen und integrieren',
+                      'fields': [
+                        {
+                          'label': 'y =',
+                          'answer': 'tan(x)',
+                          'variables': ['x'],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          });
+        }
+        return _reply({'solved': false, 'feedback': '?'});
       }),
     );
     UnlockBlockScreen.practiceHook = (context, moduleId, problem) async => true;
+    final opened = <Flashcard>[];
+    var next = (selfGrade: Grade.again, isCorrect: false);
+    UnlockBlockScreen.solveHook = (context, card) async {
+      opened.add(card);
+      return (selfGrade: next.selfGrade, isCorrect: next.isCorrect);
+    };
     final repo = UnlockBlockRepository(openDatabase: () async => db);
     await tester.pumpWidget(
       MaterialApp(
@@ -239,15 +357,21 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('unlock-answer-0')), findsNothing, reason: 'kein bloßes Textfeld mehr');
 
-    await tester.enterText(find.byKey(const ValueKey('unlock-answer-0')), 'u = x^2, ...');
-    await tester.tap(find.byKey(const ValueKey('unlock-check-0')));
+    // Lösen: die Aufgabe wird als Rechenweg aufbereitet (einmal) und geöffnet.
+    await tester.tap(find.byKey(const ValueKey('unlock-solve-0')));
     await tester.pumpAndSettle();
-    expect(find.text('Der Faktor 2x fehlt.'), findsOneWidget);
+    expect(built.single, contains('A1'));
+    expect(opened.single.type, QuestionType.steps);
+    expect(find.text('Noch nicht richtig.'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('unlock-solve-0')));
+    await tester.pumpAndSettle();
+    expect(built, hasLength(1), reason: 'Karte gespeichert, nicht neu gebaut');
+
     await tester.tap(find.byKey(const ValueKey('unlock-start-practice-0')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('unlock-practice')), findsOneWidget);
-
     await tester.tap(find.byKey(const ValueKey('unlock-exercise-0')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('unlock-exercise-1')));
@@ -257,21 +381,23 @@ void main() {
     expect(find.byKey(const ValueKey('unlock-practice-done')), findsOneWidget);
     await tester.pumpAndSettle(const Duration(seconds: 4));
 
-    // Lösung ansehen zählt als Hilfe – auch wenn es dann stimmt.
-    solve = true;
-    await tester.tap(find.byKey(const ValueKey('unlock-solution-1')));
+    // Mit Hilfe (z.B. Vorrechnen vorher) richtig: zählt nicht als „ohne Hilfe“.
+    next = (selfGrade: Grade.hard, isCorrect: true);
+    await tester.tap(find.byKey(const ValueKey('unlock-solve-1')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('unlock-answer-1')), 'abgeschrieben');
-    await tester.tap(find.byKey(const ValueKey('unlock-check-1')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('zählt es nicht als „ohne Hilfe“'), findsOneWidget);
+    expect(find.textContaining('zählt nicht als „ohne Hilfe“'), findsOneWidget);
 
-    await tester.enterText(find.byKey(const ValueKey('unlock-answer-0')), 'richtig gerechnet');
-    await tester.tap(find.byKey(const ValueKey('unlock-check-0')));
+    // Neue Aufgabe ohne Hilfe gelöst.
+    next = (selfGrade: Grade.good, isCorrect: true);
+    await tester.tap(find.byKey(const ValueKey('unlock-solve-0')));
     await tester.pumpAndSettle();
+    expect(built, hasLength(3), reason: 'Aufgabe 2 und die neue Aufgabe bekommen je ihre eigene Karte');
+    expect(built.last, contains('Neue Aufgabe gleicher Art'));
+    expect(find.text('Ohne Hilfe gelöst.'), findsOneWidget);
     expect(find.byKey(const ValueKey('unlock-solved')), findsNothing, reason: 'Aufgabe 2 noch mit Hilfe');
     final stored = (await tester.runAsync(() => repo.all()))!.single;
     expect(stored.tasks[0].state, UnlockTaskState.solved);
+    expect(stored.tasks[0].card, isNotNull);
     expect(stored.tasks[1].helped, isTrue);
     expect((await tester.runAsync(() => LearnCreditRepository.loadFrom(db)))!.bonus.keys, ['unlock:b1:practice']);
   });
