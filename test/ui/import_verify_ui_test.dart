@@ -86,7 +86,9 @@ class _FakeAi {
     final body = jsonDecode(request.body) as Map<String, dynamic>;
     models.add(body['model'] as String);
     final messages = body['messages'] as List;
-    final system = messages[0]['content'] as String;
+    // Lange System-Prompts kommen bei Claude als Content-Teile (Prompt-Caching).
+    final rawSystem = messages[0]['content'];
+    final system = rawSystem is String ? rawSystem : [for (final p in rawSystem as List) p['text']].join();
     final user = messages[1]['content'];
     if (system.contains('unabhängiger Prüfer')) {
       calls.add('verify');

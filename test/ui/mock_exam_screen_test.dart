@@ -144,6 +144,10 @@ void main() {
       await tester.tap(find.text('Antwort abgeben'));
       await settle();
     }
+    // Die Antworten werden im Hintergrund verbucht (Karte, Lerntag,
+    // Antwort-Protokoll) – erst fertig schreiben lassen.
+    await settle();
+    await settle();
 
     expect(find.text('2 von 2 richtig (100 %)'), findsOneWidget);
     await tester.tap(find.text('Frage q1'));

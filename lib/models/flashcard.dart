@@ -245,10 +245,17 @@ class ImageTarget {
 
 /// Eine Antwortmöglichkeit bei Single-/Multiple-Choice.
 class QuizOption {
-  const QuizOption({required this.text, required this.isCorrect, this.imageBase64});
+  const QuizOption({required this.text, required this.isCorrect, this.imageBase64, this.why});
 
   final String text;
   final bool isCorrect;
+
+  /// Bei einer falschen Option: der Denkfehler, der zu genau dieser Wahl
+  /// führt (von der KI beim Erzeugen mitgeliefert) – wird nach einer
+  /// falschen Antwort sofort gezeigt, ohne KI-Aufruf.
+  final String? why;
+
+  bool get hasWhy => (why ?? '').trim().isNotEmpty;
 
   /// Bild als Antwort (z.B. ein Gefügebild) – [text] ist dann nur die
   /// Beschriftung ("Bild a") und darf leer sein.
@@ -259,23 +266,28 @@ class QuizOption {
   /// Text zum Anzeigen, auch wenn die Option nur ein Bild ist.
   String labelAt(int index) => text.trim().isNotEmpty ? text : 'Bild ${String.fromCharCode(97 + index)}';
 
-  QuizOption copyWith({String? text, bool? isCorrect, String? imageBase64, bool clearImage = false}) => QuizOption(
+  QuizOption copyWith({String? text, bool? isCorrect, String? imageBase64, bool clearImage = false, String? why}) =>
+      QuizOption(
         text: text ?? this.text,
         isCorrect: isCorrect ?? this.isCorrect,
         imageBase64: clearImage ? null : (imageBase64 ?? this.imageBase64),
+        why: why ?? this.why,
       );
 
-  Map<String, dynamic> toMap() => {'text': text, 'isCorrect': isCorrect, if (hasImage) 'image': imageBase64};
+  Map<String, dynamic> toMap() =>
+      {'text': text, 'isCorrect': isCorrect, if (hasImage) 'image': imageBase64, if (hasWhy) 'why': why};
 
   /// Tolerant gegenüber importierten/älteren Daten (fehlender Text,
   /// `isCorrect` als 1 oder "true") statt beim Laden abzustürzen.
   factory QuizOption.fromMap(Map<String, dynamic> map) {
     final isCorrect = map['isCorrect'];
     final image = (map['image'] ?? map['imageBase64'])?.toString() ?? '';
+    final why = (map['why'] ?? '').toString().trim();
     return QuizOption(
       text: map['text']?.toString() ?? '',
       isCorrect: isCorrect == true || isCorrect == 1 || const {'true', '1'}.contains(isCorrect?.toString()),
       imageBase64: image.isEmpty ? null : image,
+      why: why.isEmpty ? null : why,
     );
   }
 }
@@ -642,6 +654,13 @@ class Flashcard {
   /// das Konzept der Karte ([conceptId]); ohne beides steht die Karte allein.
   final String? stageGroup;
 
+  /// Per Einstufung übersprungen (siehe PlacementService): eine schwerere
+  /// Stufe derselben Gruppe wurde gleich sicher gewusst. Die Karte ruht wie
+  /// eine geschaffte Stufe, zählt aber nicht als grün (nicht über Tage
+  /// nachgewiesen) – sie fällt aus der Ampel heraus. Ein Rückfall der
+  /// schwereren Stufe holt sie zurück (copyWithStageReopened).
+  final bool placedOut;
+
   /// KI-Hilfestellungen für die aktuelle Stufe, erzeugt nach wiederholten
   /// Fehlern (siehe [hintMissStreak]) und gespeichert, damit sie beim
   /// nächsten Mal sofort (auch offline) da sind. Bei einem Stufenwechsel
@@ -693,6 +712,7 @@ class Flashcard {
     this.weight = 1.0,
     this.stageLevel,
     this.stageGroup,
+    this.placedOut = false,
     this.aiHints,
   });
 
@@ -816,6 +836,7 @@ class Flashcard {
       weight: weight,
       stageLevel: stageLevel,
       stageGroup: stageGroup,
+      placedOut: placedOut,
       aiHints: aiHints,
     );
   }
@@ -903,6 +924,7 @@ class Flashcard {
       weight: weight,
       stageLevel: stageLevel,
       stageGroup: stageGroup,
+      placedOut: placedOut,
       aiHints: aiHints,
     );
     // Gespeicherte KI-Hilfestellungen passen nach einer geänderten Frage
@@ -980,7 +1002,11 @@ class Flashcard {
         'masteryBox': masteryBox < masteryBoxCap - 1 ? masteryBox : masteryBoxCap - 1,
         'due': (due.isAfter(dueBy) ? dueBy : due).toIso8601String(),
         'variantMissStreak': 0,
+        'placedOut': false,
       });
+
+  /// Per Einstufung übersprungen (siehe [placedOut]) bzw. wieder freigegeben.
+  Flashcard copyWithPlacedOut(bool value) => Flashcard.fromMap({...toMap(), 'placedOut': value});
 
   /// Fehler-Leiter (siehe [variantMissStreak]): ab so vielen falschen
   /// Antworten in Folge erscheint vor dem Antworten eine KI-Hilfestellung …
@@ -1078,6 +1104,7 @@ class Flashcard {
         weight: weight,
         stageLevel: stageLevel,
         stageGroup: stageGroup,
+        placedOut: placedOut,
         aiHints: aiHints,
       );
       return (card: updated, nextType: chain[variantLevel + 1], needsGeneration: true);
@@ -1145,6 +1172,7 @@ class Flashcard {
       weight: weight,
       stageLevel: stageLevel,
       stageGroup: stageGroup,
+      placedOut: placedOut,
       aiHints: aiHints,
     );
     return (card: updated, nextType: null, needsGeneration: false);
@@ -1229,6 +1257,7 @@ class Flashcard {
       weight: weight,
       stageLevel: stageLevel,
       stageGroup: stageGroup,
+      placedOut: placedOut,
     );
   }
 
@@ -1335,6 +1364,7 @@ class Flashcard {
       weight: weight,
       stageLevel: stageLevel,
       stageGroup: stageGroup,
+      placedOut: placedOut,
     );
   }
 
@@ -1388,6 +1418,7 @@ class Flashcard {
         'weight': weight,
         'stageLevel': stageLevel,
         'stageGroup': stageGroup,
+        if (placedOut) 'placedOut': true,
         'aiHints': aiHints,
       };
 
@@ -1449,6 +1480,7 @@ class Flashcard {
         weight: _sanitizeWeight((map['weight'] as num?)?.toDouble()),
         stageLevel: _sanitizeStageLevel((map['stageLevel'] as num?)?.toInt()),
         stageGroup: (map['stageGroup'] as String?)?.trim().isEmpty ?? true ? null : (map['stageGroup'] as String).trim(),
+        placedOut: map['placedOut'] == true,
         aiHints: (map['aiHints'] as List?)?.map((h) => h.toString()).where((h) => h.trim().isNotEmpty).toList(),
       );
 

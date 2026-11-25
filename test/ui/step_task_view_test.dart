@@ -98,7 +98,7 @@ void main() {
                 isNew: false,
                 examMode: examMode,
                 canGiveUp: canGiveUp,
-                onComplete: ({Grade? selfGrade, bool? isCorrect}) => results.add((grade: selfGrade, correct: isCorrect)),
+                onComplete: ({Grade? selfGrade, bool? isCorrect, Object? signals}) => results.add((grade: selfGrade, correct: isCorrect)),
               ),
             ),
           ],
@@ -254,7 +254,7 @@ void main() {
       home: Scaffold(
         body: Column(
           children: [
-            Expanded(child: QuestionAnswerView(card: card, isNew: false, onComplete: ({Grade? selfGrade, bool? isCorrect}) {})),
+            Expanded(child: QuestionAnswerView(card: card, isNew: false, onComplete: ({Grade? selfGrade, bool? isCorrect, Object? signals}) {})),
           ],
         ),
       ),
@@ -475,7 +475,7 @@ void main() {
             key: ValueKey(card.id),
             card: card,
             isNew: false,
-            onComplete: ({Grade? selfGrade, bool? isCorrect}) => results.add((grade: selfGrade, correct: isCorrect)),
+            onComplete: ({Grade? selfGrade, bool? isCorrect, Object? signals}) => results.add((grade: selfGrade, correct: isCorrect)),
           ),
         ),
       ),

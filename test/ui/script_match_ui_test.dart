@@ -138,7 +138,7 @@ void main() {
         child: MaterialApp(
           theme: AppTheme.light,
           home: Scaffold(
-            body: QuestionAnswerView(key: ValueKey(card.id), card: card, isNew: false, onComplete: ({selfGrade, isCorrect}) {}),
+            body: QuestionAnswerView(key: ValueKey(card.id), card: card, isNew: false, onComplete: ({selfGrade, isCorrect, signals}) {}),
           ),
         ),
       ));

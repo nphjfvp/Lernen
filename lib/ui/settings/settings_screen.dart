@@ -956,6 +956,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       style: TextStyle(fontSize: 11.5, color: c.inkMuted),
                     ),
                   ),
+                  const SizedBox(height: 4),
+                  Text('LERNEN & BEWERTUNG', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, letterSpacing: 0.04, color: c.inkMuted)),
+                  SwitchListTile(
+                    key: const ValueKey('ask-confidence'),
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.askConfidence,
+                    activeThumbColor: c.accent,
+                    onChanged: (v) => context.read<SettingsRepository>().update(settings.copyWith(askConfidence: v)),
+                    title: const Text(
+                      'Vor dem Prüfen nach Sicherheit fragen',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Geraten / eher sicher / sicher (freiwillig). Richtig Geratenes zählt als „Schwer“, sicher Falsches '
+                      'landet als mögliche Fehlvorstellung im Fehlertagebuch.',
+                      style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                    ),
+                  ),
+                  SwitchListTile(
+                    key: const ValueKey('retry-variants'),
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.retryVariants,
+                    activeThumbColor: c.accent,
+                    onChanged: (v) => context.read<SettingsRepository>().update(settings.copyWith(retryVariants: v)),
+                    title: const Text(
+                      'Wiederholungsrunde in neuer Form',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Falsch Beantwortetes kommt im Daily Quiz in neuer Einkleidung wieder (andere Situation oder Zahlen, '
+                      'per KI) statt wortgleich – so zählt wirklich das Wissen, nicht die Erinnerung an eben.',
+                      style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                    ),
+                  ),
+                  SwitchListTile(
+                    key: const ValueKey('respect-prerequisites'),
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.respectPrerequisites,
+                    activeThumbColor: c.accent,
+                    onChanged: (v) => context.read<SettingsRepository>().update(settings.copyWith(respectPrerequisites: v)),
+                    title: const Text(
+                      'Voraussetzungen beachten',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Neue Fragen zu einem Konzept kommen erst, wenn die Konzepte sitzen, auf denen es aufbaut '
+                      '(Fach → Konzepte → „Voraussetzungen per KI bestimmen“).',
+                      style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                    ),
+                  ),
+                  SwitchListTile(
+                    key: const ValueKey('web-research'),
+                    contentPadding: EdgeInsets.zero,
+                    value: settings.webResearchEnabled,
+                    activeThumbColor: c.accent,
+                    onChanged: (v) => context.read<SettingsRepository>().update(settings.copyWith(webResearchEnabled: v)),
+                    title: const Text(
+                      'Web-Recherche für Erklärungen',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Nach „Einfacher erklären“ kann die KI im Netz nach anderen Erklärungen suchen (mit Quellen, '
+                      'kostet ein paar Cent je Suche). Begriffe aus deinen Unterlagen haben Vorrang.',
+                      style: TextStyle(fontSize: 11.5, color: c.inkMuted),
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   const AiUsageTile(key: ValueKey('ai-usage-tile')),
                   const SizedBox(height: 22),

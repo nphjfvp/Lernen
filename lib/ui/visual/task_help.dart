@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/flashcard.dart';
+import '../../services/answer_signals.dart';
 import '../../services/fsrs_service.dart';
 import '../../theme/app_colors.dart';
 import '../daily/question_answer_view.dart';
@@ -27,11 +28,12 @@ class QuestionWithHelp extends StatefulWidget {
     this.onImageEdited,
     this.onSkip,
     this.canGiveUp = false,
+    this.isVariant = false,
   });
 
   final Flashcard card;
   final bool isNew;
-  final void Function({Grade? selfGrade, bool? isCorrect}) onComplete;
+  final AnswerCallback onComplete;
 
   /// Links in der Kopfzeile (z.B. „Aufgabe 3 von 12“).
   final Widget? info;
@@ -41,6 +43,9 @@ class QuestionWithHelp extends StatefulWidget {
   final Future<void> Function(Uint8List? bytes)? onImageEdited;
   final VoidCallback? onSkip;
   final bool canGiveUp;
+
+  /// Neu eingekleidete Fassung (siehe QuestionAnswerView.isVariant).
+  final bool isVariant;
 
   /// Taschenrechner offen – bleibt für die Sitzung, auch über Aufgaben hinweg.
   static bool calculatorOpen = false;
@@ -77,12 +82,12 @@ class _QuestionWithHelpState extends State<QuestionWithHelp> {
     setState(() => _watched = true);
   }
 
-  void _complete({Grade? selfGrade, bool? isCorrect}) {
+  void _complete({Grade? selfGrade, bool? isCorrect, AnswerSignals? signals}) {
     if (_watched) {
-      widget.onComplete(selfGrade: Grade.again, isCorrect: false);
+      widget.onComplete(selfGrade: Grade.again, isCorrect: false, signals: signals);
       return;
     }
-    widget.onComplete(selfGrade: selfGrade, isCorrect: isCorrect);
+    widget.onComplete(selfGrade: selfGrade, isCorrect: isCorrect, signals: signals);
   }
 
   void _copy(String value) {
@@ -108,6 +113,7 @@ class _QuestionWithHelpState extends State<QuestionWithHelp> {
       canGiveUp: widget.canGiveUp,
       onSkip: widget.onSkip,
       onImageEdited: widget.onImageEdited,
+      isVariant: widget.isVariant,
       onComplete: _complete,
     );
     final calculator = CalculatorSim(onUseResult: _copy);

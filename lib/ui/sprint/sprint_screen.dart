@@ -7,6 +7,7 @@ import '../widgets/calc_tasks_toggle.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../services/answer_signals.dart';
 import '../../services/calc_task_detector.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
@@ -106,10 +107,10 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
     });
   }
 
-  void _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) {
+  void _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect, AnswerSignals? signals}) {
     // "Schwer" ist ein erfolgreicher, nur mühsamer Abruf – zählt als richtig.
     final wasCorrect = isCorrect ?? (selfGrade != Grade.again);
-    unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect));
+    unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals));
     // Eine Antwort nach Zeitablauf (z.B. während der KI-Prüfung einer
     // Freitextantwort) zählt fürs Lernen, aber nicht mehr für die Punkte –
     // die Bestleistung ist dann schon ausgewertet.
@@ -188,8 +189,8 @@ class _SprintScreenState extends State<SprintScreen> with CardReviewMixin<Sprint
                         onImageEdited: (bytes) => saveEditedImage(_queue[_index], bytes),
                         onSkip: _index < _queue.length - 1 ? _skip : null,
                         canGiveUp: true,
-                        onComplete: ({selfGrade, isCorrect}) =>
-                            _handleComplete(_queue[_index], selfGrade: selfGrade, isCorrect: isCorrect),
+                        onComplete: ({selfGrade, isCorrect, signals}) => _handleComplete(_queue[_index],
+                            selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
                       ),
                     ),
                   ],

@@ -257,13 +257,13 @@ Markdown-Codefences, ohne zusätzlichen Text davor/danach:
   "flashcards": [
     {"type": "single_choice", "front": "Frage", "level": "leicht", "group": "Sachverhalt A",
      "conceptTitle": "Konzeptname",
-     "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
+     "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false, "why": "Denkfehler hinter dieser Option"}]},
     {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"],
      "level": "mittel", "group": "Sachverhalt A", "conceptTitle": "Konzeptname"},
     {"type": "free_text", "front": "Frage", "correctText": "Lösung; Alternative",
      "level": "schwer", "group": "Sachverhalt A", "conceptTitle": "Konzeptname"},
     {"type": "multiple_choice", "front": "Frage", "level": "leicht", "group": "Sachverhalt B",
-     "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
+     "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false, "why": "Denkfehler hinter dieser Option"}]},
     {"type": "table", "front": "Vervollständige die Tabelle", "level": "schwer", "group": "Sachverhalt B",
      "table": [["Begriff", "Merkmal"], ["...", {"answer": "Lösung; Variante"}]]},
     {"type": "drag_drop", "front": "Ordne zu", "dragPairs": [{"source": "A", "target": "B"}]},
@@ -304,7 +304,7 @@ Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format, ohne
 Markdown-Codefences, ohne zusätzlichen Text davor/danach:
 {"flashcards": [
-  {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]},
+  {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false, "why": "Denkfehler hinter dieser Option"}]},
   {"type": "fill_blank", "front": "Text mit ___ Lücke", "blanks": ["Lösung"]},
   {"type": "free_text", "front": "Frage", "correctText": "Lösung"},
   {"type": "flashcard", "front": "Frage", "back": "Antwort (Pflichtfeld, nie leer)"}

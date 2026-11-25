@@ -8,6 +8,24 @@ Architektur. Kurzüberblick: [README](../README.md); Änderungen der Reihe nach:
 
 - **Modul-Verwaltung** – Fächer-Ordner mit Klausurdatum, in denen Folien und
   Übungsaufgaben gesammelt werden.
+- **Laut denken** (`lib/ui/study/think_aloud_screen.dart`) – Fragen aus
+  gewählten Fächern (fällig → wackelig → neu), zu denen man den Gedankengang
+  spricht (Diktierfunktion der Tastatur) oder tippt. Die KI
+  (`AiService.assessThinking`) liest den Weg: Urteil, erste Bruchstelle,
+  kleinster Anstoß nach der Hilfe-Leiter, Lösung erst am Ende; verbucht wie
+  jede Antwort.
+- **Ehrliche Bewertung** – vor dem Prüfen „geraten / eher sicher / sicher“,
+  „Weiß ich nicht“, Tipps in fünf Stufen; daraus macht `AnswerSignals.gradeFor`
+  die FSRS-Bewertung (geraten oder Tipp 2–3 → „Schwer“, Tipp ab 4 → nicht
+  gewusst). Antwort-Protokoll mit Kalibrierung im Fortschritt und
+  Fehlvorstellungen im Fehlertagebuch; Denkfehler je falscher Option.
+- **Einstufen** (Fach → Lernen) – je Fragen-Ordner zuerst die schwerste Stufe;
+  sicher gewusst → leichtere Stufen übersprungen (`Flashcard.placedOut`).
+- **Voraussetzungen** – Konzepte bauen aufeinander auf (`Concept.prerequisiteIds`,
+  per KI oder von Hand); das Daily Quiz führt neue Karten erst ein, wenn die
+  Grundlagen sitzen (`PrerequisiteGate`).
+- **Wiederholungsrunde in neuer Form** und **Prüffrage nach jedem
+  Lektionsschritt**; Web-Suche nach anderen Erklärungen als letzte Stufe.
 - **Laborversuche** (nur in Fächern mit Schalter **Laborfach**) – Vorbereitung,
   Durchführung und Bericht eines Praktikumsversuchs an einem Ort, mit Termin im
   Kalender, Fotos von Messprotokollen mit automatischem Auslesen; die KI liest

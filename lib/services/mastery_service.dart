@@ -42,7 +42,9 @@ class MasteryService {
   /// nicht mehr wiederholt, ihre Behaltensrate sinkt nur rechnerisch); eine
   /// wartende als noch nicht dran ("neu"), eine stumme (Gewicht 0) ebenso.
   MasteryLevel levelFor(Flashcard card, {DateTime? now, StageStatus stage = StageStatus.active}) {
-    if (stage == StageStatus.done) return MasteryLevel.green;
+    // Per Einstufung übersprungen: ruht, ist aber nicht über Tage
+    // nachgewiesen – kein Grün (siehe Flashcard.placedOut).
+    if (stage == StageStatus.done) return card.placedOut ? MasteryLevel.neu : MasteryLevel.green;
     if (stage == StageStatus.locked || stage == StageStatus.muted) return MasteryLevel.neu;
     if (card.reps == 0) return MasteryLevel.neu;
     // masteryBox ist die PRIMÄRE Grundlage, nicht die momentane
@@ -83,6 +85,9 @@ class MasteryService {
       // Stumme Karten sind bewusst aus dem Lernen genommen – sie sollen die
       // Ampel weder nach unten ziehen noch aufhübschen.
       if (stage == StageStatus.muted) continue;
+      // Übersprungene Stufen zählen weder als grün noch als neu: das Wissen
+      // steht in der schwereren Stufe derselben Gruppe.
+      if (stage == StageStatus.done && card.placedOut) continue;
       final level = levelFor(card, now: now, stage: stage);
       counts[level] = counts[level]! + 1;
     }

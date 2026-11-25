@@ -153,7 +153,8 @@ class _MissedLessonsScreenState extends State<MissedLessonsScreen> {
               key: ValueKey('lessons-retry-$_retryRound-${card.id}'),
               card: card,
               isNew: false,
-              onComplete: ({selfGrade, isCorrect}) => _retryAnswered(card, selfGrade: selfGrade, isCorrect: isCorrect),
+              onComplete: ({selfGrade, isCorrect, signals}) =>
+                  _retryAnswered(card, selfGrade: selfGrade, isCorrect: isCorrect),
             ),
           ),
         ],

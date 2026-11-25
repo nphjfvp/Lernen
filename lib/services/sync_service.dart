@@ -82,6 +82,10 @@ Map<String, dynamic> syncedSettingsOf(AppSettings settings, {required bool inclu
       'clarifyScene3d': settings.clarifyScene3d,
       'scene3dBlocks': settings.scene3dBlocks,
       'scene3dRepair': settings.scene3dRepair,
+      'askConfidence': settings.askConfidence,
+      'respectPrerequisites': settings.respectPrerequisites,
+      'retryVariants': settings.retryVariants,
+      'webResearchEnabled': settings.webResearchEnabled,
     };
 
 /// Merged die gesyncten Einstellungen (siehe [syncedSettingsOf]) in
@@ -135,6 +139,10 @@ AppSettings mergeAiSettings(AppSettings current, Map<String, dynamic>? synced) {
     clarifyScene3d: synced['clarifyScene3d'] as bool?,
     scene3dBlocks: synced['scene3dBlocks'] as String?,
     scene3dRepair: synced['scene3dRepair'] as String?,
+    askConfidence: synced['askConfidence'] as bool?,
+    respectPrerequisites: synced['respectPrerequisites'] as bool?,
+    retryVariants: synced['retryVariants'] as bool?,
+    webResearchEnabled: synced['webResearchEnabled'] as bool?,
   );
 }
 

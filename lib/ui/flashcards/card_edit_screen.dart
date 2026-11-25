@@ -55,9 +55,13 @@ class CardEditScreen extends StatefulWidget {
 }
 
 class _OptionRow {
-  _OptionRow(String text, this.isCorrect, [this.image]) : controller = TextEditingController(text: text);
+  _OptionRow(String text, this.isCorrect, [this.image, this.why]) : controller = TextEditingController(text: text);
   final TextEditingController controller;
   bool isCorrect;
+
+  /// Denkfehler hinter dieser Option (siehe QuizOption.why) – bleibt beim
+  /// Bearbeiten erhalten.
+  final String? why;
 
   /// Bild als Antwort (base64).
   String? image;
@@ -114,7 +118,7 @@ class _CardEditScreenState extends State<CardEditScreen> {
     _back = TextEditingController(text: card.back);
     _correctText = TextEditingController(text: card.correctText ?? '');
     for (final o in card.options ?? const <QuizOption>[]) {
-      _options.add(_OptionRow(o.text, o.isCorrect, o.imageBase64));
+      _options.add(_OptionRow(o.text, o.isCorrect, o.imageBase64, o.why));
     }
     if (_isChoice) {
       while (_options.length < 2) {
@@ -250,7 +254,12 @@ class _CardEditScreenState extends State<CardEditScreen> {
       options = [
         for (final o in _options)
           if (o.controller.text.trim().isNotEmpty || o.image != null)
-            QuizOption(text: o.controller.text.trim(), isCorrect: o.isCorrect, imageBase64: o.image),
+            QuizOption(
+              text: o.controller.text.trim(),
+              isCorrect: o.isCorrect,
+              imageBase64: o.image,
+              why: o.isCorrect ? null : o.why,
+            ),
       ];
       final correct = options.where((o) => o.isCorrect).length;
       if (options.length < 2) return _fail('Mindestens zwei Antwortoptionen eintragen.');

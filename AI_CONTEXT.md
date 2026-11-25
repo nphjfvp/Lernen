@@ -148,10 +148,15 @@ EINE Stelle verbucht Antworten: `ReviewService.evaluate` (rein) +
 KI-Erzeugung der nächsten Stufe im Hintergrund – wird auch nach Verlassen des
 Screens gespeichert). Neue Lernmodi MÜSSEN darüber laufen.
 
-Sonderfall **Tipp**: wurde vor dem Antworten ein KI-Tipp geholt und die
-Antwort ist richtig, meldet `QuestionAnswerView` BEIDES (`isCorrect: true`,
-`selfGrade: Grade.hard`): Bewertung „Schwer“ (Ampel steigt nicht), die
-Eskalationskette bleibt unberührt, `wasWrong` ist false.
+**Antwort-Signale** (`AnswerSignals`, Punkt 136): `QuestionAnswerView` meldet
+zusätzlich `signals` (Sicherheit geraten/eher sicher/sicher, „Weiß ich nicht“,
+höchste Stufe der Hilfe-Leiter). Die Bewertung macht `AnswerSignals.gradeFor`
+in `ReviewService.evaluate`: „Weiß ich nicht“/falsch → again; Tipp-Stufe ≥ 4
+→ again (`wasWrong`); Tipp 2–3 oder „geraten“ → höchstens hard (Ampel steigt
+nicht, Kette unberührt); Stufe 1 kostet nichts. Automatische Hilfestellungen
+der Fehler-Leiter zählen als Stufe 2/3. Fast richtige Tabelle meldet weiter
+`selfGrade: hard`. Jede Antwort landet im Antwort-Protokoll
+(`ReviewLogRepository`, nur Gerät).
 
 | Ort | FSRS/Ampel-Wirkung |
 | --- | --- |
@@ -160,6 +165,8 @@ Eskalationskette bleibt unberührt, `wasWrong` ist false.
 | Sprint (Mini-Spiel) | ja (seit Backlog-Punkt 3) |
 | Probeklausur (`mock_exam_screen.dart`, `examMode`) | ja, ohne SnackBar; übersprungene/unbeantwortete zählen nur für die Note |
 | Zwischen-Check im Lernmodus | nur falsch Beantwortetes wird gespeichert – als `Grade.again` verbucht (rot, morgen fällig) + `priorityIntroduction` |
+| Laut denken (`think_aloud_screen.dart`) | ja (gelöst → isCorrect, Anstöße als Tipp-Stufe; „Lösung zeigen“ = Weiß ich nicht) |
+| Einstufen (`placement_screen.dart`) | nur sicher und ohne Hilfe richtige Antworten; falsche werden nicht verbucht (Messen) |
 | Speedrun (Konzepte) | nein (Konzepte haben keinen SR-Zustand) |
 | Vorschau in „Frage erstellen“ | nein (kosmetisch) |
 
@@ -225,6 +232,8 @@ Modellgrenzen 0,25–4 (`_sanitizeWeight`), UI-Regler 0,5–3 in 0,25-Schritten.
 5. sonst → **gelb**
 
 Folge: Grün braucht mindestens 4 richtige Antworten an 4 verschiedenen Tagen.
+Per Einstufung übersprungene Karten (`Flashcard.placedOut`, Status done) sind
+NICHT grün und fallen aus `breakdown` heraus.
 
 ### 5.6 Schwierigkeits-Eskalation (`Flashcard.copyWithBoxUpdate`)
 Läuft für JEDE Karte (Fehler-Leiter), befördert aber nur Karten mit
@@ -302,6 +311,10 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
   erreichtem Termin entfernt auch den Termin.
 - **Stufen-Gate** (5.6b): nur die aktive Stufe je Gruppe, wartende und
   ruhende Karten sind weder fällig noch neu.
+- **Voraussetzungs-Gate** (`PrerequisiteGate`, Schalter
+  `respectPrerequisites`): neue Karten eines Konzepts warten, solange eine
+  lernbare Karte eines Voraussetzungs-Konzepts (`Concept.prerequisiteIds`)
+  neu oder rot ist; Kreise zählen nicht, priorityIntroduction nie gesperrt.
 - **Fällig**: `reps>0 && due < morgen`, sortiert nach `due`, unbegrenzt.
 - **Neu** (`reps==0`) pro Fach budgetiert: Pacing über Tage bis zur Klausur
   (abzüglich 3 Tage Wiederholungspuffer, ohne Klausur 14 Tage Horizont),

@@ -4,17 +4,23 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/concept.dart';
 import '../../models/daily_session_state.dart';
 import '../../models/flashcard.dart';
+import '../../repositories/concept_repository.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/daily_session_repository.dart';
 import '../../repositories/learn_credit_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../repositories/settings_repository.dart';
+import '../../services/ai_service.dart';
+import '../../services/answer_signals.dart';
 import '../../services/calc_task_detector.dart';
 import '../../services/daily_scheduler_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/home_widget_service.dart';
+import '../../services/retry_variant_service.dart';
 import '../../services/screen_guard.dart';
 import '../../services/stage_gate_service.dart';
 import '../../theme/app_colors.dart';
@@ -70,6 +76,16 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
   /// verhindert eine Endlosschleife bei einer Karte, die immer wieder falsch
   /// beantwortet wird.
   final Map<String, int> _wrongAttempts = {};
+
+  /// Neu eingekleidete Fassungen falsch beantworteter Karten für die
+  /// Wiederholungsrunde (siehe RetryVariantService), je Karten-ID.
+  final Map<String, Flashcard> _variants = {};
+  final Set<String> _variantPending = {};
+
+  /// Wiederholungen, die schon ohne neue Fassung angezeigt wurden (ID +
+  /// Versuch) – eine später fertige Fassung tauscht die Frage nicht mitten
+  /// im Antworten aus.
+  final Set<String> _shownPlain = {};
 
   /// Heute mindestens einmal falsch beantwortete Karten (Reihenfolge wie
   /// beantwortet) – nach dem Quiz gibt es dazu Lerneinheiten.
@@ -181,18 +197,21 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     final flashcardRepo = context.read<FlashcardRepository>();
     final lectureUnitRepo = context.read<LectureUnitRepository>();
     final includeCalc = CalcTasksToggle.includeOf(context);
+    final gateOn = _prerequisitesOn;
     final allCards = await flashcardRepo.loadAll();
     final unitCoveredById = await lectureUnitRepo.loadAllCoveredById();
     final now = DateTime.now();
     final session = await DailySessionRepository().load(now);
     final cardsById = {for (final c in allCards) c.id: c};
     final introducedToday = session.introducedByModule({for (final c in allCards) c.id: c.moduleId});
+    final concepts = gateOn ? await ConceptRepository.loadAll() : const <Concept>[];
     final plan = DailySchedulerService().buildPlan(
       modules: modules,
       allCards: allCards,
       unitCoveredById: unitCoveredById,
       introducedTodayByModule: introducedToday,
       includeCalcTasks: includeCalc,
+      concepts: concepts,
     );
     // Heute zurückgestellte Rechenaufgaben merken – sobald sie wieder dabei sind,
     // kommen sie zuerst und zusätzlich dran (siehe DailySchedulerService).
@@ -289,6 +308,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
   /// reguläre Tagesplan (inkl. Wiederholungsrunde) bereits abgeschlossen ist.
   Future<void> _continueVoluntarily() async {
     setState(() => _bonusLoading = true);
+    final gateOn = _prerequisitesOn;
     final modules = context.read<ModuleRepository>().modules;
     final flashcardRepo = context.read<FlashcardRepository>();
     final lectureUnitRepo = context.read<LectureUnitRepository>();
@@ -300,12 +320,16 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       ..._wrongQueue.map((c) => c.id),
       ..._bonusQueue.map((c) => c.id),
     };
+    final includeCalc = CalcTasksToggle.includeOf(context);
+    final concepts = gateOn ? await ConceptRepository.loadAll() : const <Concept>[];
+    if (!mounted) return;
     final extra = DailySchedulerService().buildExtraBatch(
       modules: modules,
       allCards: allCards,
       unitCoveredById: unitCoveredById,
       excludeIds: excludeIds,
-      includeCalcTasks: CalcTasksToggle.includeOf(context),
+      includeCalcTasks: includeCalc,
+      concepts: concepts,
     );
     if (!mounted) return;
     setState(() {
@@ -338,8 +362,14 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
     });
   }
 
-  Future<void> _handleComplete(Flashcard card, {required _QuizStage stage, Grade? selfGrade, bool? isCorrect}) async {
-    final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
+  Future<void> _handleComplete(
+    Flashcard card, {
+    required _QuizStage stage,
+    Grade? selfGrade,
+    bool? isCorrect,
+    AnswerSignals? signals,
+  }) async {
+    final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals);
     final updated = outcome.card;
     // Eine inzwischen gelöschte Karte kommt nicht in die Wiederholungsrunde,
     // eine nach dem Rückfall wartende auch nicht (erst die leichtere Stufe).
@@ -365,6 +395,7 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
           // Wiederholungsrunde: die gerade abgeschlossene Karte stand vorn in
           // der Queue (siehe build()).
           _wrongQueue.removeAt(0);
+          _variants.remove(card.id);
           final attempts = (_wrongAttempts[card.id] ?? 0) + 1;
           _wrongAttempts[card.id] = attempts;
           if (wasWrong && attempts < _maxWrongRequeueAttempts) {
@@ -380,8 +411,28 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
       _reviewedCount += 1;
       _answeredSinceLoad += 1;
     });
+    if (wasWrong && _wrongQueue.any((c) => c.id == card.id)) _prepareVariant(updated);
     _persistSession(answered: card);
     unawaited(_refreshHomeWidget());
+  }
+
+  /// Voraussetzungs-Sperre an (siehe PrerequisiteGate)? Vor dem ersten
+  /// await auslesen.
+  bool get _prerequisitesOn => context.read<SettingsRepository?>()?.settings.respectPrerequisites ?? false;
+
+  /// Bereitet im Hintergrund die neue Fassung für die Wiederholungsrunde vor
+  /// (nur mit KI, eingeschaltet und für passende Fragetypen). Scheitert das,
+  /// kommt die Karte wortgleich wieder.
+  void _prepareVariant(Flashcard card) {
+    final settings = context.read<SettingsRepository?>()?.settings;
+    if (settings == null || !settings.retryVariants || !settings.hasApiKey || !RetryVariantService.supports(card)) return;
+    if (!_variantPending.add(card.id)) return;
+    final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+    unawaited(RetryVariantService.generate(ai, card).then((variant) {
+      _variantPending.remove(card.id);
+      if (variant == null || !mounted || !_wrongQueue.any((c) => c.id == card.id)) return;
+      setState(() => _variants[card.id] = variant);
+    }));
   }
 
   Future<void> _refreshHomeWidget() async {
@@ -421,8 +472,8 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         onSkip: _index < plan.total - 1 || _skipQueue.isNotEmpty
             ? () => _handleSkip(card, stage: _QuizStage.main)
             : null,
-        onComplete: ({selfGrade, isCorrect}) =>
-            _handleComplete(card, stage: _QuizStage.main, selfGrade: selfGrade, isCorrect: isCorrect),
+        onComplete: ({selfGrade, isCorrect, signals}) =>
+            _handleComplete(card, stage: _QuizStage.main, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
         onImageEdited: (bytes) => saveEditedImage(card, bytes),
       );
     } else if (_skipQueue.isNotEmpty) {
@@ -439,20 +490,28 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         isSkipped: true,
         revisitRemaining: _skipQueue.length,
         onSkip: _skipQueue.length > 1 ? () => _handleSkip(card, stage: _QuizStage.skipped) : null,
-        onComplete: ({selfGrade, isCorrect}) =>
-            _handleComplete(card, stage: _QuizStage.skipped, selfGrade: selfGrade, isCorrect: isCorrect),
+        onComplete: ({selfGrade, isCorrect, signals}) =>
+            _handleComplete(card, stage: _QuizStage.skipped, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
         onImageEdited: (bytes) => saveEditedImage(card, bytes),
       );
     } else if (_wrongQueue.isNotEmpty) {
       // Wiederholungsrunde: Hauptrunde ist durch, aber es gibt noch falsch
       // beantwortete Karten von vorhin (siehe _handleComplete).
       final card = _wrongQueue.first;
+      // Neue Fassung nur, wenn sie schon bereitlag, als die Karte nach vorn
+      // kam – sonst bliebe sie, bis sie fertig ist, und tauschte dann die
+      // Frage mitten im Antworten aus.
+      final attemptKey = '${card.id}-${_wrongAttempts[card.id] ?? 0}';
+      final ready = _variants[card.id];
+      if (ready == null) _shownPlain.add(attemptKey);
+      final variant = _shownPlain.contains(attemptKey) ? null : ready;
       body = _SessionView(
         // Versuchszähler im Key: kommt dieselbe Karte direkt erneut dran
         // (einzige Karte in der Queue), braucht sie einen frischen
         // Antwort-State statt der schon geprüften Eingabe von eben.
-        key: ValueKey('revisit-${card.id}-${_wrongAttempts[card.id] ?? 0}'),
-        card: card,
+        key: ValueKey('revisit-$attemptKey-${variant != null}'),
+        card: variant ?? card,
+        isVariant: variant != null,
         moduleName: context.read<ModuleRepository>().byId(card.moduleId)?.name ?? '',
         progress: 1,
         total: plan.total,
@@ -461,9 +520,9 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         isRevisit: true,
         revisitRemaining: _wrongQueue.length,
         onSkip: _wrongQueue.length > 1 ? () => _handleSkip(card, stage: _QuizStage.revisit) : null,
-        onComplete: ({selfGrade, isCorrect}) =>
-            _handleComplete(card, stage: _QuizStage.revisit, selfGrade: selfGrade, isCorrect: isCorrect),
-        onImageEdited: (bytes) => saveEditedImage(card, bytes),
+        onComplete: ({selfGrade, isCorrect, signals}) =>
+            _handleComplete(card, stage: _QuizStage.revisit, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
+        onImageEdited: variant != null ? null : (bytes) => saveEditedImage(card, bytes),
       );
     } else if (_bonusQueue.isNotEmpty) {
       // Freiwillige Zusatzrunde (siehe _continueVoluntarily): Haupt- und
@@ -481,8 +540,8 @@ class _DailyQuizScreenState extends State<DailyQuizScreen>
         isBonus: true,
         revisitRemaining: _bonusQueue.length,
         onSkip: _bonusQueue.length > 1 ? () => _handleSkip(card, stage: _QuizStage.bonus) : null,
-        onComplete: ({selfGrade, isCorrect}) =>
-            _handleComplete(card, stage: _QuizStage.bonus, selfGrade: selfGrade, isCorrect: isCorrect),
+        onComplete: ({selfGrade, isCorrect, signals}) =>
+            _handleComplete(card, stage: _QuizStage.bonus, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
         onImageEdited: (bytes) => saveEditedImage(card, bytes),
       );
     } else if (plan.total == 0 && _reviewedCount == 0) {
@@ -678,6 +737,7 @@ class _SessionView extends StatelessWidget {
     this.onImageEdited,
     this.onSkip,
     this.isRevisit = false,
+    this.isVariant = false,
     this.isBonus = false,
     this.isSkipped = false,
     this.revisitRemaining = 0,
@@ -689,7 +749,7 @@ class _SessionView extends StatelessWidget {
   final int total;
   final int position;
   final bool isNew;
-  final void Function({Grade? selfGrade, bool? isCorrect}) onComplete;
+  final AnswerCallback onComplete;
   final Future<void> Function(Uint8List? bytes)? onImageEdited;
 
   /// "Überspringen" (null: nicht anbieten, z.B. bei der letzten Karte).
@@ -704,6 +764,9 @@ class _SessionView extends StatelessWidget {
   /// [_DailyQuizScreenState._wrongQueue]) – zeigt statt "Position / Total"
   /// die Anzahl verbleibender Wiederholungen.
   final bool isRevisit;
+
+  /// [card] ist eine neu eingekleidete Fassung (siehe RetryVariantService).
+  final bool isVariant;
 
   /// true, wenn dies die freiwillige Zusatzrunde nach Sessionende ist (siehe
   /// [_DailyQuizScreenState._bonusQueue]/_continueVoluntarily) – nutzt
@@ -736,7 +799,7 @@ class _SessionView extends StatelessWidget {
                 children: [
                   Text(
                     isRevisit
-                        ? '🔄 Wiederholung · noch $revisitRemaining'
+                        ? '🔄 Wiederholung${isVariant ? ' in neuer Form' : ''} · noch $revisitRemaining'
                         : isSkipped
                             ? '⏭ Übersprungen · noch $revisitRemaining'
                             : isBonus
@@ -774,6 +837,7 @@ class _SessionView extends StatelessWidget {
             onImageEdited: onImageEdited,
             onSkip: onSkip,
             canGiveUp: true,
+            isVariant: isVariant,
           ),
         ),
       ],

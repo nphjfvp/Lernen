@@ -1,8 +1,10 @@
 import 'calc_task_detector.dart';
 import 'calendar_days.dart';
+import '../models/concept.dart';
 import '../models/flashcard.dart';
 import '../models/module.dart';
 import 'fsrs_service.dart';
+import 'prerequisite_gate.dart';
 import 'stage_gate_service.dart';
 
 /// Der Tagesplan für das Daily Quiz: fällige Wiederholungen + eine
@@ -111,11 +113,17 @@ class DailySchedulerService {
   /// täglich ohne Fach dran und ließen sich nirgends löschen –, nur die
   /// gerade freigeschaltete Stufe ihrer Gruppe (Leicht → Mittel → Schwer,
   /// siehe StageGate) und nur aus behandelten Einheiten (siehe [buildPlan]).
+  ///
+  /// [concepts]: mit [Concept.prerequisiteIds] – neue Karten eines Konzepts,
+  /// dessen Voraussetzungen noch nicht sitzen, warten (siehe
+  /// PrerequisiteGate). Leer = keine Voraussetzungs-Sperre.
   static List<Flashcard> _eligible(
     List<Module> modules,
     List<Flashcard> allCards,
-    Map<String, bool> unitCoveredById,
-  ) {
+    Map<String, bool> unitCoveredById, {
+    List<Concept> concepts = const [],
+    DateTime? now,
+  }) {
     final moduleIds = {for (final m in modules) m.id};
     final stages = StageGate.statuses(allCards.where((c) => moduleIds.contains(c.moduleId)));
     bool isEligible(Flashcard c) {
@@ -125,7 +133,11 @@ class DailySchedulerService {
       return unitCoveredById[unitId] ?? true;
     }
 
-    return allCards.where(isEligible).toList();
+    final eligible = allCards.where(isEligible).toList();
+    if (concepts.every((c) => c.prerequisiteIds.isEmpty)) return eligible;
+    final blocked = PrerequisiteGate.blockedConcepts(concepts, eligible, now: now);
+    if (blocked.isEmpty) return eligible;
+    return eligible.where((c) => PrerequisiteGate.mayIntroduce(c, blocked)).toList();
   }
 
   /// [unitCoveredById] ordnet jede Vorlesungseinheit (LectureUnit.id) ihrem
@@ -160,6 +172,7 @@ class DailySchedulerService {
     DateTime? now,
     bool includeCalcTasks = true,
     bool Function(Flashcard card)? isCalcTask,
+    List<Concept> concepts = const [],
   }) {
     final isCalc = isCalcTask ?? CalcTaskDetector.isCalcTask;
     if (!includeCalcTasks) {
@@ -170,6 +183,7 @@ class DailySchedulerService {
         introducedTodayByModule: introducedTodayByModule,
         now: now,
         isCalcTask: isCalc,
+        concepts: concepts,
       );
       final calcIds = {for (final c in allCards) if (isCalc(c)) c.id};
       final withoutCalc = _build(
@@ -181,6 +195,7 @@ class DailySchedulerService {
         now: now,
         isCalc: isCalc,
         catchUp: false,
+        concepts: concepts,
       );
       return DailyPlan(
         dueCards: withoutCalc.dueCards,
@@ -198,6 +213,7 @@ class DailySchedulerService {
       now: now,
       isCalc: isCalc,
       catchUp: true,
+      concepts: concepts,
     );
   }
 
@@ -210,11 +226,14 @@ class DailySchedulerService {
     required DateTime? now,
     required bool Function(Flashcard) isCalc,
     required bool catchUp,
+    List<Concept> concepts = const [],
   }) {
     final today = now ?? DateTime.now();
     final todayDay = DateTime(today.year, today.month, today.day);
 
-    final eligibleCards = _eligible(modules, allCards, unitCoveredById).where((c) => !exclude.contains(c.id)).toList();
+    final eligibleCards = _eligible(modules, allCards, unitCoveredById, concepts: concepts, now: now)
+        .where((c) => !exclude.contains(c.id))
+        .toList();
     bool deferredCalc(Flashcard c) => catchUp && c.calcDeferredAt != null && isCalc(c);
     var calcCatchUp = 0;
 
@@ -360,9 +379,10 @@ class DailySchedulerService {
     int batchSize = 10,
     bool includeCalcTasks = true,
     bool Function(Flashcard card)? isCalcTask,
+    List<Concept> concepts = const [],
   }) {
     final isCalc = isCalcTask ?? CalcTaskDetector.isCalcTask;
-    final eligibleCards = _eligible(modules, allCards, unitCoveredById)
+    final eligibleCards = _eligible(modules, allCards, unitCoveredById, concepts: concepts, now: now)
         .where((c) => !excludeIds.contains(c.id) && (includeCalcTasks || !isCalc(c)))
         .toList();
     bool deferredCalc(Flashcard c) => includeCalcTasks && c.calcDeferredAt != null && isCalc(c);

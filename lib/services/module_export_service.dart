@@ -333,8 +333,15 @@ class ModuleExportService {
         unitId: cpt.unitId == null ? null : unitIdMap[cpt.unitId],
         linkedMaterialId: cpt.linkedMaterialId == null ? null : materialIdMap[cpt.linkedMaterialId],
         linkedPageNumber: cpt.linkedPageNumber,
+        prerequisiteIds: cpt.prerequisiteIds,
       );
     }).toList();
+    // Voraussetzungen erst jetzt übersetzen – sie können auf später
+    // eingelesene Konzepte zeigen.
+    for (var i = 0; i < concepts.length; i++) {
+      final mapped = [for (final id in concepts[i].prerequisiteIds) ?conceptIdMap[id]];
+      concepts[i] = concepts[i].copyWith(prerequisiteIds: mapped);
+    }
 
     final flashcards = ((json['flashcards'] as List?) ?? const [])
         .map((e) => Flashcard.fromMap(Map<String, dynamic>.from(e as Map)))

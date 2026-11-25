@@ -257,6 +257,67 @@ class VisualShow {
   }
 }
 
+/// Eine Antwortmöglichkeit der Prüffrage eines Schritts.
+class StepCheckOption {
+  const StepCheckOption({required this.text, required this.correct, this.why = ''});
+
+  final String text;
+  final bool correct;
+
+  /// Bei einer falschen Option: der Denkfehler dahinter.
+  final String why;
+
+  Map<String, dynamic> toMap() => {'text': text, 'correct': correct, if (why.isNotEmpty) 'why': why};
+
+  static StepCheckOption? fromMap(Object? raw) {
+    if (raw is String) return raw.trim().isEmpty ? null : StepCheckOption(text: raw.trim(), correct: false);
+    if (raw is! Map) return null;
+    final text = _str(raw['text'] ?? raw['option'] ?? raw['label']);
+    if (text.isEmpty) return null;
+    final flag = raw['correct'] ?? raw['isCorrect'] ?? raw['richtig'];
+    return StepCheckOption(
+      text: text,
+      correct: flag == true || '$flag'.toLowerCase() == 'true',
+      why: _str(raw['why'] ?? raw['misconception'] ?? raw['denkfehler']),
+    );
+  }
+}
+
+/// Prüffrage nach einem Schritt („hat der Schritt gesessen?“): kurz, nur mit
+/// dem Schritt lösbar, eine Anwendung statt Nachplappern; jede falsche
+/// Option steht für einen typischen Denkfehler.
+class StepCheck {
+  const StepCheck({required this.question, required this.options, this.explanation = ''});
+
+  final String question;
+  final List<StepCheckOption> options;
+
+  /// Warum die richtige Option stimmt (nach dem Antworten gezeigt).
+  final String explanation;
+
+  Map<String, dynamic> toMap() => {
+    'question': question,
+    'options': [for (final o in options) o.toMap()],
+    if (explanation.isNotEmpty) 'explanation': explanation,
+  };
+
+  /// Null, wenn die Frage nicht taugt (keine Frage, < 2 Optionen, nicht
+  /// genau eine richtige).
+  static StepCheck? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final question = _str(raw['question'] ?? raw['frage'] ?? raw['front']);
+    final options = [
+      for (final o in (raw['options'] is List ? raw['options'] as List : const [])) ?StepCheckOption.fromMap(o),
+    ];
+    if (question.isEmpty || options.length < 2 || options.where((o) => o.correct).length != 1) return null;
+    return StepCheck(
+      question: question,
+      options: options,
+      explanation: _str(raw['explanation'] ?? raw['erklaerung'] ?? raw['erklärung']),
+    );
+  }
+}
+
 /// Ein Erklärschritt.
 class VisualStep {
   const VisualStep({
@@ -265,6 +326,7 @@ class VisualStep {
     this.formula = '',
     this.show = const VisualShow(),
     this.guide = '',
+    this.check,
   });
 
   final String title;
@@ -280,8 +342,11 @@ class VisualStep {
   /// herausfindet (verrät die Lösung nicht).
   final String guide;
 
+  /// Prüffrage nach dem Schritt (null bei älteren Lektionen).
+  final StepCheck? check;
+
   VisualStep copyWith({VisualShow? show}) =>
-      VisualStep(title: title, text: text, formula: formula, show: show ?? this.show, guide: guide);
+      VisualStep(title: title, text: text, formula: formula, show: show ?? this.show, guide: guide, check: check);
 
   Map<String, dynamic> toMap() => {
     'title': title,
@@ -289,6 +354,7 @@ class VisualStep {
     if (formula.isNotEmpty) 'formula': formula,
     if (!show.isEmpty || show.isPending) 'show': show.toMap(),
     if (guide.isNotEmpty) 'guide': guide,
+    if (check != null) 'check': check!.toMap(),
   };
 
   static VisualStep? fromMap(Object? raw) {
@@ -308,6 +374,7 @@ class VisualStep {
             (const ['scene', 'scene3d', 'car', 'plot', 'transform', 'idea'].any(raw.containsKey) ? raw : null),
       ),
       guide: _str(raw['guide'] ?? raw['leitfrage'] ?? raw['question']),
+      check: StepCheck.fromMap(raw['check'] ?? raw['pruefung'] ?? raw['prüfung'] ?? raw['quiz']),
     );
   }
 }

@@ -88,7 +88,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         theme: AppTheme.light,
         home: Scaffold(
-          body: QuestionAnswerView(card: card, isNew: false, onComplete: ({selfGrade, isCorrect}) {}),
+          body: QuestionAnswerView(card: card, isNew: false, onComplete: ({selfGrade, isCorrect, signals}) {}),
         ),
       ));
       expect(find.textContaining('Begriffe: Festlegung der Mengen'), findsOneWidget);

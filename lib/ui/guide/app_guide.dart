@@ -162,9 +162,39 @@ const appGuideChapters = <GuideChapter>[
     items: [
       GuideItem(
         'Beim Beantworten',
-        'Falsch Beantwortetes kommt in derselben Runde noch einmal. Überspringen legt eine Karte nach hinten, '
-            'Auflösen zeigt die Lösung. Vorher ein KI-Tipp, danach eine Erklärung oder „Im Skript“ nachsehen.',
+        'Falsch Beantwortetes kommt in derselben Runde noch einmal – mit KI in neuer Form (andere Situation oder '
+            'Zahlen), damit wirklich das Wissen zählt. Überspringen legt eine Karte nach hinten, „Weiß ich nicht“ '
+            'zeigt die Lösung (ehrliche Lücke statt raten). Vor dem Prüfen kannst du angeben, wie sicher du bist: '
+            'richtig, aber geraten zählt als „Schwer“, sicher und falsch deutet auf eine Fehlvorstellung hin. Bei '
+            'einer falschen Option steht, welcher Denkfehler dahintersteckt. Danach eine Erklärung, „Einfacher '
+            'erklären“ und zuletzt eine Suche im Netz nach anderen Erklärungen.',
         where: 'Daily Quiz',
+      ),
+      GuideItem(
+        'Tipps in Stufen',
+        'Jeder Klick auf „Tipp“ hilft eine Stufe mehr: 1 Blick auf die Angabe, 2 Art der Aufgabe, 3 Themengebiet, '
+            '4 Regel genannt, 5 Ansatz. Stufe 1 kostet nichts, mit 2–3 zählt richtig als „Schwer“, ab 4 als nicht '
+            'gewusst.',
+        where: 'Beim Beantworten: Tipp',
+      ),
+      GuideItem(
+        'Laut denken',
+        'Fragen aus deinen Fächern, zu denen du deinen Gedankengang sprichst oder tippst – auch Halbfertiges. '
+            'Die KI liest deinen Weg, sagt, was trägt und wo er abbiegt, gibt den kleinsten Anstoß und zeigt die '
+            'Lösung erst am Ende. Sprechen: Mikrofon auf der Tastatur bzw. Win + H.',
+        where: 'Fächer → Laut denken · Fach → Lernen → Laut denken',
+      ),
+      GuideItem(
+        'Einstufen',
+        'Je Fragen-Ordner zuerst die schwerste Stufe: weißt du sie sicher, überspringst du die leichteren. Sie '
+            'zählen dann nicht als grün und kommen zurück, wenn die schwere Stufe mehrmals schiefgeht.',
+        where: 'Fach → Lernen → Einstufen',
+      ),
+      GuideItem(
+        'Voraussetzungen',
+        'Die KI bestimmt, welche Konzepte auf welchen aufbauen. Neue Fragen zu einem Konzept kommen erst, wenn '
+            'seine Grundlagen sitzen (abschaltbar).',
+        where: 'Fach → Verstehen → Lernkonzepte → Voraussetzungen per KI bestimmen',
       ),
       GuideItem(
         'Ampel',
@@ -201,7 +231,9 @@ const appGuideChapters = <GuideChapter>[
       ),
       GuideItem(
         'Schwachstellen',
-        'Das Fehlertagebuch zeigt, was oft schiefgeht; „Die 20 schwächsten üben“ und eine KI-Musteranalyse.',
+        'Das Fehlertagebuch zeigt, was oft schiefgeht; „Die 20 schwächsten üben“ und eine KI-Musteranalyse. '
+            'Sicher und trotzdem falsch Beantwortetes steht oben als mögliche Fehlvorstellung. Im Fortschritt '
+            'siehst du, wie gut deine Sicherheit zur Trefferquote passt.',
         where: 'Fortschritt → Schwachstellen',
       ),
     ],
@@ -295,6 +327,13 @@ const appGuideChapters = <GuideChapter>[
             'Fragen und Wünsche gehen in die KI-Leiste unten (siehe „Die KI-Leiste“): z.B. „Markier alles mit dem '
             'Weg grün und alles mit der Zeit rot“ oder „Lass uns das an einem Beispiel durchgehen“.',
         where: 'Fach → Verstehen → Aufgaben visuell lösen',
+      ),
+      GuideItem(
+        'Prüffrage nach jedem Schritt',
+        'Unter jedem Lektionsschritt eine kurze Prüffrage: Sitzt der Schritt, bevor der nächste darauf aufbaut? '
+            'Bei einer falschen Wahl steht der Denkfehler dahinter, und „Schritt anders erklären“ holt eine neue '
+            'Erklärung genau an dieser Stelle.',
+        where: 'Lektion → unter dem Schritt → Prüffrage',
       ),
       GuideItem(
         'Lernen – erst verstehen, dann lösen',

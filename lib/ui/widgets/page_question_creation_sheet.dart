@@ -1137,7 +1137,7 @@ class _PageQuestionCreationSheetState extends State<PageQuestionCreationSheet>
             key: ValueKey('${card.id}-$_editRevision'),
             card: card,
             isNew: false,
-            onComplete: ({selfGrade, isCorrect}) {
+            onComplete: ({selfGrade, isCorrect, signals}) {
               if (index < flat.length - 1) setState(() => _previewIndex = index + 1);
             },
           ),

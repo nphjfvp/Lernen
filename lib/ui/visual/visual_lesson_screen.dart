@@ -25,6 +25,7 @@ import '../widgets/math_text.dart';
 import '../settings/model_picker_sheet.dart';
 import 'scene3d_plan_sheet.dart';
 import 'scene3d_live_view.dart';
+import 'step_check_card.dart';
 import 'visual_chat_screen.dart';
 import 'visual_diagram_view.dart';
 import 'visual_scene3d_view.dart';
@@ -495,6 +496,16 @@ class _VisualLessonScreenState extends State<VisualLessonScreen> {
                                   ..._socraticBody(c, _page, page.step!),
                               ] else
                                 ..._stepBody(c, page.step!, isResult: page.kind == _PageKind.result),
+                              // Erst erklärt, dann geprüft – nicht solange ein
+                              // sokratischer Schritt noch verschlossen ist.
+                              if (page.kind == _PageKind.step &&
+                                  page.step!.check != null &&
+                                  !(_style == VisualStyle.socratic && !_socraticFor(_page).unlocked))
+                                StepCheckCard(
+                                  key: ValueKey('step-check-$_page'),
+                                  check: page.step!.check!,
+                                  onRepair: (request) => _ask(step: page.step, question: request),
+                                ),
                             ],
                           ),
                   ),

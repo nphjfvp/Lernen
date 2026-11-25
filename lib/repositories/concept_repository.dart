@@ -10,6 +10,18 @@ class ConceptRepository extends ChangeNotifier {
   List<Concept> forModule(String moduleId) =>
       List.unmodifiable(_byModule[moduleId] ?? const []);
 
+  /// Alle Konzepte aller Fächer (für die Voraussetzungs-Sperre im Daily
+  /// Quiz, siehe PrerequisiteGate). Fehler → leer (dann ohne Sperre).
+  static Future<List<Concept>> loadAll() async {
+    try {
+      final db = await DatabaseService.instance.database;
+      final records = await DatabaseService.concepts.find(db);
+      return [for (final r in records) Concept.fromMap(r.value)];
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> loadForModule(String moduleId) async {
     final db = await DatabaseService.instance.database;
     final records = await DatabaseService.concepts.find(

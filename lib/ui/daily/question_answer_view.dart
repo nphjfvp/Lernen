@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/flashcard.dart';
@@ -18,6 +19,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/answer_checker.dart';
+import '../../services/answer_signals.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/html_question_contract.dart';
 import '../../services/weakness_service.dart';
@@ -60,10 +62,16 @@ class QuestionAnswerView extends StatefulWidget {
     this.onImageEdited,
     this.onSkip,
     this.canGiveUp = false,
+    this.isVariant = false,
   });
 
   final Flashcard card;
   final bool isNew;
+
+  /// [card] ist eine neu eingekleidete Fassung (Wiederholungsrunde, siehe
+  /// RetryVariantService): Hilfestellungen werden nicht an der gespeicherten
+  /// Karte abgelegt, das Bild ist nicht bearbeitbar.
+  final bool isVariant;
 
   /// Gesetzt, wenn die Frage übersprungen werden darf: der Knopf
   /// "Überspringen" ruft das auf, ohne dass etwas verbucht wird – der Aufrufer
@@ -71,7 +79,7 @@ class QuestionAnswerView extends StatefulWidget {
   /// in der Probeklausur (die hat ihr eigenes Überspringen).
   final VoidCallback? onSkip;
 
-  /// Ob "Auflösen" angeboten wird: die Lösung wird gezeigt und die Frage zählt
+  /// Ob "Weiß ich nicht" angeboten wird: die Lösung wird gezeigt und die Frage zählt
   /// als falsch, ohne dass etwas beantwortet werden muss.
   final bool canGiveUp;
 
@@ -86,10 +94,11 @@ class QuestionAnswerView extends StatefulWidget {
   final bool examMode;
 
   /// [selfGrade] für den offenen `flashcard`-Typ, [isCorrect] für alle
-  /// automatisch geprüften Typen. Ausnahme: richtig beantwortet, aber mit
-  /// Tipp – dann kommt beides ([isCorrect] true, [selfGrade] "Schwer"), damit
-  /// die Antwort zählt, die Ampel aber nicht steigt (siehe ReviewService).
-  final void Function({Grade? selfGrade, bool? isCorrect}) onComplete;
+  /// automatisch geprüften Typen (bei einer fast richtigen Tabelle beides,
+  /// [selfGrade] "Schwer"). Sicherheit, „Weiß ich nicht“ und die Tipp-Stufe
+  /// kommen in `signals` – daraus macht ReviewService die Bewertung (siehe
+  /// AnswerSignals.gradeFor).
+  final AnswerCallback onComplete;
 
   @override
   State<QuestionAnswerView> createState() => _QuestionAnswerViewState();
@@ -179,8 +188,13 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   bool _checked = false;
   AnswerCheckResult? _result;
 
-  /// "Auflösen" gedrückt: die Lösung steht da, die Frage zählt als falsch.
+  /// "Weiß ich nicht" gedrückt: die Lösung steht da, die Frage zählt als
+  /// nicht gewusst (ehrliche Lücke, keine Fehlvorstellung).
   bool _gaveUp = false;
+
+  /// Vor dem Prüfen angegebene Sicherheit (freiwillig, siehe
+  /// AppSettings.askConfidence).
+  AnswerConfidence? _confidence;
 
   /// true, während für eine Freitext- oder Lückentext-Antwort auf die
   /// KI-Zweitmeinung gewartet wird (siehe [_checkFreeTextAnswer],
@@ -228,7 +242,9 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   bool _useHtmlFrame = false;
 
   // -- KI-Hilfe: Tipp vor dem Antworten, Erklärung danach -----------------
-  String? _hint;
+  /// Per „Tipp“ geholte Hilfen, je eine Stufe der Hilfe-Leiter (siehe
+  /// HintLadder).
+  final List<({int level, String text})> _manualHints = [];
   bool _hintLoading = false;
 
   /// Fehler-Leiter (siehe Flashcard.hintsDueFor): nach wiederholten Fehlern
@@ -236,10 +252,31 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   List<String> _ladderHints = const [];
   bool _ladderHintsLoading = false;
 
-  bool get _helpShown => _hint != null || _ladderHints.isNotEmpty;
+  /// Automatische Hilfestellungen der Fehler-Leiter zählen als Stufe 2 und 3.
+  static const _ladderFirstLevel = 2;
+
+  /// Höchste gesehene Stufe der Hilfe-Leiter (0 = keine Hilfe).
+  int get _hintLevel {
+    final ladder = _ladderHints.isEmpty ? 0 : _ladderFirstLevel + _ladderHints.length - 1;
+    final manual = _manualHints.isEmpty ? 0 : _manualHints.last.level;
+    return max(ladder, manual);
+  }
+
+  AnswerSignals get _signals => AnswerSignals(
+        confidence: _confidence,
+        dontKnow: _gaveUp,
+        hintLevel: _hintLevel,
+        variant: widget.isVariant,
+      );
   String? _explanation;
   bool _explanationLoading = false;
   bool _explainedSimpler = false;
+
+  /// Letzte Stufe: andere Erklärung aus der Websuche (siehe
+  /// AiService.explainWithWebResearch), mit Quellen.
+  String? _webExplanation;
+  List<WebSource> _webSources = const [];
+  bool _webLoading = false;
   String? _aiHelpError;
 
   /// Die Aufrufer speichern asynchron (DB-Write), bevor sie zur nächsten
@@ -252,7 +289,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
   void _submit({Grade? selfGrade, bool? isCorrect}) {
     if (_submitted) return;
     _submitted = true;
-    widget.onComplete(selfGrade: selfGrade, isCorrect: isCorrect);
+    widget.onComplete(selfGrade: selfGrade, isCorrect: isCorrect, signals: _signals);
   }
 
   /// Zuordnen-Fragen mit mehrfach genannten Zielen gelten als Kategorien
@@ -277,7 +314,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     _labelInputs = List.generate(_labelTargets.length, (_) => TextEditingController());
     _tableControllers = List.generate(_tableBlanks.length, (_) => TextEditingController());
     if (widget.card.type == QuestionType.html) _setupWebView();
-    if (!widget.examMode && Flashcard.hintsDueFor(widget.card.variantMissStreak) > 0) {
+    if (!widget.examMode && !widget.isVariant && Flashcard.hintsDueFor(widget.card.variantMissStreak) > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadLadderHints());
     }
   }
@@ -301,7 +338,12 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     setState(() => _ladderHintsLoading = true);
     try {
       while (hints.length < due) {
-        hints.add(await ai.generateHint(question: card.promptText, correctAnswer: answer, previousHints: hints));
+        hints.add(await ai.generateHint(
+          question: card.promptText,
+          correctAnswer: answer,
+          previousHints: hints,
+          level: _ladderFirstLevel + hints.length,
+        ));
         if (mounted) setState(() => _ladderHints = List.of(hints));
       }
       await repo?.updateHints(card.id, hints, type: card.type, front: card.front);
@@ -429,7 +471,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     widget.onSkip!();
   }
 
-  /// "Auflösen": Lösung zeigen und als falsch werten – ohne KI-Prüfung und
+  /// "Weiß ich nicht": Lösung zeigen und als nicht gewusst werten – ohne KI-Prüfung und
   /// ohne dass die Frage beantwortet sein muss. Alle Stellen/Lücken/Zellen
   /// gelten als falsch, damit überall die richtige Lösung erscheint.
   void _giveUp() {
@@ -462,7 +504,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     });
   }
 
-  /// "Überspringen" und "Auflösen" unter der Frage (nur wo angeboten).
+  /// "Überspringen" und "Weiß ich nicht" unter der Frage (nur wo angeboten).
   Widget _skipRow(AppColors c) {
     if (!_canSkipOrGiveUp) return const SizedBox.shrink();
     return Row(
@@ -479,8 +521,8 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
           TextButton.icon(
             key: const ValueKey('question-give-up'),
             onPressed: _aiChecking ? null : _giveUp,
-            icon: const Icon(Icons.flag_outlined, size: 18),
-            label: const Text('Auflösen'),
+            icon: const Icon(Icons.help_outline, size: 18),
+            label: const Text('Weiß ich nicht'),
             style: TextButton.styleFrom(foregroundColor: c.inkMuted),
           ),
       ],
@@ -853,16 +895,25 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     }
   }
 
+  /// Nächste Stufe der Hilfe-Leiter: genau eine Stufe mehr als bisher
+  /// gesehen, gezielt an der bisherigen Eingabe.
   Future<void> _loadHint() async {
     final ai = _helpAiOrNull();
-    if (ai == null) return;
+    final level = _hintLevel + 1;
+    if (ai == null || level > HintLadder.maxLevel) return;
     setState(() {
       _hintLoading = true;
       _aiHelpError = null;
     });
     try {
-      final hint = await ai.generateHint(question: widget.card.promptText, correctAnswer: _correctAnswerText);
-      if (mounted) setState(() => _hint = hint);
+      final hint = await ai.generateHint(
+        question: widget.card.promptText,
+        correctAnswer: _correctAnswerText,
+        previousHints: [..._ladderHints, for (final h in _manualHints) h.text],
+        level: level,
+        attempt: _userAnswerText,
+      );
+      if (mounted) setState(() => _manualHints.add((level: level, text: hint)));
     } catch (e) {
       if (mounted) setState(() => _aiHelpError = e is AiServiceException ? e.message : 'Tipp fehlgeschlagen: $e');
     } finally {
@@ -899,15 +950,47 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     }
   }
 
+  bool get _webResearchAvailable =>
+      context.read<SettingsRepository?>()?.settings.webResearchEnabled ?? false;
+
+  Future<void> _loadWebExplanation() async {
+    final ai = _helpAiOrNull();
+    if (ai == null) return;
+    setState(() {
+      _webLoading = true;
+      _aiHelpError = null;
+    });
+    try {
+      final result = await ai.explainWithWebResearch(
+        question: widget.card.promptText,
+        correctAnswer: _correctAnswerText,
+        userAnswer: _userAnswerText,
+        previousExplanations: [?_explanation],
+      );
+      if (!mounted) return;
+      setState(() {
+        _webExplanation = result.text;
+        _webSources = result.sources;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _aiHelpError = e is AiServiceException ? e.message : 'Websuche fehlgeschlagen: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _webLoading = false);
+    }
+  }
+
   static Widget _smallSpinner() =>
       const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2));
 
-  /// "Im Skript" (jederzeit, auch ohne KI) + "Tipp" vor dem Antworten – ein
-  /// Denkanstoß ohne Lösung. Eine danach richtige Antwort zählt nur als
-  /// "Schwer" (siehe [QuestionAnswerView.onComplete]).
+  /// "Im Skript" (jederzeit, auch ohne KI) + "Tipp" vor dem Antworten – die
+  /// Hilfe-Leiter: je Klick eine Stufe mehr (siehe HintLadder). Wie viel
+  /// Hilfe nötig war, bestimmt die Bewertung (AnswerSignals.gradeFor).
   Widget _buildHintArea(AppColors c) {
     if (widget.examMode) return const SizedBox.shrink();
-    final hint = _hint;
+    final nextLevel = _hintLevel + 1;
+    final canAskMore = nextLevel <= HintLadder.maxLevel;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
@@ -946,18 +1029,37 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               SourceLinkButton(card: widget.card),
-              if (_aiHelpAvailable && hint == null)
-                TextButton.icon(
-                  onPressed: _hintLoading ? null : _loadHint,
-                  icon: _hintLoading ? _smallSpinner() : const Icon(Icons.lightbulb_outline, size: 18),
-                  label: const Text('Tipp'),
+              if (_aiHelpAvailable && canAskMore)
+                Tooltip(
+                  message: 'Stufe $nextLevel: ${HintLadder.nameOf(nextLevel)} – ${HintLadder.costOf(nextLevel)}',
+                  child: TextButton.icon(
+                    key: const ValueKey('hint-ladder-button'),
+                    onPressed: _hintLoading ? null : _loadHint,
+                    icon: _hintLoading ? _smallSpinner() : const Icon(Icons.lightbulb_outline, size: 18),
+                    label: Text(_manualHints.isEmpty && _ladderHints.isEmpty ? 'Tipp' : 'Weiterer Tipp ($nextLevel/${HintLadder.maxLevel})'),
+                  ),
                 ),
             ],
           ),
-          if (_aiHelpAvailable && hint != null)
+          if (_aiHelpAvailable)
+            for (final h in _manualHints)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _AiHelpBox(
+                  icon: Icons.lightbulb_outline,
+                  text: 'Tipp ${h.level} · ${HintLadder.nameOf(h.level)}: ${h.text}',
+                  color: c.warn,
+                  background: c.warnSoft,
+                ),
+              ),
+          if (_aiHelpAvailable && _hintLevel >= 2)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: _AiHelpBox(icon: Icons.lightbulb_outline, text: hint, color: c.warn, background: c.warnSoft),
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Mit Hilfe bis Stufe $_hintLevel: ${HintLadder.costOf(_hintLevel)}.',
+                key: const ValueKey('hint-cost'),
+                style: TextStyle(fontSize: 12, color: c.inkMuted),
+              ),
             ),
           if (_aiHelpAvailable && _aiHelpError != null)
             Padding(
@@ -1015,7 +1117,35 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                 onPressed: _explanationLoading ? null : () => _loadExplanation(simpler: true),
                 icon: _explanationLoading ? _smallSpinner() : const Icon(Icons.child_care_outlined, size: 18),
                 label: const Text('Einfacher erklären'),
+              )
+            else if (_webExplanation == null && _webResearchAvailable)
+              // Erst wenn auch die einfache Fassung nicht gereicht hat.
+              TextButton.icon(
+                key: const ValueKey('web-research'),
+                onPressed: _webLoading ? null : _loadWebExplanation,
+                icon: _webLoading ? _smallSpinner() : const Icon(Icons.travel_explore, size: 18),
+                label: const Text('Immer noch unklar? Im Netz nach anderen Erklärungen suchen'),
               ),
+            if (_webExplanation != null) ...[
+              const SizedBox(height: 8),
+              _AiHelpBox(
+                icon: Icons.travel_explore,
+                text: _webExplanation!,
+                color: c.accentOnSoft,
+                background: c.accentSoft,
+              ),
+              for (final source in _webSources)
+                TextButton(
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                  onPressed: () => launchUrl(Uri.parse(source.url), mode: LaunchMode.externalApplication),
+                  child: Text(
+                    'Quelle: ${source.title.isNotEmpty ? source.title : source.url}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+            ],
           ],
           if (_aiHelpError != null)
             Padding(
@@ -1490,14 +1620,16 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
           _buildFeedback(c),
           _buildExplainArea(c),
         ],
+        if (_showConfidence) _buildConfidence(c),
         const SizedBox(height: 20),
         if (_checked)
           FilledButton(
             onPressed: () => _submit(
               isCorrect: _result!.isCorrect || _tablePartial,
-              // Mit Tipp richtig bzw. Tabelle fast richtig: zählt, aber nur
-              // als "Schwer" – die Ampel steigt dadurch nicht.
-              selfGrade: _tablePartial || (_helpShown && _result!.isCorrect) ? Grade.hard : null,
+              // Tabelle fast richtig: zählt, aber nur als "Schwer" – die
+              // Ampel steigt dadurch nicht. Tipps und „geraten“ wirken über
+              // die Signale (AnswerSignals.gradeFor).
+              selfGrade: _tablePartial ? Grade.hard : null,
             ),
             child: const Text('Weiter'),
           )
@@ -2304,6 +2436,68 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     );
   }
 
+  /// Sicherheit nur dort abfragen, wo automatisch geprüft wird – nicht in
+  /// der Probeklausur und nur, wenn eingeschaltet.
+  bool get _showConfidence =>
+      !_checked &&
+      !widget.examMode &&
+      _answerable &&
+      (context.read<SettingsRepository?>()?.settings.askConfidence ?? false);
+
+  Widget _buildConfidence(AppColors c) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('Wie sicher?', style: TextStyle(fontSize: 12.5, color: c.inkMuted)),
+          for (final level in AnswerConfidence.values)
+            ChoiceChip(
+              key: ValueKey('confidence-${level.name}'),
+              label: Text(level.label),
+              selected: _confidence == level,
+              visualDensity: VisualDensity.compact,
+              onSelected: (on) => setState(() => _confidence = on ? level : null),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Denkfehler hinter den gewählten falschen Optionen (QuizOption.why).
+  List<String> get _chosenMisconceptions {
+    final options = widget.card.options ?? const <QuizOption>[];
+    final chosen = switch (widget.card.type) {
+      QuestionType.singleChoice => [?_selectedIndex],
+      QuestionType.multipleChoice => _selectedIndices.toList()..sort(),
+      _ => const <int>[],
+    };
+    return [
+      for (final i in chosen)
+        if (i < options.length && !options[i].isCorrect && options[i].hasWhy)
+          'Warum „${options[i].labelAt(i)}“ nicht passt: ${options[i].why!.trim()}',
+    ];
+  }
+
+  /// Was Sicherheit und Tipps an der Bewertung ändern – damit es nicht
+  /// überrascht, dass eine richtige Antwort die Ampel nicht hebt.
+  String? _signalNote(AnswerCheckResult result) {
+    final signals = _signals;
+    if (!result.isCorrect && AnswerSignals.isConfidentMiss(isCorrect: false, signals: signals)) {
+      return 'Du warst dir sicher – das spricht für eine Fehlvorstellung, nicht nur eine Lücke. '
+          'Lies die Erklärung genau; die Frage landet im Fehlertagebuch.';
+    }
+    if (!result.isCorrect) return null;
+    if (signals.hintLevel >= 4) return 'Richtig – aber mit genannter Regel bzw. Ansatz: zählt als nicht gewusst.';
+    if (signals.hintLevel >= 2) return 'Richtig mit Tipp – zählt als „Schwer“, die Ampel steigt nicht.';
+    if (signals.confidence == AnswerConfidence.guessed) {
+      return 'Richtig, aber geraten – zählt als „Schwer“, die Ampel steigt nicht.';
+    }
+    return null;
+  }
+
   Widget _buildFeedback(AppColors c) {
     final result = _result!;
     final isTable = widget.card.type == QuestionType.table;
@@ -2312,7 +2506,7 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
     if (result.isCorrect) {
       title = 'Richtig!';
     } else if (_gaveUp) {
-      title = 'Aufgelöst – zählt als falsch.';
+      title = 'Nicht gewusst – hier ist die Lösung.';
     } else if (isTable) {
       title = '$_tableRight von ${_tableBlanks.length} Zellen richtig'
           '${_tablePartial ? ' – fast, zählt als "Schwer".' : '.'}';
@@ -2343,6 +2537,14 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
                 if (_checkInfo != null) ...[
                   const SizedBox(height: 6),
                   Text(_checkInfo!, style: TextStyle(fontSize: 12, color: c.inkMuted)),
+                ],
+                for (final why in _chosenMisconceptions) ...[
+                  const SizedBox(height: 6),
+                  MathText(why, key: const ValueKey('option-why'), style: TextStyle(fontSize: 13, color: c.ink)),
+                ],
+                if (_signalNote(result) case final note?) ...[
+                  const SizedBox(height: 6),
+                  Text(note, key: const ValueKey('signal-note'), style: TextStyle(fontSize: 12, color: c.inkMuted)),
                 ],
                 if (_canAcceptAsCorrect) ...[
                   const SizedBox(height: 4),

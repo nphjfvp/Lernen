@@ -77,4 +77,8 @@ class DatabaseService {
   /// Ergebnisse der Modell-Tests (siehe ModelTestRepository) – nur zum
   /// Vergleichen, nur auf diesem Gerät.
   static final modelTests = stringMapStoreFactory.store('model_tests');
+
+  /// Antwort-Protokoll (siehe ReviewLogRepository): jede verbuchte Antwort
+  /// mit Sicherheit, Tipp-Stufe und FSRS-Stand davor. Nur auf diesem Gerät.
+  static final reviewLog = stringMapStoreFactory.store('review_log');
 }

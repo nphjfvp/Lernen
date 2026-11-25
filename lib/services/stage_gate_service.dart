@@ -145,7 +145,8 @@ class StageGate {
     final levels = group.map(levelOf).toSet().toList()..sort((a, b) => a.index.compareTo(b.index));
     if (levels.isEmpty) return null;
     for (final level in levels) {
-      if (group.any((c) => levelOf(c) == level && !isMastered(c))) return level;
+      // Per Einstufung übersprungene Karten halten die Stufe nicht auf.
+      if (group.any((c) => levelOf(c) == level && !isMastered(c) && !c.placedOut)) return level;
     }
     return levels.last;
   }

@@ -110,7 +110,7 @@ void main() {
           body: QuestionAnswerView(
             card: _learn(),
             isNew: false,
-            onComplete: ({selfGrade, isCorrect}) => grade = selfGrade,
+            onComplete: ({selfGrade, isCorrect, signals}) => grade = selfGrade,
           ),
         ),
       ));

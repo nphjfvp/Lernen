@@ -24,6 +24,11 @@ class Concept {
   final String? linkedMaterialId;
   final int? linkedPageNumber;
 
+  /// Konzepte desselben Fachs, auf denen dieses direkt aufbaut (per KI
+  /// bestimmt oder von Hand). Neue Karten dieses Konzepts kommen im Daily
+  /// Quiz erst, wenn die Voraussetzungen sitzen (siehe PrerequisiteGate).
+  final List<String> prerequisiteIds;
+
   const Concept({
     required this.id,
     required this.moduleId,
@@ -34,7 +39,21 @@ class Concept {
     this.unitId,
     this.linkedMaterialId,
     this.linkedPageNumber,
+    this.prerequisiteIds = const [],
   });
+
+  Concept copyWith({String? title, String? explanation, List<String>? prerequisiteIds}) => Concept(
+        id: id,
+        moduleId: moduleId,
+        title: title ?? this.title,
+        explanation: explanation ?? this.explanation,
+        sourceMaterialIds: sourceMaterialIds,
+        createdAt: createdAt,
+        unitId: unitId,
+        linkedMaterialId: linkedMaterialId,
+        linkedPageNumber: linkedPageNumber,
+        prerequisiteIds: prerequisiteIds ?? this.prerequisiteIds,
+      );
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -46,6 +65,7 @@ class Concept {
         'unitId': unitId,
         'linkedMaterialId': linkedMaterialId,
         'linkedPageNumber': linkedPageNumber,
+        if (prerequisiteIds.isNotEmpty) 'prerequisiteIds': prerequisiteIds,
       };
 
   factory Concept.fromMap(Map<String, dynamic> map) => Concept(
@@ -58,5 +78,9 @@ class Concept {
         unitId: map['unitId'] as String?,
         linkedMaterialId: map['linkedMaterialId'] as String?,
         linkedPageNumber: (map['linkedPageNumber'] as num?)?.toInt(),
+        prerequisiteIds: [
+          for (final id in map['prerequisiteIds'] as List? ?? const [])
+            if (id != null && '$id'.isNotEmpty && '$id' != map['id']) '$id',
+        ],
       );
 }

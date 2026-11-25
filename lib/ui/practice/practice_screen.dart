@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/flashcard_repository.dart';
+import '../../services/answer_signals.dart';
 import '../../services/calc_task_detector.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mastery_service.dart';
@@ -117,8 +118,8 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
     setState(() => queue.add(queue.removeAt(_index)));
   }
 
-  Future<void> _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
-    final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
+  Future<void> _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect, AnswerSignals? signals}) async {
+    final outcome = await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals);
     if (!mounted) return;
     setState(() {
       // Rückfall: die zurückgeholten leichteren Fragen direkt als Nächstes.
@@ -197,10 +198,11 @@ class _PracticeScreenState extends State<PracticeScreen> with CardReviewMixin<Pr
                               // Die letzte Karte lässt sich nicht mehr ans Ende legen.
                               onSkip: _index < queue.length - 1 ? _skip : null,
                               canGiveUp: true,
-                              onComplete: ({selfGrade, isCorrect}) => _handleComplete(
+                              onComplete: ({selfGrade, isCorrect, signals}) => _handleComplete(
                                 queue[_index],
                                 selfGrade: selfGrade,
                                 isCorrect: isCorrect,
+                                signals: signals,
                               ),
                             ),
                           ),

@@ -1,6 +1,7 @@
 import '../models/flashcard.dart';
 import '../models/module.dart';
 import 'ai_service.dart';
+import 'answer_signals.dart';
 import 'fsrs_service.dart';
 import 'question_parsing.dart';
 
@@ -114,6 +115,10 @@ class ReviewService {
   /// Karte wurde währenddessen befördert oder zurückgestuft).
   ///
   /// [weight]: effektives Gewicht (Karte × Fach), siehe FsrsService.review.
+  ///
+  /// [signals]: Sicherheit, „Weiß ich nicht“ und Tipp-Stufe – die Bewertung
+  /// folgt [AnswerSignals.gradeFor] (z.B. richtig, aber geraten → Schwer;
+  /// Tipp mit genannter Regel → Nochmal).
   ReviewOutcome evaluate(
     Flashcard card, {
     Grade? selfGrade,
@@ -121,11 +126,12 @@ class ReviewService {
     DateTime? now,
     bool allowLevelChange = true,
     double weight = 1.0,
+    AnswerSignals signals = AnswerSignals.none,
   }) {
-    assert(selfGrade != null || isCorrect != null, 'selfGrade oder isCorrect muss gesetzt sein');
+    assert(selfGrade != null || isCorrect != null || signals.dontKnow, 'selfGrade oder isCorrect muss gesetzt sein');
     final at = now ?? DateTime.now();
-    final grade = selfGrade ?? _fsrs.gradeFromResult(isCorrect!);
-    final wasWrong = isCorrect == false || selfGrade == Grade.again;
+    final grade = AnswerSignals.gradeFor(selfGrade: selfGrade, isCorrect: isCorrect, signals: signals);
+    final wasWrong = grade == Grade.again;
     var updated = _fsrs.review(card, grade, now: at, weight: weight);
     if (!allowLevelChange) return ReviewOutcome(card: updated, wasWrong: wasWrong);
 

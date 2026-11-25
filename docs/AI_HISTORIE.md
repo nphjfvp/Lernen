@@ -1831,3 +1831,40 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     „Noch nicht richtig.“. Textfeld (`unlock-answer-$i`/`unlock-check-$i`, KI-Prüfung) nur noch als Ausweg
     (`_plainAnswer`), wenn das Aufbereiten scheitert. Tests: `unlock_blocks_test` (Karte zur Aufgabe, Block lösen als
     Rechenweg).
+136. Ideen aus LearnHarness (nur Ideen, kein Code – AGPL): Antwort-Signale `AnswerSignals`
+    (lib/services/answer_signals.dart: `AnswerConfidence` guessed/unsure/sure, `dontKnow`, `hintLevel`, `variant`;
+    `AnswerSignals.gradeFor` = EINE Bewertungsregel: dontKnow/falsch → again, Tipp ≥ 4 → again, Tipp 2–3 oder
+    „geraten“ → höchstens hard; `isConfidentMiss`), `typedef AnswerCallback` (onComplete mit `signals`) durch
+    QuestionAnswerView → QuestionWithHelp → alle Lernmodi → `CardReviewMixin.recordReview(signals:)` →
+    `ReviewService.evaluate(signals:)` (`wasWrong` = Grade again). `HintLadder` (5 Stufen, `instructions`, `costOf`);
+    `AiService.generateHint(level:, attempt:)`; QuestionAnswerView: `_manualHints` (je Klick eine Stufe,
+    `hint-ladder-button`, `hint-cost`), Leiter-Hilfestellungen zählen als Stufe 2/3. Sicherheit per `ChoiceChip`
+    (`confidence-*`, `AppSettings.askConfidence`), „Weiß ich nicht“ (`question-give-up`), `signal-note`.
+    `QuizOption.why` (Denkfehler je falscher Option; parseOptions/canonicalize lesen why/misconception/denkfehler;
+    Kartenbearbeitung behält es), Anzeige `option-why`; `_noGiveawayRule` um „falsche Optionen mit System“ und
+    Asymmetrie-Verbot erweitert, Crosscheck prüft Erkennbarkeit ohne Fachwissen. Antwort-Protokoll
+    `ReviewLogRepository` (Store `review_log`, nur Gerät, max. 20000, Löschkaskade) mit `ReviewLogEntry`
+    (FSRS-Stand davor) und `ReviewLogAnalysis.calibration`/`confidentMissCards` → `_CalibrationCard` im Fortschritt,
+    Fehlvorstellungen oben im Fehlertagebuch. Wiederholungsrunde in neuer Form: `RetryVariantService`
+    (`AiService.generateRetryVariant`, `copyWithContent` → gleiche ID/Lernstand, nichts gespeichert), Daily Quiz
+    `_prepareVariant`/`_variants`/`_shownPlain`, `QuestionAnswerView.isVariant`. Einstufung: `Flashcard.placedOut`
+    (durch alle Rekonstruktionen, `copyWithPlacedOut`, `copyWithStageReopened` hebt auf), StageGate.activeLevel
+    überspringt placedOut, MasteryService: kein Grün, nicht in der Aufschlüsselung; `PlacementService`
+    (candidates/placeOutBelow), `PlacementScreen` (`module-placement`, falsche Antworten nicht verbucht).
+    Prüffrage je Lektionsschritt: `StepCheck`/`StepCheckOption`, `VisualStep.check`, Prompt-Regel „check“,
+    `StepCheckCard` (`step-check-*`, „Schritt anders erklären“ → `_ask`). Voraussetzungen:
+    `Concept.prerequisiteIds` (+copyWith, Export übersetzt IDs), `AiService.assignPrerequisites`/`parsePrerequisites`,
+    `PrerequisiteGate` (blockiert neue Karten, Kreise ignoriert, nur lernbare Karten), `DailySchedulerService`
+    `concepts:` (buildPlan/buildExtraBatch/_eligible), `ConceptRepository.loadAll`, UI „Voraussetzungen per KI
+    bestimmen“/`_editPrerequisites`, `AppSettings.respectPrerequisites`. Web-Recherche:
+    `_complete(webSearch:, sourcesOut:)` (OpenRouter-Plugin „web“, max 3), `WebSource.fromAnnotations`,
+    `AiService.explainWithWebResearch`, Knopf `web-research` nach „Einfacher erklären“
+    (`AppSettings.webResearchEnabled`). Prompt-Caching: `AiService.buildMessages` markiert System-Prompts ab
+    `cacheMinChars` bei anthropic/ und google/gemini mit `cache_control`. Laut denken: `ThinkAloudService`
+    (pick: fällig → wackelig → neu, Fächer abwechselnd; `ThinkVerdict`/`ThinkError`),
+    `AiService.assessThinking` (Prompt `_thinkAloudSystemPrompt`), `ThinkAloudScreen` (`home-think-aloud`,
+    `module-think-aloud`; Spracheingabe über die Diktierfunktion der Tastatur, kein eigenes Plugin).
+    Einstellungen „Lernen & Bewertung“ (askConfidence, retryVariants, respectPrerequisites, webResearchEnabled;
+    gesynct). Tutor-Prompts ohne Pauschallob. Tests: answer_signals_test, answer_signals_view_test,
+    retry_variant_service_test, placement_service_test, step_check_card_test, prerequisite_gate_test,
+    ai_web_cache_test, think_aloud_service_test.

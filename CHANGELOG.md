@@ -4,6 +4,40 @@ Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7t) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
 
+### 7u. Lernen nach dem Vorbild von LearnHarness: messen, prüfen, laut denken
+
+- **Laut denken** (neu, Fächer → „Laut denken“ oder im Fach): Fragen aus den
+  gewählten Fächern, zu denen du deinen Gedankengang sprichst (Mikrofon der
+  Tastatur bzw. Win + H) oder tippst – auch Unsicheres. Die KI liest deinen
+  Weg, sagt, was trägt und wo er abbiegt, gibt nur den kleinsten nötigen
+  Anstoß und zeigt die Lösung erst am Ende. Zählt für Ampel und Wiederholung.
+- **Wie sicher bist du?** Vor dem Prüfen freiwillig „geraten / eher sicher /
+  sicher“. Richtig, aber geraten zählt als „Schwer“ (die Ampel steigt nicht);
+  sicher und falsch landet als mögliche Fehlvorstellung oben im
+  Fehlertagebuch. Im Fortschritt steht, wie gut deine Sicherheit passt.
+- **„Weiß ich nicht“** statt „Auflösen“: ehrliche Lücke statt Raten.
+- **Tipps in Stufen**: jeder Klick hilft eine Stufe mehr (Angabe → Art der
+  Aufgabe → Themengebiet → Regel → Ansatz). Stufe 1 kostet nichts, 2–3 machen
+  aus richtig „Schwer“, ab 4 zählt es als nicht gewusst.
+- **Denkfehler je Option**: neue Auswahlfragen bringen zu jeder falschen
+  Option den Denkfehler mit – nach einer falschen Wahl steht er sofort da.
+  Die KI achtet außerdem darauf, dass man die richtige Option nicht an Länge
+  oder Wortwahl erkennt.
+- **Wiederholungsrunde in neuer Form**: Falsches kommt im Daily Quiz mit
+  anderer Situation oder anderen Zahlen wieder (per KI), nicht wortgleich.
+- **Einstufen** (Fach → Lernen): je Fragen-Ordner zuerst die schwerste Stufe.
+  Sicher gewusst → die leichteren werden übersprungen (zählen nicht als grün
+  und kommen zurück, wenn die schwere Stufe mehrmals schiefgeht).
+- **Voraussetzungen**: die KI bestimmt, welche Konzepte auf welchen aufbauen;
+  neue Fragen zu einem Konzept kommen erst, wenn seine Grundlagen sitzen.
+- **Prüffrage nach jedem Lektionsschritt** mit Denkfehler-Hinweis und
+  „Schritt anders erklären“.
+- **Im Netz nach anderen Erklärungen suchen** – nach „Einfacher erklären“,
+  mit Quellen; Begriffe aus deinen Unterlagen haben Vorrang.
+- Günstiger: lange KI-Anweisungen werden bei Claude/Gemini zwischengespeichert.
+- Tutor-Antworten sachlicher: kein Pauschallob mehr.
+- Alles Neue lässt sich unter Einstellungen → „Lernen & Bewertung“ abschalten.
+
 ### 7t. Entsperr-Blöcke: rechnen wie bei jeder Aufgabe – mit Stift und Tafel
 
 - Die Aufgaben eines Entsperr-Blocks löst man jetzt in derselben Ansicht wie

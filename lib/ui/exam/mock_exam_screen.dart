@@ -8,6 +8,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/mock_exam_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../services/answer_signals.dart';
 import '../../services/ai_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/mock_exam_service.dart';
@@ -117,13 +118,13 @@ class _MockExamScreenState extends State<MockExamScreen> with CardReviewMixin<Mo
     }
   }
 
-  Future<void> _answer(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
+  Future<void> _answer(Flashcard card, {Grade? selfGrade, bool? isCorrect, AnswerSignals? signals}) async {
     // Nach Zeitablauf/Abgabe zählt keine späte Antwort mehr (Note und
     // gespeicherter Lernstand sollen übereinstimmen).
     if (_phase != _Phase.running) return;
     final correct = isCorrect ?? (selfGrade != Grade.again);
     _correctById[card.id] = correct;
-    unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect, showLevelFeedback: false));
+    unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect, showLevelFeedback: false, signals: signals));
     _next();
   }
 
@@ -306,7 +307,8 @@ class _MockExamScreenState extends State<MockExamScreen> with CardReviewMixin<Mo
             card: card,
             isNew: false,
             examMode: true,
-            onComplete: ({selfGrade, isCorrect}) => _answer(card, selfGrade: selfGrade, isCorrect: isCorrect),
+            onComplete: ({selfGrade, isCorrect, signals}) =>
+                _answer(card, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
           ),
         ),
       ],

@@ -122,7 +122,7 @@ void main() {
               key: ValueKey(card.id),
               card: card,
               isNew: false,
-              onComplete: ({Grade? selfGrade, bool? isCorrect}) {},
+              onComplete: ({Grade? selfGrade, bool? isCorrect, Object? signals}) {},
             ),
           ),
         ),
@@ -213,7 +213,7 @@ void main() {
       MaterialApp(
         theme: AppTheme.light,
         home: Scaffold(
-          body: QuestionAnswerView(card: card, isNew: false, onComplete: ({Grade? selfGrade, bool? isCorrect}) {}),
+          body: QuestionAnswerView(card: card, isNew: false, onComplete: ({Grade? selfGrade, bool? isCorrect, Object? signals}) {}),
         ),
       ),
     );
@@ -263,7 +263,7 @@ void main() {
         child: MaterialApp(
           theme: AppTheme.light,
           home: Scaffold(
-            body: QuestionAnswerView(card: card, isNew: false, onComplete: ({Grade? selfGrade, bool? isCorrect}) {}),
+            body: QuestionAnswerView(card: card, isNew: false, onComplete: ({Grade? selfGrade, bool? isCorrect, Object? signals}) {}),
           ),
         ),
       ),

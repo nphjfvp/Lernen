@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../models/ai_usage.dart';
@@ -27,6 +28,7 @@ import '../models/unlock_block.dart';
 import '../models/visual_lesson.dart';
 import '../models/worked_solution.dart';
 import '../models/visual_task_type.dart';
+import 'answer_signals.dart';
 import 'calc_engine.dart';
 import 'calc_plan.dart';
 import 'condense_service.dart';
@@ -37,6 +39,7 @@ import 'openrouter_errors.dart';
 import 'question_parsing.dart';
 import 'screen_awake.dart';
 import 'text_chunker.dart';
+import 'think_aloud_service.dart';
 
 part 'ai_prompts/material.dart';
 part 'ai_prompts/import.dart';
@@ -114,6 +117,30 @@ typedef VisualTopicIdea = ({
   bool visual,
   String reason,
 });
+
+/// Eine Quelle der Websuche (siehe AiService.explainWithWebResearch).
+class WebSource {
+  const WebSource({required this.url, this.title = ''});
+
+  final String url;
+  final String title;
+
+  /// Liest die `url_citation`-Anmerkungen einer OpenRouter-Antwort; doppelte
+  /// Adressen fallen weg.
+  static List<WebSource> fromAnnotations(Object? raw) {
+    if (raw is! List) return const [];
+    final seen = <String>{};
+    final result = <WebSource>[];
+    for (final a in raw) {
+      if (a is! Map) continue;
+      final citation = a['url_citation'] is Map ? a['url_citation'] as Map : a;
+      final url = '${citation['url'] ?? ''}'.trim();
+      if (!url.startsWith('http') || !seen.add(url)) continue;
+      result.add(WebSource(url: url, title: '${citation['title'] ?? ''}'.trim()));
+    }
+    return result;
+  }
+}
 
 class AiService {
   /// [background]: Darf [backgroundTransport] übernehmen? Standard: nur ohne
@@ -228,7 +255,7 @@ sondern möglichst den spezifischsten:
      {"answer": "Lösung; Variante"}.
      {"type": "table", "front": "Vervollständige die Tabelle", "table": [["Begriff", "Merkmal"], ["...", {"answer": "..."}]]}
    - "single_choice": genau eine richtige Antwort unter mehreren Optionen.
-     {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false}]}
+     {"type": "single_choice", "front": "Frage", "options": [{"text": "...", "isCorrect": true}, {"text": "...", "isCorrect": false, "why": "Denkfehler hinter dieser Option"}]}
    - "multiple_choice": mehrere Antworten gleichzeitig richtig, gleiches Format.
    - "fill_blank": Lückentext. Markiere jede Lücke im "front"-Text mit genau
      drei Unterstrichen "___", "blanks" enthält die Lösungen in derselben
@@ -312,7 +339,16 @@ Hier ist der Dokumenttext:
   /// als `content`-Wert einer Chat-Nachricht gültig, daher hier bewusst
   /// `Object` statt `String`.
   /// [temperature] 0 für Bewertungen (gleiche Antwort → gleiches Urteil).
-  Future<String> _complete(String systemPrompt, Object userContent, {double temperature = 0.3}) async {
+  ///
+  /// [webSearch]: OpenRouter-Websuche zuschalten (Plugin „web“, kostet extra);
+  /// gefundene Quellen landen in [sourcesOut].
+  Future<String> _complete(
+    String systemPrompt,
+    Object userContent, {
+    double temperature = 0.3,
+    bool webSearch = false,
+    List<WebSource>? sourcesOut,
+  }) async {
     if (apiKey.trim().isEmpty) {
       throw AiServiceException(
           'Kein OpenRouter-API-Key hinterlegt. Bitte in den Einstellungen eintragen.');
@@ -333,9 +369,9 @@ Hier ist der Dokumenttext:
       'model': model,
       if (!bare) 'temperature': temperature,
       if (!bare && outputLimit != null) 'max_tokens': outputLimit,
-      'messages': [
-        {'role': 'system', 'content': systemPrompt},
-        {'role': 'user', 'content': userContent},
+      'messages': buildMessages(model, systemPrompt, userContent),
+      if (webSearch) 'plugins': [
+        {'id': 'web', 'max_results': 3},
       ],
     });
     var body = encode(bare: false);
@@ -410,12 +446,44 @@ Hier ist der Dokumenttext:
       throw AiServiceException('Leere Antwort vom Modell erhalten.',
           rawResponse: response.body);
     }
+    if (sourcesOut != null) sourcesOut.addAll(WebSource.fromAnnotations(choices.first['message']?['annotations']));
     final finish = choices.first['finish_reason'] ?? choices.first['native_finish_reason'];
     if (finish == 'length' || finish == 'max_tokens' || finish == 'MAX_TOKENS') {
       onTruncated?.call(_labelOf(systemPrompt));
     }
     return content;
   }
+
+  /// Ab dieser Länge wird ein System-Prompt zum Zwischenspeichern markiert –
+  /// kürzere liegen unter der Mindestgröße der Anbieter (~1024 Tokens).
+  static const int cacheMinChars = 4000;
+
+  /// Anbieter, die Prompt-Caching nur mit ausdrücklicher Markierung
+  /// (`cache_control`) nutzen; OpenAI, DeepSeek & Co. cachen von selbst.
+  static bool usesCacheControl(String model) =>
+      model.startsWith('anthropic/') || model.startsWith('google/gemini');
+
+  /// Die Nachrichten einer Anfrage. Lange System-Prompts (Fragen erzeugen,
+  /// PDF-Import, Lektionen – oft viele Anfragen hintereinander mit demselben
+  /// Prompt) werden bei Claude/Gemini als zwischenspeicherbar markiert: ab der
+  /// zweiten Anfrage kostet dieser Teil nur noch einen Bruchteil.
+  @visibleForTesting
+  static List<Map<String, dynamic>> buildMessages(String model, String systemPrompt, Object userContent) => [
+        if (usesCacheControl(model) && systemPrompt.length >= cacheMinChars)
+          {
+            'role': 'system',
+            'content': [
+              {
+                'type': 'text',
+                'text': systemPrompt,
+                'cache_control': {'type': 'ephemeral'},
+              },
+            ],
+          }
+        else
+          {'role': 'system', 'content': systemPrompt},
+        {'role': 'user', 'content': userContent},
+      ];
 
   /// Wartet auf [request] – ohne Obergrenze bliebe bei einer hängenden
   /// Verbindung (z.B. Netzwechsel unterwegs) der Lade-Spinner für immer
@@ -1708,6 +1776,40 @@ Antworte in der Sprache der Vorlage.
     return await _json(raw);
   }
 
+  /// Neue Einkleidung einer falsch beantworteten Frage für die
+  /// Wiederholungsrunde (siehe RetryVariantService): DASSELBE Wissen, derselbe
+  /// Fragetyp, gleiche Schwierigkeit – aber eine andere Situation, ein
+  /// anderes Beispiel bzw. andere Zahlen, damit die Antwort nicht aus dem
+  /// Gedächtnis an eben kommt, sondern aus dem Verständnis.
+  Future<Map<String, dynamic>> generateRetryVariant({
+    required String questionText,
+    required String currentAnswer,
+    required QuestionType type,
+  }) async {
+    final systemPrompt = '''
+Du kleidest eine Lernfrage NEU ein. Der Lernende hat sie eben falsch
+beantwortet; gleich kommt sie noch einmal – aber dieselbe Frage direkt
+wieder zu stellen trainiert nur das Wiedererkennen. Erzeuge deshalb eine
+Frage, die DASSELBE Wissen (dieselbe Regel, denselben Begriff, dieselbe
+Formel) mit derselben Schwierigkeit prüft, aber in einer anderen Situation:
+anderes Beispiel, andere Zahlenwerte, andere Blickrichtung (z.B. von der
+Ursache auf die Wirkung statt umgekehrt). Nicht nur umformulieren. Die neue
+Lösung muss eindeutig sein; rechne sie bei Zahlen selbst nach. Nichts
+voraussetzen, was über das Wissen der ursprünglichen Frage hinausgeht.
+${_variantTypeRule(type)}
+$_noGiveawayRule
+Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
+\$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash
+(z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
+Antworte AUSSCHLIESSLICH mit validem JSON in genau diesem Format (siehe
+oben), ohne Markdown-Codefences, ohne zusätzlichen Text davor/danach.
+Antworte in der Sprache der Vorlage.
+''';
+    final userPrompt = 'Ursprüngliche Frage: $questionText\nBekannte Lösung: $currentAnswer';
+    final raw = await _complete(systemPrompt, userPrompt);
+    return await _json(raw);
+  }
+
   /// Zweitmeinung für Freitext-Antworten: der lokale Vergleich
   /// (AnswerChecker.checkFreeText) ist ein reiner Text-/Tippfehler-Abgleich
   /// und damit für echte, frei formulierte Antworten fast unmöglich zu
@@ -1843,23 +1945,143 @@ Antworte in der Sprache der Vorlage.
     return raw.trim();
   }
 
+  /// Letzte Stufe nach „Erklär mir das“ und „Einfacher erklären“: im Netz
+  /// nach anderen, einfacheren Erklärungen suchen (Analogie, Beispiel) –
+  /// Begriffe und Lösung der Frage haben Vorrang vor den Quellen. Liefert den
+  /// Text und die gefundenen Quellen.
+  Future<({String text, List<WebSource> sources})> explainWithWebResearch({
+    required String question,
+    required String correctAnswer,
+    String? userAnswer,
+    List<String> previousExplanations = const [],
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Frage: $question')
+      ..writeln('Richtige Lösung (gilt, auch wenn eine Quelle anders formuliert): $correctAnswer');
+    if (userAnswer != null && userAnswer.trim().isNotEmpty) buffer.writeln('Antwort des Lernenden: $userAnswer');
+    if (previousExplanations.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('Diese Erklärungen hat der Lernende NICHT verstanden:');
+      for (final e in previousExplanations) {
+        buffer.writeln('- ${_cap(e, 800)}');
+      }
+    }
+    final sources = <WebSource>[];
+    final raw = await _complete(_webExplainSystemPrompt, buffer.toString(), webSearch: true, sourcesOut: sources);
+    return (text: raw.trim(), sources: sources);
+  }
+
+  static const _webExplainSystemPrompt = '''
+Ein Lernender hat eine Lernfrage samt Erklärung und einer vereinfachten
+Fassung NICHT verstanden. Nutze die Websuche, um eine ANDERE, einfachere
+Erklärung zu finden: eine treffende Analogie, ein anschauliches Beispiel
+oder einen anderen Zugang, mit dem es andere gut erklären.
+Regeln:
+- Begriffe, Formelzeichen und die gegebene Lösung haben Vorrang vor den
+  Quellen. Widerspricht eine Quelle der Lösung, sag das in einem Satz und
+  folge der Lösung.
+- Nicht dieselbe Erklärung noch einmal – ein anderer Weg.
+- Höchstens 8 kurze Sätze, ein kleines durchgerechnetes Beispiel, wenn es
+  passt. Kein Lob, keine Floskeln.
+- Normaler Fließtext (kein JSON, keine Codefences), Formeln in LaTeX
+  zwischen \$…\$, in der Sprache der Frage, du-Form.
+''';
+
+  /// Modus „Laut denken“: liest den gesprochenen bzw. getippten
+  /// Gedankengang zu einer Frage ([turns]: bisheriger Wechsel, `user` = der
+  /// Lernende) und antwortet wie ein Tutor beim Üben: Urteil, erste
+  /// Bruchstelle, kleinster nötiger Anstoß – die Lösung nie vorweg.
+  Future<ThinkVerdict> assessThinking({
+    required String question,
+    required String correctAnswer,
+    required List<({bool user, String text})> turns,
+    String? sourceText,
+  }) async {
+    final buffer = StringBuffer()
+      ..writeln('Frage: $question')
+      ..writeln('Richtige Lösung (NICHT verraten): $correctAnswer');
+    if ((sourceText ?? '').trim().isNotEmpty) {
+      buffer.writeln('Auszug aus den Unterlagen: ${_cap(sourceText!, 2500)}');
+    }
+    buffer
+      ..writeln()
+      ..writeln('Bisheriger Verlauf:');
+    for (final t in turns) {
+      buffer.writeln('${t.user ? 'LERNENDER (Gedankengang)' : 'DU'}: ${_cap(t.text, 3000)}');
+    }
+    final raw = await _complete(_thinkAloudSystemPrompt, buffer.toString(), temperature: 0.2);
+    final verdict = ThinkVerdict.fromJson(await _json(raw));
+    if (verdict.reply.isEmpty) throw AiServiceException('Die KI hat nicht geantwortet – bitte noch einmal schicken.');
+    return verdict;
+  }
+
+  static const _thinkAloudSystemPrompt = r'''
+Du begleitest einen Studierenden, der eine Lernfrage LAUT DENKEND löst: Er
+spricht oder tippt seinen Gedankengang, oft diktiert – lies großzügig, ein
+falsch erkanntes Wort ist kein falsch verstandener Begriff. Du kennst Frage
+und Lösung. Ziel: ER findet die Lösung selbst, und du verstehst, WIE er denkt.
+
+So gehst du vor:
+1. Lies den ganzen Gedankengang. Achte auf den Weg, nicht nur aufs Ergebnis:
+   welche Begriffe und Regeln er heranzieht, in welcher Reihenfolge, wo er rät,
+   wo er abbiegt. Eine richtige Antwort auf falschem Weg ist eine Warnung, eine
+   falsche Antwort mit gutem Weg ist Fortschritt.
+2. Nennt er (noch) keine Antwort oder steckt er fest: "status": "thinking".
+   Gib GENAU EINEN Anstoß an der ersten Stelle, an der sein Weg nicht
+   weitergeht – so klein wie möglich, eine Stufe mehr als bisher:
+   1 Blick auf die Angabe, 2 Art der Aufgabe, 3 Themengebiet, 4 Regel nennen,
+   5 Ansatz skizzieren. "level" = die Stufe. Nie die Lösung.
+3. Nennt er eine falsche Antwort: "status": "wrong". Sag klar, dass sie nicht
+   stimmt, zeig auf die ERSTE Stelle, an der sein Weg abbiegt, ohne die
+   Korrektur zu nennen, solange er sie selbst finden kann. "level" wie oben
+   (0, wenn du nur auf die Stelle zeigst). Ein Fehlversuch ist kein Grund,
+   die Lösung zu verraten.
+4. Nennt er die richtige Antwort (inhaltlich – eigene Worte genügen):
+   "status": "correct". Bestätige in einem Satz und benenne den Gedanken,
+   der den Ausschlag gab.
+5. "error" bei einem Fehler: "gap" (nichts kam), "confusion" (Begriffe/Regeln
+   verwechselt), "slip" (richtiger Ansatz, Flüchtigkeitsfehler),
+   "misconception" (er hält etwas Falsches für wahr), sonst "".
+6. Kein Lob, keine Floskeln. Ehrlich: nichts Falsches als richtig werten,
+   nichts Richtiges kleinreden. Bleib bei Begriffen und Lösung wie gegeben.
+
+Antworte NUR mit JSON (in Strings jeden Backslash verdoppeln):
+{"status": "correct" | "wrong" | "thinking", "reply": "an ihn, 1–4 Sätze, du-Form, Formeln in $…$", "level": 0, "error": "", "read": "ein Satz: wie er an die Frage herangeht"}
+''';
+
   /// Denkanstoß VOR dem Antworten, ohne die Lösung zu verraten. Mit
   /// [previousHints] (Fehler-Leiter: die Frage ging trotz Tipp wieder
   /// schief) wird der neue Tipp deutlicher und konkreter als die bisherigen,
   /// verrät die Lösung aber weiterhin nicht.
+  ///
+  /// [level]: Stufe der Hilfe-Leiter (1–5, siehe HintLadder) – bestimmt, wie
+  /// viel der Tipp verraten darf. [attempt]: die bisherige Eingabe des
+  /// Lernenden; der Tipp setzt an der ersten Stelle an, an der sie abbiegt.
   Future<String> generateHint({
     required String question,
     required String correctAnswer,
     List<String> previousHints = const [],
+    int? level,
+    String? attempt,
   }) async {
     final previous = previousHints.isEmpty
         ? ''
         : '\nBisherige Tipps (haben nicht gereicht – gib jetzt einen DEUTLICHEREN, konkreteren '
             'Hinweis, der einen Schritt weiter führt, ohne sie zu wiederholen und weiterhin ohne '
             'die Lösung zu nennen):\n${previousHints.map((h) => '- $h').join('\n')}';
+    final stage = level == null
+        ? ''
+        : '\nStufe ${level.clamp(1, HintLadder.maxLevel)} von ${HintLadder.maxLevel} '
+            '(${HintLadder.nameOf(level)}): ${HintLadder.instructionOf(level)}';
+    final tried = (attempt ?? '').trim().isEmpty
+        ? ''
+        : '\nBisherige Eingabe des Lernenden: ${attempt!.trim()}\n'
+            'Setze an der ERSTEN Stelle an, an der diese Eingabe vom richtigen Weg abweicht – '
+            'zeig auf den Fehler, aber nenne nicht die Korrektur, solange er sie selbst finden kann.';
     final raw = await _complete(
       _hintSystemPrompt,
-      'Frage: $question\nLösung (NICHT verraten, nur als Hintergrund für den Tipp): $correctAnswer$previous',
+      'Frage: $question\nLösung (NICHT verraten, nur als Hintergrund für den Tipp): $correctAnswer$previous$stage$tried',
     );
     return raw.trim();
   }
@@ -2283,6 +2505,46 @@ Antworte in der Sprache der Vorlage.
     final raw = await _complete(_assignStagesSystemPrompt, buffer.toString());
     return parseStageAssignments(await _json(raw));
   }
+
+  /// Nummer (wie in der Anfrage) → Nummern der Konzepte, auf denen es
+  /// direkt aufbaut (aus der Antwort von [assignPrerequisites]). Ungültige
+  /// Nummern und Selbstbezüge fallen weg.
+  static Map<int, List<int>> parsePrerequisites(Map<String, dynamic> json, int count) {
+    final result = <int, List<int>>{};
+    for (final entry in _mapsIn(json['links'] ?? json['concepts'])) {
+      final n = entry['n'];
+      if (n is! num || n.toInt() < 0 || n.toInt() >= count) continue;
+      final needs = entry['needs'] ?? entry['requires'] ?? entry['braucht'];
+      result[n.toInt()] = <int>{
+        for (final m in (needs is List ? needs : const []))
+          if (m is num && m.toInt() >= 0 && m.toInt() < count && m.toInt() != n.toInt()) m.toInt(),
+      }.toList();
+    }
+    return result;
+  }
+
+  /// Bestimmt per KI, welche Konzepte eines Fachs auf welchen anderen DIREKT
+  /// aufbauen (siehe Concept.prerequisiteIds, PrerequisiteGate). [concepts]
+  /// in der Reihenfolge der Nummern 0…n-1.
+  Future<Map<int, List<int>>> assignPrerequisites(List<({String title, String explanation})> concepts) async {
+    final buffer = StringBuffer();
+    for (var i = 0; i < concepts.length; i++) {
+      buffer.writeln('$i. ${_cap(concepts[i].title, 160)} — ${_cap(concepts[i].explanation, 300)}');
+    }
+    final raw = await _complete(_prerequisitesSystemPrompt, buffer.toString(), temperature: 0);
+    return parsePrerequisites(await _json(raw), concepts.length);
+  }
+
+  static const _prerequisitesSystemPrompt = '''
+Du bekommst die nummerierten Lernkonzepte eines Studienfachs. Bestimme für
+jedes Konzept, auf welchen ANDEREN Konzepten dieser Liste es DIREKT aufbaut –
+also welche man verstanden haben muss, damit dieses überhaupt verständlich
+ist. Nur echte Abhängigkeiten, nicht bloß thematische Nähe. Nur direkte
+(braucht C B und B A, steht bei C nur B), höchstens 3 je Konzept, keine
+Kreise. Grundlagen bauen auf nichts auf – lass sie weg.
+Antworte AUSSCHLIESSLICH mit validem JSON, ohne Codefences:
+{"links": [{"n": 2, "needs": [0, 1]}]}
+''';
 
   /// Ordnet Fragen der Skript-Seite zu, auf der ihre Erklärung steht. Jede
   /// Frage kommt mit ihren Kandidaten-Seiten (Kennung, Beschriftung, Text –
@@ -4385,7 +4647,7 @@ So gehst du vor:
 - Ist sie teilweise richtig: würdige den richtigen Teil und frag gezielt nach dem fehlenden.
 - Ist sie falsch: sag nicht nur "falsch", sondern zeig einen Widerspruch auf (z.B. "Wenn das stimmt, was müsste das Auto dann bei t = 0 tun? Schau es dir an.") und stell eine kleinere Frage.
 - Nutze die Animation als Denkhilfe: Du darfst "show" setzen (gern eine eigene "scene"), damit der Lernende etwas beobachtet (z.B. Atome, die beim Erwärmen stärker schwingen, oder die Tangente an s, ohne v zu zeigen), und "functions" für Hilfsfunktionen (z.B. die Vermutung des Lernenden, um sie neben dem Original zu zeigen). Zeig dabei NICHT das Ergebnis des Schritts, solange "reached" false ist.
-- Kurz bleiben: 1–4 Sätze, du-Form, ermutigend, Formeln in $…$.
+- Kurz bleiben: 1–4 Sätze, du-Form, Formeln in $…$. Sachlich statt ermutigend: kein Pauschallob („Super!“, „Tolle Idee“) – der Fortschritt zeigt sich am nächsten Schritt; Falsches klar benennen, nicht schönreden.
 
 Antworte NUR mit JSON:
 {"reply": "deine Antwort/Frage (Backslashes verdoppeln)",
@@ -4416,7 +4678,7 @@ Antworte NUR mit JSON:
   "variable": "t",                 ← Variable der Funktionen (Zeit t, Dehnung x, Temperatur T …); nur nötig mit "functions"
   "domain": [0, 10],
   "functions": [{"key": "s", "label": "Weg s(t)", "expr": "0.5*t^2 + 2*t", "unit": "m"}],   ← nur, wenn Graphen/Auto vorkommen, sonst []
-  "steps": [{"title": "…", "text": "Warum wir das machen, was es bedeutet, was man in der Animation sieht", "formula": "LaTeX ohne $ (optional)", "show": {…}, "guide": "Leitfrage, mit der man den Schritt selbst findet"}],
+  "steps": [{"title": "…", "text": "Warum wir das machen, was es bedeutet, was man in der Animation sieht", "formula": "LaTeX ohne $ (optional)", "show": {…}, "guide": "Leitfrage, mit der man den Schritt selbst findet", "check": {"question": "Prüffrage zu genau diesem Schritt", "options": [{"text": "…", "correct": true}, {"text": "…", "correct": false, "why": "Denkfehler hinter dieser Option"}, {"text": "…", "correct": false, "why": "…"}], "explanation": "warum die richtige stimmt"}}],
   "result": {"title": "Ergebnis", "text": "…", "formula": "…", "show": {…}},
   "short": {"title": "Kurzfassung", "text": "3–6 Kernpunkte, je Zeile mit • beginnend (LaTeX in $…$)", "formula": "die wichtigste Formel (optional)", "show": {… EINE Darstellung, die das Wichtigste auf einen Blick zeigt}},
   "recap": "nur im Lernpfad – siehe unten",
@@ -4432,6 +4694,11 @@ Regeln für "show": Zeige in JEDEM Schritt etwas, das genau diesen Schritt sicht
 Regeln für "short" (IMMER): Die Kurzfassung zum schnellen Wiedereinsteigen, wenn man das Thema schon einmal gelernt hat – das Wesentliche in wenigen Zeilen plus eine aussagekräftige Darstellung, keine neuen Inhalte.
 
 Regeln für "recap" (NUR wenn ein Lernpfad angegeben ist, sonst weglassen): 2–4 Sätze Rückblick und Übergang – was aus den genannten früheren Themen gebraucht wird, kurz wiederholt, und warum dieses Thema jetzt darauf aufbaut ("Bei … haben wir gesehen, dass … – genau das brauchen wir jetzt, um …"). Knüpfe auch in den Schritten an die früheren Themen an, wo es passt.
+
+Regeln für "check" (JEDER Schritt bekommt eine Prüffrage – sie zeigt, ob der Schritt gesessen hat, bevor darauf aufgebaut wird):
+- Nur mit dem bisher Gezeigten lösbar, aber KEIN Nachplappern des Textes: wende den Schritt auf einen neuen kleinen Fall an oder lass eine Folgerung ziehen.
+- 3 Optionen, genau eine richtig. Jede falsche Option ist die Antwort, die jemand mit einem bestimmten typischen Denkfehler geben würde – steht in "why" (ein Satz). Alle Optionen gleich lang und gleich genau, keine Begründung in einer Option.
+- "explanation": 1–2 Sätze, warum die richtige stimmt.
 
 Regeln für "guide" (sokratisches Lernen – JEDER Schritt bekommt eine):
 - Eine offene Leitfrage, mit der der Lernende den Schritt SELBST herausfinden kann, OHNE dass sie die Lösung verrät. Knüpft an Vorwissen oder an das an, was die Animation gerade zeigt.

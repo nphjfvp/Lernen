@@ -996,7 +996,7 @@ void main() {
                 child: QuestionAnswerView(
                   card: card,
                   isNew: false,
-                  onComplete: ({Grade? selfGrade, bool? isCorrect}) => results.add((grade: selfGrade, correct: isCorrect)),
+                  onComplete: ({Grade? selfGrade, bool? isCorrect, Object? signals}) => results.add((grade: selfGrade, correct: isCorrect)),
                 ),
               ),
             ],

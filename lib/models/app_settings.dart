@@ -66,6 +66,23 @@ class AppSettings {
   /// AutoSyncService. Ziel: das angemeldete Konto, sonst [syncCode].
   final bool autoSyncEnabled;
 
+  /// Vor dem Prüfen fragen, wie sicher man ist (geraten / eher sicher /
+  /// sicher) – richtig Geratenes zählt dann nur als „Schwer“, sicher Falsches
+  /// gilt als mögliche Fehlvorstellung (siehe AnswerSignals).
+  final bool askConfidence;
+
+  /// Neue Karten eines Konzepts erst, wenn seine Voraussetzungen sitzen
+  /// (siehe PrerequisiteGate im Daily Quiz).
+  final bool respectPrerequisites;
+
+  /// In der Wiederholungsrunde falsch Beantwortetes in neuer Einkleidung
+  /// zeigen (andere Situation/Zahlen, per KI) statt wortgleich.
+  final bool retryVariants;
+
+  /// Knopf „Im Netz nach anderen Erklärungen suchen“ nach „Einfacher
+  /// erklären“ (OpenRouter-Websuche, kostet ein paar Cent je Suche).
+  final bool webResearchEnabled;
+
   /// Zufällige, einmalig erzeugte Kennung dieses Geräts – erkennt beim
   /// Auto-Sync, ob der Cloud-Stand von einem ANDEREN Gerät stammt.
   final String? deviceId;
@@ -170,6 +187,10 @@ class AppSettings {
     this.inboxCode,
     this.checkpointQuizPageInterval = defaultCheckpointQuizPageInterval,
     this.autoSyncEnabled = false,
+    this.askConfidence = true,
+    this.respectPrerequisites = true,
+    this.retryVariants = true,
+    this.webResearchEnabled = true,
     this.deviceId,
     this.lastSyncedPushId,
     this.pdfStorage = const PdfStorageConfig(),
@@ -220,6 +241,10 @@ class AppSettings {
     String? inboxCode,
     int? checkpointQuizPageInterval,
     bool? autoSyncEnabled,
+    bool? askConfidence,
+    bool? respectPrerequisites,
+    bool? retryVariants,
+    bool? webResearchEnabled,
     String? deviceId,
     String? lastSyncedPushId,
     PdfStorageConfig? pdfStorage,
@@ -254,6 +279,10 @@ class AppSettings {
       inboxCode: inboxCode == null ? this.inboxCode : (inboxCode.trim().isEmpty ? null : inboxCode),
       checkpointQuizPageInterval: checkpointQuizPageInterval ?? this.checkpointQuizPageInterval,
       autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
+      askConfidence: askConfidence ?? this.askConfidence,
+      respectPrerequisites: respectPrerequisites ?? this.respectPrerequisites,
+      retryVariants: retryVariants ?? this.retryVariants,
+      webResearchEnabled: webResearchEnabled ?? this.webResearchEnabled,
       deviceId: deviceId ?? this.deviceId,
       lastSyncedPushId: lastSyncedPushId ?? this.lastSyncedPushId,
       pdfStorage: pdfStorage ?? this.pdfStorage,
@@ -287,6 +316,10 @@ class AppSettings {
         'inboxCode': inboxCode,
         'checkpointQuizPageInterval': checkpointQuizPageInterval,
         'autoSyncEnabled': autoSyncEnabled,
+        'askConfidence': askConfidence,
+        'respectPrerequisites': respectPrerequisites,
+        'retryVariants': retryVariants,
+        'webResearchEnabled': webResearchEnabled,
         'deviceId': deviceId,
         'lastSyncedPushId': lastSyncedPushId,
         'pdfStorage': pdfStorage.toMap(),
@@ -329,6 +362,10 @@ class AppSettings {
         checkpointQuizPageInterval:
             (map['checkpointQuizPageInterval'] as num?)?.toInt() ?? defaultCheckpointQuizPageInterval,
         autoSyncEnabled: map['autoSyncEnabled'] as bool? ?? false,
+        askConfidence: map['askConfidence'] as bool? ?? true,
+        respectPrerequisites: map['respectPrerequisites'] as bool? ?? true,
+        retryVariants: map['retryVariants'] as bool? ?? true,
+        webResearchEnabled: map['webResearchEnabled'] as bool? ?? true,
         deviceId: map['deviceId'] as String?,
         lastSyncedPushId: map['lastSyncedPushId'] as String?,
         pdfStorage: map['pdfStorage'] is Map

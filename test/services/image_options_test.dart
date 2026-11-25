@@ -134,7 +134,7 @@ void main() {
                 child: QuestionAnswerView(
                   card: _imageChoice(),
                   isNew: false,
-                  onComplete: ({Grade? selfGrade, bool? isCorrect}) => results.add(isCorrect),
+                  onComplete: ({Grade? selfGrade, bool? isCorrect, Object? signals}) => results.add(isCorrect),
                 ),
               ),
             ],

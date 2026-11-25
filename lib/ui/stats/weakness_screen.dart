@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../repositories/review_log_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/ai_service.dart';
 import '../../services/stage_gate_service.dart';
@@ -30,6 +31,11 @@ class _WeaknessScreenState extends State<WeaknessScreen> {
   static const _batchSize = 20;
 
   List<WeakCard>? _all;
+
+  /// Karten, deren letzte Antwort sicher und trotzdem falsch war (siehe
+  /// ReviewLogAnalysis.confidentMissCards) – mögliche Fehlvorstellungen,
+  /// stehen oben.
+  Set<String> _misconceptions = const {};
   String? _moduleFilter;
   String? _analysis;
   bool _analysisLoading = false;
@@ -45,8 +51,23 @@ class _WeaknessScreenState extends State<WeaknessScreen> {
     // Nur die gerade freigeschaltete Stufe je Gruppe (siehe StageGate):
     // wartende oder ruhende Karten sind nicht "gerade schwach".
     final cards = StageGate.learnable(await context.read<FlashcardRepository>().loadAll());
+    var misconceptions = <String>{};
+    try {
+      misconceptions = ReviewLogAnalysis.confidentMissCards(await ReviewLogRepository.load());
+    } catch (_) {
+      // Ohne Protokoll einfach ohne Markierung.
+    }
     if (!mounted) return;
-    setState(() => _all = WeaknessService().rank(cards));
+    final ranked = WeaknessService().rank(cards);
+    // Stabil: mögliche Fehlvorstellungen zuerst, sonst die bisherige Reihenfolge.
+    final sorted = [
+      ...ranked.where((w) => misconceptions.contains(w.card.id)),
+      ...ranked.where((w) => !misconceptions.contains(w.card.id)),
+    ];
+    setState(() {
+      _misconceptions = misconceptions;
+      _all = sorted;
+    });
   }
 
   List<WeakCard> get _visible {
@@ -186,7 +207,11 @@ class _WeaknessScreenState extends State<WeaknessScreen> {
                           ),
                         const SizedBox(height: 20),
                         for (final w in visible)
-                          _WeakCardTile(weak: w, moduleName: modules.byId(w.card.moduleId)?.name ?? ''),
+                          _WeakCardTile(
+                            weak: w,
+                            moduleName: modules.byId(w.card.moduleId)?.name ?? '',
+                            misconception: _misconceptions.contains(w.card.id),
+                          ),
                       ],
                     ),
                   ),
@@ -196,10 +221,13 @@ class _WeaknessScreenState extends State<WeaknessScreen> {
 }
 
 class _WeakCardTile extends StatelessWidget {
-  const _WeakCardTile({required this.weak, required this.moduleName});
+  const _WeakCardTile({required this.weak, required this.moduleName, this.misconception = false});
 
   final WeakCard weak;
   final String moduleName;
+
+  /// Zuletzt sicher und trotzdem falsch beantwortet.
+  final bool misconception;
 
   @override
   Widget build(BuildContext context) {
@@ -223,7 +251,12 @@ class _WeakCardTile extends StatelessWidget {
             leading: MasteryDot(level: weak.level),
             title: MathText(card.front, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
             subtitle: Text(
-              [if (moduleName.isNotEmpty) moduleName, card.type.label, ...weak.reasons].join(' · '),
+              [
+                if (misconception) 'sicher falsch – Fehlvorstellung?',
+                if (moduleName.isNotEmpty) moduleName,
+                card.type.label,
+                ...weak.reasons,
+              ].join(' · '),
               style: TextStyle(fontSize: 11.5, color: c.inkMuted),
             ),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),

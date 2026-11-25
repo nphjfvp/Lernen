@@ -65,7 +65,7 @@ http.Response _chatResponse(Object json) => http.Response(
       headers: {'content-type': 'application/json'},
     );
 
-Widget _harness(Flashcard card, void Function({Grade? selfGrade, bool? isCorrect}) onComplete) {
+Widget _harness(Flashcard card, void Function({Grade? selfGrade, bool? isCorrect, Object? signals}) onComplete) {
   return MaterialApp(
     theme: AppTheme.light,
     home: Scaffold(
@@ -87,7 +87,7 @@ void main() {
       Grade? reportedGrade;
       await tester.pumpWidget(_harness(
         _card(),
-        ({selfGrade, isCorrect}) => reportedGrade = selfGrade,
+        ({selfGrade, isCorrect, signals}) => reportedGrade = selfGrade,
       ));
 
       expect(find.text('Frage?'), findsOneWidget);
@@ -116,7 +116,7 @@ void main() {
           QuizOption(text: 'Lyon', isCorrect: false),
         ],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
 
       await tester.tap(find.text('Paris'));
       await tester.pump();
@@ -140,7 +140,7 @@ void main() {
           QuizOption(text: 'Lyon', isCorrect: false),
         ],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
 
       await tester.tap(find.text('Lyon'));
       await tester.pump();
@@ -164,7 +164,7 @@ void main() {
           QuizOption(text: 'Lyon', isCorrect: false),
         ],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) {}));
 
       final button = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Prüfen'));
       expect(button.onPressed, isNull);
@@ -182,7 +182,7 @@ void main() {
           QuizOption(text: 'C', isCorrect: true),
         ],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
 
       await tester.tap(find.text('A'));
       await tester.tap(find.text('C'));
@@ -200,7 +200,7 @@ void main() {
     testWidgets('toleriert kleine Tippfehler dank AnswerChecker', (tester) async {
       bool? reportedCorrect;
       final card = _card(type: QuestionType.freeText, correctText: 'Photosynthese');
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
 
       await tester.enterText(find.byType(TextField), 'Photosyntese');
       await tester.pump();
@@ -214,7 +214,7 @@ void main() {
 
     testWidgets('abgelehnte Freitext-Antwort lässt sich als richtig werten, eine richtige nicht', (tester) async {
       final card = _card(type: QuestionType.freeText, correctText: 'Photosynthese');
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) {}));
       await tester.enterText(find.byType(TextField), 'Lichtreaktion');
       await tester.pump();
       await tester.tap(find.text('Prüfen'));
@@ -234,7 +234,7 @@ void main() {
         front: 'Die Hauptstadt von ___ ist ___.',
         blanks: const ['Frankreich', 'Paris'],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
 
       final fields = find.byType(TextField);
       expect(fields, findsNWidgets(2));
@@ -268,7 +268,7 @@ void main() {
       await http.runWithClient(() async {
         await tester.pumpWidget(ChangeNotifierProvider<SettingsRepository>(
           create: (_) => _SettingsWithKey(),
-          child: _harness(cellCard, ({selfGrade, isCorrect}) => onReported(isCorrect)),
+          child: _harness(cellCard, ({selfGrade, isCorrect, signals}) => onReported(isCorrect)),
         ));
         final fields = find.byType(TextField);
         for (var i = 0; i < answers.length; i++) {
@@ -343,7 +343,7 @@ void main() {
       await http.runWithClient(() async {
         await tester.pumpWidget(ChangeNotifierProvider<SettingsRepository>(
           create: (_) => _SettingsWithKey(),
-          child: _harness(cellCard, ({selfGrade, isCorrect}) {}),
+          child: _harness(cellCard, ({selfGrade, isCorrect, signals}) {}),
         ));
         final fields = find.byType(TextField);
         await tester.enterText(fields.at(0), 'Mitochondrium');
@@ -376,7 +376,7 @@ void main() {
       await http.runWithClient(() async {
         await tester.pumpWidget(ChangeNotifierProvider<SettingsRepository>(
           create: (_) => _SettingsWithKey(),
-          child: _harness(card, ({selfGrade, isCorrect}) => reported = isCorrect),
+          child: _harness(card, ({selfGrade, isCorrect, signals}) => reported = isCorrect),
         ));
         final fields = find.byType(TextField);
         await tester.enterText(fields.at(0), 'Produktion');
@@ -400,7 +400,7 @@ void main() {
 
     testWidgets('"Als richtig werten" macht eine abgelehnte Antwort richtig', (tester) async {
       bool? reported;
-      await tester.pumpWidget(_harness(cellCard, ({selfGrade, isCorrect}) => reported = isCorrect));
+      await tester.pumpWidget(_harness(cellCard, ({selfGrade, isCorrect, signals}) => reported = isCorrect));
       final fields = find.byType(TextField);
       await tester.enterText(fields.at(0), 'Mitochondrium');
       await tester.enterText(fields.at(1), 'Adenosintriphosphat');
@@ -432,7 +432,7 @@ void main() {
         type: QuestionType.dragDrop,
         dragPairs: const [DragPair(source: 'Hund', target: 'Tier'), DragPair(source: 'Rose', target: 'Pflanze')],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
 
       await dragTo(tester, find.text('Hund'), find.text('Tier'));
       await dragTo(tester, find.text('Rose'), find.text('Pflanze'));
@@ -457,7 +457,7 @@ void main() {
           DragPair(source: 'Zahnfüllung', target: 'Keramik'),
         ],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
 
       // Als Kategorien angezeigt: jedes Ziel genau einmal.
       expect(find.text('Metall'), findsOneWidget);
@@ -487,7 +487,7 @@ void main() {
           DragPair(source: 'Gold', target: 'Au'),
         ],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
       await dragTo(tester, find.text('Gold'), find.text('Fe'));
       await dragTo(tester, find.text('Eisen'), find.text('Fe'));
       // "Gold" wurde von "Fe" verdrängt und liegt wieder im Pool.
@@ -508,7 +508,7 @@ void main() {
           DragPair(source: 'Rose', target: 'Pflanze'),
         ],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
       await tester.tap(find.text('Hund'));
       await tester.pump();
       await tester.tap(find.text('Tier'));
@@ -567,7 +567,7 @@ void main() {
     Future<({Grade? grade, bool? correct})> answer(WidgetTester tester, List<String> answers) async {
       Grade? grade;
       bool? correct;
-      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect}) {
+      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect, signals}) {
         grade = selfGrade;
         correct = isCorrect;
       }));
@@ -599,7 +599,7 @@ void main() {
     testWidgets('abgelehnte Tabelle lässt sich als richtig werten', (tester) async {
       Grade? grade;
       bool? correct;
-      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect}) {
+      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect, signals}) {
         grade = selfGrade;
         correct = isCorrect;
       }));
@@ -621,7 +621,7 @@ void main() {
     testWidgets('3 von 5 Zellen: falsch, Lösung wird angezeigt', (tester) async {
       Grade? grade;
       bool? correct;
-      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect}) {
+      await tester.pumpWidget(_harness(tableCard(), ({selfGrade, isCorrect, signals}) {
         grade = selfGrade;
         correct = isCorrect;
       }));
@@ -648,7 +648,7 @@ void main() {
         back: '',
         options: const [QuizOption(text: 'A', isCorrect: false), QuizOption(text: 'B', isCorrect: false)],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reported = selfGrade));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reported = selfGrade));
       expect(find.text('Zum Umdrehen tippen'), findsOneWidget);
       await tester.tap(find.text('Zum Umdrehen tippen'));
       await tester.pumpAndSettle();
@@ -662,7 +662,7 @@ void main() {
         type: QuestionType.multipleChoice,
         options: const [QuizOption(text: 'A', isCorrect: true), QuizOption(text: 'B', isCorrect: false)],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) {}));
       final check = find.widgetWithText(FilledButton, 'Prüfen');
       expect(tester.widget<FilledButton>(check).onPressed, isNull);
       await tester.tap(find.text('A'));
@@ -673,7 +673,7 @@ void main() {
     testWidgets('Lückentext mit leerer Lösung zeigt nur die lösbaren Lücken', (tester) async {
       bool? reportedCorrect;
       final card = _card(type: QuestionType.fillBlank, front: 'Hauptstadt: ___', blanks: const ['Paris', '']);
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reportedCorrect = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reportedCorrect = isCorrect));
       expect(find.byType(TextField), findsOneWidget);
       await tester.enterText(find.byType(TextField), 'Paris');
       await tester.pump();
@@ -692,7 +692,7 @@ void main() {
     );
 
     testWidgets('ohne API-Key gibt es weder Tipp noch Erklärung', (tester) async {
-      await tester.pumpWidget(_harness(choiceCard, ({selfGrade, isCorrect}) {}));
+      await tester.pumpWidget(_harness(choiceCard, ({selfGrade, isCorrect, signals}) {}));
       expect(find.text('Tipp'), findsNothing);
       await tester.tap(find.text('B'));
       await tester.pump();
@@ -704,7 +704,7 @@ void main() {
     testWidgets('mit API-Key: Tipp vor dem Prüfen, Erklärung danach', (tester) async {
       await tester.pumpWidget(ChangeNotifierProvider<SettingsRepository>(
         create: (_) => _SettingsWithKey(),
-        child: _harness(choiceCard, ({selfGrade, isCorrect}) {}),
+        child: _harness(choiceCard, ({selfGrade, isCorrect, signals}) {}),
       ));
       expect(find.text('Tipp'), findsOneWidget);
       await tester.tap(find.text('B'));
@@ -735,7 +735,7 @@ void main() {
                     card: card,
                     isNew: false,
                     examMode: true,
-                    onComplete: ({selfGrade, isCorrect}) => reported = isCorrect,
+                    onComplete: ({selfGrade, isCorrect, signals}) => reported = isCorrect,
                   ),
                 ),
               ],
@@ -792,7 +792,7 @@ void main() {
         ImageTarget(x: 0.25, y: 0.5, label: 'Zellkern'),
         ImageTarget(x: 0.75, y: 0.5, label: 'Mitochondrium'),
       ]);
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reported = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reported = isCorrect));
       await showImage(tester);
 
       expect(find.byKey(const ValueKey('label-zone-0')), findsOneWidget);
@@ -820,7 +820,7 @@ void main() {
         ImageTarget(x: 0.25, y: 0.5, label: 'Zellkern'),
         ImageTarget(x: 0.75, y: 0.5, label: 'Mitochondrium'),
       ]);
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) {}));
       await showImage(tester);
 
       await tester.tap(find.text('Mitochondrium'));
@@ -844,7 +844,7 @@ void main() {
         ImageTarget(x: 0.2, y: 0.7, label: 'Kapital', group: 'Input'),
         ImageTarget(x: 0.8, y: 0.5, label: 'Produkt'),
       ]);
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reported = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reported = isCorrect));
       await showImage(tester);
 
       await tester.tap(find.text('Eintippen'));
@@ -870,7 +870,7 @@ void main() {
         ImageTarget(x: 0.25, y: 0.5, label: 'Zellkern'),
         ImageTarget(x: 0.75, y: 0.5, label: 'Mitochondrium'),
       ]);
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) => reported = isCorrect));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) => reported = isCorrect));
       await showImage(tester);
 
       await tester.tap(find.text('Eintippen'));
@@ -896,7 +896,7 @@ void main() {
           ImageTarget(x: 0.5, y: 0.5, w: 0.2, h: 0.3),
         ]);
         await tester.pumpWidget(const SizedBox());
-        await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+        await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) {}));
         await showImage(tester);
 
         final box = tester.getRect(find.descendant(of: find.byType(RelativeImage), matching: find.byType(Stack)).first);
@@ -920,7 +920,7 @@ void main() {
         type: QuestionType.markImage,
         imageTargets: const [ImageTarget(x: 0.5, y: 0.5)],
       );
-      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect}) {}));
+      await tester.pumpWidget(_harness(card, ({selfGrade, isCorrect, signals}) {}));
       await tester.pump();
       expect(find.text('Prüfen'), findsNothing);
       expect(find.textContaining('Wo liegt der Kern?'), findsOneWidget);
@@ -948,7 +948,7 @@ void main() {
                 child: QuestionAnswerView(
                   card: card,
                   isNew: false,
-                  onComplete: ({selfGrade, isCorrect}) {},
+                  onComplete: ({selfGrade, isCorrect, signals}) {},
                   onImageEdited: (bytes) async {
                     called = true;
                     saved = bytes;
@@ -993,7 +993,7 @@ void main() {
                     child: QuestionAnswerView(
                       card: card,
                       isNew: false,
-                      onComplete: ({selfGrade, isCorrect}) {},
+                      onComplete: ({selfGrade, isCorrect, signals}) {},
                       onImageEdited: withCallback ? (bytes) async => saved = bytes : null,
                     ),
                   ),
@@ -1042,7 +1042,7 @@ Widget _skipHarness(
   VoidCallback? onSkip,
   bool canGiveUp = false,
   bool examMode = false,
-  required void Function({Grade? selfGrade, bool? isCorrect}) onComplete,
+  required void Function({Grade? selfGrade, bool? isCorrect, Object? signals}) onComplete,
 }) {
   return MaterialApp(
     theme: AppTheme.light,
@@ -1075,7 +1075,7 @@ void skipAndGiveUpTests() {
 
   group('QuestionAnswerView – Überspringen und Auflösen', () {
     testWidgets('ohne onSkip/canGiveUp gibt es die Knöpfe nicht', (tester) async {
-      await tester.pumpWidget(_skipHarness(choice, onComplete: ({selfGrade, isCorrect}) {}));
+      await tester.pumpWidget(_skipHarness(choice, onComplete: ({selfGrade, isCorrect, signals}) {}));
       expect(find.byKey(const ValueKey('question-skip')), findsNothing);
       expect(find.byKey(const ValueKey('question-give-up')), findsNothing);
     });
@@ -1086,7 +1086,7 @@ void skipAndGiveUpTests() {
       await tester.pumpWidget(_skipHarness(
         choice,
         onSkip: () => skipped++,
-        onComplete: ({selfGrade, isCorrect}) => completed++,
+        onComplete: ({selfGrade, isCorrect, signals}) => completed++,
       ));
       await tester.tap(find.byKey(const ValueKey('question-skip')));
       await tester.tap(find.byKey(const ValueKey('question-skip')), warnIfMissed: false);
@@ -1102,7 +1102,7 @@ void skipAndGiveUpTests() {
       await tester.pumpWidget(_skipHarness(
         choice,
         canGiveUp: true,
-        onComplete: ({selfGrade, isCorrect}) {
+        onComplete: ({selfGrade, isCorrect, signals}) {
           correct = isCorrect;
           completed++;
         },
@@ -1111,7 +1111,7 @@ void skipAndGiveUpTests() {
       await tester.tap(find.byKey(const ValueKey('question-give-up')));
       await tester.pump();
 
-      expect(find.text('Aufgelöst – zählt als falsch.'), findsOneWidget);
+      expect(find.text('Nicht gewusst – hier ist die Lösung.'), findsOneWidget);
       expect(find.textContaining('Richtige Antwort: Paris'), findsOneWidget);
       expect(find.text('Als richtig werten'), findsNothing);
       expect(find.byKey(const ValueKey('question-give-up')), findsNothing);
@@ -1131,7 +1131,7 @@ void skipAndGiveUpTests() {
       await tester.pumpWidget(_skipHarness(
         card,
         canGiveUp: true,
-        onComplete: ({selfGrade, isCorrect}) {
+        onComplete: ({selfGrade, isCorrect, signals}) {
           correct = isCorrect;
           completed++;
         },
@@ -1153,7 +1153,7 @@ void skipAndGiveUpTests() {
         _card(front: 'Was ist Spannung?', back: 'Potentialdifferenz'),
         onSkip: () {},
         canGiveUp: true,
-        onComplete: ({selfGrade, isCorrect}) => grade = selfGrade,
+        onComplete: ({selfGrade, isCorrect, signals}) => grade = selfGrade,
       ));
       expect(find.byKey(const ValueKey('question-skip')), findsOneWidget);
       expect(find.text('Potentialdifferenz'), findsNothing);
@@ -1174,14 +1174,14 @@ void skipAndGiveUpTests() {
         onSkip: () {},
         canGiveUp: true,
         examMode: true,
-        onComplete: ({selfGrade, isCorrect}) {},
+        onComplete: ({selfGrade, isCorrect, signals}) {},
       ));
       expect(find.byKey(const ValueKey('question-skip')), findsNothing);
       expect(find.byKey(const ValueKey('question-give-up')), findsNothing);
     });
 
     testWidgets('nach dem Prüfen sind die Knöpfe weg', (tester) async {
-      await tester.pumpWidget(_skipHarness(choice, onSkip: () {}, canGiveUp: true, onComplete: ({selfGrade, isCorrect}) {}));
+      await tester.pumpWidget(_skipHarness(choice, onSkip: () {}, canGiveUp: true, onComplete: ({selfGrade, isCorrect, signals}) {}));
       await tester.tap(find.text('Paris'));
       await tester.pump();
       await tester.tap(find.text('Prüfen'));

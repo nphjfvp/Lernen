@@ -48,7 +48,7 @@ void main() {
           body: Column(
             children: [
               Expanded(
-                child: QuestionAnswerView(card: card, isNew: false, onComplete: ({selfGrade, isCorrect}) {}),
+                child: QuestionAnswerView(card: card, isNew: false, onComplete: ({selfGrade, isCorrect, signals}) {}),
               ),
             ],
           ),

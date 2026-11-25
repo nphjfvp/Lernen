@@ -280,7 +280,7 @@ Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 (z.B. "\$\\\\frac{a}{b}\$"), sonst ist das JSON ungültig.
 Antworte AUSSCHLIESSLICH mit validem JSON, ohne Markdown-Codefences:
 {"cards": [{"n": 1, "level": "mittel", "group": "Ohmsches Gesetz",
-  "variants": [{"level": "leicht", "type": "single_choice", "front": "…", "options": [{"text": "…", "isCorrect": true}, {"text": "…", "isCorrect": false}, {"text": "…", "isCorrect": false}]},
+  "variants": [{"level": "leicht", "type": "single_choice", "front": "…", "options": [{"text": "…", "isCorrect": true}, {"text": "…", "isCorrect": false, "why": "Denkfehler"}, {"text": "…", "isCorrect": false, "why": "Denkfehler"}]},
                {"level": "schwer", "type": "free_text", "front": "…", "correctText": "…"}]}]}
 Jede Nummer aus der Liste kommt genau einmal vor. Antworte in der Sprache der Vorlage.
 """;
@@ -365,6 +365,12 @@ bei Karteikarten "type" plus alle für diesen Typ nötigen Felder, siehe die
 Typen im Original: front/back, front/options, front/correctText,
 front/blanks, front/dragPairs). Ändere dabei NUR, was fachlich falsch ist –
 lass alles andere unverändert.
+
+Prüfe bei Auswahlfragen zusätzlich, ob man die richtige Option OHNE
+Fachwissen erkennt (deutlich länger/genauer als die anderen, als einzige
+begründet, als einzige ohne „immer“/„nie“) oder ob eine falsche Option
+eigentlich auch stimmt – beides ist ein Problem; der "fix" gleicht die
+Optionen an bzw. korrigiert sie (mit "why" je falscher Option).
 
 Mathematische Formeln (falls vorhanden) schreibst du in LaTeX: \$…\$ im Satz,
 \$\$…\$\$ für abgesetzte Formeln. Verdopple dabei in JSON jeden Backslash

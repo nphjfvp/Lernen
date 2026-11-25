@@ -48,6 +48,8 @@ import '../flashcards/task_folder_screen.dart';
 import '../import/pdf_question_import_screen.dart';
 import '../lab/lab_experiments_section.dart';
 import '../lecture/lecture_walk_screen.dart';
+import '../practice/placement_screen.dart';
+import '../study/think_aloud_screen.dart';
 import '../practice/practice_screen.dart';
 import '../practice/study_sequence_screen.dart';
 import '../prepare/prepare_screen.dart';
@@ -397,6 +399,31 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                     ),
                     const SizedBox(height: 10),
                     _SoftRow(
+                      key: const ValueKey('module-think-aloud'),
+                      icon: Icons.record_voice_over_outlined,
+                      title: 'Laut denken',
+                      subtitle: 'Gedankengang sprechen – die KI liest deinen Weg, nicht nur das Ergebnis',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => ThinkAloudScreen(moduleIds: {module.id})),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftRow(
+                      key: const ValueKey('module-placement'),
+                      icon: Icons.stairs_outlined,
+                      title: 'Einstufen',
+                      subtitle: 'Schwere Stufe zuerst – was du schon sicher kannst, überspringst du',
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PlacementScreen(moduleId: module.id, moduleName: module.name),
+                          ),
+                        );
+                        if (mounted) await _reload();
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    _SoftRow(
                       key: const ValueKey('module-worked'),
                       icon: Icons.functions,
                       title: 'Vorrechnen & Rezepte',
@@ -641,6 +668,18 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                           )),
                     const SizedBox(height: 20),
                     _SectionHeader(title: 'Lernkonzepte', count: concepts.length),
+                    if (concepts.length >= 2 && context.read<SettingsRepository>().settings.hasApiKey)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          key: const ValueKey('concept-prerequisites-ai'),
+                          onPressed: _prerequisitesBusy ? null : () => _assignPrerequisites(concepts),
+                          icon: _prerequisitesBusy
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.account_tree_outlined, size: 18),
+                          label: const Text('Voraussetzungen per KI bestimmen'),
+                        ),
+                      ),
                     const SizedBox(height: 10),
                     if (concepts.isEmpty)
                       const _HintText('Noch keine Konzepte – starte den Nachbereiten-Modus.')
@@ -672,6 +711,21 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                                         child: MathText(concept.explanation, style: TextStyle(color: c.inkMuted, fontSize: 12.5, height: 1.5)),
                                       ),
                                     ),
+                                    if (concept.prerequisiteIds.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            'Baut auf: ${[
+                                              for (final id in concept.prerequisiteIds)
+                                                ?concepts.where((o) => o.id == id).firstOrNull?.title,
+                                            ].join(' · ')}',
+                                            key: const ValueKey('concept-builds-on'),
+                                            style: TextStyle(fontSize: 12, color: c.ink),
+                                          ),
+                                        ),
+                                      ),
                                     Padding(
                                       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                                       child: Row(
@@ -682,6 +736,12 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
                                               onPressed: () => _openConceptSourcePage(concept, materials),
                                               icon: const Icon(Icons.description_outlined, size: 16),
                                               label: Text('Seite ${concept.linkedPageNumber}'),
+                                            ),
+                                          if (concepts.length >= 2)
+                                            IconButton(
+                                              tooltip: 'Voraussetzungen wählen',
+                                              onPressed: () => _editPrerequisites(concept, concepts),
+                                              icon: const Icon(Icons.account_tree_outlined, size: 18),
                                             ),
                                           TextButton.icon(
                                             onPressed: () => _editConcept(concept),
@@ -1378,18 +1438,73 @@ class _ModuleDetailScreenState extends State<ModuleDetailScreen> {
     );
     if (result == null || !mounted) return;
     final (title, explanation) = result;
-    await context.read<ConceptRepository>().saveAll([
-      Concept(
-        id: concept.id,
-        moduleId: concept.moduleId,
-        title: title,
-        explanation: explanation,
-        sourceMaterialIds: concept.sourceMaterialIds,
-        createdAt: concept.createdAt,
-        unitId: concept.unitId,
-        linkedMaterialId: concept.linkedMaterialId,
-        linkedPageNumber: concept.linkedPageNumber,
+    await context.read<ConceptRepository>().saveAll([concept.copyWith(title: title, explanation: explanation)]);
+  }
+
+  bool _prerequisitesBusy = false;
+
+  /// Lässt die KI bestimmen, welche Konzepte auf welchen aufbauen (siehe
+  /// PrerequisiteGate) – ersetzt die bisherigen Verknüpfungen des Fachs.
+  Future<void> _assignPrerequisites(List<Concept> concepts) async {
+    final settings = context.read<SettingsRepository>().settings;
+    final repo = context.read<ConceptRepository>();
+    final messenger = ScaffoldMessenger.of(context);
+    if (!settings.hasApiKey) return;
+    setState(() => _prerequisitesBusy = true);
+    try {
+      final ai = AiService(apiKey: settings.openRouterApiKey!, model: settings.questionModelId);
+      final links = await ai.assignPrerequisites([for (final c in concepts) (title: c.title, explanation: c.explanation)]);
+      final updated = [
+        for (var i = 0; i < concepts.length; i++)
+          concepts[i].copyWith(prerequisiteIds: [for (final n in links[i] ?? const <int>[]) concepts[n].id]),
+      ];
+      await repo.saveAll(updated);
+      final count = updated.fold<int>(0, (sum, c) => sum + c.prerequisiteIds.length);
+      messenger.showSnackBar(SnackBar(
+        content: Text(count == 0
+            ? 'Keine Abhängigkeiten gefunden.'
+            : '$count Verknüpfungen gesetzt – neue Fragen kommen jetzt erst, wenn die Grundlagen sitzen.'),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e is AiServiceException ? e.message : 'Fehlgeschlagen: $e')));
+    } finally {
+      if (mounted) setState(() => _prerequisitesBusy = false);
+    }
+  }
+
+  /// Voraussetzungen eines Konzepts von Hand wählen.
+  Future<void> _editPrerequisites(Concept concept, List<Concept> all) async {
+    final chosen = {...concept.prerequisiteIds};
+    final others = [for (final c in all) if (c.id != concept.id) c];
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: Text('„${concept.title}“ baut auf …'),
+          content: SizedBox(
+            width: 420,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final o in others)
+                  CheckboxListTile(
+                    value: chosen.contains(o.id),
+                    title: Text(o.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    onChanged: (v) => setDialog(() => v == true ? chosen.add(o.id) : chosen.remove(o.id)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Abbrechen')),
+            FilledButton(onPressed: () => Navigator.of(context).pop(chosen), child: const Text('Speichern')),
+          ],
+        ),
       ),
+    );
+    if (result == null || !mounted) return;
+    await context.read<ConceptRepository>().saveAll([
+      concept.copyWith(prerequisiteIds: [for (final o in others) if (result.contains(o.id)) o.id]),
     ]);
   }
 

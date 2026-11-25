@@ -13,6 +13,8 @@ import '../../services/unlock_block_service.dart';
 import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../repositories/review_log_repository.dart';
+import '../../services/answer_signals.dart';
 import '../../repositories/settings_repository.dart';
 import '../../repositories/study_log_repository.dart';
 import '../../services/ai_service.dart';
@@ -41,7 +43,9 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
     Grade? selfGrade,
     bool? isCorrect,
     bool showLevelFeedback = true,
+    AnswerSignals? signals,
   }) async {
+    final answerSignals = signals ?? AnswerSignals.none;
     // Vor dem ersten await auslesen: die Hintergrund-Beförderung soll auch
     // dann noch gespeichert werden, wenn der Screen inzwischen geschlossen
     // wurde.
@@ -59,12 +63,21 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
       isCorrect: isCorrect,
       allowLevelChange: sameStage,
       weight: effectiveWeight(current, modules?.byId(current.moduleId)),
+      signals: answerSignals,
     );
     final saved = stored != null && await repo.update(outcome.card);
     if (!saved) return ReviewOutcome(card: outcome.card, wasWrong: outcome.wasWrong, cardDeleted: true);
     unawaited(StudyLogRepository().recordDay(DateTime.now()));
+    unawaited(_logAnswer(current, selfGrade: selfGrade, isCorrect: isCorrect, signals: answerSignals));
     // Lernzeit-Sperre: zwei fehlerfreie Antworten zu einem Thema = neues Thema.
-    unawaited(_creditAnswer(current, selfGrade: selfGrade, isCorrect: isCorrect));
+    // Mit Hilfe oder geraten ist keine „saubere“ Antwort – das Guthaben sieht
+    // die wirksame Bewertung (siehe AnswerSignals.gradeFor).
+    final effective = AnswerSignals.gradeFor(selfGrade: selfGrade, isCorrect: isCorrect, signals: answerSignals);
+    unawaited(_creditAnswer(
+      current,
+      selfGrade: effective,
+      isCorrect: isCorrect == null && !answerSignals.dontKnow ? null : effective != Grade.again,
+    ));
 
     final target = outcome.targetType;
     if (outcome.needsGeneration && target != null && settings.hasApiKey) {
@@ -94,6 +107,19 @@ mixin CardReviewMixin<T extends StatefulWidget> on State<T> {
       );
     }
     return result;
+  }
+
+  /// Antwort-Protokoll (Kalibrierung, Fehlvorstellungen) – darf das Lernen
+  /// nie stören.
+  Future<void> _logAnswer(Flashcard before, {Grade? selfGrade, bool? isCorrect, required AnswerSignals signals}) async {
+    try {
+      await ReviewLogRepository.add(ReviewLogEntry.of(
+        before,
+        grade: AnswerSignals.gradeFor(selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
+        correct: signals.dontKnow ? false : isCorrect,
+        signals: signals,
+      ));
+    } catch (_) {}
   }
 
   Future<void> _creditAnswer(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {

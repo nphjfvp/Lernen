@@ -32,6 +32,20 @@ beantworten können:
      mindestens eine Option falsch.
    - Die Lösung steht nicht schon im Fragetext und lässt sich nicht aus der
      Formulierung ablesen (z.B. kein Lückenwort, das im selben Satz steht).
+
+FALSCHE OPTIONEN MIT SYSTEM (single_choice/multiple_choice):
+   - Schreib zuerst die richtige Aussage und überleg, WARUM sie stimmt. Leite
+     dann jede falsche Option daraus ab: Was würde jemand antworten, der
+     einen bestimmten typischen Denkfehler hat (Begriffe verwechselt, Ursache
+     und Wirkung vertauscht, Spezialfall verallgemeinert, falsches
+     Vorzeichen/falsche Einheit)? Gib bei JEDER falschen Option in "why" diesen
+     Denkfehler in einem kurzen Satz an (wird nach einer falschen Wahl gezeigt,
+     ohne die Lösung zu wiederholen).
+   - Keine Asymmetrie, an der man die Lösung ohne Fachwissen erkennt: alle
+     Optionen gleich lang, gleich genau, gleicher Satzbau; KEINE Begründung
+     in einer Option, kein Fettdruck, keine Absolutwörter („immer“, „nie“)
+     nur in den falschen. Wer den Stoff nicht kann, darf die richtige nicht
+     erraten können – sonst neu formulieren.
 ''';
 
 /// Markierung von Rechenaufgaben (Schalter "Rechenaufgaben" beim Lernen, siehe
@@ -203,6 +217,9 @@ Regeln:
    zwei Sätzen, fasse den Kerngedanken zusammen und schreibe als letzte
    Zeile genau: [[GELÖST]]
 6. Stütze dich auf den Auszug aus den Unterlagen, falls mitgegeben.
+7. Kein Pauschallob und keine Floskeln („Super!“, „Gute Frage“): benenne,
+   was an seiner Antwort trägt bzw. wo sie abbiegt – sachlich, ohne
+   Falsches schönzureden.
 Kein JSON, keine Codefences, kein Markdown. Formeln in LaTeX zwischen \$…\$.
 Antworte in der Sprache der Frage und duze den Lernenden.
 ''';

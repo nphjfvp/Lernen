@@ -30,10 +30,12 @@ class QuestionParsing {
         final image = (o['image'] ?? o['imageBase64'])?.toString() ?? '';
         if (text == null && image.isEmpty) continue;
         final isCorrect = o['isCorrect'];
+        final why = (_first(Map<String, dynamic>.from(o), _whyKeys) ?? '').toString().trim();
         options.add(QuizOption(
           text: text?.toString() ?? '',
           isCorrect: isCorrect == true || isCorrect == 1 || const {'true', '1'}.contains(isCorrect.toString().toLowerCase()),
           imageBase64: image.isEmpty ? null : image,
+          why: why.isEmpty || why.toLowerCase() == 'null' ? null : why,
         ));
       } else if (o != null) {
         options.add(QuizOption(text: o.toString(), isCorrect: false));
@@ -41,6 +43,10 @@ class QuestionParsing {
     }
     return options;
   }
+
+  /// Schlüssel, unter denen die KI den Denkfehler hinter einer falschen
+  /// Option liefern kann (siehe QuizOption.why).
+  static const _whyKeys = ['why', 'misconception', 'denkfehler', 'error', 'mistake', 'reason'];
 
   static List<String>? parseBlanks(dynamic raw) {
     if (raw is! List) return null;
@@ -384,6 +390,8 @@ class QuestionParsing {
             // Bild-Antworten: Bild bzw. Bereich auf der Seite mitnehmen.
             for (final key in const ['image', 'imageBox'])
               if (o[key] != null) key: o[key],
+            if (_first(Map<String, dynamic>.from(o), _whyKeys) != null)
+              'why': _first(Map<String, dynamic>.from(o), _whyKeys),
           });
         } else if (o != null && o is! List) {
           options.add({'text': o.toString(), 'isCorrect': false});

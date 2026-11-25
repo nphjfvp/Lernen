@@ -8,6 +8,7 @@ import '../../models/flashcard.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
+import '../../services/answer_signals.dart';
 import '../../services/boss_battle.dart';
 import '../../services/calc_task_detector.dart';
 import '../../services/fsrs_service.dart';
@@ -79,12 +80,12 @@ class _BossBattleScreenState extends State<BossBattleScreen> with CardReviewMixi
     });
   }
 
-  void _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect}) {
+  void _handleComplete(Flashcard card, {Grade? selfGrade, bool? isCorrect, AnswerSignals? signals}) {
     final battle = _battle;
     if (battle == null || battle.current?.id != card.id) return;
     // "Schwer" ist ein erfolgreicher, nur mühsamer Abruf – zählt als Treffer.
     final correct = isCorrect ?? (selfGrade != Grade.again);
-    unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect));
+    unawaited(recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals));
     setState(() {
       if (battle.answer(correct: correct) == BossHit.hit) {
         _hits++;
@@ -135,8 +136,8 @@ class _BossBattleScreenState extends State<BossBattleScreen> with CardReviewMixi
                           onImageEdited: (bytes) => saveEditedImage(battle.current!, bytes),
                           onSkip: () => setState(battle.skip),
                           canGiveUp: true,
-                          onComplete: ({selfGrade, isCorrect}) =>
-                              _handleComplete(battle.current!, selfGrade: selfGrade, isCorrect: isCorrect),
+                          onComplete: ({selfGrade, isCorrect, signals}) => _handleComplete(battle.current!,
+                              selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
                         ),
                       ),
                     ],

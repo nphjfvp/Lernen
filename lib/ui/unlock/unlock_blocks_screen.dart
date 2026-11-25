@@ -6,6 +6,7 @@ import '../../models/flashcard.dart';
 import '../../models/learn_credit.dart';
 import '../../models/unlock_block.dart';
 import '../../repositories/unlock_block_repository.dart';
+import '../../services/answer_signals.dart';
 import '../../services/ai_service.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/screen_guard.dart';
@@ -391,8 +392,18 @@ class _UnlockBlockScreenState extends State<UnlockBlockScreen> with SafeSetState
                   key: ValueKey(card.id),
                   card: card,
                   isNew: false,
-                  onComplete: ({Grade? selfGrade, bool? isCorrect}) =>
-                      Navigator.of(context).pop((selfGrade: selfGrade, isCorrect: isCorrect)),
+                  onComplete: ({Grade? selfGrade, bool? isCorrect, AnswerSignals? signals}) {
+                    // Tipps/„geraten“ wirken über die Signale – hier die wirksame Bewertung.
+                    final grade = AnswerSignals.gradeFor(
+                      selfGrade: selfGrade,
+                      isCorrect: isCorrect,
+                      signals: signals ?? AnswerSignals.none,
+                    );
+                    Navigator.of(context).pop((
+                      selfGrade: grade,
+                      isCorrect: isCorrect == null && !(signals?.dontKnow ?? false) ? null : grade != Grade.again,
+                    ));
+                  },
                 ),
               ),
             ),

@@ -94,7 +94,7 @@ void main() {
     addTearDown(tester.view.reset);
     results = [];
     final card = _card(task);
-    void done({Grade? selfGrade, bool? isCorrect}) => results.add((grade: selfGrade, correct: isCorrect));
+    void done({Grade? selfGrade, bool? isCorrect, Object? signals}) => results.add((grade: selfGrade, correct: isCorrect));
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(extensions: const [AppColors.light]),

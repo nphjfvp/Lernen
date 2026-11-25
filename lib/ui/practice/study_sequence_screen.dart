@@ -9,6 +9,7 @@ import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
 import '../../repositories/material_repository.dart';
 import '../../repositories/study_sequence_repository.dart';
+import '../../services/answer_signals.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/stage_gate_service.dart';
 import '../../services/study_sequence.dart';
@@ -179,7 +180,7 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
     });
   }
 
-  Future<void> _answered(Flashcard card, {Grade? selfGrade, bool? isCorrect}) async {
+  Future<void> _answered(Flashcard card, {Grade? selfGrade, bool? isCorrect, AnswerSignals? signals}) async {
     final solved = isCorrect ?? (selfGrade != null && selfGrade != Grade.again);
     _update(
       StudySequence.record(
@@ -198,7 +199,7 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
       }
       _index++;
     });
-    await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect);
+    await recordReview(card, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals);
   }
 
   void _understood(Flashcard card) {
@@ -460,7 +461,8 @@ class _StudySequenceScreenState extends State<StudySequenceScreen> with CardRevi
             isNew: card.reps == 0,
             canGiveUp: true,
             onImageEdited: (bytes) => saveEditedImage(card, bytes),
-            onComplete: ({selfGrade, isCorrect}) => _answered(card, selfGrade: selfGrade, isCorrect: isCorrect),
+            onComplete: ({selfGrade, isCorrect, signals}) =>
+                _answered(card, selfGrade: selfGrade, isCorrect: isCorrect, signals: signals),
             info: Text(
               'Aufgabe $position von ${_ordered.length} · noch ${queue.length - _index} in dieser Runde',
               key: const ValueKey('sequence-position'),

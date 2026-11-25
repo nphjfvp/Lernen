@@ -1310,7 +1310,7 @@ class _CheckpointQuizScreenState extends State<_CheckpointQuizScreen> {
           key: ValueKey(card.id),
           card: card,
           isNew: true,
-          onComplete: ({selfGrade, isCorrect}) =>
+          onComplete: ({selfGrade, isCorrect, signals}) =>
               _handleComplete(card, selfGrade: selfGrade, isCorrect: isCorrect),
         ),
       ),

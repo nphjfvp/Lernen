@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../study/think_aloud_screen.dart';
 import '../../models/flashcard.dart';
 import '../../models/module.dart';
 import '../../repositories/flashcard_repository.dart';
@@ -256,6 +257,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        _QuickAction(
+                          key: const ValueKey('home-think-aloud'),
+                          icon: Icons.record_voice_over_outlined,
+                          label: 'Laut denken – Gedankengang sprechen',
+                          onTap: () => Navigator.of(
+                            context,
+                          ).push(MaterialPageRoute<void>(builder: (_) => const ThinkAloudScreen())),
                         ),
                         const SizedBox(height: 20),
                         Text(

@@ -82,7 +82,7 @@ Future<void> _answerWrong(WidgetTester tester, Flashcard card, {bool withMateria
         body: Column(
           children: [
             Expanded(
-              child: QuestionAnswerView(key: ValueKey(card.id), card: card, isNew: false, onComplete: ({selfGrade, isCorrect}) {}),
+              child: QuestionAnswerView(key: ValueKey(card.id), card: card, isNew: false, onComplete: ({selfGrade, isCorrect, signals}) {}),
             ),
           ],
         ),
@@ -119,7 +119,7 @@ void main() {
               card: card,
               isNew: false,
               examMode: examMode,
-              onComplete: ({selfGrade, isCorrect}) {},
+              onComplete: ({selfGrade, isCorrect, signals}) {},
             ),
           ),
         ),

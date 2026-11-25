@@ -138,7 +138,7 @@ analog `ModuleExportService`.
 - Mini-Games, Coins/Shop, Leaderboards — Gamification ≠ Lerngewinn.
 - Mathe-Formel-Editor mit Editor — LaTeX reicht.
 - Diagramm-/bildbasierte Fragetypen — bewusst draußen.
-- Externe Web-Suche im Chat — bricht offline-first.
+- Externe Web-Suche im Chat — bricht offline-first. *(Ausnahme seit 7u: nur auf Knopfdruck als letzte Stufe nach „Einfacher erklären“, abschaltbar – siehe CHANGELOG 7u.)*
 - On-device KI-Modell — zu schwer für Flutter-mobile.
 - FSRS für Konzepte — Speedrun ist bewusst kein SR (Verständnis-Check).
 

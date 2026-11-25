@@ -5,7 +5,9 @@ import '../../models/mastery_snapshot.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/mastery_snapshot_repository.dart';
 import '../../repositories/module_repository.dart';
+import '../../repositories/review_log_repository.dart';
 import '../../repositories/study_log_repository.dart';
+import '../../services/answer_signals.dart';
 import '../../services/mastery_service.dart';
 import '../../services/mastery_trend_service.dart';
 import '../../services/stats_service.dart';
@@ -34,6 +36,7 @@ class _StatsScreenState extends State<StatsScreen> {
   OverallStats? _stats;
   MasteryTrend? _trend;
   int _weakCount = 0;
+  List<CalibrationBucket> _calibration = const [];
   final _snapshotRepo = MasterySnapshotRepository();
 
   @override
@@ -72,11 +75,18 @@ class _StatsScreenState extends State<StatsScreen> {
     );
     await _snapshotRepo.recordToday(today);
     final history = await _snapshotRepo.loadRecent(14);
+    var calibration = const <CalibrationBucket>[];
+    try {
+      calibration = ReviewLogAnalysis.calibration(await ReviewLogRepository.load());
+    } catch (_) {
+      // Ohne Protokoll keine Kalibrierung.
+    }
     if (!mounted) return;
     setState(() {
       _stats = stats;
       _trend = MasteryTrendService.compare(today: today, history: history);
       _weakCount = WeaknessService().rank(allCards).length;
+      _calibration = calibration;
     });
   }
 
@@ -138,6 +148,10 @@ class _StatsScreenState extends State<StatsScreen> {
                       const SizedBox(height: 10),
                       _TrendCard(trend: _trend!),
                     ],
+                    if (_calibration.any((b) => b.total > 0)) ...[
+                      const SizedBox(height: 10),
+                      _CalibrationCard(buckets: _calibration),
+                    ],
                     const SizedBox(height: 10),
                     _WeaknessEntryCard(
                       count: _weakCount,
@@ -175,6 +189,52 @@ class _StatsScreenState extends State<StatsScreen> {
                   ],
                 ),
               ),
+      ),
+    );
+  }
+}
+
+/// Wie gut die eigene Sicherheit zur Trefferquote passt (aus dem
+/// Antwort-Protokoll): „Wenn du ‚sicher‘ sagst, liegst du zu x % richtig.“
+class _CalibrationCard extends StatelessWidget {
+  const _CalibrationCard({required this.buckets});
+
+  final List<CalibrationBucket> buckets;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final sure = buckets.where((b) => b.confidence == AnswerConfidence.sure).firstOrNull;
+    String? verdict;
+    final sureRate = sure?.rate;
+    if (sure != null && sure.total >= 10 && sureRate != null) {
+      verdict = sureRate >= 0.9
+          ? 'Dein „sicher“ ist verlässlich.'
+          : 'Bei „sicher“ liegst du öfter daneben, als es sich anfühlt – das sind meist Fehlvorstellungen.';
+    }
+    return Container(
+      key: const ValueKey('calibration-card'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: c.surface, border: Border.all(color: c.border), borderRadius: BorderRadius.circular(18)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Wie gut passt deine Sicherheit?', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          for (final b in buckets)
+            if (b.total > 0)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '„${b.confidence.label}“: ${(b.rate! * 100).round()} % richtig (${b.total} Antworten)',
+                  style: TextStyle(fontSize: 13, color: c.ink),
+                ),
+              ),
+          if (verdict != null) ...[
+            const SizedBox(height: 4),
+            Text(verdict, style: TextStyle(fontSize: 12, color: c.inkMuted)),
+          ],
+        ],
       ),
     );
   }
