@@ -20,6 +20,9 @@ Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.
   Strichen.
 - **Start ohne Netz**: Ist der Browser offline, wartet die Web-App nicht mehr
   5 Sekunden auf den Cloud-Dienst (Start 1,6 statt 6,5 Sekunden).
+- **Windows-Update repariert**: Eine neuere Compiler-Version auf GitHub ließ
+  den Windows-Build an einer Warnung im Anmelde-Plugin scheitern (das letzte
+  Windows-Setup fehlte deshalb) – die Warnung ist jetzt abgeschaltet.
 
 ### 7u. Lernen nach dem Vorbild von LearnHarness: messen, prüfen, laut denken
 

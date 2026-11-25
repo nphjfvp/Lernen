@@ -1883,3 +1883,7 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     Zeilen in den getesteten Dateien; schwach: ui/stats (jetzt getestet: `CalibrationCard`,
     `WeaknessScreen.misconceptionsFirst`), ui/modules (material_viewer_screen 0 %). Tests: ink_render_test,
     placement_screen_test, stats_learning_test, step_ink_test (Lesen erst nach dem Strich).
+138. Windows-CI: GitHub-Runner mit neuerem MSVC meldet C4238 („class rvalue used as lvalue“) in
+    firebase_auth_plugin.cpp; mit /WX aus `APPLY_STANDARD_SETTINGS` (windows/CMakeLists.txt) brach der Build ab
+    (Run vom 25.11., Android/Web grün). Abhilfe: `/wd"4238"` in `APPLY_STANDARD_SETTINGS` (Plugins nutzen die
+    Funktion, firebase_auth setzt kein eigenes /WX). Keine Abhängigkeit geändert.
