@@ -487,7 +487,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48` (App-Branch – fertige Änderungen
 immer direkt dorthin pushen, auch aus anderen Sitzungs-Branches; siehe CLAUDE.md). `flutter analyze`
-sauber, 1871 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1877 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt sind 135 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
@@ -535,7 +535,9 @@ Stift-Blatt: geglättete Tinte mit Druck, Lesen erst bei neuer Zeile, großes Bl
 Entsperr-Blöcke lösen wie jede Aufgabe: Rechenweg mit Stift, Taschenrechner, Vorrechnen (135),
 Ideen aus LearnHarness: Sicherheit/„Weiß ich nicht“/Tipp-Leiter mit einer Bewertungsregel, Antwort-Protokoll,
 Denkfehler je Option, Wiederholung in neuer Form, Einstufen, Prüffrage je Lektionsschritt, Voraussetzungs-Sperre,
-Web-Recherche als letzte Erklärstufe, Prompt-Caching, Modus „Laut denken“ (136).
+Web-Recherche als letzte Erklärstufe, Prompt-Caching, Modus „Laut denken“ (136),
+Stift-Blatt im Web ohne Wartezeit (Pfade statt Einzellinien, Striche als Bild), Offline-Start ohne Firebase-Wartezeit,
+Browser-Tests in tool/web_e2e (137).
 
 **Aufgaben für den Nutzer bauen** („ins Postfach“, Übungsblatt schicken):
 Skill `.claude/skills/postfach/SKILL.md` befolgen – Postfach-Code nie ins

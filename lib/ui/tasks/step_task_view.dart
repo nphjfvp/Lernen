@@ -526,9 +526,15 @@ class _StepTaskViewState extends State<StepTaskView> {
     _inkDirty.addAll(cells);
     _inkTimer?.cancel();
     _inkTimer = Timer(StepTaskView.inkPause, _flushInk);
+    _readAfterStroke();
   }
 
-  /// Der Stift setzt woanders an: was in anderen Zellen wartet, gleich lesen.
+  /// Zellen, die gelesen werden, sobald der laufende Strich fertig ist.
+  final Set<InkCell> _inkReadNext = {};
+
+  /// Der Stift setzt woanders an: was in anderen Zellen wartet, wird gelesen –
+  /// aber erst nach diesem Strich. Das Bild für die KI zu rechnen kostet
+  /// gerade im Browser Zeit, die beim Ansetzen den Strich aufhielte.
   void _inkStrokeStart(InkCell cell) {
     _inkTimer?.cancel();
     final others = {
@@ -536,15 +542,27 @@ class _StepTaskViewState extends State<StepTaskView> {
         if (c != cell) c,
     };
     _inkDirty.removeAll(others);
-    for (final c in others) {
-      _readInkCell(c);
-    }
-    if (_inkDirty.isNotEmpty) _inkTimer = Timer(StepTaskView.inkPause, _flushInk);
+    _inkReadNext.addAll(others);
+    if (_inkDirty.isNotEmpty || _inkReadNext.isNotEmpty) _inkTimer = Timer(StepTaskView.inkPause, _flushInk);
+  }
+
+  void _readAfterStroke() {
+    if (_inkReadNext.isEmpty) return;
+    final cells = {..._inkReadNext};
+    _inkReadNext.clear();
+    // Erst den abgesetzten Strich zeichnen lassen, dann lesen.
+    Timer(const Duration(milliseconds: 60), () {
+      if (!mounted) return;
+      for (final c in cells) {
+        _readInkCell(c);
+      }
+    });
   }
 
   void _flushInk() {
-    final cells = {..._inkDirty};
+    final cells = {..._inkDirty, ..._inkReadNext};
     _inkDirty.clear();
+    _inkReadNext.clear();
     for (final c in cells) {
       _readInkCell(c);
     }

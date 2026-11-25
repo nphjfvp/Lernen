@@ -4,6 +4,23 @@ Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7t) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
 
+### 7v. Stift im Browser ohne Wartezeit, schnellerer Start ohne Netz
+
+- **Stift-Blatt in der Web-App (iPad)**: Nach einem Strich musste man bis zu
+  1–2 Sekunden warten, bevor der nächste ging (z.B. beim „x“). Ursache war
+  keine Grenze von Web-Apps, sondern das Zeichnen: Der Browser rastert das
+  Blatt bei jedem Bild neu, und jeder Strich bestand aus hunderten
+  Einzellinien – je voller das Blatt, desto langsamer. Jetzt ist jeder Strich
+  ein paar zusammenhängende Linien, und fertige Striche liegen im Browser als
+  Bild vor. Gemessen: ein volles Blatt ist so schnell wie ein leeres.
+- Die vorige Zeile wird erst gelesen, wenn der Strich in der neuen Zeile
+  fertig ist – das Bild für die KI zu rechnen hält den Stift nicht mehr auf.
+- Setzt der Stift an, verliert ein Textfeld im Browser den Fokus – so greift
+  weder die Bildschirmtastatur noch die iPad-Handschrifterkennung nach den
+  Strichen.
+- **Start ohne Netz**: Ist der Browser offline, wartet die Web-App nicht mehr
+  5 Sekunden auf den Cloud-Dienst (Start 1,6 statt 6,5 Sekunden).
+
 ### 7u. Lernen nach dem Vorbild von LearnHarness: messen, prüfen, laut denken
 
 - **Laut denken** (neu, Fächer → „Laut denken“ oder im Fach): Fragen aus den

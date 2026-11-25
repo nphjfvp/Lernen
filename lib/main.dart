@@ -37,6 +37,7 @@ import 'services/database_service.dart';
 import 'services/material_file_store.dart';
 import 'services/sync_backup_service.dart';
 import 'services/ai_service.dart';
+import 'services/browser_online.dart';
 import 'services/reminder_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
@@ -63,11 +64,18 @@ Future<void> main(List<String> args) async {
   // für eine Frist: läuft die Initialisierung dort einmal länger als 5 Sekunden
   // (kalter Start, Virenscanner), wäre Firebase beim Start "nicht verbunden" –
   // der Auto-Sync startet dann für die ganze Sitzung nicht.
-  try {
-    final init = Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    await (kIsWeb ? init.timeout(const Duration(seconds: 5)) : init);
-  } catch (e) {
-    debugPrint('Firebase nicht konfiguriert – Cloud-Sync deaktiviert ($e).');
+  //
+  // Meldet der Browser schon „offline“, gar nicht erst warten: das SDK kommt
+  // dann ohnehin nicht, und der Start dauerte sonst die vollen 5 Sekunden.
+  if (kIsWeb && !browserOnline()) {
+    debugPrint('Offline – Cloud-Sync für diese Sitzung aus.');
+  } else {
+    try {
+      final init = Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      await (kIsWeb ? init.timeout(const Duration(seconds: 5)) : init);
+    } catch (e) {
+      debugPrint('Firebase nicht konfiguriert – Cloud-Sync deaktiviert ($e).');
+    }
   }
 
   // Settings werden vor runApp() geladen (schneller lokaler DB-Read), damit

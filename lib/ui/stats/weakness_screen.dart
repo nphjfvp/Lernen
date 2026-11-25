@@ -22,6 +22,13 @@ import '../widgets/math_text.dart';
 class WeaknessScreen extends StatefulWidget {
   const WeaknessScreen({super.key});
 
+  /// Mögliche Fehlvorstellungen (zuletzt sicher und falsch) zuerst, sonst die
+  /// Reihenfolge von [ranked] (stabil).
+  static List<WeakCard> misconceptionsFirst(List<WeakCard> ranked, Set<String> misconceptions) => [
+        ...ranked.where((w) => misconceptions.contains(w.card.id)),
+        ...ranked.where((w) => !misconceptions.contains(w.card.id)),
+      ];
+
   @override
   State<WeaknessScreen> createState() => _WeaknessScreenState();
 }
@@ -58,12 +65,7 @@ class _WeaknessScreenState extends State<WeaknessScreen> {
       // Ohne Protokoll einfach ohne Markierung.
     }
     if (!mounted) return;
-    final ranked = WeaknessService().rank(cards);
-    // Stabil: mögliche Fehlvorstellungen zuerst, sonst die bisherige Reihenfolge.
-    final sorted = [
-      ...ranked.where((w) => misconceptions.contains(w.card.id)),
-      ...ranked.where((w) => !misconceptions.contains(w.card.id)),
-    ];
+    final sorted = WeaknessScreen.misconceptionsFirst(WeaknessService().rank(cards), misconceptions);
     setState(() {
       _misconceptions = misconceptions;
       _all = sorted;

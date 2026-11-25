@@ -1868,3 +1868,18 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     gesynct). Tutor-Prompts ohne Pauschallob. Tests: answer_signals_test, answer_signals_view_test,
     retry_variant_service_test, placement_service_test, step_check_card_test, prerequisite_gate_test,
     ai_web_cache_test, think_aloud_service_test.
+137. Stift-Blatt im Web und Analyse: Messseite `tool/ink_bench/main.dart` + Playwright-Skripte `tool/web_e2e/`
+    (Stift per CDP `pointerType: "pen"`, Long Tasks; Start, Tabs, Fach anlegen → Einstufen/Laut denken auf 1280 und
+    390 px). Befund: Flutter-Web rastert das Blatt bei jedem Bild neu (kein Raster-Cache), `paintInk` zeichnete je
+    Punktabschnitt bis zu 6 `drawLine` → Bildzeit wuchs mit der Strichzahl (Container ohne GPU: leer ≈ 100 ms,
+    64 Striche ≈ 820 ms). Jetzt: `paintInk` zeichnet Abschnitte ähnlicher Stärke als EINEN Catmull-Rom-Pfad
+    (`inkChunkSegments` = 8, ≈ 390 ms) und `InkSheet.cacheStrokes` (= kIsWeb) legt fertige Striche nach
+    `cacheDelay` (350 ms, nie bei aufliegendem Stift) als `ui.Image` ab (`_InkCache`, `fits` prüft den Anfang der
+    Strichliste; neuere Striche vektoriell darüber; `debugCacheBuilds`) → volles Blatt ≈ leeres. StepTaskView liest
+    beim Ansetzen in anderer Zelle nicht mehr sofort (`_inkReadNext`, gelesen 60 ms nach dem Absetzen bzw. beim
+    Flush). Stift-Ansetzen im Web löst den Textfokus (iPad-Kritzeln/Tastatur). Web-Start: `browserOnline()`
+    (lib/services/browser_online*.dart, `navigator.onLine`) – offline kein Firebase-Init (6,5 → 1,6 s).
+    Probeklausur-/Import-Test stabil (Hintergrund-Schreibvorgänge, Content-Teile). Abdeckung (lcov): 80,7 % der
+    Zeilen in den getesteten Dateien; schwach: ui/stats (jetzt getestet: `CalibrationCard`,
+    `WeaknessScreen.misconceptionsFirst`), ui/modules (material_viewer_screen 0 %). Tests: ink_render_test,
+    placement_screen_test, stats_learning_test, step_ink_test (Lesen erst nach dem Strich).

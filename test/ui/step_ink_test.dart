@@ -305,8 +305,17 @@ void main() {
     await drain();
     expect(sent, isEmpty);
 
-    // Neue Zeile angefangen: die fertige wird gelesen.
-    await write(topLeft, const Offset(40, h * 1.5));
+    // Neue Zeile angefangen: die fertige wird gelesen – aber erst, wenn der
+    // Strich fertig ist (das Bild für die KI zu rechnen hielte ihn sonst auf).
+    final g = await tester.startGesture(topLeft + const Offset(40, h * 1.5), kind: PointerDeviceKind.stylus);
+    await tester.pump(const Duration(milliseconds: 100));
+    await drain();
+    expect(sent, isEmpty, reason: 'beim Ansetzen wird noch nichts gelesen');
+    for (var k = 1; k <= 6; k++) {
+      await g.moveTo(topLeft + Offset(40 + k * 8.0, h * 1.5 + (k.isEven ? 6 : -6)));
+    }
+    await g.up();
+    await tester.pump(const Duration(milliseconds: 100));
     await drain();
     expect(sent, hasLength(1));
     expect(tester.widget<TextField>(find.byKey(const ValueKey('step-line-0'))).controller!.text, 'Zeile 1');

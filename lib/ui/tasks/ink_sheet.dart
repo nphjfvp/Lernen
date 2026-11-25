@@ -2,6 +2,9 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -232,8 +235,42 @@ class InkSheet extends StatefulWidget {
   /// So weit darf das Blatt vergrößert werden (1 = nie).
   final double maxScale;
 
+  /// Fertige Striche als Bild zwischenspeichern (siehe [_InkCache]). Im
+  /// Browser an: Flutter-Web rastert das Blatt sonst bei JEDEM Bild neu –
+  /// mit vollem Blatt wartete der nächste Strich spürbar. In der App erledigt
+  /// das der Raster-Cache der Engine.
+  static bool cacheStrokes = kIsWeb;
+
+  /// So lange nach dem letzten Strich wird das Bild erneuert (nie, solange
+  /// der Stift aufliegt).
+  static Duration cacheDelay = const Duration(milliseconds: 350);
+
+  /// Wie oft das Bild der Striche erneuert wurde (nur für Tests).
+  @visibleForTesting
+  static int debugCacheBuilds = 0;
+
   @override
   State<InkSheet> createState() => _InkSheetState();
+}
+
+/// Die fertigen Striche [strokes] (Anfang von InkSheetController.strokes)
+/// als Bild im Maßstab [ratio] (Blatt-Pixel → Bild-Pixel).
+class _InkCache {
+  _InkCache(this.image, this.strokes, this.ratio);
+
+  final ui.Image image;
+  final List<InkStroke> strokes;
+  final double ratio;
+
+  /// Gilt das Bild noch für [current] (nur hinten angefügt, nichts
+  /// radiert/zurückgenommen)?
+  bool fits(List<InkStroke> current) {
+    if (current.length < strokes.length) return false;
+    for (var i = 0; i < strokes.length; i++) {
+      if (!identical(current[i], strokes[i])) return false;
+    }
+    return true;
+  }
 }
 
 /// Der Strich, der gerade entsteht – eigene Zeichenebene, damit beim Schreiben
@@ -282,6 +319,10 @@ class _LiveStroke extends ChangeNotifier {
 class _InkSheetState extends State<InkSheet> {
   final _live = _LiveStroke();
   int? _pointer;
+  _InkCache? _cache;
+  Timer? _cacheTimer;
+  int _cacheRun = 0;
+  double _pixelRatio = 1;
   PointerDeviceKind? _kind;
   bool _erasing = false;
   final Set<InkCell> _erased = {};
@@ -310,6 +351,8 @@ class _InkSheetState extends State<InkSheet> {
   void initState() {
     super.initState();
     _ctrl.addListener(_changed);
+    // Schon vorhandene Striche (gespeicherter Rechenweg) gleich als Bild.
+    if (_ctrl.strokes.isNotEmpty) WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleCache());
   }
 
   @override
@@ -325,11 +368,61 @@ class _InkSheetState extends State<InkSheet> {
   void dispose() {
     _ctrl.removeListener(_changed);
     _live.dispose();
+    _cacheTimer?.cancel();
+    _cache?.image.dispose();
     super.dispose();
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _scheduleCache();
+  }
+
+  /// Bild der fertigen Striche bald erneuern – erst, wenn der Stift eine
+  /// Weile nicht aufliegt, damit das Rastern nie einen Strich aufhält.
+  void _scheduleCache() {
+    if (!InkSheet.cacheStrokes) return;
+    _cacheTimer?.cancel();
+    _cacheTimer = Timer(InkSheet.cacheDelay, () {
+      if (!mounted) return;
+      if (_pointer != null) return _scheduleCache();
+      unawaited(_buildCache());
+    });
+  }
+
+  Future<void> _buildCache() async {
+    final strokes = List<InkStroke>.of(_ctrl.strokes);
+    final ratio = _scale * _pixelRatio;
+    final old = _cache;
+    if (old != null && old.ratio == ratio && old.strokes.length == strokes.length && old.fits(strokes)) return;
+    if (strokes.isEmpty || _width <= 0) {
+      setState(() => _cache = null);
+      old?.image.dispose();
+      return;
+    }
+    final run = ++_cacheRun;
+    var height = 0.0;
+    for (final st in strokes) {
+      height = math.max(height, st.bounds.bottom + 8);
+    }
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder)..scale(ratio);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final ink = dark ? const Color(0xFFA9C1FF) : const Color(0xFF1B2F7A);
+    for (final st in strokes) {
+      paintInk(canvas, st.points, st.widths, ink);
+    }
+    final picture = recorder.endRecording();
+    final image = await picture.toImage((_width * ratio).ceil(), (height * ratio).ceil());
+    picture.dispose();
+    if (!mounted || run != _cacheRun) {
+      image.dispose();
+      return;
+    }
+    setState(() => _cache = _InkCache(image, strokes, ratio));
+    InkSheet.debugCacheBuilds++;
+    old?.image.dispose();
   }
 
   Offset _toSheet(Offset local) => local / _scale;
@@ -354,6 +447,10 @@ class _InkSheetState extends State<InkSheet> {
     if (e.kind == PointerDeviceKind.mouse && e.buttons != kPrimaryButton) return;
     if (e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
       _ctrl.setPenOnly(true, chosen: false);
+      // Im Browser: ein fokussiertes Textfeld ist ein verstecktes Eingabefeld –
+      // das iPad (Kritzeln) und die Bildschirmtastatur greifen sonst nach den
+      // Stiftstrichen. Wer mit dem Stift schreibt, tippt gerade nicht.
+      if (kIsWeb) FocusManager.instance.primaryFocus?.unfocus();
     }
     _pointer = e.pointer;
     _kind = e.kind;
@@ -405,6 +502,8 @@ class _InkSheetState extends State<InkSheet> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    _pixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
+    final cache = _cache != null && _cache!.fits(_ctrl.strokes) ? _cache : null;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final ink = dark ? const Color(0xFFA9C1FF) : const Color(0xFF1B2F7A);
     final red = dark ? const Color(0xFFFF8A80) : const Color(0xFFC62828);
@@ -557,6 +656,7 @@ class _InkSheetState extends State<InkSheet> {
                                 red: red,
                                 marks: widget.marks,
                                 busy: widget.busy,
+                                cache: cache,
                               ),
                             ),
                           ),
@@ -596,23 +696,37 @@ void paintInk(Canvas canvas, List<Offset> points, List<double>? widths, Color co
     canvas.drawPath(smoothInkPath(points), paint..strokeWidth = width);
     return;
   }
-  // Abschnittsweise mit der jeweiligen Stärke – runde Enden fügen sie nahtlos.
-  for (var i = 0; i < points.length - 1; i++) {
-    final p0 = points[i == 0 ? 0 : i - 1];
-    final p1 = points[i];
-    final p2 = points[i + 1];
-    final p3 = points[i + 2 < points.length ? i + 2 : i + 1];
-    final steps = math.max(1, math.min(6, ((p2 - p1).distance / 2).ceil()));
-    var prev = p1;
-    for (var k = 1; k <= steps; k++) {
-      final t = k / steps;
-      final q = _catmullRom(p0, p1, p2, p3, t);
-      paint.strokeWidth = w(i) + (w(i + 1) - w(i)) * t;
-      canvas.drawLine(prev, q, paint);
-      prev = q;
+  // Abschnitte ähnlicher Stärke als EIN geglätteter Pfad – runde Enden fügen
+  // sie nahtlos. Wenige Zeichenbefehle je Strich: Im Browser wird das Blatt
+  // bei jedem Bild neu gerastert (kein Raster-Cache wie in der App), mit
+  // Einzellinien je Punkt kostete jedes Bild bei vollem Blatt hunderte ms.
+  final last = points.length - 1;
+  var start = 0;
+  while (start < last) {
+    var end = start + 1;
+    final w0 = w(start);
+    while (end < last && end - start < inkChunkSegments && (w(end) - w0).abs() < 0.3) {
+      end++;
     }
+    final path = Path()..moveTo(points[start].dx, points[start].dy);
+    var sum = 0.0;
+    for (var i = start; i < end; i++) {
+      final p0 = points[i == 0 ? 0 : i - 1];
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final p3 = points[i + 2 < points.length ? i + 2 : i + 1];
+      final c1 = p1 + (p2 - p0) / 6;
+      final c2 = p2 - (p3 - p1) / 6;
+      path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
+      sum += (w(i) + w(i + 1)) / 2;
+    }
+    canvas.drawPath(path, paint..strokeWidth = sum / (end - start));
+    start = end;
   }
 }
+
+/// Höchstens so viele Punkt-Abschnitte zeichnet [paintInk] als einen Pfad.
+const inkChunkSegments = 8;
 
 /// Geglätteter Pfad durch [points] (Catmull-Rom).
 Path smoothInkPath(List<Offset> points) {
@@ -628,13 +742,6 @@ Path smoothInkPath(List<Offset> points) {
     path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
   }
   return path;
-}
-
-Offset _catmullRom(Offset p0, Offset p1, Offset p2, Offset p3, double t) {
-  final t2 = t * t, t3 = t2 * t;
-  double f(double a, double b, double c, double d) =>
-      0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
-  return Offset(f(p0.dx, p1.dx, p2.dx, p3.dx), f(p0.dy, p1.dy, p2.dy, p3.dy));
 }
 
 class _LivePainter extends CustomPainter {
@@ -669,10 +776,15 @@ class _SheetPainter extends CustomPainter {
     required this.red,
     required this.marks,
     required this.busy,
+    this.cache,
   });
 
   final int revision;
   final List<InkStroke> strokes;
+
+  /// Bild der ersten Striche (passt zu [strokes]) – die übrigen werden wie
+  /// gewohnt gezeichnet.
+  final _InkCache? cache;
   final int rows;
   final double scale, width;
   final Color ink, rule, margin, muted, red;
@@ -701,7 +813,17 @@ class _SheetPainter extends CustomPainter {
     for (var r = 0; r < rows; r++) {
       _text(canvas, '${r + 1}', Offset(4, r * h + 4), 10, muted.withAlpha(140));
     }
-    for (final s in strokes) {
+    final cached = cache;
+    if (cached != null) {
+      final img = cached.image;
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromLTWH(0, 0, img.width / cached.ratio, img.height / cached.ratio),
+        Paint()..filterQuality = FilterQuality.medium,
+      );
+    }
+    for (final s in strokes.skip(cached?.strokes.length ?? 0)) {
       paintInk(canvas, s.points, s.widths, ink);
     }
     for (final MapEntry(key: cell, value: status) in marks.entries) {
@@ -734,6 +856,7 @@ class _SheetPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SheetPainter old) =>
       old.revision != revision ||
+      old.cache != cache ||
       old.rows != rows ||
       old.scale != scale ||
       old.width != width ||

@@ -150,7 +150,7 @@ class _StatsScreenState extends State<StatsScreen> {
                     ],
                     if (_calibration.any((b) => b.total > 0)) ...[
                       const SizedBox(height: 10),
-                      _CalibrationCard(buckets: _calibration),
+                      CalibrationCard(buckets: _calibration),
                     ],
                     const SizedBox(height: 10),
                     _WeaknessEntryCard(
@@ -196,8 +196,8 @@ class _StatsScreenState extends State<StatsScreen> {
 
 /// Wie gut die eigene Sicherheit zur Trefferquote passt (aus dem
 /// Antwort-Protokoll): „Wenn du ‚sicher‘ sagst, liegst du zu x % richtig.“
-class _CalibrationCard extends StatelessWidget {
-  const _CalibrationCard({required this.buckets});
+class CalibrationCard extends StatelessWidget {
+  const CalibrationCard({super.key, required this.buckets});
 
   final List<CalibrationBucket> buckets;
 
