@@ -89,6 +89,12 @@ void main() {
 
     expect(find.text('2 von 2 richtig (100 %)'), findsOneWidget);
     expect(find.text('1,0'), findsOneWidget);
+    // Die Antworten werden im Hintergrund verbucht (Karte, Lerntag,
+    // Antwort-Protokoll). Erst zu Ende schreiben lassen – ein im Test
+    // abgebrochener Schreibvorgang hielte die gemeinsame Datenbank für den
+    // nächsten Test gesperrt.
+    await settle();
+    await settle();
   });
 
   testWidgets('Durchsicht nach der Probeklausur bietet "Im Skript" pro Frage an', (tester) async {
