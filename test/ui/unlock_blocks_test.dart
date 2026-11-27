@@ -207,6 +207,26 @@ void main() {
       expect(await UnlockBlockService.instance.refresh('m1'), 0);
       expect(sent, hasLength(1));
     });
+
+    test('Gescheiterte Anfrage: kurz danach nicht schon wieder (sie kann schon gekostet haben)', () async {
+      await DatabaseService.modules.record('m1').put(db, {'id': 'm1', 'name': 'Mathe 2'});
+      await DatabaseService.flashcards.record('k').put(db, {'id': 'k', 'moduleId': 'm1', 'front': 'F', 'lapses': 1});
+      await LearnCreditRepository.saveRulesIn(db, const LearnCreditRules(enabled: true));
+      var calls = 0;
+      UnlockBlockService.aiFactory = () => AiService(
+        apiKey: 'k',
+        model: 'm',
+        client: MockClient((r) async {
+          calls++;
+          return http.Response('{"error":{"code":401,"message":"No auth"}}', 401);
+        }),
+      );
+      await expectLater(UnlockBlockService.instance.refresh('m1'), throwsA(isA<AiServiceException>()));
+      final first = calls;
+      expect(first, greaterThan(0));
+      expect(await UnlockBlockService.instance.refresh('m1'), 0);
+      expect(calls, first);
+    });
   });
 
   group('Karte zur Aufgabe', () {

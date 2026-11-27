@@ -297,13 +297,6 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
   if (data.containsKey('lectureUnits')) await DatabaseService.lectureUnits.delete(txn);
   // Laborversuche gibt es erst seit kurzem – ältere Stände kennen sie nicht.
   if (data.containsKey('labExperiments')) await DatabaseService.labExperiments.delete(txn);
-  // Ältere Stände kennen „Visuell lernen“ nicht – dann die lokalen behalten.
-  if (data.containsKey('visualLessons')) await DatabaseService.visualLessons.delete(txn);
-  // Ebenso markierte Fragen.
-  if (data.containsKey('cardFlags')) await DatabaseService.cardFlags.delete(txn);
-  if (data.containsKey('visualCourses')) await DatabaseService.visualCourses.delete(txn);
-  if (data.containsKey('visualChats')) await DatabaseService.visualChats.delete(txn);
-  if (data.containsKey('studySequences')) await DatabaseService.studySequences.delete(txn);
 
   for (final m in (data['modules'] as List? ?? [])) {
     final module = Module.fromMap(Map<String, dynamic>.from(m as Map));
@@ -339,30 +332,21 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
     final experiment = LabExperiment.fromMap(Map<String, dynamic>.from(e as Map));
     await DatabaseService.labExperiments.record(experiment.id).put(txn, experiment.toMap());
   }
-  for (final l in (data['visualLessons'] as List? ?? [])) {
-    final map = Map<String, dynamic>.from(l as Map);
-    final id = map['id']?.toString() ?? '';
-    if (id.isNotEmpty) await DatabaseService.visualLessons.record(id).put(txn, map);
-  }
-  for (final f in (data['cardFlags'] as List? ?? [])) {
-    final map = Map<String, dynamic>.from(f as Map);
-    final id = map['id']?.toString() ?? '';
-    if (id.isNotEmpty) await DatabaseService.cardFlags.record(id).put(txn, map);
-  }
-  for (final c in (data['visualCourses'] as List? ?? [])) {
-    final map = Map<String, dynamic>.from(c as Map);
-    final id = map['id']?.toString() ?? '';
-    if (id.isNotEmpty) await DatabaseService.visualCourses.record(id).put(txn, map);
-  }
-  for (final c in (data['visualChats'] as List? ?? [])) {
-    final map = Map<String, dynamic>.from(c as Map);
-    final id = map['id']?.toString() ?? '';
-    if (id.isNotEmpty) await DatabaseService.visualChats.record(id).put(txn, map);
-  }
-  for (final s in (data['studySequences'] as List? ?? [])) {
-    final map = Map<String, dynamic>.from(s as Map);
-    final id = map['id']?.toString() ?? '';
-    if (id.isNotEmpty) await DatabaseService.studySequences.record(id).put(txn, map);
+  // Sammlungen, die unverändert als Map gespeichert werden (Kennung = `id`).
+  // Kennt ein älterer Stand eine davon nicht, bleiben die lokalen Einträge.
+  for (final (key, store) in [
+    ('visualLessons', DatabaseService.visualLessons),
+    ('cardFlags', DatabaseService.cardFlags),
+    ('visualCourses', DatabaseService.visualCourses),
+    ('visualChats', DatabaseService.visualChats),
+    ('studySequences', DatabaseService.studySequences),
+  ]) {
+    if (data.containsKey(key)) await store.delete(txn);
+    for (final r in (data[key] as List? ?? [])) {
+      final map = Map<String, dynamic>.from(r as Map);
+      final id = map['id']?.toString() ?? '';
+      if (id.isNotEmpty) await store.record(id).put(txn, map);
+    }
   }
 
   await applySyncedHistory(txn, data);
@@ -373,42 +357,20 @@ Future<void> applySyncPayload(DatabaseClient txn, Map<String, dynamic> data) asy
   final moduleIds = {
     for (final m in (data['modules'] as List? ?? [])) (m as Map)['id']?.toString() ?? '',
   };
-  await DatabaseService.chatMessages.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
-  await DatabaseService.labExperiments.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
-  await DatabaseService.visualLessons.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
-  await DatabaseService.cardFlags.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
-  await DatabaseService.visualCourses.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
-  await DatabaseService.visualChats.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
-  await DatabaseService.studySequences.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
-  await DatabaseService.unsupportedTasks.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
-  await DatabaseService.unlockBlocks.delete(
-    txn,
-    finder: Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList()))),
-  );
+  final orphan = Finder(filter: Filter.not(Filter.inList('moduleId', moduleIds.toList())));
+  for (final store in [
+    DatabaseService.chatMessages,
+    DatabaseService.labExperiments,
+    DatabaseService.visualLessons,
+    DatabaseService.cardFlags,
+    DatabaseService.visualCourses,
+    DatabaseService.visualChats,
+    DatabaseService.studySequences,
+    DatabaseService.unsupportedTasks,
+    DatabaseService.unlockBlocks,
+  ]) {
+    await store.delete(txn, finder: orphan);
+  }
   await MockExamRepository.retainModulesIn(txn, moduleIds);
   // Fotos zu Versuchen, die es nach dem Abgleich nicht mehr gibt (auf einem
   // anderen Gerät gelöscht), blieben sonst als ungesehene Altlast liegen –
@@ -988,8 +950,11 @@ class SyncService {
       );
       return SyncMergeOutcome(pushId: pushId, pushed: true, result: result);
     }
-    // Die Cloud braucht nichts: beide Seiten sind jetzt gleich.
-    await SyncBaseStore.save(db, await buildSyncPayload(db));
+    // Die Cloud braucht nichts: der zusammengeführte Stand IST der Cloud-Stand.
+    // Nicht neu aus der Datenbank lesen – eine Antwort, die seit dem
+    // Zusammenführen gespeichert wurde, gälte sonst als "schon in der Cloud"
+    // und würde beim nächsten Abgleich vom alten Cloud-Stand überschrieben.
+    await SyncBaseStore.save(db, result.payload);
     return SyncMergeOutcome(pushId: cloudPushId, pushed: false, result: result);
   }
 

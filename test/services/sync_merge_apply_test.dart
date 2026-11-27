@@ -127,6 +127,24 @@ void main() {
     expect(result.changedRemotely, greaterThan(0));
   });
 
+  test('Antwort direkt nach dem Abgleich: Basis aus dem Ergebnis (wie SyncService.merge) hält sie fest', () async {
+    for (final db in [local, phone]) {
+      await putModule(db, 'm', 'Kurs');
+      await putCard(db, _card('c', 'm', 'Frage', reps: 1, lastReview: DateTime(2026, 9, 1)));
+    }
+    final cloud = await buildSyncPayload(phone);
+    final result = await mergeRemoteIntoLocal(local, cloud);
+    expect(result.changedRemotely, 0); // nichts hochzuladen
+    // Zwischen Zusammenführen und Basis-Speichern wird geantwortet.
+    await putCard(local, _card('c', 'm', 'Frage', reps: 2, lastReview: DateTime(2026, 9, 2)));
+    await SyncBaseStore.save(local, result.payload);
+
+    // Ein anderes Gerät lädt etwas anderes hoch; die Karte dort ist unverändert.
+    await putModule(phone, 'm2', 'Zweiter Kurs');
+    await mergeRemoteIntoLocal(local, await buildSyncPayload(phone));
+    expect((await cards())['c']!.reps, 2);
+  });
+
   test('eine lokal vorhandene PDF überlebt das Zusammenführen', () async {
     await putModule(local, 'm', 'Kurs');
     await DatabaseService.materials.record('mat').put(local, {

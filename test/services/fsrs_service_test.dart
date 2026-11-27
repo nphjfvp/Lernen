@@ -311,8 +311,8 @@ void main() {
       final sameDay = fsrs.review(first, Grade.good, now: DateTime(2026, 5, 4, 23));
       expect(nextMorning.elapsedDays, 1);
       expect(nextMorning.stability, greaterThan(sameDay.stability));
-      expect(FsrsService.calendarDaysBetween(evening, DateTime(2026, 5, 5, 8)), 1);
-      expect(FsrsService.calendarDaysBetween(DateTime(2026, 5, 5, 8), evening), 0);
+      expect(FsrsService.elapsedCalendarDays(evening, DateTime(2026, 5, 5, 8)), 1);
+      expect(FsrsService.elapsedCalendarDays(DateTime(2026, 5, 5, 8), evening), 0);
     });
 
     test('Fälligkeit ist immer Mitternacht des Zieltags', () {

@@ -195,7 +195,8 @@ der Fehler-Leiter zählen als Stufe 2/3. Fast richtige Tabelle meldet weiter
 ### 5.3 FSRS (`lib/services/fsrs_service.dart`)
 FSRS-4.5 mit Default-Gewichten, Ziel-Retention 0,9, **Mindestintervall 1 Tag**
 (keine Same-Day-Learning-Steps). Vergangene Zeit in KALENDERTAGEN
-(`calendarDaysBetween`, UTC-Daten), `due` = Mitternacht per
+(`FsrsService.elapsedCalendarDays` = `calendarDaysBetween` aus calendar_days.dart,
+nie negativ; UTC-Daten), `due` = Mitternacht per
 `DateTime(j, m, t + n)` (zeitumstellungssicher). `again` erhöht `lapses` nur
 bei einer schon gelernten Karte (neu → `state='learning'`, sonst
 `'relearning'`). **Erneuter Fehlversuch am selben Tag**

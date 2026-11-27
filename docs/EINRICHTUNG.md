@@ -253,7 +253,10 @@ mit denselben Tests wie Android/Windows davor).
 ### Eigener Signierschlüssel
 
 Ohne Secrets signiert die CI mit dem eingecheckten Debug-Schlüssel
-(`android/app/debug.keystore`). Für einen eigenen Schlüssel:
+(`android/app/debug.keystore`). Der liegt öffentlich im Repo: jeder kann
+damit eine APK bauen, die Android als „Update“ von Lernen annimmt – samt
+Zugriff auf gespeicherten API-Key, Anmeldung und Lernstand. Deshalb
+empfohlen, einmal einen eigenen Schlüssel einzurichten:
 
 1. Schlüssel erzeugen (einmal, auf dem PC; `keytool` gehört zu jedem Java/
    Android Studio):

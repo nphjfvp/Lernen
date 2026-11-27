@@ -4,6 +4,20 @@ Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7t) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
 
+### 7w. Audit: Sync verliert keine Antwort mehr, Entsperr-Blöcke sparen KI-Kosten
+
+- **Abgleich**: Wer genau während eines automatischen Abgleichs eine Frage
+  beantwortete, konnte die Antwort später verlieren – sie galt fälschlich als
+  „schon in der Cloud“ und wurde beim nächsten Abgleich mit einem anderen
+  Gerät vom alten Stand überschrieben. Der Basisstand kommt jetzt aus dem
+  zusammengeführten Ergebnis statt aus der Datenbank.
+- **Entsperr-Blöcke (Lernzeit-Sperre)**: Scheiterte die KI-Anfrage, griff die
+  20-Minuten-Pause nicht – jeder Fehler beim Üben löste nach ~3 Minuten die
+  nächste große (bezahlte) Anfrage aus. Die Pause zählt jetzt ab dem Versuch.
+- Aufgeräumt: Wiederholte Blöcke beim Übernehmen eines Cloud-Stands sind
+  Schleifen; FSRS nutzt die gemeinsame Tageszählung (`elapsedCalendarDays`).
+- Einrichtung: Hinweis, warum ein eigener Android-Signierschlüssel wichtig ist.
+
 ### 7v. Stift im Browser ohne Wartezeit, schnellerer Start ohne Netz
 
 - **Stift-Blatt in der Web-App (iPad)**: Nach einem Strich musste man bis zu

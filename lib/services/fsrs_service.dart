@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../models/flashcard.dart';
+import 'calendar_days.dart';
 
 /// Bewertung einer Karteikarte nach dem Umdrehen (Anki-Konvention).
 enum Grade { again, hard, good, easy }
@@ -80,16 +81,14 @@ class FsrsService {
   /// Eskalationskette (siehe [review]).
   static const int transitStageMaxIntervalDays = 7;
 
-  /// Vergangene KALENDERTAGE zwischen zwei Zeitpunkten. Die App plant in
-  /// ganzen Tagen ("morgen fällig") – abends lernen und am nächsten Morgen
-  /// wiederholen ist ein Tag Abstand, auch wenn keine 24 Stunden vergangen
-  /// sind (mit `difference().inDays` wären es 0 Tage: keine Stabilitäts-
-  /// zunahme, das Intervall wüchse nicht). Über UTC-Daten gerechnet, damit
-  /// die Zeitumstellung (23-/25-Stunden-Tag) nichts verschiebt.
-  static int calendarDaysBetween(DateTime from, DateTime to) => max(
-        0,
-        DateTime.utc(to.year, to.month, to.day).difference(DateTime.utc(from.year, from.month, from.day)).inDays,
-      );
+  /// Vergangene KALENDERTAGE zwischen zwei Zeitpunkten, nie negativ. Die App
+  /// plant in ganzen Tagen ("morgen fällig") – abends lernen und am nächsten
+  /// Morgen wiederholen ist ein Tag Abstand, auch wenn keine 24 Stunden
+  /// vergangen sind (mit `difference().inDays` wären es 0 Tage: keine
+  /// Stabilitätszunahme, das Intervall wüchse nicht). Eigener Name, weil
+  /// [calendarDaysBetween] negativ werden darf (der Daily-Plan erkennt daran
+  /// eine vergangene Klausur).
+  static int elapsedCalendarDays(DateTime from, DateTime to) => max(0, calendarDaysBetween(from, to));
 
   /// Mitternacht [days] Kalendertage nach [at] – ohne Stunden-Addition, die
   /// an der Zeitumstellung eine Stunde daneben läge.
@@ -172,7 +171,7 @@ class FsrsService {
       difficulty = card.difficulty;
       stability = card.stability;
     } else {
-      final elapsed = card.lastReview == null ? 0 : calendarDaysBetween(card.lastReview!, reviewedAt);
+      final elapsed = card.lastReview == null ? 0 : elapsedCalendarDays(card.lastReview!, reviewedAt);
       final r = _retrievability(elapsed, card.stability);
       difficulty = _nextDifficulty(card.difficulty, grade);
       stability = grade == Grade.again
@@ -214,7 +213,7 @@ class FsrsService {
       due: due,
       stability: stability,
       difficulty: difficulty,
-      elapsedDays: card.lastReview == null ? 0 : calendarDaysBetween(card.lastReview!, reviewedAt),
+      elapsedDays: card.lastReview == null ? 0 : elapsedCalendarDays(card.lastReview!, reviewedAt),
       scheduledDays: scheduled,
       reps: card.reps + 1,
       // Ein Lapse ist das Vergessen einer schon GELERNTEN Karte – eine neue
@@ -233,7 +232,7 @@ class FsrsService {
   /// Aktuelle geschätzte Erinnerungswahrscheinlichkeit einer Karte "heute".
   double currentRetrievability(Flashcard card, {DateTime? now}) {
     if (card.reps == 0 || card.lastReview == null) return 0;
-    return _retrievability(calendarDaysBetween(card.lastReview!, now ?? DateTime.now()), card.stability);
+    return _retrievability(elapsedCalendarDays(card.lastReview!, now ?? DateTime.now()), card.stability);
   }
 
   /// Leitet für automatisch auswertbare Fragetypen (Single-/Multiple-Choice,

@@ -125,6 +125,9 @@ class UnlockBlockService {
       ]..sort((a, b) => (a.kind == 'Vorlesung' ? 1 : 0).compareTo(b.kind == 'Vorlesung' ? 1 : 0));
       if (sources.isEmpty && concepts.isEmpty && mistakes.isEmpty) return 0;
 
+      // Vor dem Aufruf merken: auch eine gescheiterte Anfrage kann schon Geld
+      // gekostet haben – sonst löste jeder Fehler beim Üben gleich die nächste aus.
+      _last[moduleId] = when;
       final plan = await ai.planUnlockBlocks(
         moduleId: moduleId,
         moduleName: '${module?['name'] ?? 'Fach'}',
@@ -142,7 +145,6 @@ class UnlockBlockService {
         maxNew: room,
         now: when,
       );
-      _last[moduleId] = when;
       final keep = {
         for (final b in untouched)
           if (plan.keep.contains(b.id)) b.id,
