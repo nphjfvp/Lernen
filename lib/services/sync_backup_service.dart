@@ -81,8 +81,20 @@ class SyncBackupService {
     required String kind,
     required String reason,
     DateTime? now,
+  }) =>
+      db.transaction((txn) async =>
+          createIn(txn, await buildSyncPayload(txn), kind: kind, reason: reason, now: now));
+
+  /// Wie [create], aber mit einem bereits gebauten Stand [payload] (siehe
+  /// buildSyncPayload) und in der Transaktion [txn] des Aufrufers – spart das
+  /// erneute Einlesen des ganzen Datenbestands.
+  static Future<SyncBackup?> createIn(
+    DatabaseClient txn,
+    Map<String, dynamic> payload, {
+    required String kind,
+    required String reason,
+    DateTime? now,
   }) async {
-    final payload = await buildSyncPayload(db);
     final modules = (payload['modules'] as List).length;
     final flashcards = (payload['flashcards'] as List).length;
     if (modules == 0 && flashcards == 0) return null;
@@ -100,11 +112,9 @@ class SyncBackupService {
       flashcards: flashcards,
       bytes: compressed.length,
     );
-    await db.transaction((txn) async {
-      await DatabaseService.syncBackups.record(backup.id).put(txn, backup.toMap());
-      await DatabaseService.syncBackupData.record(backup.id).put(txn, {'data': base64Encode(compressed)});
-      await _prune(txn, kind);
-    });
+    await DatabaseService.syncBackups.record(backup.id).put(txn, backup.toMap());
+    await DatabaseService.syncBackupData.record(backup.id).put(txn, {'data': base64Encode(compressed)});
+    await _prune(txn, kind);
     return backup;
   }
 

@@ -52,14 +52,40 @@ class FlashcardRepository extends ChangeNotifier {
   Future<void> updateAll(List<Flashcard> cards) async {
     if (cards.isEmpty) return;
     final db = await DatabaseService.instance.database;
-    await db.transaction((txn) async {
+    final written = await db.transaction((txn) async {
+      final written = <Flashcard>[];
       for (final card in cards) {
         final ref = DatabaseService.flashcards.record(card.id);
-        if (await ref.get(txn) != null) await ref.put(txn, card.toMap());
+        if (await ref.get(txn) == null) continue;
+        await ref.put(txn, card.toMap());
+        written.add(card);
       }
+      return written;
     });
-    for (final moduleId in {for (final c in cards) c.moduleId}) {
-      if (_byModule.containsKey(moduleId)) await loadForModule(moduleId);
+    await _replaceCached(written);
+  }
+
+  /// Tauscht geschriebene Karten im geladenen Stand ([forModule]) aus, statt
+  /// das ganze Fach neu zu lesen – im Daily Quiz passiert das bei jeder
+  /// Antwort. Fehlt eine Karte in der Liste ihres geladenen Fachs (z.B. dorthin
+  /// verschoben), wird dieses Fach neu geladen.
+  Future<void> _replaceCached(Iterable<Flashcard> cards) async {
+    final reload = <String>{};
+    var changed = false;
+    for (final card in cards) {
+      final list = _byModule[card.moduleId];
+      if (list == null) continue;
+      final i = list.indexWhere((c) => c.id == card.id);
+      if (i < 0) {
+        reload.add(card.moduleId);
+      } else {
+        list[i] = card;
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
+    for (final moduleId in reload) {
+      await loadForModule(moduleId);
     }
   }
 
@@ -94,9 +120,7 @@ class FlashcardRepository extends ChangeNotifier {
       await ref.put(txn, card.toMap());
       return true;
     });
-    if (written && _byModule.containsKey(card.moduleId)) {
-      await loadForModule(card.moduleId);
-    }
+    if (written) await _replaceCached([card]);
     return written;
   }
 
@@ -117,9 +141,7 @@ class FlashcardRepository extends ChangeNotifier {
       await ref.put(txn, card.toMap());
       return card;
     });
-    if (updated != null && _byModule.containsKey(updated.moduleId)) {
-      await loadForModule(updated.moduleId);
-    }
+    if (updated != null) await _replaceCached([updated]);
     return updated;
   }
 
@@ -131,24 +153,20 @@ class FlashcardRepository extends ChangeNotifier {
   Future<int> updateScriptLocations(Map<String, ({String? materialId, int page})> locations) async {
     if (locations.isEmpty) return 0;
     final db = await DatabaseService.instance.database;
-    final moduleIds = <String>{};
     final changed = await db.transaction((txn) async {
-      var n = 0;
+      final changed = <Flashcard>[];
       for (final e in locations.entries) {
         final ref = DatabaseService.flashcards.record(e.key);
         final stored = await ref.get(txn);
         if (stored == null) continue;
         final card = Flashcard.fromMap(stored).copyWithScript(materialId: e.value.materialId, page: e.value.page);
         await ref.put(txn, card.toMap());
-        moduleIds.add(card.moduleId);
-        n++;
+        changed.add(card);
       }
-      return n;
+      return changed;
     });
-    for (final id in moduleIds) {
-      if (_byModule.containsKey(id)) await loadForModule(id);
-    }
-    return changed;
+    await _replaceCached(changed);
+    return changed.length;
   }
 
   /// KI-Hilfestellungen am GESPEICHERTEN Stand ablegen (siehe
@@ -166,9 +184,7 @@ class FlashcardRepository extends ChangeNotifier {
       await ref.put(txn, withHints.toMap());
       return withHints;
     });
-    if (updated != null && _byModule.containsKey(updated.moduleId)) {
-      await loadForModule(updated.moduleId);
-    }
+    if (updated != null) await _replaceCached([updated]);
   }
 
   Future<void> delete(String id, String moduleId) async {
