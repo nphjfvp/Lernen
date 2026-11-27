@@ -68,6 +68,21 @@ void main() {
     expect((await repo.loadById('a'))!.front, 'Geändert');
   });
 
+  test('update tauscht nur die Karte im geladenen Fach aus, ohne neu zu laden', () async {
+    final db = await DatabaseService.instance.database;
+    final repo = FlashcardRepository();
+    await repo.saveAll([_card('c')]);
+    // Direkt geschrieben: taucht erst nach einem vollen Neuladen auf.
+    await DatabaseService.flashcards.record('direkt').put(db, _card('direkt').toMap());
+    var notified = 0;
+    repo.addListener(() => notified++);
+
+    expect(await repo.update(_card('c', front: 'Neu')), isTrue);
+    expect(repo.forModule('m1').singleWhere((c) => c.id == 'c').front, 'Neu');
+    expect(repo.forModule('m1').where((c) => c.id == 'direkt'), isEmpty);
+    expect(notified, 1);
+  });
+
   test('update legt eine inzwischen gelöschte Karte nicht wieder an', () async {
     final repo = FlashcardRepository();
     await repo.saveAll([_card('b')]);
