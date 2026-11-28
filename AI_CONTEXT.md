@@ -488,7 +488,7 @@ Leicht → Mittel → Schwer für GETRENNTE Karten desselben Sachverhalts.
 
 Entwicklungszweig: `claude/neue-lern-app-fokus-ej3k48` (App-Branch – fertige Änderungen
 immer direkt dorthin pushen, auch aus anderen Sitzungs-Branches; siehe CLAUDE.md). `flutter analyze`
-sauber, 1880 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
+sauber, 1899 Tests grün (auch mit `TZ=Europe/Berlin`), `flutter build web`
 erfolgreich.
 
 Umgesetzt sind 135 Punkte – einzeln, mit Klassen-/Key-/Test-Namen, in
@@ -538,7 +538,8 @@ Ideen aus LearnHarness: Sicherheit/„Weiß ich nicht“/Tipp-Leiter mit einer B
 Denkfehler je Option, Wiederholung in neuer Form, Einstufen, Prüffrage je Lektionsschritt, Voraussetzungs-Sperre,
 Web-Recherche als letzte Erklärstufe, Prompt-Caching, Modus „Laut denken“ (136),
 Stift-Blatt im Web ohne Wartezeit (Pfade statt Einzellinien, Striche als Bild), Offline-Start ohne Firebase-Wartezeit,
-Browser-Tests in tool/web_e2e (137).
+Browser-Tests in tool/web_e2e (137),
+Panik-Modus B3: Inhaltsdateien (`panik-content`) als eigenes Fach importieren, Prüftool tool/panik_check_test.dart (139).
 
 **Aufgaben für den Nutzer bauen** („ins Postfach“, Übungsblatt schicken):
 Skill `.claude/skills/postfach/SKILL.md` befolgen – Postfach-Code nie ins
