@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,7 @@ import '../../models/module.dart';
 import '../../repositories/module_repository.dart';
 import '../../repositories/settings_repository.dart';
 import '../../services/claude_inbox.dart';
+import '../../services/panik_import.dart';
 import '../../theme/app_colors.dart';
 import '../tasks/task_import_screen.dart';
 
@@ -74,7 +77,43 @@ class _ClaudeInboxScreenState extends State<ClaudeInboxScreen> {
     return modules.firstOrNull;
   }
 
+  /// Panik-Lieferung: wird ein eigenes neues Fach (löschbar wie jedes Fach).
+  Future<void> _takePanik(InboxDelivery d) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Als neues Fach anlegen?'),
+        content: Text('„${d.title}“ wird ein eigenes Fach mit ${d.taskCount} Einträgen für den Panik-Modus. '
+            'Es lässt sich jederzeit wie jedes Fach löschen.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Anlegen')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final moduleRepo = context.read<ModuleRepository>();
+    final messenger = ScaffoldMessenger.of(context);
+    final code = _code;
+    try {
+      final created = await PanikImport.save(jsonDecode(d.payload));
+      await moduleRepo.load();
+      messenger.showSnackBar(SnackBar(content: Text('Fach „${created.module.name}“ angelegt.')));
+    } on FormatException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Nicht übernommen: ${e.message}')));
+      return;
+    }
+    if (code == null) return;
+    try {
+      await _inbox.remove(code, d.id);
+    } catch (_) {
+      // Bleibt liegen – beim nächsten Mal lässt sie sich verwerfen.
+    }
+    await _load();
+  }
+
   Future<void> _take(InboxDelivery d) async {
+    if (d.isPanik) return _takePanik(d);
     final modules = context.read<ModuleRepository>().modules;
     if (modules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -207,7 +246,7 @@ class _ClaudeInboxScreenState extends State<ClaudeInboxScreen> {
                     key: ValueKey('inbox-take-$i'),
                     onPressed: count == 0 ? null : () => _take(d),
                     icon: const Icon(Icons.move_to_inbox_outlined, size: 18),
-                    label: const Text('Ansehen & übernehmen'),
+                    label: Text(d.isPanik ? 'Als neues Fach anlegen' : 'Ansehen & übernehmen'),
                   ),
                 ],
               ),

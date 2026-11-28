@@ -81,7 +81,9 @@ def cmd_send(args):
         sys.exit(f'{args.file} ist kein gültiges JSON: {e}')
     if len(payload.encode('utf-8')) > 900_000:
         sys.exit('Die Lieferung ist zu groß (über 900 KB) – bitte auf mehrere aufteilen.')
-    count = len(parsed.get('tasks', [])) + len(parsed.get('flashcards', [])) if isinstance(parsed, dict) else len(parsed)
+    # Aufgaben-Lieferung (tasks/flashcards) oder Panik-Inhaltsdatei (items)
+    count = (len(parsed.get('tasks', [])) + len(parsed.get('flashcards', [])) + len(parsed.get('items', []))
+             if isinstance(parsed, dict) else len(parsed))
     now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
     fields = {
         'title': {'stringValue': args.title},

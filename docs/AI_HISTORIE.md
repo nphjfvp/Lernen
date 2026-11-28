@@ -1887,3 +1887,17 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     firebase_auth_plugin.cpp; mit /WX aus `APPLY_STANDARD_SETTINGS` (windows/CMakeLists.txt) brach der Build ab
     (Run vom 25.11., Android/Web grün). Abhilfe: `/wd"4238"` in `APPLY_STANDARD_SETTINGS` (Plugins nutzen die
     Funktion, firebase_auth setzt kein eigenes /WX). Keine Abhängigkeit geändert.
+139. Panik-Modus, Baustein B3 (Import): Format `panik-content` v1 (`lib/models/panik_content.dart`: `PanikContent.parse`
+    prüft streng und wirft `FormatException` mit allen Fehlern; `looksLike` erkennt das Format; Arten `PanikItemKind`
+    example/task/reserve/recognize/formula). `lib/services/panik_import.dart`: `PanikImport.build` → `ImportedModule`
+    (Typ → `Concept` mit Rezept/Erkennen/Fehlern als Erklärung, Voraussetzungen als `prerequisiteIds`; Eintrag →
+    `Flashcard` mit `conceptId`; KEINE neuen Felder – Panik-Angaben in `taskData['panik']`, gelesen über
+    `PanikCardInfo.of`; bewusst ohne `kind` auf oberster Ebene, sonst „App aktualisieren“-Hinweis in
+    QuestionAnswerView). Rechenwege = Karteikarten mit Lösungsweg hinten, Schritte in `panik.steps` (kein StepTask:
+    `TaskStep.fromMap` verwirft Schritte ohne Felder). Erkennen = singleChoice mit Typ-Titeln. Reserve = Gewicht 0
+    (`isMuted`, nie im Daily Quiz). Jede Karte `stageGroup: einzeln-<id>` (sonst StageGate-Gruppierung je Konzept).
+    `PanikImport.save` speichert in EINER Transaktion über `ModuleExportService.saveImported`. Einstieg:
+    Home „Fach importieren“ (erkennt das Format) und Claude-Postfach (`InboxDelivery.isPanik`, „Als neues Fach
+    anlegen“, `_takePanik`). Inhalte nie im Repo; Prüfen vor dem Versand:
+    `PANIK_FILE=… flutter test tool/panik_check_test.dart` (Leser der App + `TexParser` für jede Formel).
+    Tests: panik_import_test.

@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 
+import '../models/panik_content.dart';
 import 'ai_service.dart';
 
 /// Eine Lieferung im Claude-Postfach: Aufgaben im Import-Format der App
@@ -27,8 +30,26 @@ class InboxDelivery {
   final String note;
   final DateTime? createdAt;
 
+  /// Panik-Inhaltsdatei (siehe PanikContent) statt Aufgaben für ein Fach.
+  bool get isPanik => PanikContent.looksLike(_decoded);
+
+  Object? get _decoded {
+    try {
+      return jsonDecode(payload);
+    } on FormatException {
+      return null;
+    }
+  }
+
   /// Wie viele Aufgaben/Fragen sich daraus lesen lassen (0 = unbrauchbar).
   int get taskCount {
+    if (isPanik) {
+      try {
+        return PanikContent.parse(_decoded).items.length;
+      } on FormatException {
+        return 0;
+      }
+    }
     try {
       return AiService.parseImportedTasks(payload).drafts.length;
     } on AiServiceException {

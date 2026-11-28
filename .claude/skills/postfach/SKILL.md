@@ -47,6 +47,14 @@ externe KIs (`AiService.parseImportedTasks`).
    (oder unter Einstellungen → Claude-Postfach → „Postfach öffnen“) zum Prüfen
    bereitliegen.
 
+## Panik-Inhalte
+
+Inhaltsdateien für den Panik-Modus (`"format": "panik-content"`, siehe
+`lib/models/panik_content.dart`) gehen ebenfalls übers Postfach; die App legt
+daraus ein neues Fach an. Vor dem Senden prüfen:
+`PANIK_FILE=<datei> flutter test tool/panik_check_test.dart` (0 Formelfehler).
+Die Datei bleibt im Scratchpad, nie im Repo.
+
 ## Grenzen
 
 - Bilder/Abbildungen reisen nicht mit – Aufgaben, die ohne Abbildung nicht

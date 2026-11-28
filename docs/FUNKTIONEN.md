@@ -61,6 +61,11 @@ Architektur. Kurzüberblick: [README](../README.md); Änderungen der Reihe nach:
   weiter unten für den genauen Anwendungsfall). Einzelne Konzepte und
   Karteikarten lassen sich im Modul-Detail bzw. in der Karteikarten-
   Übersicht jederzeit bearbeiten oder löschen.
+- **Panik-Modus – Inhalte** (im Aufbau, `lib/models/panik_content.dart`, `lib/services/panik_import.dart`):
+  eine Panik-Inhaltsdatei (Aufgabentypen mit Erkennungsmerkmalen, Rezept, typischen Fehlern, Prüfungsgewicht;
+  Lösungsbeispiele und Aufgaben mit Prinzip-Etikett je Schritt, „Verfahren erkennen“, Formelkarten, Reserveaufgaben
+  für Probeklausuren) wird per Claude-Postfach oder „Fach importieren“ ein eigenes Fach. Die App enthält keine
+  Inhalte; das Fach lässt sich wie jedes andere löschen.
 - **Fragen aus PDF importieren** (`lib/ui/import/pdf_question_import_screen.dart`,
   im Fach als eigener Eintrag und im ⋮-Menü jeder PDF unter
   "Materialien") – die KI liest **beliebig viele PDFs auf einmal** (aus dem

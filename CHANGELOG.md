@@ -4,6 +4,21 @@ Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7t) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
 
+### 7x. Panik-Modus, Baustein 1: Inhalte als eigenes Fach importieren
+
+- Die App liest jetzt **Panik-Inhaltsdateien**: Aufgabentypen mit
+  Erkennungsmerkmalen, Rezept und typischen Fehlern, dazu Lösungsbeispiele,
+  Aufgaben mit Rechenweg (jeder Schritt mit kurzem Prinzip-Etikett),
+  „Verfahren erkennen“-Fragen und Formelkarten.
+- Eine solche Datei kommt per **Claude-Postfach** („Als neues Fach anlegen“)
+  oder über **Fach importieren** und wird ein **eigenes Fach** – die App
+  selbst enthält keine Inhalte. Löschen wie jedes Fach.
+- Die Datei wird streng geprüft; eine fehlerhafte Datei wird gar nicht
+  übernommen (nie halb).
+- Bis der Panik-Modus fertig ist, lernt man die Inhalte normal: Rechenwege als
+  Karteikarte (Aufgabe vorn, ganzer Lösungsweg hinten), Erkennen als Auswahl.
+  Reserveaufgaben für Probeklausuren kommen nicht ins Daily Quiz.
+
 ### 7w. Audit: Sync verliert keine Antwort mehr, Entsperr-Blöcke sparen KI-Kosten
 
 - **Abgleich**: Wer genau während eines automatischen Abgleichs eine Frage

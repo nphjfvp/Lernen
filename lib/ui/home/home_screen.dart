@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../study/think_aloud_screen.dart';
 import '../../models/flashcard.dart';
 import '../../models/module.dart';
+import '../../models/panik_content.dart';
 import '../../repositories/flashcard_repository.dart';
 import '../../repositories/lab_experiment_repository.dart';
 import '../../repositories/lecture_unit_repository.dart';
@@ -17,6 +18,7 @@ import '../../services/continue_learning.dart';
 import '../../services/database_service.dart';
 import '../../services/mastery_service.dart';
 import '../../services/module_export_service.dart';
+import '../../services/panik_import.dart';
 import '../../services/task_folder_service.dart';
 import '../../theme/app_colors.dart';
 import '../modules/module_detail_screen.dart';
@@ -144,6 +146,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final json = jsonDecode(utf8.decode(bytes));
       if (json is! Map) {
         throw const FormatException('Keine gültige Fach-Export-Datei.');
+      }
+      // Panik-Inhaltsdatei: wird ein neues Fach (ohne Lernstand-Rückfrage).
+      if (PanikContent.looksLike(json)) {
+        final created = await PanikImport.save(json);
+        await moduleRepo.load();
+        if (!context.mounted) return;
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => ModuleDetailScreen(moduleId: created.module.id)));
+        return;
       }
       var imported = ModuleExportService.parse(Map<String, dynamic>.from(json));
       if (!context.mounted) return;
