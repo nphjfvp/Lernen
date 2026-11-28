@@ -22,6 +22,8 @@ import '../../services/answer_checker.dart';
 import '../../services/answer_signals.dart';
 import '../../services/fsrs_service.dart';
 import '../../services/html_question_contract.dart';
+import '../../services/panik_import.dart';
+import '../panik/panik_paper_view.dart';
 import '../../services/weakness_service.dart';
 import '../../theme/app_colors.dart';
 import '../study/explain_chat.dart';
@@ -1245,6 +1247,21 @@ class _QuestionAnswerViewState extends State<QuestionAnswerView> {
         onComplete: _submit,
         onSkip: widget.onSkip,
         canGiveUp: widget.canGiveUp,
+      );
+    }
+    // Panik-Modus: Rechenweg auf Papier, Schritt für Schritt abgleichen.
+    final panik = PanikCardInfo.of(widget.card);
+    if (panik != null && panik.steps.isNotEmpty) {
+      return PanikPaperView(
+        card: widget.card,
+        info: panik,
+        isNew: widget.isNew,
+        onSkip: widget.onSkip,
+        onComplete: ({required bool isCorrect, required AnswerSignals signals}) {
+          if (_submitted) return;
+          _submitted = true;
+          widget.onComplete(isCorrect: isCorrect, signals: signals.copyWith(variant: widget.isVariant));
+        },
       );
     }
     if (widget.card.type == QuestionType.flashcard || widget.card.type == QuestionType.learn || !_answerable) {

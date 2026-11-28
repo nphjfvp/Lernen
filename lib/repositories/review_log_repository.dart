@@ -25,6 +25,8 @@ class ReviewLogEntry {
     this.stabilityBefore = 0,
     this.difficultyBefore = 0,
     this.elapsedDays = 0,
+    this.errorCause,
+    this.errorStep,
   });
 
   final String cardId;
@@ -45,6 +47,10 @@ class ReviewLogEntry {
 
   /// Kalendertage seit der vorigen Wiederholung (0 bei einer neuen Karte).
   final int elapsedDays;
+
+  /// Rechenweg auf Papier (Panik-Modus): Ursache und Schritt des ersten Fehlers.
+  final ErrorCause? errorCause;
+  final int? errorStep;
 
   bool get confidentMiss =>
       AnswerSignals.isConfidentMiss(isCorrect: correct, signals: AnswerSignals(confidence: confidence, dontKnow: dontKnow));
@@ -73,6 +79,8 @@ class ReviewLogEntry {
       stabilityBefore: before.stability,
       difficultyBefore: before.difficulty,
       elapsedDays: last == null ? 0 : _days(last, when),
+      errorCause: signals.errorCause,
+      errorStep: signals.errorStep,
     );
   }
 
@@ -97,6 +105,8 @@ class ReviewLogEntry {
         'stabilityBefore': stabilityBefore,
         'difficultyBefore': difficultyBefore,
         'elapsedDays': elapsedDays,
+        if (errorCause != null) 'errorCause': errorCause!.name,
+        if (errorStep != null) 'errorStep': errorStep,
       };
 
   factory ReviewLogEntry.fromMap(Map<String, dynamic> map) {
@@ -121,6 +131,8 @@ class ReviewLogEntry {
       stabilityBefore: num0(map['stabilityBefore']),
       difficultyBefore: num0(map['difficultyBefore']),
       elapsedDays: (map['elapsedDays'] as num?)?.toInt() ?? 0,
+      errorCause: ErrorCause.fromKey(map['errorCause']),
+      errorStep: (map['errorStep'] as num?)?.toInt(),
     );
   }
 }

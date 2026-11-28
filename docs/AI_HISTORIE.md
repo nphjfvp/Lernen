@@ -1901,3 +1901,12 @@ Dritte Runde (gründliche Code-Analyse, siehe `CODE_ANALYSE.md`):
     anlegen“, `_takePanik`). Inhalte nie im Repo; Prüfen vor dem Versand:
     `PANIK_FILE=… flutter test tool/panik_check_test.dart` (Leser der App + `TexParser` für jede Formel).
     Tests: panik_import_test.
+140. Panik-Modus B4 (Papier-Ablauf): `lib/ui/panik/panik_paper_view.dart` (`PanikPaperView`, Phasen solving →
+    checking → chooseCause → finished; Keys `panik-reveal`, `panik-ok`, `panik-wrong`, `panik-cause-<name>`,
+    `panik-done`, `panik-easy`, `panik-hard`, `panik-stuck`, `panik-step-<i>`). Eingehängt in `QuestionAnswerView.build`
+    vor dem Karteikarten-Zweig: Karten mit `PanikCardInfo.of(card).steps` → Papier-Ansicht, damit gilt sie in allen
+    Lernmodi über die EINE Verbuchung (`CardReviewMixin.recordReview`). Ergebnis: alles gestimmt → `isCorrect: true`
+    mit Sicherheit sure („ging leicht“, Wechselkriterium) bzw. unsure; Fehler → `isCorrect: false` +
+    `AnswerSignals.errorCause` (`ErrorCause`: procedure, calculation, sign, formula, missingStep, other) +
+    `errorStep` (1-basiert); „nicht weiter“ → dontKnow. `ReviewLogEntry` speichert `errorCause`/`errorStep`
+    (Fehlerprotokoll, nur Gerät). Beispiele laufen bis B5 ebenfalls als Papier-Aufgabe. Tests: panik_paper_view_test.

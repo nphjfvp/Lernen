@@ -65,7 +65,9 @@ Architektur. Kurzüberblick: [README](../README.md); Änderungen der Reihe nach:
   eine Panik-Inhaltsdatei (Aufgabentypen mit Erkennungsmerkmalen, Rezept, typischen Fehlern, Prüfungsgewicht;
   Lösungsbeispiele und Aufgaben mit Prinzip-Etikett je Schritt, „Verfahren erkennen“, Formelkarten, Reserveaufgaben
   für Probeklausuren) wird per Claude-Postfach oder „Fach importieren“ ein eigenes Fach. Die App enthält keine
-  Inhalte; das Fach lässt sich wie jedes andere löschen.
+  Inhalte; das Fach lässt sich wie jedes andere löschen. Rechenaufgaben daraus löst man auf Papier und gleicht
+  sie Schritt für Schritt ab (`lib/ui/panik/panik_paper_view.dart`: „Stimmt“/„Hier falsch“, beim ersten Fehler die
+  Ursache – landet im Antwort-Protokoll).
 - **Fragen aus PDF importieren** (`lib/ui/import/pdf_question_import_screen.dart`,
   im Fach als eigener Eintrag und im ⋮-Menü jeder PDF unter
   "Materialien") – die KI liest **beliebig viele PDFs auf einmal** (aus dem

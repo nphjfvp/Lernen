@@ -28,6 +28,22 @@ enum AnswerConfidence {
   }
 }
 
+/// Ursache des ersten Fehlers in einem auf Papier gerechneten Rechenweg
+/// (Panik-Modus, siehe PanikPaperView) – fürs Fehlerprotokoll.
+enum ErrorCause {
+  procedure('Verfahren falsch gewählt'),
+  calculation('Rechenfehler'),
+  sign('Vorzeichen'),
+  formula('Formel/Korrespondenz falsch'),
+  missingStep('Schritt vergessen'),
+  other('Sonstiges');
+
+  const ErrorCause(this.label);
+  final String label;
+
+  static ErrorCause? fromKey(Object? key) => values.where((c) => c.name == key).firstOrNull;
+}
+
 /// Stufen der Hilfe-Leiter (siehe [AnswerSignals.hintLevel]): je Klick auf
 /// „Tipp“ eine Stufe mehr, von „schau auf die Angabe“ bis „so fängst du an“.
 /// Wie viel Hilfe nötig war, bestimmt die Bewertung (siehe
@@ -72,7 +88,14 @@ class HintLadder {
 /// durchgereicht (QuestionAnswerView → CardReviewMixin.recordReview) und
 /// fließt in die Bewertung und das Antwort-Protokoll.
 class AnswerSignals {
-  const AnswerSignals({this.confidence, this.dontKnow = false, this.hintLevel = 0, this.variant = false});
+  const AnswerSignals({
+    this.confidence,
+    this.dontKnow = false,
+    this.hintLevel = 0,
+    this.variant = false,
+    this.errorCause,
+    this.errorStep,
+  });
 
   static const none = AnswerSignals();
 
@@ -90,12 +113,19 @@ class AnswerSignals {
   /// Wiederholungsrunde im Daily Quiz) – nur fürs Protokoll.
   final bool variant;
 
+  /// Rechenweg auf Papier: Ursache des ersten Fehlers und in welchem Schritt
+  /// (1-basiert) er lag – null, wenn alles stimmte.
+  final ErrorCause? errorCause;
+  final int? errorStep;
+
   AnswerSignals copyWith({AnswerConfidence? confidence, bool? dontKnow, int? hintLevel, bool? variant}) =>
       AnswerSignals(
         confidence: confidence ?? this.confidence,
         dontKnow: dontKnow ?? this.dontKnow,
         hintLevel: hintLevel ?? this.hintLevel,
         variant: variant ?? this.variant,
+        errorCause: errorCause,
+        errorStep: errorStep,
       );
 
   /// Bewertung einer Antwort aus Ergebnis und Signalen – die EINE Regel für

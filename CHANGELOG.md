@@ -4,6 +4,21 @@ Was sich geändert hat – das Neueste oben. Die Nummern (5a … 7t) sind die
 früheren Abschnittsnummern aus der README und bleiben als Verweis erhalten.
 Ausführliche Beschreibung der Funktionen: [docs/FUNKTIONEN.md](docs/FUNKTIONEN.md).
 
+### 7y. Panik-Modus, Baustein 2: Rechenaufgaben auf Papier abgleichen
+
+- Rechenaufgaben aus Panik-Inhalten rechnest du **auf Papier**. Danach deckst
+  du die Lösung **Schritt für Schritt** auf – jeder Schritt mit kurzem
+  Prinzip-Etikett („Variablen trennen“, „dA = r dr dφ“) – und markierst
+  „Stimmt“ oder „Hier falsch“.
+- Beim ersten Fehler wählst du die **Ursache** (Verfahren falsch gewählt,
+  Rechenfehler, Vorzeichen, Formel/Korrespondenz falsch, Schritt vergessen,
+  Sonstiges); sie landet mit dem Schritt im Antwort-Protokoll, und die
+  Aufgabe kommt bald wieder.
+- Alles richtig: „Ging leicht“ oder „Ging, aber mühsam“. „Ich komme nicht
+  weiter“ zeigt die ganze Lösung (zählt als „Weiß ich nicht“).
+- Funktioniert überall, wo Karten drankommen (Daily Quiz, Üben …).
+  Ungeprüfte Lösungen sind sichtbar markiert.
+
 ### 7x. Panik-Modus, Baustein 1: Inhalte als eigenes Fach importieren
 
 - Die App liest jetzt **Panik-Inhaltsdateien**: Aufgabentypen mit
